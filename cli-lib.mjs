@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.2.1";
 export const MCP_SCHEMA_URL =
   "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json";
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
@@ -45,6 +45,11 @@ export function nonEmpty(value) {
   if (typeof value !== "string") return undefined;
   const trimmed = value.trim();
   return trimmed || undefined;
+}
+
+function nonEmptySecret(value) {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return value;
 }
 
 export function normalizeBifrostUrl(value) {
@@ -158,8 +163,61 @@ export function runtimeConfigFromState(state) {
   return { url: url ? normalizeBifrostUrl(url) : undefined, apiKey, virtualKey };
 }
 
-export function managementKeyFromState(state) {
-  return nonEmpty(process.env.BIFROST_MANAGEMENT_API_KEY) ?? nonEmpty(state.secrets?.managementApiKey);
+/**
+ * Resolve Bifrost management authentication for the standalone CLI.
+ *
+ * OSS uses the dashboard/admin username and password over HTTP Basic auth.
+ * Enterprise can instead use a scoped management API key over Bearer auth.
+ * Environment variables override the stored configuration. A pre-0.2.1
+ * `managementApiKey` is retained as a backward-compatible bearer credential.
+ */
+export function managementAuthFromState(state, env = process.env) {
+  const requestedMode = nonEmpty(env.BIFROST_MANAGEMENT_AUTH_MODE)?.toLowerCase();
+  const envApiKey = nonEmpty(env.BIFROST_MANAGEMENT_API_KEY);
+  const envUsername = nonEmpty(env.BIFROST_ADMIN_USERNAME);
+  const envPassword = nonEmptySecret(env.BIFROST_ADMIN_PASSWORD);
+
+  if (requestedMode === "basic") {
+    return envUsername && envPassword ? { mode: "basic", username: envUsername, password: envPassword } : undefined;
+  }
+  if (requestedMode === "bearer") {
+    return envApiKey ? { mode: "bearer", apiKey: envApiKey } : undefined;
+  }
+  if (envApiKey) return { mode: "bearer", apiKey: envApiKey };
+  if (envUsername && envPassword) return { mode: "basic", username: envUsername, password: envPassword };
+
+  const storedMode = nonEmpty(state.config?.bifrost?.managementAuthMode)?.toLowerCase();
+  const storedApiKey = nonEmpty(state.secrets?.managementApiKey);
+  const storedUsername = nonEmpty(state.secrets?.managementAdminUsername);
+  const storedPassword = nonEmptySecret(state.secrets?.managementAdminPassword);
+
+  if (storedMode === "basic") {
+    return storedUsername && storedPassword
+      ? { mode: "basic", username: storedUsername, password: storedPassword }
+      : undefined;
+  }
+  if (storedMode === "bearer") {
+    return storedApiKey ? { mode: "bearer", apiKey: storedApiKey } : undefined;
+  }
+
+  // Backward compatibility for 0.2.0 stores that had only managementApiKey.
+  if (storedApiKey) return { mode: "bearer", apiKey: storedApiKey };
+  if (storedUsername && storedPassword) {
+    return { mode: "basic", username: storedUsername, password: storedPassword };
+  }
+  return undefined;
+}
+
+/** Backward-compatible helper retained for callers that explicitly need only an Enterprise API key. */
+export function managementKeyFromState(state, env = process.env) {
+  return nonEmpty(env.BIFROST_MANAGEMENT_API_KEY) ?? nonEmpty(state.secrets?.managementApiKey);
+}
+
+export function managementAuthLabel(auth) {
+  if (auth?.mode === "basic") return "basic (OSS admin credentials)";
+  if (auth?.mode === "bearer") return "bearer (Enterprise scoped API key)";
+  if (typeof auth === "string" && nonEmpty(auth)) return "bearer (legacy API key)";
+  return "missing";
 }
 
 export async function requestJson(url, options = {}) {
@@ -213,22 +271,41 @@ export async function testInference({ url, apiKey, virtualKey }) {
   return { models: models.length };
 }
 
-export function managementHeaders(key) {
-  if (!nonEmpty(key)) throw new Error("Bifrost management API key is required; run `pifrost global setup`");
-  return { Authorization: `Bearer ${key}` };
+export function managementHeaders(auth) {
+  // 0.2.0 compatibility: a bare string is an Enterprise Bearer key.
+  if (typeof auth === "string") {
+    const key = nonEmpty(auth);
+    if (!key) throw new Error("Bifrost management authentication is required; run `pifrost global setup`");
+    return { Authorization: `Bearer ${key}` };
+  }
+  if (auth?.mode === "basic") {
+    const username = nonEmpty(auth.username);
+    const password = nonEmptySecret(auth.password);
+    if (!username || !password) {
+      throw new Error("Bifrost OSS management auth requires an admin username and password");
+    }
+    const encoded = Buffer.from(`${username}:${password}`, "utf8").toString("base64");
+    return { Authorization: `Basic ${encoded}` };
+  }
+  if (auth?.mode === "bearer") {
+    const key = nonEmpty(auth.apiKey);
+    if (!key) throw new Error("Bifrost Enterprise management auth requires a scoped API key");
+    return { Authorization: `Bearer ${key}` };
+  }
+  throw new Error("Bifrost management authentication is required; run `pifrost global setup`");
 }
 
-export async function testManagement(url, key) {
+export async function testManagement(url, auth) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/governance/virtual-keys?limit=1&offset=0`, {
-    headers: managementHeaders(key),
+    headers: managementHeaders(auth),
   });
   return body;
 }
 
-export async function getRoutingRules(url, key) {
+export async function getRoutingRules(url, auth) {
   const base = bifrostManagementBase(url);
-  const headers = managementHeaders(key);
+  const headers = managementHeaders(auth);
   const candidates = [
     `${base}/api/routing/rules?limit=100&offset=0`,
     `${base}/api/governance/routing-rules?limit=100&offset=0`,
@@ -487,57 +564,57 @@ export function normalizeMcpClient(client) {
   };
 }
 
-export async function listMcpClients(url, managementKey) {
+export async function listMcpClients(url, managementAuth) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/mcp/clients?limit=100&offset=0`, {
-    headers: managementHeaders(managementKey),
+    headers: managementHeaders(managementAuth),
   });
   return arrayFromResponse(body, ["clients", "mcp_clients", "items"]).map(normalizeMcpClient);
 }
 
-export async function listVirtualKeys(url, managementKey, search) {
+export async function listVirtualKeys(url, managementAuth, search) {
   const base = bifrostManagementBase(url);
   const query = new URLSearchParams({ limit: "100", offset: "0" });
   if (nonEmpty(search)) query.set("search", search.trim());
   const body = await requestJson(`${base}/api/governance/virtual-keys?${query}`, {
-    headers: managementHeaders(managementKey),
+    headers: managementHeaders(managementAuth),
   });
   return arrayFromResponse(body, ["virtual_keys", "keys", "items"]);
 }
 
-export async function getVirtualKey(url, managementKey, id) {
+export async function getVirtualKey(url, managementAuth, id) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/governance/virtual-keys/${encodeURIComponent(id)}`, {
-    headers: managementHeaders(managementKey),
+    headers: managementHeaders(managementAuth),
   });
   return body?.virtual_key ?? body?.data ?? body;
 }
 
-export async function createVirtualKey(url, managementKey, request) {
+export async function createVirtualKey(url, managementAuth, request) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/governance/virtual-keys`, {
     method: "POST",
-    headers: managementHeaders(managementKey),
+    headers: managementHeaders(managementAuth),
     body: request,
   });
   return body?.virtual_key ?? body?.data ?? body;
 }
 
-export async function updateVirtualKey(url, managementKey, id, request) {
+export async function updateVirtualKey(url, managementAuth, id, request) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/governance/virtual-keys/${encodeURIComponent(id)}`, {
     method: "PUT",
-    headers: managementHeaders(managementKey),
+    headers: managementHeaders(managementAuth),
     body: request,
   });
   return body?.virtual_key ?? body?.data ?? body;
 }
 
-export async function rotateVirtualKey(url, managementKey, id) {
+export async function rotateVirtualKey(url, managementAuth, id) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/governance/virtual-keys/${encodeURIComponent(id)}/rotate`, {
     method: "POST",
-    headers: managementHeaders(managementKey),
+    headers: managementHeaders(managementAuth),
   });
   return body?.virtual_key ?? body?.data ?? body;
 }
