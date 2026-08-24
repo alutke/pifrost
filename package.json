@@ -1,0 +1,46 @@
+{
+  "name": "pifrost",
+  "version": "0.1.0",
+  "description": "A native Pi/OhMyPi provider for Maxim Bifrost with safe routing-alias capability synthesis",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "oh-my-pi",
+    "pi-coding-agent",
+    "bifrost",
+    "llm-gateway",
+    "model-routing"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alutke/pifrost.git"
+  },
+  "homepage": "https://github.com/alutke/pifrost#readme",
+  "files": [
+    "index.ts",
+    "README.md",
+    "NOTICE.md",
+    "LICENSE",
+    "pifrost.aliases.example.json"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "tsx --test test/**/*.test.ts"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "^0.84.1",
+    "@earendil-works/pi-coding-agent": "^0.84.1",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=22.19.0"
+  }
+}
