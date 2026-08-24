@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
 import { buildRichRouteCatalog, fetchBifrostDatasheets } from "../datasheet.ts";
-import { normalizePricingDatasheet } from "../pricing-normalize.ts";
+import {
+  normalizeModelParametersDatasheet,
+  normalizePricingDatasheet,
+} from "../pricing-normalize.ts";
 
 const aliasConfig: PifrostAliasConfig = {
   includePhysicalModels: false,
@@ -78,8 +81,8 @@ const liveModels: BifrostProviderModel[] = refs.map((id) => ({
 
 const sheets = await fetchBifrostDatasheets({ cacheTtlMs: 0 });
 const rich = buildRichRouteCatalog(liveModels, aliasConfig, {
-  ...sheets,
   pricing: normalizePricingDatasheet(sheets.pricing),
+  parameters: normalizeModelParametersDatasheet(sheets.parameters),
 });
 const catalog = buildPifrostCatalog(rich.models, aliasConfig);
 
@@ -96,5 +99,8 @@ for (const id of Object.keys(aliasConfig.aliases).sort()) {
 assert.equal(catalog.models.length, 10, "all ten current OMP aliases must synthesize");
 assert.ok((byId.get("omp-default")?.contextWindow ?? 0) > 128_000, "omp-default must not use generic 128K fallback metadata");
 assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) >= 1_000_000, "omp-slow should retain a 1M-class context envelope");
+assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) < 1_100_000, "omp-slow must not add max output on top of the published context window");
 assert.ok(byId.get("omp-vision")?.input.includes("image"), "omp-vision must advertise image input");
 assert.ok(byId.get("omp-designer")?.input.includes("image"), "omp-designer must advertise image input");
+assert.deepEqual(byId.get("omp-slow")?.thinking?.efforts.map(String), ["high", "max"], "omp-slow effort envelope should be high/max");
+assert.deepEqual(byId.get("omp-task")?.thinking?.efforts.map(String), ["high", "max"], "omp-task effort envelope should be high/max");
