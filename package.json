@@ -1,10 +1,10 @@
 {
   "name": "pifrost",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
-    "pifrost": "./cli.mjs"
+    "pifrost": "./cli-entry.mjs"
   },
   "keywords": [
     "pi-package",
@@ -29,7 +29,9 @@
     "datasheet.ts",
     "pricing-normalize.ts",
     "cli.mjs",
+    "cli-entry.mjs",
     "cli-lib.mjs",
+    "routing-discovery.mjs",
     "README.md",
     "CHANGELOG.md",
     "NOTICE.md",
@@ -42,9 +44,9 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-lib.mjs",
+    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check routing-discovery.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
-    "cli": "node cli.mjs"
+    "cli": "node cli-entry.mjs"
   },
   "devDependencies": {
     "@oh-my-pi/pi-ai": "18.0.4",
