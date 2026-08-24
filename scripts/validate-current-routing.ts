@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
 import { buildRichRouteCatalog, fetchBifrostDatasheets } from "../datasheet.ts";
+import { normalizePricingDatasheet } from "../pricing-normalize.ts";
 
 const aliasConfig: PifrostAliasConfig = {
   includePhysicalModels: false,
@@ -76,12 +77,10 @@ const liveModels: BifrostProviderModel[] = refs.map((id) => ({
 }));
 
 const sheets = await fetchBifrostDatasheets({ cacheTtlMs: 0 });
-const pricing = { ...sheets.pricing };
-for (const [key, value] of Object.entries(sheets.pricing)) {
-  if (!key.endsWith("-free") && !(`${key}-free` in pricing)) pricing[`${key}-free`] = value;
-}
-
-const rich = buildRichRouteCatalog(liveModels, aliasConfig, { ...sheets, pricing });
+const rich = buildRichRouteCatalog(liveModels, aliasConfig, {
+  ...sheets,
+  pricing: normalizePricingDatasheet(sheets.pricing),
+});
 const catalog = buildPifrostCatalog(rich.models, aliasConfig);
 
 for (const diagnostic of rich.diagnostics.filter((item) => item.status !== "ok")) {
