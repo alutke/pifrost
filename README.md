@@ -49,7 +49,7 @@ The public model-parameters feed is not complete for every model. Missing reason
 - Bifrost OpenAI-compatible Chat Completions endpoint
 - a Bifrost inference API credential
 - a Bifrost inference Virtual Key with access to every `omp-*` route Pifrost should expose
-- outbound HTTPS access to `getbifrost.ai` for Bifrost's public capability datasheets
+- outbound HTTPS access to `getbifrost.ai` when refreshing Bifrost's public capability datasheets
 
 The LLM Virtual Key is intentionally separate from project-specific MCP Virtual Keys.
 
@@ -59,7 +59,7 @@ The LLM Virtual Key is intentionally separate from project-specific MCP Virtual 
 omp install github:alutke/pifrost
 ```
 
-Pifrost's CI validates TypeScript, unit tests, the current Bifrost public datasheet coverage used by the target route families, and loading with the real OMP 18.0.4 plugin loader.
+Pifrost's CI validates TypeScript, unit tests, the current Bifrost public datasheet coverage used by the target route families, the target OMP routing envelopes, and loading with the real OMP 18.0.4 plugin loader.
 
 ## Configure global LLM access
 
@@ -168,15 +168,53 @@ retry:
 
 OMP model fallback should remain disabled so Bifrost is the single owner of provider fallback.
 
-## Refresh models
+## Cache-first startup
 
-After changing routing aliases or upgrading Pifrost:
+Pifrost keeps a **last-known-good, non-secret catalog** at:
 
-```bash
-omp models refresh
+```text
+~/.omp/agent/pifrost.catalog.json
 ```
 
-OMP 18 runs `fetchDynamicModels` through its standard SQLite model cache. Pifrost also caches the public Bifrost datasheets in-process for 15 minutes to avoid repeatedly downloading the large catalogs.
+Once the cache has been seeded, Pifrost passes those models to `pi.registerProvider()` synchronously. OMP can therefore select `bifrost/omp-*` during startup without waiting for Bifrost `/v1/models` plus the public datasheets.
+
+The cache stores only model metadata and diagnostics. It does **not** store the Bifrost API key or Virtual Key. Cache identity is bound to:
+
+- the normalized Bifrost URL
+- a SHA-256 fingerprint of the inference Virtual Key
+- a SHA-256 fingerprint of the active alias manifest
+
+Changing the Virtual Key, Bifrost URL, or alias manifest invalidates the cache automatically. A cache older than 30 days is also ignored as a safety boundary.
+
+A cache is considered refresh-due after six hours by default. Refresh-due data is still served immediately for startup, and Pifrost refreshes it in the background for the next session. Fresh caches perform no network-backed model discovery on the startup critical path.
+
+Optional tuning:
+
+```text
+PIFROST_CACHE_FILE
+PIFROST_REFRESH_INTERVAL_MS
+PIFROST_FORCE_REFRESH
+```
+
+## Refresh models
+
+For an explicit network-backed refresh:
+
+```bash
+PIFROST_FORCE_REFRESH=1 omp models refresh
+```
+
+This is also the recommended command immediately after installing/upgrading Pifrost when no `pifrost.catalog.json` exists yet. It performs the slower discovery outside the interactive UI and seeds the startup cache.
+
+Inside OMP you can also run:
+
+```text
+/pifrost refresh
+```
+
+That refreshes the on-disk last-known-good catalog. Restart OMP afterward to guarantee the newly refreshed envelope is the one selected at startup.
+
+OMP still has its own SQLite model cache; Pifrost's small catalog cache exists specifically so extension-registered models are available synchronously before asynchronous runtime discovery completes.
 
 ## Doctor
 
@@ -186,7 +224,7 @@ Inside OMP:
 /pifrost doctor
 ```
 
-The command performs a fresh Bifrost inventory read, applies Bifrost's capability catalogs and reports the effective alias envelopes, for example:
+`doctor` is cache-first and reports the effective alias envelopes without forcing the expensive network discovery path. For example:
 
 ```text
 Pifrost doctor — /home/pi/.omp/agent/pifrost.aliases.json
@@ -205,7 +243,7 @@ The alias manifest deliberately remains separate from the protected Bifrost mana
 When a routing rule changes in Bifrost, update the corresponding chain in `pifrost.aliases.json` and run:
 
 ```bash
-omp models refresh
+PIFROST_FORCE_REFRESH=1 omp models refresh
 ```
 
 A migration/setup script may use the Bifrost admin API once to generate the manifest from live routing rules, but the resulting Pifrost runtime requires only the global inference credentials.
@@ -219,7 +257,7 @@ npm test
 node scripts/validate-public-datasheets.mjs
 ```
 
-CI also installs the local package with OMP 18.0.4's real plugin loader.
+CI also validates the target route envelopes and installs the local package with OMP 18.0.4's real plugin loader.
 
 ## Attribution
 

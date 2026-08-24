@@ -10,8 +10,15 @@ import {
 	PROVIDER_ID,
 	type AliasDiagnostic,
 	type BifrostConfig,
+	type PifrostCatalog,
 } from "./index.ts";
 import { buildRichRouteCatalog, fetchBifrostDatasheets } from "./datasheet.ts";
+import {
+	cacheIsFresh,
+	DEFAULT_REFRESH_INTERVAL_MS,
+	loadCatalogCache,
+	writeCatalogCache,
+} from "./cache.ts";
 import {
 	normalizeModelParametersDatasheet,
 	normalizePricingDatasheet,
@@ -22,36 +29,51 @@ function nonEmpty(value: string | undefined): string | undefined {
 	return trimmed ? trimmed : undefined;
 }
 
-async function buildCatalog(
+function positiveEnvMilliseconds(name: string, fallback: number): number {
+	const raw = nonEmpty(process.env[name]);
+	if (!raw) return fallback;
+	const parsed = Number(raw);
+	return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
+}
+
+function forceRefreshRequested(): boolean {
+	return /^(?:1|true|yes)$/iu.test(nonEmpty(process.env.PIFROST_FORCE_REFRESH) ?? "");
+}
+
+async function fetchFreshCatalog(
 	config: BifrostConfig,
 	aliasSource: ReturnType<typeof loadAliasConfig>,
 	resolvedApiKey?: string,
-) {
+): Promise<PifrostCatalog> {
 	const liveConfig: BifrostConfig = {
 		url: config.url,
 		apiKey: nonEmpty(resolvedApiKey) ?? config.apiKey,
 		virtualKey: nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? config.virtualKey,
 	};
 	const liveModels = await fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(20_000) });
+	let catalog: PifrostCatalog;
 	if (!aliasSource.config || Object.keys(aliasSource.config.aliases ?? {}).length === 0) {
-		return buildPifrostCatalog(liveModels, aliasSource.config);
+		catalog = buildPifrostCatalog(liveModels, aliasSource.config);
+	} else {
+		const datasheets = await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) });
+		const richRoutes = buildRichRouteCatalog(liveModels, aliasSource.config, {
+			pricing: normalizePricingDatasheet(datasheets.pricing),
+			parameters: normalizeModelParametersDatasheet(datasheets.parameters),
+		});
+		catalog = buildPifrostCatalog(richRoutes.models, aliasSource.config);
 	}
 
-	const datasheets = await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) });
-	const richRoutes = buildRichRouteCatalog(liveModels, aliasSource.config, {
-		pricing: normalizePricingDatasheet(datasheets.pricing),
-		parameters: normalizeModelParametersDatasheet(datasheets.parameters),
-	});
-	return buildPifrostCatalog(richRoutes.models, aliasSource.config);
+	writeCatalogCache(catalog, { config: liveConfig, aliasConfig: aliasSource.config });
+	return catalog;
 }
 
 /**
  * Native OMP 18 extension entry point.
  *
- * Runtime credentials are only the global inference Bearer credential and inference VK.
- * Rich capability metadata comes from Bifrost's public datasheets, supplemented only for
- * narrowly-scoped vendor-documented fields currently missing from those feeds. No Bifrost
- * admin credential is persisted.
+ * Startup is deliberately cache-first: the last-known-good non-secret model catalog is
+ * registered synchronously so OMP can select a model immediately. Network-backed Bifrost
+ * and datasheet discovery refreshes that cache separately, avoiding the previous no-model
+ * period and long interactive startup stalls.
  */
 export default function pifrostProvider(pi: ExtensionAPI): void {
 	pi.registerFlag("bifrost-url", {
@@ -84,16 +106,50 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	});
 
 	let diagnostics: AliasDiagnostic[] = [];
+	let refreshInFlight: Promise<PifrostCatalog> | undefined;
+	const refreshIntervalMs = positiveEnvMilliseconds("PIFROST_REFRESH_INTERVAL_MS", DEFAULT_REFRESH_INTERVAL_MS);
 
 	if (config?.apiKey && config.virtualKey) {
+		const startupCache = loadCatalogCache({ config, aliasConfig: aliasSource.config });
+		if (startupCache) diagnostics = startupCache.diagnostics;
+
+		const refresh = (resolvedApiKey?: string): Promise<PifrostCatalog> => {
+			if (!refreshInFlight) {
+				refreshInFlight = fetchFreshCatalog(config, aliasSource, resolvedApiKey).finally(() => {
+					refreshInFlight = undefined;
+				});
+			}
+			return refreshInFlight;
+		};
+
+		const scheduleBackgroundRefresh = (resolvedApiKey?: string): void => {
+			void refresh(resolvedApiKey)
+				.then((catalog) => {
+					diagnostics = catalog.diagnostics;
+				})
+				.catch((error) => {
+					process.stderr.write(
+						`pifrost: background catalog refresh failed: ${error instanceof Error ? error.message : String(error)}\n`,
+					);
+				});
+		};
+
 		pi.registerProvider(PROVIDER_ID, {
 			baseUrl: config.url,
 			apiKey: config.apiKey,
 			api: "openai-completions",
 			authHeader: true,
 			headers: { "x-bf-vk": config.virtualKey },
+			...(startupCache ? { models: startupCache.models } : {}),
 			async fetchDynamicModels(resolvedApiKey) {
-				const catalog = await buildCatalog(config, aliasSource, resolvedApiKey);
+				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
+				if (cached && !forceRefreshRequested()) {
+					diagnostics = cached.diagnostics;
+					if (!cacheIsFresh(cached, refreshIntervalMs)) scheduleBackgroundRefresh(resolvedApiKey);
+					return cached.models;
+				}
+
+				const catalog = await refresh(resolvedApiKey);
 				diagnostics = catalog.diagnostics;
 				return catalog.models;
 			},
@@ -105,11 +161,11 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	}
 
 	pi.registerCommand("pifrost", {
-		description: "Pifrost diagnostics; use /pifrost doctor",
+		description: "Pifrost diagnostics; use /pifrost doctor or /pifrost refresh",
 		handler: async (args, ctx) => {
-			const command = args.trim().toLowerCase();
-			if (command && command !== "doctor") {
-				ctx.ui.notify("Usage: /pifrost doctor", "warning");
+			const command = args.trim().toLowerCase() || "doctor";
+			if (command !== "doctor" && command !== "refresh") {
+				ctx.ui.notify("Usage: /pifrost doctor | /pifrost refresh", "warning");
 				return;
 			}
 			if (!config?.apiKey || !config.virtualKey) {
@@ -121,14 +177,28 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 			}
 
 			try {
-				const catalog = await buildCatalog(config, aliasSource);
-				diagnostics = catalog.diagnostics;
+				if (command === "refresh") {
+					const catalog = await fetchFreshCatalog(config, aliasSource);
+					diagnostics = catalog.diagnostics;
+					ctx.ui.notify(
+						`${formatDoctorReport(diagnostics, aliasSource.path)}\nCatalog cache refreshed; restart OMP to guarantee the refreshed envelope is selected at startup.`,
+						diagnostics.some((item) => item.unresolved.length) ? "warning" : "info",
+					);
+					return;
+				}
+
+				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
+				if (cached) diagnostics = cached.diagnostics;
+				if (!cached && diagnostics.length === 0) {
+					const catalog = await fetchFreshCatalog(config, aliasSource);
+					diagnostics = catalog.diagnostics;
+				}
 				ctx.ui.notify(
 					formatDoctorReport(diagnostics, aliasSource.path),
 					diagnostics.some((item) => item.unresolved.length) ? "warning" : "info",
 				);
 			} catch (error) {
-				ctx.ui.notify(`Pifrost doctor failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+				ctx.ui.notify(`Pifrost ${command} failed: ${error instanceof Error ? error.message : String(error)}`, "error");
 			}
 		},
 	});
