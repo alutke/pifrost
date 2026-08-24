@@ -21,6 +21,7 @@
     "index.ts",
     "native.ts",
     "datasheet.ts",
+    "pricing-normalize.ts",
     "README.md",
     "NOTICE.md",
     "LICENSE",
