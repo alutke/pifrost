@@ -31,7 +31,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "tsx --test test/**/*.test.ts"
+    "test": "tsx --test test/*.test.ts"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "^0.84.1",
