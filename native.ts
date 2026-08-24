@@ -11,11 +11,31 @@ import {
 	type AliasDiagnostic,
 	type BifrostConfig,
 } from "./index.ts";
-import { buildRichRouteCatalog, fetchBifrostDatasheets } from "./datasheet.ts";
+import {
+	buildRichRouteCatalog,
+	fetchBifrostDatasheets,
+	type BifrostDatasheets,
+} from "./datasheet.ts";
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
+}
+
+/**
+ * Some subscription gateways expose a free entitlement alias by appending `-free`
+ * to an otherwise identical underlying model ID (for example Laguna S 2.1 Free).
+ * Bifrost's public pricing datasheet records the underlying model. Add non-destructive
+ * pricing aliases so those entitlement names inherit the same capability envelope.
+ */
+function withEntitlementPricingAliases(datasheets: BifrostDatasheets): BifrostDatasheets {
+	const pricing = { ...datasheets.pricing };
+	for (const [key, value] of Object.entries(datasheets.pricing)) {
+		if (key.endsWith("-free")) continue;
+		const freeKey = `${key}-free`;
+		if (!(freeKey in pricing)) pricing[freeKey] = value;
+	}
+	return { ...datasheets, pricing };
 }
 
 async function buildCatalog(
@@ -33,7 +53,9 @@ async function buildCatalog(
 		return buildPifrostCatalog(liveModels, aliasSource.config);
 	}
 
-	const datasheets = await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) });
+	const datasheets = withEntitlementPricingAliases(
+		await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) }),
+	);
 	const richRoutes = buildRichRouteCatalog(liveModels, aliasSource.config, datasheets);
 	const catalog = buildPifrostCatalog(richRoutes.models, aliasSource.config);
 
