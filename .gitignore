@@ -1,0 +1,5 @@
+node_modules/
+*.log
+.env
+.omp/pifrost.aliases.json
+pifrost.aliases.json
