@@ -34,6 +34,13 @@ function model(
 	};
 }
 
+function effortThinking(...efforts: string[]): NonNullable<BifrostProviderModel["thinking"]> {
+	return {
+		mode: "effort",
+		efforts: efforts as unknown as NonNullable<BifrostProviderModel["thinking"]>["efforts"],
+	};
+}
+
 test("normalizes Bifrost URLs to the native /v1 mount", () => {
 	assert.equal(normalizeBifrostUrl("http://localhost:8180"), "http://localhost:8180/v1");
 	assert.equal(normalizeBifrostUrl("http://localhost:8180/v1"), "http://localhost:8180/v1");
@@ -68,8 +75,8 @@ test("maps rich Bifrost model metadata to canonical OMP thinking metadata", () =
 	assert.equal(mapped.supportsTools, true);
 	assert.equal(mapped.reasoning, true);
 	assert.equal(mapped.thinking?.mode, "effort");
-	assert.deepEqual(mapped.thinking?.efforts, ["low", "high", "max"]);
-	assert.equal(mapped.thinking?.defaultLevel, "high");
+	assert.deepEqual(mapped.thinking?.efforts.map(String), ["low", "high", "max"]);
+	assert.equal(String(mapped.thinking?.defaultLevel), "high");
 });
 
 test("resolves provider-prefixed Bifrost fallback references by physical model id", () => {
@@ -100,7 +107,7 @@ test("alias image, tools and reasoning are conservative intersections", () => {
 	const physical = [
 		model("one", {
 			reasoning: true,
-			thinking: { mode: "effort", efforts: ["low", "high", "max"] },
+			thinking: effortThinking("low", "high", "max"),
 			input: ["text", "image"],
 			supportsTools: true,
 			compat: {
@@ -127,18 +134,18 @@ test("alias reasoning effort is the intersection of every fallback", () => {
 	const physical = [
 		model("one", {
 			reasoning: true,
-			thinking: { mode: "effort", efforts: ["low", "high", "max"] },
+			thinking: effortThinking("low", "high", "max"),
 			compat: { supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true },
 		}),
 		model("two", {
 			reasoning: true,
-			thinking: { mode: "effort", efforts: ["high", "max"] },
+			thinking: effortThinking("high", "max"),
 			compat: { supportsDeveloperRole: false, supportsReasoningEffort: true, supportsUsageInStreaming: true },
 		}),
 	];
 	const result = synthesizeAlias("reasoning", ["one", "two"], physical);
 	assert.ok(result.model);
-	assert.deepEqual(result.model.thinking?.efforts, ["high", "max"]);
+	assert.deepEqual(result.model.thinking?.efforts.map(String), ["high", "max"]);
 	assert.deepEqual(result.diagnostic.reasoningEfforts, ["high", "max"]);
 });
 
