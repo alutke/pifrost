@@ -370,13 +370,15 @@ export function backupOmpConfig(env = process.env) {
 export function configureOmp() {
   if (!commandExists("omp")) throw new Error("`omp` is not installed or not on PATH");
   const backup = backupOmpConfig();
+  // OMP exposes modelRoles as one schema record, not modelRoles.<role> paths.
+  // Always use OMP's schema-aware CLI rather than rewriting its YAML directly.
   const settings = [
     ["modelProviderOrder", JSON.stringify(["bifrost"])],
     ["enabledModels", JSON.stringify(["bifrost/*"])],
     ["retry.modelFallback", "false"],
     ["task.enableEffort", "true"],
     ["task.enableLsp", "true"],
-    ...Object.entries(ROLE_MAP).map(([role, model]) => [`modelRoles.${role}`, model]),
+    ["modelRoles", JSON.stringify(ROLE_MAP)],
   ];
   for (const [key, value] of settings) runCommand("omp", ["config", "set", key, value]);
   return { backup, settings: settings.length };
@@ -554,10 +556,26 @@ export function virtualKeyMcpConfigs(vk) {
     .filter(Boolean);
 }
 
-export async function upsertRepoVirtualKey({ state, repo, clients, url, managementKey }) {
+function usableVirtualKeyValue(value) {
+  const key = nonEmpty(value);
+  if (!key || /\*|redact|masked/iu.test(key)) return undefined;
+  return key;
+}
+
+export async function upsertRepoVirtualKey({
+  state,
+  repo,
+  clients,
+  url,
+  managementKey,
+  rotateExisting = false,
+}) {
   const keyName = `omp-${repo.name.toLowerCase().replace(/[^a-z0-9._-]+/gu, "-")}-mcp`;
   const local = state.config.repos?.[repo.id];
+  const localSecret = usableVirtualKeyValue(state.secrets.repos?.[repo.id]?.mcpVirtualKey);
   let vk;
+  let created = false;
+
   if (local?.virtualKeyId) {
     try {
       vk = await updateVirtualKey(url, managementKey, local.virtualKeyId, {
@@ -572,6 +590,7 @@ export async function upsertRepoVirtualKey({ state, repo, clients, url, manageme
       if (!(error instanceof PifrostHttpError) || error.status !== 404) throw error;
     }
   }
+
   if (!vk) {
     const matches = await listVirtualKeys(url, managementKey, keyName);
     const existing = matches.find((candidate) => candidate?.name === keyName);
@@ -584,8 +603,9 @@ export async function upsertRepoVirtualKey({ state, repo, clients, url, manageme
         })),
         is_active: true,
       });
-      if (!nonEmpty(vk?.value) && nonEmpty(existing?.value)) vk.value = existing.value;
+      if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
     } else {
+      created = true;
       vk = await createVirtualKey(url, managementKey, {
         name: keyName,
         description: `Pifrost MCP-only key for ${repo.name}`,
@@ -597,14 +617,11 @@ export async function upsertRepoVirtualKey({ state, repo, clients, url, manageme
       });
     }
   }
+
   if (!vk?.id) throw new Error("Bifrost did not return a Virtual Key id");
-  let keyValue = nonEmpty(vk?.value);
-  if (!keyValue || /\*|redact|masked/iu.test(keyValue)) {
-    const rotated = await rotateVirtualKey(url, managementKey, vk.id);
-    keyValue = nonEmpty(rotated?.value);
-    vk = { ...vk, ...rotated };
-  }
-  if (!keyValue) throw new Error("Bifrost did not return the Virtual Key value after create/update/rotate");
+
+  // Persist the association before dealing with a missing raw value so an explicit
+  // `repo rotate-key` can recover safely. Never rotate an existing key implicitly.
   state.config.repos[repo.id] = {
     name: repo.name,
     identity: repo.identity,
@@ -612,8 +629,28 @@ export async function upsertRepoVirtualKey({ state, repo, clients, url, manageme
     virtualKeyName: vk.name ?? keyName,
     mcpClients: clients,
   };
-  state.secrets.repos[repo.id] = { mcpVirtualKey: keyValue };
+
+  let keyValue = usableVirtualKeyValue(vk?.value) ?? localSecret;
+  if (!keyValue && !created && rotateExisting) {
+    const rotated = await rotateVirtualKey(url, managementKey, vk.id);
+    keyValue = usableVirtualKeyValue(rotated?.value);
+    vk = { ...vk, ...rotated };
+  }
+
+  if (keyValue) state.secrets.repos[repo.id] = { mcpVirtualKey: keyValue };
   saveState(state.config, state.secrets);
+
+  if (!keyValue) {
+    if (created) {
+      throw new Error(
+        "Bifrost created the repo Virtual Key but did not return its raw value. The association was saved; run `pifrost repo rotate-key` to create and store a fresh value explicitly.",
+      );
+    }
+    throw new Error(
+      "An existing repo Virtual Key was found but its raw value is not available locally. Re-run `pifrost repo init --rotate-existing` to rotate it explicitly, or run `pifrost repo rotate-key` now that the association has been saved.",
+    );
+  }
+
   return vk;
 }
 
