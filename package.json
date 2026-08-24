@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A native OhMyPi provider for Maxim Bifrost with safe routing-alias capability synthesis",
   "type": "module",
   "keywords": [
@@ -20,6 +20,7 @@
   "files": [
     "index.ts",
     "native.ts",
+    "cache.ts",
     "datasheet.ts",
     "pricing-normalize.ts",
     "README.md",
