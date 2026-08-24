@@ -12,7 +12,10 @@ test("loads inference-only runtime configuration from the Pifrost store", () => 
 	try {
 		writeFileSync(
 			join(root, "config.json"),
-			JSON.stringify({ schemaVersion: 1, bifrost: { url: "http://bifrost/v1" } }),
+			JSON.stringify({
+				schemaVersion: 1,
+				bifrost: { url: "http://bifrost/v1", managementAuthMode: "basic" },
+			}),
 		);
 		writeFileSync(
 			join(root, "secrets.json"),
@@ -20,7 +23,9 @@ test("loads inference-only runtime configuration from the Pifrost store", () => 
 				schemaVersion: 1,
 				inferenceApiKey: "inference-api",
 				inferenceVirtualKey: "inference-vk",
-				managementApiKey: "management-must-not-leak",
+				managementApiKey: "enterprise-management-must-not-leak",
+				managementAdminUsername: "admin-must-not-leak",
+				managementAdminPassword: "password-must-not-leak",
 			}),
 		);
 		assert.deepEqual(loadStoredRuntimeConfig({ PIFROST_CONFIG_DIR: root }), {

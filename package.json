@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {

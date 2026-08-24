@@ -7,6 +7,12 @@ export interface PifrostStoredConfig {
 	schemaVersion?: number;
 	bifrost?: {
 		url?: string;
+		/**
+		 * Management authentication used only by the standalone Pifrost CLI.
+		 * `basic` is the Bifrost OSS admin username/password flow; `bearer` is
+		 * the scoped API-key flow available to Bifrost Enterprise.
+		 */
+		managementAuthMode?: "basic" | "bearer";
 	};
 	repos?: Record<
 		string,
@@ -24,7 +30,12 @@ export interface PifrostStoredSecrets {
 	schemaVersion?: number;
 	inferenceApiKey?: string;
 	inferenceVirtualKey?: string;
+	/** Bifrost Enterprise scoped management API key. */
 	managementApiKey?: string;
+	/** Bifrost OSS dashboard/admin username for HTTP Basic management auth. */
+	managementAdminUsername?: string;
+	/** Bifrost OSS dashboard/admin password for HTTP Basic management auth. */
+	managementAdminPassword?: string;
 	repos?: Record<string, { mcpVirtualKey?: string }>;
 }
 
@@ -58,8 +69,8 @@ export function loadStoredSecrets(env: NodeJS.ProcessEnv = process.env): Pifrost
 
 /**
  * Load the runtime inference connection written by the standalone `pifrost` CLI.
- * This is intentionally inference-only; the management API credential is never
- * exposed to the OMP extension runtime.
+ * This is intentionally inference-only. Neither OSS admin credentials nor an
+ * Enterprise management API key are exposed to the OMP extension runtime.
  */
 export function loadStoredRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Partial<BifrostConfig> {
 	const config = loadStoredConfig(env);

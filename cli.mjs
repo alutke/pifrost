@@ -23,7 +23,8 @@ import {
   listMcpClients,
   loadAliasManifest,
   loadState,
-  managementKeyFromState,
+  managementAuthFromState,
+  managementAuthLabel,
   normalizeBifrostUrl,
   removeRepoState,
   repoIdentity,
@@ -67,22 +68,30 @@ Usage:
   pifrost --version
 
 Global setup options:
-  --url <url>                 Bifrost URL, e.g. http://192.168.1.221:8180/v1
-  --api-key <key>             Inference Bearer/API key
-  --virtual-key <key>         Global inference Virtual Key
-  --management-key <key>      Bifrost management API key
-  --skip-omp                  Do not change OMP settings
-  --skip-test                 Save without connectivity tests
-  --yes                       Accept existing/default values non-interactively
+  --url <url>                    Bifrost URL, e.g. http://192.168.1.221:8180/v1
+  --api-key <key>                Inference Bearer/API key
+  --virtual-key <key>            Global inference Virtual Key
+  --management-auth <mode>       basic (Bifrost OSS) or bearer (Enterprise)
+  --management-username <user>   OSS admin/dashboard username
+  --management-password <pass>   OSS admin/dashboard password
+  --management-key <key>         Enterprise scoped management API key
+  --skip-omp                     Do not change OMP settings
+  --skip-test                    Save without connectivity tests
+  --yes                          Accept existing/default values non-interactively
 
 Environment overrides:
   BIFROST_URL
   BIFROST_API_KEY
   BIFROST_VIRTUAL_KEY
+  BIFROST_MANAGEMENT_AUTH_MODE
+  BIFROST_ADMIN_USERNAME
+  BIFROST_ADMIN_PASSWORD
   BIFROST_MANAGEMENT_API_KEY
   PIFROST_CONFIG_DIR
 
-Secrets are stored in ~/.config/pifrost/secrets.json with mode 0600.
+Bifrost OSS management APIs use HTTP Basic auth with the dashboard/admin
+username and password. Scoped management API keys are a Bifrost Enterprise
+feature. Secrets are stored in ~/.config/pifrost/secrets.json with mode 0600.
 Repo .omp/mcp.json files contain no secret; they resolve the repo VK through
 '!pifrost secret repo-mcp --id ...' at connection time.
 `;
@@ -191,6 +200,26 @@ async function askSecret(rl, prompt, existing) {
   }
 }
 
+function normalizeManagementMode(value) {
+  if (!value) return undefined;
+  const mode = String(value).trim().toLowerCase();
+  if (["basic", "oss", "admin"].includes(mode)) return "basic";
+  if (["bearer", "enterprise", "api-key", "apikey"].includes(mode)) return "bearer";
+  throw new Error("Management auth mode must be `basic` (Bifrost OSS) or `bearer` (Bifrost Enterprise)");
+}
+
+function buildManagementAuth(mode, username, password, apiKey) {
+  if (!mode) return undefined;
+  if (mode === "basic") {
+    if (!username || !password) {
+      throw new Error("Bifrost OSS management auth requires both --management-username and --management-password");
+    }
+    return { mode: "basic", username, password };
+  }
+  if (!apiKey) throw new Error("Bifrost Enterprise management auth requires --management-key");
+  return { mode: "bearer", apiKey };
+}
+
 function requireRuntime(state) {
   const runtime = runtimeConfigFromState(state);
   if (!runtime.url || !runtime.apiKey || !runtime.virtualKey) {
@@ -201,21 +230,51 @@ function requireRuntime(state) {
 
 function requireManagement(state) {
   const runtime = requireRuntime(state);
-  const managementKey = managementKeyFromState(state);
-  if (!managementKey) {
-    throw new Error("Bifrost management API key is missing; run `pifrost global setup` and add one");
+  const managementAuth = managementAuthFromState(state);
+  if (!managementAuth) {
+    throw new Error(
+      "Bifrost management authentication is missing; run `pifrost global setup`. Use OSS admin username/password (Basic auth), or an Enterprise scoped API key.",
+    );
   }
-  return { ...runtime, managementKey };
+  // Keep the legacy local variable name so the rest of the control-plane code
+  // remains source-compatible; it now carries a management-auth descriptor.
+  return { ...runtime, managementKey: managementAuth };
 }
 
 async function commandGlobalSetup(flags) {
   const state = loadState();
   const current = runtimeConfigFromState(state);
-  const existingManagement = managementKeyFromState(state);
+  const existingManagement = managementAuthFromState(state);
   let url = flagString(flags, "url") ?? current.url ?? state.config.bifrost?.url;
   let apiKey = flagString(flags, "api-key") ?? current.apiKey;
   let virtualKey = flagString(flags, "virtual-key") ?? current.virtualKey;
-  let managementKey = flagString(flags, "management-key") ?? existingManagement;
+
+  const explicitMode = flagString(flags, "management-auth") ?? process.env.BIFROST_MANAGEMENT_AUTH_MODE;
+  let managementMode = normalizeManagementMode(explicitMode) ?? existingManagement?.mode;
+  let managementUsername =
+    flagString(flags, "management-username") ??
+    process.env.BIFROST_ADMIN_USERNAME ??
+    (existingManagement?.mode === "basic" ? existingManagement.username : undefined);
+  let managementPassword =
+    flagString(flags, "management-password") ??
+    process.env.BIFROST_ADMIN_PASSWORD ??
+    (existingManagement?.mode === "basic" ? existingManagement.password : undefined);
+  let managementApiKey =
+    flagString(flags, "management-key") ??
+    process.env.BIFROST_MANAGEMENT_API_KEY ??
+    (existingManagement?.mode === "bearer" ? existingManagement.apiKey : undefined);
+
+  if (!explicitMode) {
+    if (flagString(flags, "management-key") || process.env.BIFROST_MANAGEMENT_API_KEY) managementMode = "bearer";
+    if (
+      flagString(flags, "management-username") ||
+      flagString(flags, "management-password") ||
+      process.env.BIFROST_ADMIN_USERNAME ||
+      process.env.BIFROST_ADMIN_PASSWORD
+    ) {
+      managementMode = "basic";
+    }
+  }
 
   const nonInteractive = Boolean(flags.yes) || (!process.stdin.isTTY && !flagString(flags, "url"));
   if (!nonInteractive) {
@@ -225,11 +284,31 @@ async function commandGlobalSetup(flags) {
       virtualKey = await askSecret(rl, "Global inference Virtual Key", virtualKey);
       const wantManagement = await confirm(
         rl,
-        "Configure a management API key for route sync and repo MCP automation?",
-        Boolean(managementKey),
+        "Configure management auth for route sync and repo MCP automation?",
+        true,
       );
-      if (wantManagement) managementKey = await askSecret(rl, "Management API key", managementKey);
-      else managementKey = undefined;
+      if (wantManagement) {
+        const selected = await ask(
+          rl,
+          "Management auth mode (basic=OSS admin credentials, bearer=Enterprise API key)",
+          managementMode ?? "basic",
+        );
+        managementMode = normalizeManagementMode(selected);
+        if (managementMode === "basic") {
+          managementUsername = await ask(rl, "Bifrost admin username", managementUsername);
+          managementPassword = await askSecret(rl, "Bifrost admin password", managementPassword);
+          managementApiKey = undefined;
+        } else {
+          managementApiKey = await askSecret(rl, "Enterprise scoped management API key", managementApiKey);
+          managementUsername = undefined;
+          managementPassword = undefined;
+        }
+      } else {
+        managementMode = undefined;
+        managementUsername = undefined;
+        managementPassword = undefined;
+        managementApiKey = undefined;
+      }
     });
   }
 
@@ -237,14 +316,20 @@ async function commandGlobalSetup(flags) {
     throw new Error("Bifrost URL, inference API key and global inference Virtual Key are required");
   }
   url = normalizeBifrostUrl(url);
+  const managementAuth = buildManagementAuth(
+    managementMode,
+    managementUsername,
+    managementPassword,
+    managementApiKey,
+  );
 
   if (!flags["skip-test"]) {
     process.stdout.write("Testing inference connection... ");
     const inference = await testInference({ url, apiKey, virtualKey });
     console.log(`OK (${inference.models} models visible)`);
-    if (managementKey) {
-      process.stdout.write("Testing management API... ");
-      await testManagement(url, managementKey);
+    if (managementAuth) {
+      process.stdout.write(`Testing management API via ${managementAuthLabel(managementAuth)}... `);
+      await testManagement(url, managementAuth);
       console.log("OK");
     }
   }
@@ -252,8 +337,21 @@ async function commandGlobalSetup(flags) {
   state.config.bifrost = { ...(state.config.bifrost ?? {}), url };
   state.secrets.inferenceApiKey = apiKey;
   state.secrets.inferenceVirtualKey = virtualKey;
-  if (managementKey) state.secrets.managementApiKey = managementKey;
-  else delete state.secrets.managementApiKey;
+
+  delete state.secrets.managementApiKey;
+  delete state.secrets.managementAdminUsername;
+  delete state.secrets.managementAdminPassword;
+  if (managementAuth?.mode === "basic") {
+    state.config.bifrost.managementAuthMode = "basic";
+    state.secrets.managementAdminUsername = managementAuth.username;
+    state.secrets.managementAdminPassword = managementAuth.password;
+  } else if (managementAuth?.mode === "bearer") {
+    state.config.bifrost.managementAuthMode = "bearer";
+    state.secrets.managementApiKey = managementAuth.apiKey;
+  } else {
+    delete state.config.bifrost.managementAuthMode;
+  }
+
   const paths = saveState(state.config, state.secrets);
   console.log(`Saved config:  ${paths.config}`);
   console.log(`Saved secrets: ${paths.secrets} (0600)`);
@@ -269,13 +367,19 @@ async function commandGlobalSetup(flags) {
 async function commandGlobalStatus() {
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
-  const managementKey = managementKeyFromState(state);
+  const managementAuth = managementAuthFromState(state);
   printHeader("Global Pifrost status");
   console.log(`Config directory:       ${state.paths.root}`);
   console.log(`Bifrost URL:            ${runtime.url ?? "missing"}`);
   console.log(`Inference API key:      ${runtime.apiKey ? "set" : "missing"}`);
   console.log(`Inference Virtual Key:  ${runtime.virtualKey ? "set" : "missing"}`);
-  console.log(`Management API key:     ${managementKey ? "set" : "missing"}`);
+  console.log(`Management auth:        ${managementAuthLabel(managementAuth)}`);
+  if (managementAuth?.mode === "basic") {
+    console.log(`Admin username:         ${managementAuth.username ? "set" : "missing"}`);
+    console.log(`Admin password:         ${managementAuth.password ? "set" : "missing"}`);
+  } else if (managementAuth?.mode === "bearer") {
+    console.log(`Management API key:     ${managementAuth.apiKey ? "set" : "missing"}`);
+  }
   console.log(`OMP installed:          ${boolMark(commandExists("omp"))}`);
   if (runtime.url && runtime.apiKey && runtime.virtualKey) {
     try {
@@ -285,9 +389,9 @@ async function commandGlobalStatus() {
       console.log(`Inference connection:   FAIL (${formatError(error)})`);
     }
   }
-  if (runtime.url && managementKey) {
+  if (runtime.url && managementAuth) {
     try {
-      await testManagement(runtime.url, managementKey);
+      await testManagement(runtime.url, managementAuth);
       console.log("Management connection:  OK");
     } catch (error) {
       console.log(`Management connection:  FAIL (${formatError(error)})`);
@@ -303,11 +407,11 @@ async function commandInit(flags) {
   installOmpPlugin();
   await commandGlobalSetup(flags);
   const state = loadState();
-  if (managementKeyFromState(state)) {
+  if (managementAuthFromState(state)) {
     console.log("Synchronizing Bifrost omp-* routes...");
     await commandRoutesSync({ "no-refresh": true });
   } else {
-    console.log("Skipping route sync because no management API key is configured.");
+    console.log("Skipping route sync because no management authentication is configured.");
   }
   console.log("Refreshing Pifrost model catalog...");
   await commandModelsRefresh({ force: true });
