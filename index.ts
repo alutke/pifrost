@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 export const PROVIDER_ID = "bifrost";
@@ -9,16 +10,9 @@ const DEFAULT_MAX_TOKENS = 8_192;
 const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 type Fetch = typeof globalThis.fetch;
-type Effort = (typeof THINKING_EFFORTS)[number];
+type EffortName = (typeof THINKING_EFFORTS)[number];
+type OmpThinkingConfig = NonNullable<OmpModel["thinking"]>;
 type ProviderHeaders = Record<string, string | null>;
-
-export interface ThinkingConfig {
-	mode: "effort";
-	efforts: Effort[];
-	defaultLevel?: Effort;
-	effortMap?: Partial<Record<Effort, string>>;
-	requiresEffort?: boolean;
-}
 
 export interface BifrostConfig {
 	url: string;
@@ -69,7 +63,7 @@ export interface BifrostProviderModel {
 	id: string;
 	name: string;
 	reasoning: boolean;
-	thinking?: ThinkingConfig;
+	thinking?: OmpThinkingConfig;
 	input: ("text" | "image")[];
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow: number;
@@ -126,6 +120,20 @@ function nonEmpty(value: string | undefined): string | undefined {
 	return trimmed ? trimmed : undefined;
 }
 
+function toOmpEffort(value: EffortName): OmpEffort {
+	return value as OmpEffort;
+}
+
+function effortName(value: OmpEffort): EffortName | undefined {
+	const normalized = String(value);
+	return THINKING_EFFORTS.find((candidate) => candidate === normalized);
+}
+
+function thinkingEffortNames(thinking: OmpThinkingConfig | undefined): EffortName[] {
+	if (!thinking) return [];
+	return thinking.efforts.map(effortName).filter((value): value is EffortName => value !== undefined);
+}
+
 export function flagFromArgv(name: string, argv: readonly string[] = process.argv.slice(2)): string | undefined {
 	const flag = `--${name}`;
 	let result: string | undefined;
@@ -162,7 +170,7 @@ export function normalizeBifrostUrl(value: string): string {
 	let path = parsed.pathname.replace(/\/+$/u, "");
 	path = path.replace(/\/(?:chat\/completions|models)$/u, "");
 	if (!/\/v1$/u.test(path)) {
-		path = /\/openai$/u.test(path) ? `${path}/v1` : `${path}/v1`;
+		path = `${path}/v1`;
 	}
 	parsed.pathname = path;
 	return parsed.toString().replace(/\/$/u, "");
@@ -226,18 +234,20 @@ function isChatModel(model: BifrostModel): boolean {
 	return methods.some((method) => /chat|message|generate|completion/u.test(method));
 }
 
-function modelThinking(model: BifrostModel): ThinkingConfig | undefined {
+function modelThinking(model: BifrostModel): OmpThinkingConfig | undefined {
 	const supported = new Set(model.reasoning?.supported_efforts?.map((effort) => effort.toLowerCase()) ?? []);
-	const efforts = THINKING_EFFORTS.filter((effort) => supported.has(effort));
-	if (efforts.length === 0) return undefined;
+	const names = THINKING_EFFORTS.filter((effort) => supported.has(effort));
+	if (names.length === 0) return undefined;
 
+	const efforts = names.map(toOmpEffort);
 	const rawDefault = model.reasoning?.default_effort?.toLowerCase();
-	const defaultLevel = THINKING_EFFORTS.find((effort) => effort === rawDefault && efforts.includes(effort));
-	const effortMap = Object.fromEntries(efforts.map((effort) => [effort, effort])) as Partial<Record<Effort, string>>;
+	const defaultName = names.find((effort) => effort === rawDefault);
+	const defaultLevel = defaultName ? toOmpEffort(defaultName) : undefined;
+	const effortMap = Object.fromEntries(names.map((effort) => [effort, effort])) as OmpThinkingConfig["effortMap"];
 
 	return {
 		mode: "effort",
-		efforts: [...efforts],
+		efforts,
 		...(defaultLevel ? { defaultLevel } : {}),
 		effortMap,
 		...(model.reasoning?.mandatory ? { requiresEffort: true } : {}),
@@ -288,7 +298,7 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		maxTokens,
 		supportsTools,
 		compat: {
-			// Mixed Bifrost chains must remain safe for models that only accept system messages.
+			// A heterogeneous route must stay safe when a fallback only accepts system messages.
 			supportsDeveloperRole: false,
 			supportsReasoningEffort: Boolean(thinking),
 			supportsUsageInStreaming: true,
@@ -356,14 +366,18 @@ export function resolveAliasReference(
 	});
 }
 
-function intersectThinking(models: readonly BifrostProviderModel[]): ThinkingConfig | undefined {
+function intersectThinking(models: readonly BifrostProviderModel[]): OmpThinkingConfig | undefined {
 	if (!models.length || models.some((model) => !model.reasoning || !model.thinking)) return undefined;
-	const efforts = THINKING_EFFORTS.filter((effort) => models.every((model) => model.thinking?.efforts.includes(effort)));
-	if (efforts.length === 0) return undefined;
+
+	const names = THINKING_EFFORTS.filter((effort) =>
+		models.every((model) => thinkingEffortNames(model.thinking).includes(effort)),
+	);
+	if (names.length === 0) return undefined;
+
 	return {
 		mode: "effort",
-		efforts: [...efforts],
-		effortMap: Object.fromEntries(efforts.map((effort) => [effort, effort])) as Partial<Record<Effort, string>>,
+		efforts: names.map(toOmpEffort),
+		effortMap: Object.fromEntries(names.map((effort) => [effort, effort])) as OmpThinkingConfig["effortMap"],
 		...(models.some((model) => model.thinking?.requiresEffort) ? { requiresEffort: true } : {}),
 	};
 }
@@ -382,7 +396,7 @@ export function synthesizeAlias(
 	const members = resolved.map((entry) => entry.model);
 	const thinking = intersectThinking(members);
 	const reasoning = members.length > 0 && members.every((model) => model.reasoning);
-	const reasoningEfforts = thinking?.efforts ?? [];
+	const reasoningEfforts = thinkingEffortNames(thinking);
 
 	const diagnostic: AliasDiagnostic = {
 		id,
