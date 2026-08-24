@@ -1,7 +1,7 @@
 {
   "name": "pifrost",
-  "version": "0.1.0",
-  "description": "A native Pi/OhMyPi provider for Maxim Bifrost with safe routing-alias capability synthesis",
+  "version": "0.1.1",
+  "description": "A native OhMyPi provider for Maxim Bifrost with safe routing-alias capability synthesis",
   "type": "module",
   "keywords": [
     "pi-package",
@@ -34,8 +34,7 @@
     "test": "tsx --test test/*.test.ts"
   },
   "devDependencies": {
-    "@earendil-works/pi-ai": "^0.84.1",
-    "@earendil-works/pi-coding-agent": "^0.84.1",
+    "@oh-my-pi/pi-coding-agent": "18.0.4",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"
