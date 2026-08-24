@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.2
+
+- Fixed `pifrost routes list|diff|sync` returning zero aliases on Bifrost installations where one routing management path returns an empty `200` while the compatibility path contains the persisted rules.
+- Route discovery now probes both `/api/routing/rules` and `/api/governance/routing-rules`, merges their results, and deduplicates rules instead of stopping on the first successful HTTP response.
+- Added compatibility parsing for `rules`, `routing_rules`, `items`, direct `data` arrays, and nested `data`/`result` response shapes.
+- Expanded alias detection to support Bifrost query-builder conditions as well as direct rule names and CEL expressions.
+- Added `pifrost routes diagnose`, which reports each endpoint's status, response shape, raw rule count, derived alias count, and unmatched rule names without exposing management credentials.
+- `pifrost routes sync` now reports the raw routing-rule count and endpoint diagnostics when no `omp-*` aliases can be derived.
+- `pifrost init` and `pifrost doctor` now use the resilient routing discovery path.
+- Added regression tests for empty-canonical/non-empty-legacy responses, endpoint merging/deduplication, alternate response shapes, and query-builder alias extraction.
+
 ## 0.2.1
 
 - Corrected Bifrost management authentication for OSS deployments: Pifrost now supports the dashboard/admin username and password over HTTP Basic auth, matching Bifrost OSS's management API behavior.
@@ -51,7 +62,7 @@
 
 - Replaced the legacy `@earendil-works/pi-ai/compat` provider layer with OMP 18's native `pi.registerProvider(name, config)` API.
 - Dynamic Bifrost discovery now uses OMP 18 `fetchDynamicModels` and canonical `thinking` metadata.
-- Preserved separate Bifrost Bearer/API authentication and `x-bf-vk` inference governance.
+- Preserved separate Bifrost Bearer/API auth and `x-bf-vk` inference governance.
 - Changed bare Bifrost URL normalization to the live `/v1` mount.
 - Added an OMP 18.0.4 plugin-loader validation step to CI so runtime extension import compatibility is tested directly.
 
