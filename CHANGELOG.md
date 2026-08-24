@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.2
+
+- Kept Bifrost `/v1/models` as the inference-VK-filtered live inventory while enriching route metadata from Bifrost's own public datasheets.
+- Added context/output/modality/pricing discovery from `https://getbifrost.ai/datasheet`.
+- Added reasoning/tool capability discovery from `https://getbifrost.ai/datasheet/model-parameters` when published.
+- Route members without authoritative context/output metadata are withheld instead of falling back to generic 128K/8K values.
+- Kept provider-qualified route members distinct during alias synthesis, even when multiple providers serve the same underlying model ID.
+- Added support for subscription `-free` entitlement aliases such as Laguna S 2.1 Free inheriting the underlying model's capability metadata.
+- Added public-datasheet coverage checks to CI alongside unit tests, typechecking and the real OMP 18.0.4 plugin loader.
+
 ## 0.1.1
 
 - Replaced the legacy `@earendil-works/pi-ai/compat` provider layer with OMP 18's native `pi.registerProvider(name, config)` API.
