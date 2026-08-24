@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.2.1
+
+- Corrected Bifrost management authentication for OSS deployments: Pifrost now supports the dashboard/admin username and password over HTTP Basic auth, matching Bifrost OSS's management API behavior.
+- Retained Enterprise scoped management API keys as an optional Bearer-auth mode.
+- Added `--management-auth`, `--management-username`, and `--management-password` to `pifrost global setup`; `--management-key` remains available for Enterprise.
+- Added `BIFROST_MANAGEMENT_AUTH_MODE`, `BIFROST_ADMIN_USERNAME`, and `BIFROST_ADMIN_PASSWORD` environment overrides while preserving `BIFROST_MANAGEMENT_API_KEY`.
+- Added backward compatibility for 0.2.0 stores containing `managementApiKey` only; they continue to resolve as Bearer management authentication.
+- Management credentials remain CLI-only: neither OSS admin credentials nor Enterprise management API keys are exposed to the OMP provider runtime.
+- Updated global status/doctor output to report the active management authentication mode and validate it against Bifrost.
+- Added tests for Basic and Bearer Authorization headers, CLI persistence, environment precedence, 0.2.0 migration compatibility, and management-secret non-exposure.
+- Corrected the README user guide to explain that scoped management API keys are Enterprise-only and that Bifrost OSS uses Basic auth with its configured admin credentials.
+
 ## 0.2.0
 
 - Added a standalone `pifrost` terminal CLI for first-time setup, global status/configuration, Bifrost route synchronization, model-cache management, diagnostics, and repository-specific MCP administration.
@@ -45,7 +57,7 @@
 
 ## 0.1.0
 
-- Initial Pifrost provider derived from `lxdlam/pi-bifrost-provider`.
+- Initial Pifrost provider derived from `lxdlam/pi-bifrost-provider` under the MIT license.
 - Dynamic Bifrost physical-model discovery over OpenAI Chat Completions.
 - Conservative capability-envelope synthesis for Bifrost routing aliases.
 - `/pifrost doctor` alias diagnostics.
