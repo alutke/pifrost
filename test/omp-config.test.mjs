@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -16,9 +16,8 @@ test("configureOmp writes modelRoles as one OMP schema record", () => {
   const oldConfigDir = process.env.PIFROST_CONFIG_DIR;
 
   try {
-    const fs = require("node:fs");
-    fs.mkdirSync(bin, { recursive: true });
-    fs.mkdirSync(agent, { recursive: true });
+    mkdirSync(bin, { recursive: true });
+    mkdirSync(agent, { recursive: true });
     const omp = join(bin, "omp");
     writeFileSync(
       omp,
