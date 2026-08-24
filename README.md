@@ -17,19 +17,31 @@ omp-slow
 
 OMP sees only `bifrost/omp-slow`. Without additional metadata it cannot know the safe context window, maximum output, vision support, or controllable reasoning levels of the fallback chain.
 
-Pifrost discovers the physical models from Bifrost and calculates a conservative alias capability envelope:
+Pifrost calculates a conservative alias capability envelope:
 
 - `contextWindow` = minimum context window across every route member
 - `maxTokens` = minimum output limit across every route member
 - image input = enabled only when every route member supports images
 - reasoning = enabled only when every route member supports reasoning
-- reasoning efforts = intersection of supported effort levels
+- reasoning efforts = intersection of published effort levels
 - tool support = reported by `/pifrost doctor` only when every route member advertises it
 - displayed cost = conservative maximum across route members
 
-If any configured route member cannot be resolved, the alias is withheld instead of publishing unsafe metadata.
+If any configured route member cannot be resolved safely, the alias is withheld instead of publishing guessed metadata.
 
 Pifrost does **not** classify prompts or select providers. Bifrost remains the routing and fallback authority.
+
+## Metadata sources
+
+Bifrost's OpenAI-compatible `/v1/models` response can be intentionally sparse. Pifrost therefore separates **availability** from **capability metadata**:
+
+1. Bifrost `/v1/models`, authenticated with the global inference Bearer credential and inference Virtual Key, determines which physical models are actually available to that OMP identity.
+2. Bifrost's public `https://getbifrost.ai/datasheet` supplies context limits, output limits, architecture/modalities and pricing.
+3. Bifrost's public `https://getbifrost.ai/datasheet/model-parameters` supplies reasoning/tool metadata when that model is published in the parameters feed.
+
+These are the same public catalog sources Bifrost uses to build its management model catalog. Pifrost does not need or persist Bifrost administrator credentials during normal OMP operation.
+
+The public model-parameters feed is not complete for every model. Missing reasoning metadata is treated conservatively; Pifrost does not invent selectable reasoning levels. Context and maximum-output metadata are mandatory for an alias member.
 
 ## Requirements
 
@@ -37,6 +49,7 @@ Pifrost does **not** classify prompts or select providers. Bifrost remains the r
 - Bifrost OpenAI-compatible Chat Completions endpoint
 - a Bifrost inference API credential
 - a Bifrost inference Virtual Key with access to every `omp-*` route Pifrost should expose
+- outbound HTTPS access to `getbifrost.ai` for Bifrost's public capability datasheets
 
 The LLM Virtual Key is intentionally separate from project-specific MCP Virtual Keys.
 
@@ -46,7 +59,7 @@ The LLM Virtual Key is intentionally separate from project-specific MCP Virtual 
 omp install github:alutke/pifrost
 ```
 
-Pifrost's CI validates the extension with the real OMP 18.0.4 plugin loader in addition to TypeScript and unit tests.
+Pifrost's CI validates TypeScript, unit tests, the current Bifrost public datasheet coverage used by the target route families, and loading with the real OMP 18.0.4 plugin loader.
 
 ## Configure global LLM access
 
@@ -121,17 +134,9 @@ Example:
 }
 ```
 
-Provider-qualified Bifrost fallback references are accepted. For example:
+Provider-qualified Bifrost fallback references are accepted. Pifrost resolves the underlying model family for capability lookup while preserving each route member as a distinct entry during the alias intersection.
 
-```text
-CommandCode GOAT/deepseek/deepseek-v4-pro
-```
-
-can resolve against a physical catalog ID such as:
-
-```text
-deepseek/deepseek-v4-pro
-```
+Subscription aliases that append `-free` to an otherwise identical underlying model, such as `poolside/laguna-s-2.1-free`, inherit the underlying Bifrost datasheet entry when no explicit `-free` pricing row exists.
 
 Set `includePhysicalModels` to `false` when OMP should see only the logical aliases.
 
@@ -171,7 +176,7 @@ After changing routing aliases or upgrading Pifrost:
 omp models refresh
 ```
 
-OMP 18 runs `fetchDynamicModels` through its standard SQLite model cache. `refresh` forces a fresh Bifrost catalog read.
+OMP 18 runs `fetchDynamicModels` through its standard SQLite model cache. Pifrost also caches the public Bifrost datasheets in-process for 15 minutes to avoid repeatedly downloading the large catalogs.
 
 ## Doctor
 
@@ -181,7 +186,7 @@ Inside OMP:
 /pifrost doctor
 ```
 
-The command performs a fresh Bifrost model read and reports the effective alias envelopes, for example:
+The command performs a fresh Bifrost inventory read, applies Bifrost's capability catalogs and reports the effective alias envelopes, for example:
 
 ```text
 Pifrost doctor — /home/pi/.omp/agent/pifrost.aliases.json
@@ -211,6 +216,7 @@ A migration/setup script may use the Bifrost admin API once to generate the mani
 npm install
 npm run check
 npm test
+node scripts/validate-public-datasheets.mjs
 ```
 
 CI also installs the local package with OMP 18.0.4's real plugin loader.

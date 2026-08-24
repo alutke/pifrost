@@ -19,6 +19,10 @@ jobs:
       - run: npm install
       - run: npm run check
       - run: npm test
+      - name: Validate Bifrost public datasheets
+        run: node scripts/validate-public-datasheets.mjs
+      - name: Validate current OMP route envelopes
+        run: npx tsx scripts/validate-current-routing.ts
       - name: Validate with OMP 18 plugin loader
         run: |
           export HOME="$RUNNER_TEMP/omp-home"
