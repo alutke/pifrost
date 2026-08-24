@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A native OhMyPi provider for Maxim Bifrost with safe routing-alias capability synthesis",
   "type": "module",
   "keywords": [
@@ -19,6 +19,8 @@
   "homepage": "https://github.com/alutke/pifrost#readme",
   "files": [
     "index.ts",
+    "native.ts",
+    "datasheet.ts",
     "README.md",
     "NOTICE.md",
     "LICENSE",
@@ -26,7 +28,7 @@
   ],
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./native.ts"
     ]
   },
   "scripts": {
