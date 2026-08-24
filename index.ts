@@ -1,28 +1,24 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import {
-	type ApiKeyCredential,
-	createProvider,
-	type Model,
-	openAICompletionsApi,
-	type Provider,
-	type ProviderHeaders,
-	type RefreshModelsContext,
-	type ThinkingLevelMap,
-} from "@earendil-works/pi-ai/compat";
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 export const PROVIDER_ID = "bifrost";
-const PLACEHOLDER_API_KEY = "pifrost-keyless";
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
-const UNRESOLVED_BASE_URL = "http://localhost/openai/v1";
-const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 type Fetch = typeof globalThis.fetch;
+type Effort = (typeof THINKING_EFFORTS)[number];
+type ProviderHeaders = Record<string, string | null>;
 
-type ThinkingLevel = (typeof THINKING_LEVELS)[number];
+export interface ThinkingConfig {
+	mode: "effort";
+	efforts: Effort[];
+	defaultLevel?: Effort;
+	effortMap?: Partial<Record<Effort, string>>;
+	requiresEffort?: boolean;
+}
 
 export interface BifrostConfig {
 	url: string;
@@ -73,18 +69,17 @@ export interface BifrostProviderModel {
 	id: string;
 	name: string;
 	reasoning: boolean;
-	thinkingLevelMap?: ThinkingLevelMap;
+	thinking?: ThinkingConfig;
 	input: ("text" | "image")[];
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow: number;
 	maxTokens: number;
+	/** Diagnostic capability. OMP defaults to normal tool support when this field is absent upstream. */
 	supportsTools: boolean;
 	compat: {
-		supportsDeveloperRole: true;
+		supportsDeveloperRole: boolean;
 		supportsReasoningEffort: boolean;
-		supportsUsageInStreaming: true;
-		supportsStrictMode: true;
-		maxTokensField: "max_completion_tokens";
+		supportsUsageInStreaming: boolean;
 	};
 }
 
@@ -117,6 +112,15 @@ export interface PifrostCatalog {
 	diagnostics: AliasDiagnostic[];
 }
 
+export interface NativeProviderConfig {
+	baseUrl: string;
+	apiKey: string;
+	api: "openai-completions";
+	authHeader: true;
+	headers: Record<string, string>;
+	fetchDynamicModels(apiKey: string | undefined): Promise<readonly BifrostProviderModel[]>;
+}
+
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
@@ -137,9 +141,11 @@ export function flagFromArgv(name: string, argv: readonly string[] = process.arg
 	return result;
 }
 
+/** Normalize a Bifrost instance URL to the OpenAI-compatible /v1 mount used by OMP. */
 export function normalizeBifrostUrl(value: string): string {
 	const input = value.trim();
 	if (!input) throw new Error("BIFROST_URL is required");
+
 	let parsed: URL;
 	try {
 		parsed = new URL(input);
@@ -152,10 +158,11 @@ export function normalizeBifrostUrl(value: string): string {
 	if (parsed.search || parsed.hash) {
 		throw new Error("BIFROST_URL must not contain a query string or fragment");
 	}
+
 	let path = parsed.pathname.replace(/\/+$/u, "");
 	path = path.replace(/\/(?:chat\/completions|models)$/u, "");
 	if (!/\/v1$/u.test(path)) {
-		path = /\/openai$/u.test(path) ? `${path}/v1` : `${path}/openai/v1`;
+		path = /\/openai$/u.test(path) ? `${path}/v1` : `${path}/v1`;
 	}
 	parsed.pathname = path;
 	return parsed.toString().replace(/\/$/u, "");
@@ -190,6 +197,7 @@ function setHeader(headers: ProviderHeaders, name: string, value: string | null)
 	headers[name] = value;
 }
 
+/** Headers used for Pifrost's own discovery probes. */
 export function bifrostHeaders(config: BifrostConfig, overrides?: ProviderHeaders): ProviderHeaders {
 	const headers: ProviderHeaders = { Accept: "application/json" };
 	setHeader(headers, "Authorization", config.apiKey ? `Bearer ${config.apiKey}` : null);
@@ -218,24 +226,28 @@ function isChatModel(model: BifrostModel): boolean {
 	return methods.some((method) => /chat|message|generate|completion/u.test(method));
 }
 
-function thinkingLevelMap(model: BifrostModel): ThinkingLevelMap | undefined {
-	const supported = model.reasoning?.supported_efforts?.map((effort) => effort.toLowerCase());
-	if (!supported?.length) return undefined;
-	const has = (level: string) => supported.includes(level);
+function modelThinking(model: BifrostModel): ThinkingConfig | undefined {
+	const supported = new Set(model.reasoning?.supported_efforts?.map((effort) => effort.toLowerCase()) ?? []);
+	const efforts = THINKING_EFFORTS.filter((effort) => supported.has(effort));
+	if (efforts.length === 0) return undefined;
+
+	const rawDefault = model.reasoning?.default_effort?.toLowerCase();
+	const defaultLevel = THINKING_EFFORTS.find((effort) => effort === rawDefault && efforts.includes(effort));
+	const effortMap = Object.fromEntries(efforts.map((effort) => [effort, effort])) as Partial<Record<Effort, string>>;
+
 	return {
-		off: model.reasoning?.mandatory ? null : "off",
-		minimal: has("minimal") ? "minimal" : null,
-		low: has("low") ? "low" : null,
-		medium: has("medium") ? "medium" : null,
-		high: has("high") ? "high" : null,
-		xhigh: has("xhigh") ? "xhigh" : null,
-		max: has("max") ? "max" : null,
+		mode: "effort",
+		efforts: [...efforts],
+		...(defaultLevel ? { defaultLevel } : {}),
+		effortMap,
+		...(model.reasoning?.mandatory ? { requiresEffort: true } : {}),
 	};
 }
 
 export function toProviderModel(model: BifrostModel): BifrostProviderModel | undefined {
 	const id = nonEmpty(model.id);
 	if (!id || !isChatModel(model)) return undefined;
+
 	const contextWindow =
 		positiveInteger(
 			model.context_length,
@@ -251,17 +263,20 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			model.per_request_limits?.completion_tokens,
 		) ?? DEFAULT_MAX_TOKENS,
 	);
+
 	const parameters = model.supported_parameters?.map((parameter) => parameter.toLowerCase()) ?? [];
 	const reasoning = model.reasoning !== undefined || parameters.some((parameter) => parameter.includes("reasoning"));
+	const thinking = reasoning ? modelThinking(model) : undefined;
 	const supportsTools = parameters.some((parameter) => /tool|function/u.test(parameter));
 	const inputModalities = model.architecture?.input_modalities?.map((modality) => modality.toLowerCase()) ?? [];
 	const inputPrice = pricePerMillion(model.pricing?.prompt) ?? 0;
 	const outputPrice = pricePerMillion(model.pricing?.completion) ?? 0;
+
 	return {
 		id,
 		name: nonEmpty(model.normalized_name) ?? nonEmpty(model.name) ?? id,
 		reasoning,
-		thinkingLevelMap: reasoning ? thinkingLevelMap(model) : undefined,
+		thinking,
 		input: inputModalities.some((modality) => modality.includes("image")) ? ["text", "image"] : ["text"],
 		cost: {
 			input: inputPrice,
@@ -273,11 +288,10 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		maxTokens,
 		supportsTools,
 		compat: {
-			supportsDeveloperRole: true,
-			supportsReasoningEffort: reasoning && parameters.some((parameter) => parameter.includes("reasoning")),
+			// Mixed Bifrost chains must remain safe for models that only accept system messages.
+			supportsDeveloperRole: false,
+			supportsReasoningEffort: Boolean(thinking),
 			supportsUsageInStreaming: true,
-			supportsStrictMode: true,
-			maxTokensField: "max_completion_tokens",
 		},
 	};
 }
@@ -295,11 +309,15 @@ export async function fetchBifrostModels(
 	config: BifrostConfig,
 	options: { fetch?: Fetch; signal?: AbortSignal } = {},
 ): Promise<BifrostProviderModel[]> {
+	if (!config.apiKey) throw new Error("BIFROST_API_KEY is required for model discovery");
+	if (!config.virtualKey) throw new Error("BIFROST_VIRTUAL_KEY is required for model discovery");
+
 	const fetchImpl = options.fetch ?? globalThis.fetch;
 	const requestHeaders = Object.fromEntries(
 		Object.entries(bifrostHeaders(config)).filter((entry): entry is [string, string] => entry[1] !== null),
 	);
 	const response = await fetchImpl(`${config.url}/models`, { headers: requestHeaders, signal: options.signal });
+
 	let body: unknown;
 	try {
 		body = await response.json();
@@ -310,10 +328,11 @@ export async function fetchBifrostModels(
 		const detail = errorMessage(body);
 		throw new Error(`Bifrost model discovery failed (${response.status})${detail ? `: ${detail}` : ""}`);
 	}
+
 	const data = (body as BifrostModelResponse | undefined)?.data;
 	if (!Array.isArray(data)) throw new Error("Bifrost model discovery returned an invalid response (expected data[])");
-	const models = data.map(toProviderModel).filter((model): model is BifrostProviderModel => model !== undefined);
-	const uniqueModels = [...new Map(models.map((model) => [model.id, model])).values()];
+	const models = data.map(toProviderModel).filter((entry): entry is BifrostProviderModel => entry !== undefined);
+	const uniqueModels = [...new Map(models.map((entry) => [entry.id, entry])).values()];
 	if (uniqueModels.length === 0) throw new Error("Bifrost did not return any chat-completion models");
 	return uniqueModels;
 }
@@ -337,27 +356,16 @@ export function resolveAliasReference(
 	});
 }
 
-function intersectThinkingMaps(models: readonly BifrostProviderModel[]): ThinkingLevelMap | undefined {
-	if (!models.length || models.some((model) => !model.reasoning || !model.thinkingLevelMap)) return undefined;
-	const result: ThinkingLevelMap = {
-		off: null,
-		minimal: null,
-		low: null,
-		medium: null,
-		high: null,
-		xhigh: null,
-		max: null,
+function intersectThinking(models: readonly BifrostProviderModel[]): ThinkingConfig | undefined {
+	if (!models.length || models.some((model) => !model.reasoning || !model.thinking)) return undefined;
+	const efforts = THINKING_EFFORTS.filter((effort) => models.every((model) => model.thinking?.efforts.includes(effort)));
+	if (efforts.length === 0) return undefined;
+	return {
+		mode: "effort",
+		efforts: [...efforts],
+		effortMap: Object.fromEntries(efforts.map((effort) => [effort, effort])) as Partial<Record<Effort, string>>,
+		...(models.some((model) => model.thinking?.requiresEffort) ? { requiresEffort: true } : {}),
 	};
-	for (const level of THINKING_LEVELS) {
-		const values = models.map((model) => model.thinkingLevelMap?.[level] ?? null);
-		if (values.every((value) => value !== null)) result[level] = level;
-	}
-	return result;
-}
-
-function supportedEfforts(map: ThinkingLevelMap | undefined): string[] {
-	if (!map) return [];
-	return THINKING_LEVELS.filter((level) => level !== "off" && map[level] !== null);
 }
 
 export function synthesizeAlias(
@@ -370,11 +378,12 @@ export function synthesizeAlias(
 	const resolved = normalized.chain
 		.map((reference) => ({ reference, model: resolveAliasReference(reference, physicalModels) }))
 		.filter((entry): entry is { reference: string; model: BifrostProviderModel } => entry.model !== undefined);
-	const unresolved = normalized.chain.filter(
-		(reference) => !resolved.some((entry) => entry.reference === reference),
-	);
+	const unresolved = normalized.chain.filter((reference) => !resolved.some((entry) => entry.reference === reference));
 	const members = resolved.map((entry) => entry.model);
-	const thinking = intersectThinkingMaps(members);
+	const thinking = intersectThinking(members);
+	const reasoning = members.length > 0 && members.every((model) => model.reasoning);
+	const reasoningEfforts = thinking?.efforts ?? [];
+
 	const diagnostic: AliasDiagnostic = {
 		id,
 		name,
@@ -384,18 +393,19 @@ export function synthesizeAlias(
 		contextWindow: members.length ? Math.min(...members.map((model) => model.contextWindow)) : undefined,
 		maxTokens: members.length ? Math.min(...members.map((model) => model.maxTokens)) : undefined,
 		image: members.length > 0 && members.every((model) => model.input.includes("image")),
-		reasoning: members.length > 0 && members.every((model) => model.reasoning),
-		reasoningEfforts: supportedEfforts(thinking),
+		reasoning,
+		reasoningEfforts: [...reasoningEfforts],
 		tools: members.length > 0 && members.every((model) => model.supportsTools),
 	};
+
 	if (members.length === 0 || unresolved.length > 0) return { diagnostic };
-	const reasoning = diagnostic.reasoning;
+
 	return {
 		model: {
 			id,
 			name,
 			reasoning,
-			thinkingLevelMap: reasoning ? thinking : undefined,
+			thinking: reasoning ? thinking : undefined,
 			input: diagnostic.image ? ["text", "image"] : ["text"],
 			cost: {
 				input: Math.max(...members.map((model) => model.cost.input)),
@@ -407,12 +417,10 @@ export function synthesizeAlias(
 			maxTokens: diagnostic.maxTokens!,
 			supportsTools: diagnostic.tools,
 			compat: {
-				supportsDeveloperRole: true,
+				supportsDeveloperRole: false,
 				supportsReasoningEffort:
-					reasoning && members.every((model) => model.compat.supportsReasoningEffort) && diagnostic.reasoningEfforts.length > 0,
-				supportsUsageInStreaming: true,
-				supportsStrictMode: true,
-				maxTokensField: "max_completion_tokens",
+					Boolean(thinking) && members.every((model) => model.compat.supportsReasoningEffort),
+				supportsUsageInStreaming: members.every((model) => model.compat.supportsUsageInStreaming),
 			},
 		},
 		diagnostic,
@@ -426,6 +434,7 @@ export function buildPifrostCatalog(
 	if (!aliasConfig || Object.keys(aliasConfig.aliases ?? {}).length === 0) {
 		return { models: [...physicalModels], diagnostics: [] };
 	}
+
 	const diagnostics: AliasDiagnostic[] = [];
 	const aliases: BifrostProviderModel[] = [];
 	for (const [id, definition] of Object.entries(aliasConfig.aliases)) {
@@ -444,6 +453,12 @@ function parseAliasFile(path: string): PifrostAliasConfig {
 	if (!parsed || typeof parsed !== "object" || !parsed.aliases || typeof parsed.aliases !== "object") {
 		throw new Error(`Invalid Pifrost alias file: ${path}`);
 	}
+	for (const [id, definition] of Object.entries(parsed.aliases)) {
+		const chain = Array.isArray(definition) ? definition : definition.chain;
+		if (!Array.isArray(chain) || chain.length === 0 || chain.some((item) => typeof item !== "string" || !item.trim())) {
+			throw new Error(`Invalid Pifrost alias ${id}: chain must contain at least one non-empty model reference`);
+		}
+	}
 	return parsed;
 }
 
@@ -451,6 +466,7 @@ export function findAliasConfigPath(explicitPath?: string, cwd = process.cwd()):
 	const candidates = [
 		nonEmpty(explicitPath),
 		nonEmpty(process.env.PIFROST_ALIASES),
+		nonEmpty(process.env.PIFROST_ALIASES_FILE),
 		resolve(cwd, ".omp/pifrost.aliases.json"),
 		resolve(cwd, "pifrost.aliases.json"),
 		resolve(homedir(), ".omp/agent/pifrost.aliases.json"),
@@ -466,132 +482,40 @@ export function loadAliasConfig(explicitPath?: string, cwd = process.cwd()): {
 	return path ? { path, config: parseAliasFile(path) } : {};
 }
 
-type BifrostRuntimeModel = Model<"openai-completions">;
-
-function runtimeModels(models: readonly BifrostProviderModel[], baseUrl: string): BifrostRuntimeModel[] {
-	return models.map((model) => ({ ...model, provider: PROVIDER_ID, api: "openai-completions", baseUrl }));
-}
-
-function credentialConfig(
-	credential: ApiKeyCredential | undefined,
-	fallback: BifrostConfig | undefined,
-): BifrostConfig | undefined {
-	const credentialUrl = nonEmpty(credential?.env?.BIFROST_URL);
-	const url = credentialUrl ?? fallback?.url;
-	if (!url) return undefined;
-	const ownsConfig = credentialUrl !== undefined;
-	const key = nonEmpty(credential?.key);
-	const apiKey = key && key !== PLACEHOLDER_API_KEY ? key : ownsConfig ? undefined : fallback?.apiKey;
-	const credentialVirtualKey = nonEmpty(credential?.env?.BIFROST_VIRTUAL_KEY);
-	const virtualKey = ownsConfig ? credentialVirtualKey : (credentialVirtualKey ?? fallback?.virtualKey);
-	return { url: normalizeBifrostUrl(url), apiKey, virtualKey };
-}
-
-function configCredential(config: BifrostConfig): ApiKeyCredential {
-	return {
-		type: "api_key",
-		key: config.apiKey ?? PLACEHOLDER_API_KEY,
-		env: { BIFROST_URL: config.url, BIFROST_VIRTUAL_KEY: config.virtualKey ?? "" },
-	};
-}
-
-export interface CreateBifrostProviderOptions {
-	config?: BifrostConfig;
+export interface CreateNativeProviderOptions {
+	config: BifrostConfig;
 	aliasConfig?: PifrostAliasConfig;
-	models?: readonly BifrostProviderModel[];
 	fetch?: Fetch;
 	onDiagnostics?: (diagnostics: AliasDiagnostic[]) => void;
 }
 
-export function createBifrostProvider(options: CreateBifrostProviderOptions = {}): Provider<"openai-completions"> {
-	const fetchImpl = options.fetch ?? globalThis.fetch;
-	let ambientConfig = options.config;
-	const initial = buildPifrostCatalog(options.models ?? [], options.aliasConfig);
-	options.onDiagnostics?.(initial.diagnostics);
-	const catalog = runtimeModels(initial.models, ambientConfig?.url ?? UNRESOLVED_BASE_URL);
-	let pendingModels = catalog.length > 0 ? [...catalog] : undefined;
-	const replaceCatalog = (models: readonly BifrostRuntimeModel[]): void => {
-		catalog.splice(0, catalog.length, ...models);
-	};
-	const discoverRuntime = async (config: BifrostConfig, signal?: AbortSignal): Promise<BifrostRuntimeModel[]> => {
-		const physical = await fetchBifrostModels(config, { fetch: fetchImpl, signal });
-		const built = buildPifrostCatalog(physical, options.aliasConfig);
-		options.onDiagnostics?.(built.diagnostics);
-		return runtimeModels(built.models, config.url);
-	};
-	const refreshModels = async (context: RefreshModelsContext): Promise<void> => {
-		if (pendingModels) {
-			const models = pendingModels;
-			if (await context.publish({ persist: { models, checkedAt: Date.now() }, update: () => replaceCatalog(models) })) {
-				pendingModels = undefined;
-			}
-			return;
-		}
-		if (context.stored) {
-			const restored = context.stored.models.filter(
-				(model): model is BifrostRuntimeModel => model.provider === PROVIDER_ID && model.api === "openai-completions",
-			);
-			if (!(await context.publish({ update: () => replaceCatalog(restored) }))) return;
-		}
-		if (!context.allowNetwork || context.signal.aborted) return;
-		const config = credentialConfig(
-			context.credential?.type === "api_key" ? context.credential : undefined,
-			ambientConfig,
-		);
-		if (!config) return;
-		const discovered = await discoverRuntime(config, context.signal);
-		await context.publish({ persist: { models: discovered, checkedAt: Date.now() }, update: () => replaceCatalog(discovered) });
-	};
-	const base = createProvider({
-		id: PROVIDER_ID,
-		name: "Pifrost / Bifrost AI Gateway",
-		baseUrl: ambientConfig?.url,
-		auth: {
-			apiKey: {
-				name: "Bifrost connection",
-				async login(interaction) {
-					interaction.notify({ type: "info", message: "Configure the Bifrost gateway for Pifrost." });
-					const url = normalizeBifrostUrl(
-						await interaction.prompt({ type: "text", message: "Bifrost URL", placeholder: "http://localhost:8080" }),
-					);
-					const apiKey = nonEmpty(
-						await interaction.prompt({ type: "secret", message: "API key (optional; Enter to skip)" }),
-					);
-					const virtualKey = nonEmpty(
-						await interaction.prompt({ type: "secret", message: "Virtual key (optional; Enter to skip)" }),
-					);
-					const config = { url, apiKey, virtualKey };
-					interaction.notify({ type: "progress", message: "Discovering Bifrost models and deriving aliases..." });
-					const discovered = await discoverRuntime(config, interaction.signal);
-					ambientConfig = config;
-					pendingModels = discovered;
-					replaceCatalog(discovered);
-					return configCredential(config);
-				},
-				async resolve({ ctx, credential }) {
-					const envConfig = optionalConfigFromEnvironment({
-						BIFROST_URL: await ctx.env("BIFROST_URL"),
-						BIFROST_API_KEY: await ctx.env("BIFROST_API_KEY"),
-						BIFROST_VIRTUAL_KEY: await ctx.env("BIFROST_VIRTUAL_KEY"),
-					});
-					const config = credentialConfig(credential, ambientConfig ?? envConfig);
-					if (!config) return undefined;
-					return {
-						auth: {
-							apiKey: config.apiKey ?? PLACEHOLDER_API_KEY,
-							baseUrl: config.url,
-							headers: bifrostHeaders(config),
-						},
-						env: { BIFROST_URL: config.url, BIFROST_VIRTUAL_KEY: config.virtualKey ?? "" },
-						source: credential ? "stored Bifrost connection" : "BIFROST_URL",
-					};
-				},
-			},
+/** Build the native OMP 18 provider config consumed by pi.registerProvider(). */
+export function createNativeProviderConfig(options: CreateNativeProviderOptions): NativeProviderConfig {
+	const { config } = options;
+	if (!config.apiKey) throw new Error("Pifrost requires BIFROST_API_KEY");
+	if (!config.virtualKey) throw new Error("Pifrost requires BIFROST_VIRTUAL_KEY");
+
+	return {
+		baseUrl: config.url,
+		apiKey: config.apiKey,
+		api: "openai-completions",
+		authHeader: true,
+		headers: { "x-bf-vk": config.virtualKey },
+		async fetchDynamicModels(resolvedApiKey) {
+			const liveConfig: BifrostConfig = {
+				url: config.url,
+				apiKey: nonEmpty(resolvedApiKey) ?? config.apiKey,
+				virtualKey: nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? config.virtualKey,
+			};
+			const physical = await fetchBifrostModels(liveConfig, {
+				fetch: options.fetch,
+				signal: AbortSignal.timeout(20_000),
+			});
+			const catalog = buildPifrostCatalog(physical, options.aliasConfig);
+			options.onDiagnostics?.(catalog.diagnostics);
+			return catalog.models;
 		},
-		models: catalog,
-		api: openAICompletionsApi(),
-	});
-	return { ...base, refreshModels };
+	};
 }
 
 function formatNumber(value: number | undefined): string {
@@ -614,54 +538,54 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 	return lines.join("\n");
 }
 
-export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
+/** Native OMP 18 extension entry point. No legacy Pi compatibility imports are used at runtime. */
+export default function pifrostProvider(pi: ExtensionAPI): void {
 	pi.registerFlag("bifrost-url", {
-		description: "Bifrost instance or OpenAI-compatible base URL (env: BIFROST_URL)",
+		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL)",
 		type: "string",
 	});
 	pi.registerFlag("bifrost-api-key", {
-		description: "Bifrost API/auth key (env: BIFROST_API_KEY)",
+		description: "Bifrost inference API key (env: BIFROST_API_KEY)",
 		type: "string",
 	});
 	pi.registerFlag("bifrost-virtual-key", {
-		description: "Bifrost virtual key (env: BIFROST_VIRTUAL_KEY)",
+		description: "Bifrost inference virtual key (env: BIFROST_VIRTUAL_KEY)",
 		type: "string",
 	});
 	pi.registerFlag("pifrost-aliases", {
 		description: "Path to Pifrost alias manifest (env: PIFROST_ALIASES)",
 		type: "string",
 	});
+
 	const flag = (name: string): string | undefined => {
 		const value = pi.getFlag(name);
 		return (typeof value === "string" ? nonEmpty(value) : undefined) ?? flagFromArgv(name);
 	};
+
 	const aliasSource = loadAliasConfig(flag("pifrost-aliases"));
 	const config = optionalConfigFromEnvironment(process.env, {
 		url: flag("bifrost-url"),
 		apiKey: flag("bifrost-api-key"),
 		virtualKey: flag("bifrost-virtual-key"),
 	});
+
 	let diagnostics: AliasDiagnostic[] = [];
-	let models: BifrostProviderModel[] | undefined;
-	if (config) {
-		try {
-			models = await fetchBifrostModels(config, { signal: AbortSignal.timeout(15_000) });
-		} catch (error) {
-			process.stderr.write(
-				`pifrost: startup model discovery failed; provider will retry later: ${error instanceof Error ? error.message : String(error)}\n`,
-			);
-		}
-	}
-	pi.registerProvider(
-		createBifrostProvider({
+
+	if (config?.apiKey && config.virtualKey) {
+		const nativeConfig = createNativeProviderConfig({
 			config,
 			aliasConfig: aliasSource.config,
-			models,
 			onDiagnostics: (next) => {
 				diagnostics = next;
 			},
-		}),
-	);
+		});
+		pi.registerProvider(PROVIDER_ID, nativeConfig);
+	} else {
+		process.stderr.write(
+			"pifrost: provider not registered; set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY\n",
+		);
+	}
+
 	pi.registerCommand("pifrost", {
 		description: "Pifrost diagnostics; use /pifrost doctor",
 		handler: async (args, ctx) => {
@@ -670,7 +594,25 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				ctx.ui.notify("Usage: /pifrost doctor", "warning");
 				return;
 			}
-			ctx.ui.notify(formatDoctorReport(diagnostics, aliasSource.path), diagnostics.some((item) => item.unresolved.length) ? "warning" : "info");
+			if (!config?.apiKey || !config.virtualKey) {
+				ctx.ui.notify(
+					"Pifrost is not configured. Set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY.",
+					"warning",
+				);
+				return;
+			}
+
+			try {
+				const physical = await fetchBifrostModels(config, { signal: AbortSignal.timeout(20_000) });
+				const catalog = buildPifrostCatalog(physical, aliasSource.config);
+				diagnostics = catalog.diagnostics;
+				ctx.ui.notify(
+					formatDoctorReport(diagnostics, aliasSource.path),
+					diagnostics.some((item) => item.unresolved.length) ? "warning" : "info",
+				);
+			} catch (error) {
+				ctx.ui.notify(`Pifrost doctor failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+			}
 		},
 	});
 }
