@@ -19,6 +19,7 @@ import {
 	loadCatalogCache,
 	writeCatalogCache,
 } from "./cache.ts";
+import { loadStoredRuntimeConfig } from "./config-store.ts";
 import {
 	normalizeModelParametersDatasheet,
 	normalizePricingDatasheet,
@@ -74,18 +75,21 @@ async function fetchFreshCatalog(
  * registered synchronously so OMP can select a model immediately. Network-backed Bifrost
  * and datasheet discovery refreshes that cache separately, avoiding the previous no-model
  * period and long interactive startup stalls.
+ *
+ * Runtime configuration precedence is: OMP CLI flag -> process environment -> the secure
+ * configuration written by `pifrost global setup`.
  */
 export default function pifrostProvider(pi: ExtensionAPI): void {
 	pi.registerFlag("bifrost-url", {
-		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL)",
+		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL; fallback: Pifrost config)",
 		type: "string",
 	});
 	pi.registerFlag("bifrost-api-key", {
-		description: "Bifrost inference API key (env: BIFROST_API_KEY)",
+		description: "Bifrost inference API key (env: BIFROST_API_KEY; fallback: Pifrost secret store)",
 		type: "string",
 	});
 	pi.registerFlag("bifrost-virtual-key", {
-		description: "Bifrost inference virtual key (env: BIFROST_VIRTUAL_KEY)",
+		description: "Bifrost inference virtual key (env: BIFROST_VIRTUAL_KEY; fallback: Pifrost secret store)",
 		type: "string",
 	});
 	pi.registerFlag("pifrost-aliases", {
@@ -99,7 +103,14 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	};
 
 	const aliasSource = loadAliasConfig(flag("pifrost-aliases"));
-	const config = optionalConfigFromEnvironment(process.env, {
+	const stored = loadStoredRuntimeConfig();
+	const mergedEnvironment: NodeJS.ProcessEnv = {
+		...process.env,
+		BIFROST_URL: nonEmpty(process.env.BIFROST_URL) ?? stored.url,
+		BIFROST_API_KEY: nonEmpty(process.env.BIFROST_API_KEY) ?? stored.apiKey,
+		BIFROST_VIRTUAL_KEY: nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? stored.virtualKey,
+	};
+	const config = optionalConfigFromEnvironment(mergedEnvironment, {
 		url: flag("bifrost-url"),
 		apiKey: flag("bifrost-api-key"),
 		virtualKey: flag("bifrost-virtual-key"),
@@ -156,7 +167,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 		});
 	} else {
 		process.stderr.write(
-			"pifrost: provider not registered; set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY\n",
+			"pifrost: provider not registered; run `pifrost global setup` or set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY\n",
 		);
 	}
 
@@ -170,7 +181,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 			}
 			if (!config?.apiKey || !config.virtualKey) {
 				ctx.ui.notify(
-					"Pifrost is not configured. Set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY.",
+					"Pifrost is not configured. Run `pifrost global setup` or set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY.",
 					"warning",
 				);
 				return;
