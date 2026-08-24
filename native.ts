@@ -12,7 +12,10 @@ import {
 	type BifrostConfig,
 } from "./index.ts";
 import { buildRichRouteCatalog, fetchBifrostDatasheets } from "./datasheet.ts";
-import { normalizePricingDatasheet } from "./pricing-normalize.ts";
+import {
+	normalizeModelParametersDatasheet,
+	normalizePricingDatasheet,
+} from "./pricing-normalize.ts";
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -35,11 +38,10 @@ async function buildCatalog(
 	}
 
 	const datasheets = await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) });
-	const richRoutes = buildRichRouteCatalog(
-		liveModels,
-		aliasSource.config,
-		{ ...datasheets, pricing: normalizePricingDatasheet(datasheets.pricing) },
-	);
+	const richRoutes = buildRichRouteCatalog(liveModels, aliasSource.config, {
+		pricing: normalizePricingDatasheet(datasheets.pricing),
+		parameters: normalizeModelParametersDatasheet(datasheets.parameters),
+	});
 	return buildPifrostCatalog(richRoutes.models, aliasSource.config);
 }
 
@@ -47,8 +49,9 @@ async function buildCatalog(
  * Native OMP 18 extension entry point.
  *
  * Runtime credentials are only the global inference Bearer credential and inference VK.
- * Rich capability metadata comes from Bifrost's public datasheets, the same upstream source
- * Bifrost uses for its management model catalog. No Bifrost admin credential is persisted.
+ * Rich capability metadata comes from Bifrost's public datasheets, supplemented only for
+ * narrowly-scoped vendor-documented fields currently missing from those feeds. No Bifrost
+ * admin credential is persisted.
  */
 export default function pifrostProvider(pi: ExtensionAPI): void {
 	pi.registerFlag("bifrost-url", {
