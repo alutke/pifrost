@@ -13,6 +13,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
       - run: npm install
       - run: npm run check
       - run: npm test
+      - name: Validate with OMP 18 plugin loader
+        run: |
+          export HOME="$RUNNER_TEMP/omp-home"
+          mkdir -p "$HOME"
+          bun node_modules/@oh-my-pi/pi-coding-agent/src/cli.ts install . --force
+          bun node_modules/@oh-my-pi/pi-coding-agent/src/cli.ts plugin list
