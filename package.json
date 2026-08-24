@@ -1,15 +1,19 @@
 {
   "name": "pifrost",
-  "version": "0.1.3",
-  "description": "A native OhMyPi provider for Maxim Bifrost with safe routing-alias capability synthesis",
+  "version": "0.2.0",
+  "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
+  "bin": {
+    "pifrost": "./cli.mjs"
+  },
   "keywords": [
     "pi-package",
     "oh-my-pi",
     "pi-coding-agent",
     "bifrost",
     "llm-gateway",
-    "model-routing"
+    "model-routing",
+    "mcp"
   ],
   "license": "MIT",
   "repository": {
@@ -21,9 +25,13 @@
     "index.ts",
     "native.ts",
     "cache.ts",
+    "config-store.ts",
     "datasheet.ts",
     "pricing-normalize.ts",
+    "cli.mjs",
+    "cli-lib.mjs",
     "README.md",
+    "CHANGELOG.md",
     "NOTICE.md",
     "LICENSE",
     "pifrost.aliases.example.json"
@@ -34,8 +42,9 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-lib.mjs",
+    "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
+    "cli": "node cli.mjs"
   },
   "devDependencies": {
     "@oh-my-pi/pi-ai": "18.0.4",
