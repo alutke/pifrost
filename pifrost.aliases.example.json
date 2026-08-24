@@ -1,0 +1,89 @@
+{
+  "includePhysicalModels": false,
+  "aliases": {
+    "omp-default": {
+      "name": "OMP Default",
+      "chain": [
+        "opencode-go/kimi-k2.7-code",
+        "CommandCode GOAT/moonshotai/Kimi-K2.7-Code",
+        "CommandCode GOAT/deepseek/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash"
+      ]
+    },
+    "omp-smol": {
+      "name": "OMP Smol",
+      "chain": [
+        "CommandCode GOAT/poolside/laguna-s-2.1-free",
+        "CommandCode GOAT/deepseek/deepseek-v4-flash",
+        "opencode-go/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash"
+      ]
+    },
+    "omp-task": {
+      "name": "OMP Task",
+      "chain": [
+        "CommandCode GOAT/deepseek/deepseek-v4-flash",
+        "opencode-go/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash"
+      ]
+    },
+    "omp-advisor": {
+      "name": "OMP Advisor",
+      "chain": [
+        "CommandCode GOAT/deepseek/deepseek-v4-flash",
+        "opencode-go/deepseek-v4-flash",
+        "deepseek/deepseek-v4-flash"
+      ]
+    },
+    "omp-slow": {
+      "name": "OMP Slow",
+      "chain": [
+        "openai/gpt-5.6-luna",
+        "CommandCode GOAT/deepseek/deepseek-v4-pro",
+        "opencode-go/deepseek-v4-pro",
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    "omp-plan": {
+      "name": "OMP Plan",
+      "chain": [
+        "openai/gpt-5.6-terra",
+        "CommandCode GOAT/zai-org/GLM-5.2",
+        "opencode-go/glm-5.2",
+        "deepseek/deepseek-v4-pro"
+      ]
+    },
+    "omp-designer": {
+      "name": "OMP Designer",
+      "chain": [
+        "openai/gpt-5.6-terra",
+        "opencode-go/mimo-v2.5",
+        "Xiaomi MIMO/mimo-v2.5"
+      ]
+    },
+    "omp-vision": {
+      "name": "OMP Vision",
+      "chain": [
+        "opencode-go/mimo-v2.5",
+        "CommandCode GOAT/xiaomi/mimo-v2.5",
+        "Xiaomi MIMO/mimo-v2.5"
+      ]
+    },
+    "omp-commit": {
+      "name": "OMP Commit",
+      "chain": [
+        "opencode-go/mimo-v2.5",
+        "CommandCode GOAT/xiaomi/mimo-v2.5",
+        "Xiaomi MIMO/mimo-v2.5"
+      ]
+    },
+    "omp-tiny": {
+      "name": "OMP Tiny",
+      "chain": [
+        "Xiaomi MIMO/mimo-v2.5",
+        "opencode-go/mimo-v2.5",
+        "CommandCode GOAT/xiaomi/mimo-v2.5"
+      ]
+    }
+  }
+}
