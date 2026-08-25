@@ -24,6 +24,7 @@ import {
 	normalizeModelParametersDatasheet,
 	normalizePricingDatasheet,
 } from "./pricing-normalize.ts";
+import { augmentLiveInventoryForRoutes } from "./route-inventory.ts";
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -57,7 +58,8 @@ async function fetchFreshCatalog(
 		catalog = buildPifrostCatalog(liveModels, aliasSource.config);
 	} else {
 		const datasheets = await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) });
-		const richRoutes = buildRichRouteCatalog(liveModels, aliasSource.config, {
+		const routeInventory = augmentLiveInventoryForRoutes(liveModels, aliasSource.config);
+		const richRoutes = buildRichRouteCatalog(routeInventory, aliasSource.config, {
 			pricing: normalizePricingDatasheet(datasheets.pricing),
 			parameters: normalizeModelParametersDatasheet(datasheets.parameters),
 		});
