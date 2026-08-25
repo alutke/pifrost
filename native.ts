@@ -61,7 +61,7 @@ async function fetchFreshCatalog(
 			pricing: normalizePricingDatasheet(datasheets.pricing),
 			parameters: normalizeModelParametersDatasheet(datasheets.parameters),
 		});
-		catalog = buildPifrostCatalog(richRoutes.models, aliasSource.config);
+		catalog = buildPifrostCatalog(richRoutes.models, aliasSource.config, richRoutes.diagnostics);
 	}
 
 	writeCatalogCache(catalog, { config: liveConfig, aliasConfig: aliasSource.config });
