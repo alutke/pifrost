@@ -117,14 +117,21 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 	},
 };
 
+/**
+ * Vendor overrides are intentionally qualified. A bare model id may match a
+ * known vendor model, but an explicitly different vendor must never inherit the
+ * override merely because the model tail happens to be identical.
+ */
 export function findVendorCapabilityOverride(
 	reference: string,
 	liveModelId?: string,
 ): CatalogCapabilityFallback | undefined {
-	for (const value of [reference, liveModelId]) {
-		if (!value) continue;
-		const hint = VERIFIED_MODEL_HINTS[canonicalModelFamily(value)];
-		if (hint) return hint;
+	const values = [reference, liveModelId].filter((value): value is string => Boolean(value));
+	if (values.some((value) => equivalentModelId(value, "stealth/ox-alpha"))) {
+		return VERIFIED_MODEL_HINTS["ox-alpha"];
+	}
+	if (values.some((value) => equivalentModelId(value, "deepseek/deepseek-v4-flash-vision-exp"))) {
+		return VERIFIED_MODEL_HINTS["deepseek-v4-flash-vision-exp"];
 	}
 	return undefined;
 }
