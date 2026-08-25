@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.2.6
+
+- Added a layered capability resolver for route members: Bifrost public datasheets remain primary, while OMP's bundled model catalog supplies safe context/output, modality, reasoning, thinking, tool and compatibility metadata when Bifrost's public feeds lag a current provider model.
+- Added narrow verified fallbacks for Ox Alpha and DeepSeek V4 Flash Vision Exp so the currently implemented `omp-task` and `omp-vision` routes synthesize even when those preview models have not yet landed in both upstream catalogs.
+- Normalized known Ox Alpha identities across `stealth/ox-alpha`, `ox-alpha-free`, and `x-preview-f-free`, including live `/v1/models` alias drift.
+- Removed blanket `-free` capability inheritance. Pifrost no longer assumes arbitrary free variants have the same context/output limits as paid/base models; only explicitly known-equivalent entitlement aliases are merged.
+- Extended metadata fallback to reseller/custom-provider routes such as CommandCode by conservatively intersecting matching OMP catalog surfaces when no direct provider catalog exists.
+- Preserved the safety rule for genuinely unknown models: if neither Bifrost, OMP's installed catalog nor a narrow verified hint can establish safe context and output limits, the route member remains withheld rather than receiving generic guessed values.
+- Updated the current-routing integration test to the ten Bifrost routes presently in use, including Ox Alpha and DeepSeek V4 Flash Vision Exp, and added regression coverage for alias drift, future OMP-catalog models, vision preservation, tool support and unknown-model withholding.
+- Added `@oh-my-pi/pi-ai` as a runtime dependency because its bundled model catalog is now an intentional capability source.
+
 ## 0.2.5
 
 - Added `pifrost repo reset --delete-remote` for a complete repository reset that removes the repo's Bifrost Virtual Key before deleting local Pifrost state and the generated `bifrost` MCP entry.
