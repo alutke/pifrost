@@ -104,6 +104,10 @@ assert.ok(byId.get("omp-vision")?.input.includes("image"), "omp-vision must adve
 assert.ok(byId.get("omp-designer")?.input.includes("image"), "omp-designer must advertise image input");
 assert.ok(byId.get("omp-task"), "omp-task must not be withheld when Ox Alpha aliases are used");
 assert.ok((byId.get("omp-task")?.contextWindow ?? 0) >= 1_000_000, "omp-task should retain a 1M-class context envelope");
-assert.ok((byId.get("omp-task")?.maxTokens ?? 0) >= 131_072, "omp-task should retain at least 131K output");
+// The currently implemented OpenCode ox-alpha-free fallback publishes a 32K
+// output limit. Preserve that real restriction instead of inheriting the
+// 131K paid/base Ox Alpha limit. Replacing this fallback with DeepSeek V4 Flash
+// in Bifrost will automatically raise the route envelope without a Pifrost change.
+assert.ok((byId.get("omp-task")?.maxTokens ?? 0) >= 32_768, "omp-task should retain the published Ox Alpha Free output envelope");
 assert.deepEqual(byId.get("omp-task")?.thinking?.efforts.map(String), ["high", "max"], "omp-task effort envelope should be high/max");
 assert.ok(byId.get("omp-advisor")?.reasoning, "omp-advisor must retain reasoning support");
