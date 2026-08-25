@@ -3,6 +3,7 @@ import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import {
 	findCatalogCapabilityFallback,
 	modelIdentityCandidates,
+	type CatalogModelLike,
 } from "./catalog-fallback.ts";
 import {
 	resolveAliasReference,
@@ -228,6 +229,7 @@ export function buildRichRouteCatalog(
 	liveModels: readonly BifrostProviderModel[],
 	aliasConfig: PifrostAliasConfig,
 	datasheets: BifrostDatasheets,
+	catalogOverride?: readonly CatalogModelLike[],
 ): RichRouteCatalog {
 	const models: BifrostProviderModel[] = [];
 	const diagnostics: RichRouteDiagnostic[] = [];
@@ -241,7 +243,7 @@ export function buildRichRouteCatalog(
 
 		const pricing = findDatasheetEntry(datasheets.pricing, reference, liveModel.id);
 		const parameters = findDatasheetEntry(datasheets.parameters, reference, liveModel.id);
-		const fallback = findCatalogCapabilityFallback(reference, liveModel.id);
+		const fallback = findCatalogCapabilityFallback(reference, liveModel.id, catalogOverride);
 
 		const contextWindow = positiveInteger(
 			pricing?.value.context_length,
@@ -282,6 +284,7 @@ export function buildRichRouteCatalog(
 		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? fallback?.cost.output ?? liveModel.cost.output;
 		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? fallback?.cost.cacheRead ?? inputCost;
 		const cacheWrite = perMillion(pricing?.value.cache_creation_input_token_cost) ?? fallback?.cost.cacheWrite ?? inputCost;
+		const supportsTools = toolsFromParameters(parameters?.value) || fallback?.supportsTools || liveModel.supportsTools;
 
 		models.push({
 			...liveModel,
@@ -294,7 +297,7 @@ export function buildRichRouteCatalog(
 			input: image ? ["text", "image"] : ["text"],
 			reasoning,
 			thinking: reasoning ? thinking : undefined,
-			supportsTools: toolsFromParameters(parameters?.value) || liveModel.supportsTools,
+			supportsTools,
 			cost: {
 				input: inputCost,
 				output: outputCost,
