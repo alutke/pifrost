@@ -28,7 +28,7 @@ export interface CatalogModelLike {
 }
 
 export interface CatalogCapabilityFallback {
-	source: "omp-catalog-provider" | "omp-catalog-family";
+	source: "omp-catalog-provider" | "omp-catalog-family" | "verified-model-hint";
 	matched: string[];
 	contextWindow: number;
 	maxTokens: number;
@@ -87,6 +87,12 @@ export function modelIdentityCandidates(...values: Array<string | undefined>): s
 	return [...new Set(result.filter(Boolean))];
 }
 
+export function equivalentModelId(left: string, right: string): boolean {
+	const leftCandidates = new Set(modelIdentityCandidates(left));
+	return modelIdentityCandidates(right).some((candidate) => leftCandidates.has(candidate)) ||
+		canonicalModelFamily(left) === canonicalModelFamily(right);
+}
+
 function routeProvider(reference: string): string | undefined {
 	const slash = reference.indexOf("/");
 	return slash > 0 ? normalized(reference.slice(0, slash)) : undefined;
@@ -113,6 +119,49 @@ export function preferredCatalogProviders(reference: string): string[] {
 			return [];
 	}
 }
+
+function thinking(efforts: EffortName[], requiresEffort = false): Thinking {
+	return {
+		mode: "effort",
+		efforts: efforts as unknown as Thinking["efforts"],
+		effortMap: Object.fromEntries(efforts.map((effort) => [effort, effort])) as Thinking["effortMap"],
+		...(requiresEffort ? { requiresEffort: true } : {}),
+	};
+}
+
+/**
+ * Small, versioned exception table for models whose official/current metadata can
+ * appear in provider listings before Bifrost or the installed OMP catalog catches
+ * up. This is deliberately not a general guessing mechanism.
+ */
+const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
+	"ox-alpha": {
+		source: "verified-model-hint",
+		matched: ["verified/stealth/ox-alpha"],
+		contextWindow: 1_048_576,
+		maxTokens: 131_072,
+		input: ["text", "image"],
+		reasoning: true,
+		thinking: thinking(["low", "high", "max"], true),
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+	},
+	"deepseek-v4-flash-vision-exp": {
+		source: "verified-model-hint",
+		matched: ["verified/deepseek/deepseek-v4-flash-vision-exp"],
+		contextWindow: 1_048_576,
+		maxTokens: 384_000,
+		input: ["text", "image"],
+		reasoning: true,
+		thinking: thinking(["high", "xhigh"]),
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+	},
+};
 
 let catalogCache: CatalogModelLike[] | undefined;
 
@@ -150,9 +199,9 @@ function thinkingFromLevelMap(model: CatalogModelLike): Thinking | undefined {
 	};
 }
 
-function thinkingNames(thinking: Thinking | undefined): EffortName[] {
-	if (!thinking) return [];
-	const set = new Set(thinking.efforts.map(String));
+function thinkingNames(config: Thinking | undefined): EffortName[] {
+	if (!config) return [];
+	const set = new Set(config.efforts.map(String));
 	return EFFORTS.filter((effort) => set.has(effort));
 }
 
@@ -174,7 +223,7 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 	const complete = models.filter((model) => positive(model.contextWindow) && positive(model.maxTokens));
 	if (!complete.length) return undefined;
 	const reasoning = complete.every((model) => Boolean(model.reasoning));
-	const thinking = reasoning ? intersectThinking(complete) : undefined;
+	const modelThinking = reasoning ? intersectThinking(complete) : undefined;
 	const image = complete.every((model) => model.input?.includes("image"));
 	const costs = complete.map((model) => ({
 		input: positive(model.cost?.input) || model.cost?.input === 0 ? model.cost.input : 0,
@@ -189,7 +238,7 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		maxTokens: Math.min(...complete.map((model) => model.maxTokens as number)),
 		input: image ? ["text", "image"] : ["text"],
 		reasoning,
-		thinking,
+		thinking: modelThinking,
 		cost: {
 			input: Math.max(...costs.map((cost) => cost.input)),
 			output: Math.max(...costs.map((cost) => cost.output)),
@@ -199,7 +248,7 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		// OMP treats supportsTools === false as the exceptional case that requires
 		// in-band tool syntax. Undefined therefore means normal/native tool support.
 		supportsTools: complete.every((model) => model.supportsTools !== false),
-		supportsReasoningEffort: Boolean(thinking),
+		supportsReasoningEffort: Boolean(modelThinking),
 		supportsUsageInStreaming: complete.every((model) => model.compat?.supportsUsageInStreaming !== false),
 	};
 }
@@ -232,5 +281,8 @@ export function findCatalogCapabilityFallback(
 
 	// For reseller/custom providers (for example CommandCode), use all matching
 	// OMP catalog surfaces and take the conservative intersection/minimum.
-	return toFallback(all.filter(matchesIdentity), "omp-catalog-family");
+	const familyFallback = toFallback(all.filter(matchesIdentity), "omp-catalog-family");
+	if (familyFallback) return familyFallback;
+
+	return VERIFIED_MODEL_HINTS[family];
 }
