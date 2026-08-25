@@ -62,3 +62,70 @@ export async function recoverRepoVirtualKeyByName(url, managementAuth, repo) {
   }
   return { expectedName, id, alreadyMissing: false };
 }
+
+/**
+ * Resolve, confirm and delete the repo VK for a full reset. This helper does
+ * not touch local state; callers should remove local config only after it
+ * returns a non-cancelled result. That ordering prevents a failed management
+ * request from orphaning a remote key again.
+ */
+export async function deleteRepoVirtualKeyForReset({
+  url,
+  managementAuth,
+  repo,
+  repoConfig,
+  recoverByName = false,
+  yes = false,
+  confirm,
+}) {
+  let virtualKeyId = repoConfig?.virtualKeyId;
+  let virtualKeyName = repoConfig?.virtualKeyName ?? canonicalRepoVirtualKeyName(repo);
+
+  if (!virtualKeyId) {
+    if (!recoverByName) {
+      throw new Error(
+        "Current repo has no stored Bifrost Virtual Key id. Local state was not changed. If local state was previously removed, re-run with `--delete-remote --recover-by-name` to look up only the exact canonical Pifrost VK name.",
+      );
+    }
+    const recovered = await recoverRepoVirtualKeyByName(url, managementAuth, repo);
+    virtualKeyName = recovered.expectedName;
+    virtualKeyId = recovered.id;
+    if (recovered.alreadyMissing) {
+      return {
+        cancelled: false,
+        name: virtualKeyName,
+        id: undefined,
+        deleted: false,
+        alreadyMissing: true,
+        recoveredByName: true,
+      };
+    }
+  }
+
+  if (!yes) {
+    if (typeof confirm !== "function") {
+      throw new Error("Remote Virtual Key deletion requires confirmation or explicit `--yes`");
+    }
+    const approved = await confirm({ name: virtualKeyName, id: virtualKeyId });
+    if (!approved) {
+      return {
+        cancelled: true,
+        name: virtualKeyName,
+        id: virtualKeyId,
+        deleted: false,
+        alreadyMissing: false,
+        recoveredByName: recoverByName && !repoConfig?.virtualKeyId,
+      };
+    }
+  }
+
+  const result = await deleteVirtualKey(url, managementAuth, virtualKeyId);
+  return {
+    cancelled: false,
+    name: virtualKeyName,
+    id: virtualKeyId,
+    deleted: result.deleted,
+    alreadyMissing: result.alreadyMissing,
+    recoveredByName: recoverByName && !repoConfig?.virtualKeyId,
+  };
+}
