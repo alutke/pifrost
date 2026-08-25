@@ -13,9 +13,10 @@ import {
   runtimeConfigFromState,
   writeAliasManifest,
 } from "./cli-lib.mjs";
+import { printModelDoctor } from "./model-diagnostics.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
-const VERSION = "0.2.3";
+const VERSION = "0.2.4";
 const OLD_CLI = fileURLToPath(new URL("./cli.mjs", import.meta.url));
 const REPO_CLI = fileURLToPath(new URL("./repo-cli.mjs", import.meta.url));
 
@@ -158,16 +159,41 @@ async function init(args) {
   delegate(["global", "status"]);
 }
 
+function modelDoctor() {
+  const result = printModelDoctor();
+  if (!result.ok) process.exitCode = 2;
+}
+
+function insideGitRepo() {
+  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
+    stdio: "ignore",
+    env: process.env,
+  });
+  return result.status === 0;
+}
+
 async function doctor() {
-  const oldStatus = delegate(["doctor"], { allowFailure: true });
+  let failed = false;
+
+  if (delegate(["global", "status"], { allowFailure: true }) !== 0) failed = true;
+
+  const modelResult = printModelDoctor();
+  if (!modelResult.ok) failed = true;
+
+  if (insideGitRepo()) {
+    console.log("");
+    if (delegateRepo(["status"], { allowFailure: true }) !== 0) failed = true;
+  }
+
   console.log("");
   try {
     await routesDiagnose();
   } catch (error) {
     console.error(`Routing discovery: FAIL (${error instanceof Error ? error.message : String(error)})`);
-    process.exitCode = 2;
+    failed = true;
   }
-  if (oldStatus !== 0 && !process.exitCode) process.exitCode = oldStatus;
+
+  if (failed) process.exitCode = 2;
 }
 
 async function main() {
@@ -187,6 +213,8 @@ async function main() {
     if (args[1] === "sync") return routesSync(args.slice(2));
     if (args[1] === "diagnose") return routesDiagnose();
   }
+
+  if (args[0] === "models" && args[1] === "doctor") return modelDoctor();
 
   return delegate(args);
 }
