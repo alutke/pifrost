@@ -29,6 +29,7 @@
     "datasheet.ts",
     "catalog-fallback.ts",
     "model-resolution.ts",
+    "route-inventory.ts",
     "pricing-normalize.ts",
     "cli.mjs",
     "cli-entry.mjs",
