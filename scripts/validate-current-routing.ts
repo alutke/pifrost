@@ -120,3 +120,11 @@ assert.ok((byId.get("omp-task")?.contextWindow ?? 0) >= 1_000_000, "omp-task sho
 assert.ok((byId.get("omp-task")?.maxTokens ?? 0) >= 32_768, "omp-task must retain a safe published Ox Alpha output envelope");
 assert.deepEqual(byId.get("omp-task")?.thinking?.efforts.map(String), ["high", "max"], "omp-task effort envelope should be high/max");
 assert.ok(byId.get("omp-advisor")?.reasoning, "omp-advisor must retain reasoning support");
+
+// The CommandCode deal route is the free Laguna endpoint, not paid Laguna.
+// Current hosted metadata publishes a 256K-class context and 32,768 output cap.
+for (const id of ["omp-smol", "omp-tiny"]) {
+  assert.ok(byId.get(id), `${id} must synthesize`);
+  assert.ok((byId.get(id)?.contextWindow ?? Number.MAX_SAFE_INTEGER) <= 262_144, `${id} must not inherit paid Laguna's 1M context`);
+  assert.equal(byId.get(id)?.maxTokens, 32_768, `${id} must retain Laguna Free's output cap`);
+}

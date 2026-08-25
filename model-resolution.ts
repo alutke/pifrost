@@ -14,14 +14,13 @@ interface ModelIdentity {
 }
 
 // Entitlement/preview aliases are equivalent only when independently known to
-// expose the same underlying capability family. Never strip `-free` globally.
+// expose the same capability surface. Never strip `-free` globally: free routes
+// can have materially smaller context/output limits than their paid sibling.
 const MODEL_EQUIVALENCE = new Map<string, string>([
 	["stealth/ox-alpha", "ox-alpha"],
 	["ox-alpha", "ox-alpha"],
 	["ox-alpha-free", "ox-alpha"],
 	["x-preview-f-free", "ox-alpha"],
-	["laguna-s-2.1-free", "laguna-s-2.1"],
-	["laguna-s-2.1", "laguna-s-2.1"],
 ]);
 
 /** Normalize only provider/vendor qualifiers; model IDs retain punctuation. */
