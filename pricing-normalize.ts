@@ -217,11 +217,20 @@ interface ParameterHint {
 	value: ModelParameterEntry;
 }
 
+function parameterEntryMatchesVendor(key: string, entry: ModelParameterEntry, qualified: string): boolean {
+	const explicit = [key, entry.base_model].filter((candidate): candidate is string => Boolean(candidate));
+	const isBare = explicit.every((candidate) => !candidate.includes("/"));
+	if (entry.provider && isBare) {
+		return explicit.some((candidate) => equivalentModelId(`${entry.provider}/${candidate}`, qualified));
+	}
+	return explicit.some((candidate) => equivalentModelId(candidate, qualified));
+}
+
 /**
  * Fill narrowly-scoped capability facts that are documented upstream but may
  * lag in Bifrost's model-parameters feed. Existing Bifrost values always win.
- * Qualified identities prevent a same-named model from another vendor from
- * receiving the hint accidentally.
+ * Synthetic hints are vendor-qualified; an explicit different-vendor row never
+ * receives a hint merely because its model tail is identical.
  */
 export function normalizeModelParametersDatasheet(sheet: ModelParametersDatasheet): ModelParametersDatasheet {
 	const result: ModelParametersDatasheet = { ...sheet };
@@ -241,10 +250,10 @@ export function normalizeModelParametersDatasheet(sheet: ModelParametersDatashee
 	];
 
 	for (const hint of hints) {
-		result[hint.family] = mergeParameterHint(result[hint.family], hint.value);
+		result[hint.qualified] = mergeParameterHint(result[hint.qualified], hint.value);
 		for (const [key, value] of Object.entries(result)) {
-			const identities = [key, value.base_model].filter((candidate): candidate is string => Boolean(candidate));
-			if (identities.some((candidate) => equivalentModelId(candidate, hint.qualified))) {
+			if (key === hint.qualified) continue;
+			if (parameterEntryMatchesVendor(key, value, hint.qualified)) {
 				result[key] = mergeParameterHint(value, hint.value);
 			}
 		}
