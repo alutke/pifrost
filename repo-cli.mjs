@@ -22,6 +22,7 @@ import {
   writeRepoMcpConfig,
 } from "./cli-lib.mjs";
 import { listMcpClients, mcpAssignment } from "./mcp-client-normalization.mjs";
+import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 
 function parseArgs(argv) {
   const positional = [];
@@ -52,6 +53,11 @@ function parseArgs(argv) {
 function flagString(flags, name) {
   const value = flags[name];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function flagEnabled(flags, name) {
+  const value = flags[name];
+  return value === true || value === "true" || value === "1";
 }
 
 function splitCsv(value) {
@@ -248,21 +254,74 @@ async function commandRepoRotateKey() {
   console.log(`Rotated MCP Virtual Key for ${current.repo.name}; local secret store updated.`);
 }
 
-async function commandRepoReset() {
+function removeLocalRepoMcpEntry(current) {
+  const path = join(current.repo.root, ".omp/mcp.json");
+  if (!existsSync(path)) return path;
+  const parsed = JSON.parse(readFileSync(path, "utf8"));
+  if (parsed?.mcpServers?.bifrost) {
+    delete parsed.mcpServers.bifrost;
+    if (Object.keys(parsed.mcpServers).length === 0) delete parsed.mcpServers;
+    writeFileSync(path, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
+  }
+  return path;
+}
+
+async function confirmRemoteDeletion({ name, id }) {
+  if (!input.isTTY) {
+    throw new Error("Remote Virtual Key deletion requires an interactive terminal or explicit `--yes`");
+  }
+  const rl = createInterface({ input, output });
+  try {
+    console.log(`\nRemote Bifrost Virtual Key: ${name} (${id})`);
+    const answer = (await rl.question("Type DELETE to permanently remove this Virtual Key: ")).trim();
+    return answer === "DELETE";
+  } finally {
+    rl.close();
+  }
+}
+
+async function commandRepoReset(flags) {
   const state = loadState();
   const current = currentRepoState(state);
-  const path = join(current.repo.root, ".omp/mcp.json");
-  if (existsSync(path)) {
-    const parsed = JSON.parse(readFileSync(path, "utf8"));
-    if (parsed?.mcpServers?.bifrost) {
-      delete parsed.mcpServers.bifrost;
-      if (Object.keys(parsed.mcpServers).length === 0) delete parsed.mcpServers;
-      writeFileSync(path, `${JSON.stringify(parsed, null, 2)}\n`, { mode: 0o600 });
+  const deleteRemote = flagEnabled(flags, "delete-remote");
+  const recoverByName = flagEnabled(flags, "recover-by-name");
+  const yes = flagEnabled(flags, "yes");
+
+  if (recoverByName && !deleteRemote) {
+    throw new Error("`--recover-by-name` is only valid together with `--delete-remote`");
+  }
+
+  if (deleteRemote) {
+    const { url, managementKey } = requireManagement(state);
+    const remote = await deleteRepoVirtualKeyForReset({
+      url,
+      managementAuth: managementKey,
+      repo: current.repo,
+      repoConfig: current.config,
+      recoverByName,
+      yes,
+      confirm: confirmRemoteDeletion,
+    });
+
+    if (remote.cancelled) {
+      console.log("Remote deletion cancelled. Local repo configuration was not changed.");
+      return;
+    }
+    if (remote.alreadyMissing) {
+      console.log(`Remote Bifrost Virtual Key ${remote.name}${remote.id ? ` (${remote.id})` : ""} is already absent.`);
+    } else {
+      console.log(`Deleted remote Bifrost Virtual Key ${remote.name} (${remote.id}).`);
     }
   }
+
+  removeLocalRepoMcpEntry(current);
   removeRepoState(state, current.repo.id);
   console.log(`Removed local Pifrost repo configuration for ${current.repo.name}.`);
-  console.log("The Bifrost Virtual Key itself was left intact; delete it in Bifrost or re-run repo init to reuse it.");
+  if (!deleteRemote) {
+    console.log("The Bifrost Virtual Key itself was left intact. Use `pifrost repo reset --delete-remote` for a full reset.");
+  } else {
+    console.log("Repo reset complete: remote Bifrost VK and local Pifrost integration are absent.");
+  }
 }
 
 async function main() {
@@ -271,7 +330,7 @@ async function main() {
   if (one === "init") return commandRepoInit(flags);
   if (one === "status") return commandRepoStatus();
   if (one === "rotate-key") return commandRepoRotateKey();
-  if (one === "reset") return commandRepoReset();
+  if (one === "reset") return commandRepoReset(flags);
   if (one === "mcp" && two === "list") return commandRepoMcpList();
   if (one === "mcp" && two === "add") return commandRepoMcpAdd(three, flags);
   if (one === "mcp" && two === "remove") return commandRepoMcpRemove(three);
