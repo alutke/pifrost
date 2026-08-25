@@ -289,7 +289,8 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 	const liveContextWindow = positiveInteger(
 		model.context_length,
 		model.top_provider?.context_length,
-		model.max_input_tokens && model.max_output_tokens ? model.max_input_tokens + model.max_output_tokens : undefined,
+		// max_input_tokens is already the usable request/context ceiling.
+		model.max_input_tokens,
 		model.per_request_limits?.prompt_tokens,
 	);
 	const contextWindow = liveContextWindow ?? DEFAULT_CONTEXT_WINDOW;
