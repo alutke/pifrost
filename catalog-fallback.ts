@@ -115,6 +115,22 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsReasoningEffort: true,
 		supportsUsageInStreaming: true,
 	},
+	"laguna-s-2.1-free": {
+		source: "verified-model-hint",
+		matched: ["verified/poolside/laguna-s-2.1-free"],
+		// Current hosted free endpoints publish 256K context and 32,768 output.
+		// Use 256,000 rather than 262,144 where providers differ in K semantics.
+		contextWindow: 256_000,
+		maxTokens: 32_768,
+		input: ["text"],
+		// Reasoning exists on some hosted surfaces, but Pifrost does not assume a
+		// portable effort contract for the subscription alias. Under-advertise it.
+		reasoning: false,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: false,
+		supportsUsageInStreaming: true,
+	},
 };
 
 /**
@@ -132,6 +148,9 @@ export function findVendorCapabilityOverride(
 	}
 	if (values.some((value) => equivalentModelId(value, "deepseek/deepseek-v4-flash-vision-exp"))) {
 		return VERIFIED_MODEL_HINTS["deepseek-v4-flash-vision-exp"];
+	}
+	if (values.some((value) => equivalentModelId(value, "poolside/laguna-s-2.1-free"))) {
+		return VERIFIED_MODEL_HINTS["laguna-s-2.1-free"];
 	}
 	return undefined;
 }
