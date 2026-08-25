@@ -1,4 +1,4 @@
-import { canonicalModelFamily, equivalentModelId } from "./catalog-fallback.ts";
+import { equivalentModelId } from "./catalog-fallback.ts";
 import type {
 	DatasheetCapabilitySources,
 	ModelParametersDatasheet,
@@ -82,16 +82,20 @@ function withVendorImage(entry: PricingDatasheetEntry, modalities: string[]): Pr
 }
 
 function applyKnownArchitecture(entry: PricingDatasheetEntry, key: string): PricingDatasheetEntry {
-	const family = canonicalModelFamily(entry.base_model ?? key);
+	const identity = entry.base_model ?? key;
 
-	// These are narrow vendor-backed facts used only when Bifrost omits the
-	// architecture. A non-empty Bifrost modality list always wins.
-	if (family === "mimo-v2.5") return withVendorImage(entry, ["text", "image"]);
-	if (family === "mimo-v2.5-pro") return withVendorImage(entry, ["text"]);
-	if (family === "deepseek-v4-flash-vision-exp" || family === "ox-alpha") {
+	// Narrow vendor-backed facts used only when Bifrost omits architecture. The
+	// vendor-qualified identity check prevents a same-named model from another
+	// vendor inheriting the hint. Bare canonical rows remain eligible.
+	if (equivalentModelId(identity, "xiaomi/mimo-v2.5")) return withVendorImage(entry, ["text", "image"]);
+	if (equivalentModelId(identity, "xiaomi/mimo-v2.5-pro")) return withVendorImage(entry, ["text"]);
+	if (equivalentModelId(identity, "deepseek/deepseek-v4-flash-vision-exp")) {
 		return withVendorImage(entry, ["text", "image"]);
 	}
-	if (/^gpt-5\.6-(?:luna|terra|sol)$/u.test(family)) return withVendorImage(entry, ["text", "image"]);
+	if (equivalentModelId(identity, "stealth/ox-alpha")) return withVendorImage(entry, ["text", "image"]);
+	for (const model of ["gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.6-sol"]) {
+		if (equivalentModelId(identity, `openai/${model}`)) return withVendorImage(entry, ["text", "image"]);
+	}
 	return entry;
 }
 
