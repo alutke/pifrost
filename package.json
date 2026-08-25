@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -27,6 +27,7 @@
     "cache.ts",
     "config-store.ts",
     "datasheet.ts",
+    "catalog-fallback.ts",
     "pricing-normalize.ts",
     "cli.mjs",
     "cli-entry.mjs",
@@ -52,8 +53,11 @@
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "cli": "node cli-entry.mjs"
   },
-  "devDependencies": {
+  "dependencies": {
     "@oh-my-pi/pi-ai": "18.0.4",
+    "@oh-my-pi/pi-catalog": "18.0.4"
+  },
+  "devDependencies": {
     "@oh-my-pi/pi-coding-agent": "18.0.4",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
