@@ -4,6 +4,11 @@ import { resolve } from "node:path";
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
+import {
+	resolveModelReference,
+	type ModelResolutionKind,
+} from "./model-resolution.ts";
+
 export const PROVIDER_ID = "bifrost";
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
@@ -13,6 +18,10 @@ type Fetch = typeof globalThis.fetch;
 type EffortName = (typeof THINKING_EFFORTS)[number];
 type OmpThinkingConfig = NonNullable<OmpModel["thinking"]>;
 type ProviderHeaders = Record<string, string | null>;
+
+export type CapabilitySource = "live" | "bifrost-datasheet" | "canonical-family" | "vendor-override" | "fallback";
+export type CapabilityKey = "contextWindow" | "maxTokens" | "image" | "reasoning" | "reasoningEfforts" | "tools";
+export type CapabilityProvenance = Partial<Record<CapabilityKey, CapabilitySource>>;
 
 export interface BifrostConfig {
 	url: string;
@@ -70,6 +79,8 @@ export interface BifrostProviderModel {
 	maxTokens: number;
 	/** Diagnostic capability. OMP defaults to normal tool support when this field is absent upstream. */
 	supportsTools: boolean;
+	/** Per-capability provenance used only for safe route synthesis and diagnostics. */
+	capabilitySources?: CapabilityProvenance;
 	compat: {
 		supportsDeveloperRole: boolean;
 		supportsReasoningEffort: boolean;
@@ -87,6 +98,24 @@ export interface PifrostAliasConfig {
 	aliases: Record<string, PifrostAliasDefinition | string[]>;
 }
 
+export interface RouteMemberCapabilityDiagnostic {
+	reference: string;
+	liveModelId?: string;
+	resolution?: ModelResolutionKind;
+	status: string;
+	reason?: string;
+	sources?: CapabilityProvenance;
+}
+
+export interface AliasMemberDiagnostic {
+	reference: string;
+	resolvedModelId?: string;
+	resolution?: ModelResolutionKind;
+	status: "resolved" | "unresolved";
+	reason?: string;
+	sources?: CapabilityProvenance;
+}
+
 export interface AliasDiagnostic {
 	id: string;
 	name: string;
@@ -99,6 +128,7 @@ export interface AliasDiagnostic {
 	reasoning: boolean;
 	reasoningEfforts: string[];
 	tools: boolean;
+	members?: AliasMemberDiagnostic[];
 }
 
 export interface PifrostCatalog {
@@ -169,9 +199,7 @@ export function normalizeBifrostUrl(value: string): string {
 
 	let path = parsed.pathname.replace(/\/+$/u, "");
 	path = path.replace(/\/(?:chat\/completions|models)$/u, "");
-	if (!/\/v1$/u.test(path)) {
-		path = `${path}/v1`;
-	}
+	if (!/\/v1$/u.test(path)) path = `${path}/v1`;
 	parsed.pathname = path;
 	return parsed.toString().replace(/\/$/u, "");
 }
@@ -258,27 +286,28 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 	const id = nonEmpty(model.id);
 	if (!id || !isChatModel(model)) return undefined;
 
-	const contextWindow =
-		positiveInteger(
-			model.context_length,
-			model.top_provider?.context_length,
-			model.max_input_tokens && model.max_output_tokens ? model.max_input_tokens + model.max_output_tokens : undefined,
-			model.per_request_limits?.prompt_tokens,
-		) ?? DEFAULT_CONTEXT_WINDOW;
-	const maxTokens = Math.min(
-		contextWindow,
-		positiveInteger(
-			model.max_output_tokens,
-			model.top_provider?.max_completion_tokens,
-			model.per_request_limits?.completion_tokens,
-		) ?? DEFAULT_MAX_TOKENS,
+	const liveContextWindow = positiveInteger(
+		model.context_length,
+		model.top_provider?.context_length,
+		// max_input_tokens is already the usable request/context ceiling.
+		model.max_input_tokens,
+		model.per_request_limits?.prompt_tokens,
 	);
+	const contextWindow = liveContextWindow ?? DEFAULT_CONTEXT_WINDOW;
+	const liveMaxTokens = positiveInteger(
+		model.max_output_tokens,
+		model.top_provider?.max_completion_tokens,
+		model.per_request_limits?.completion_tokens,
+	);
+	const maxTokens = Math.min(contextWindow, liveMaxTokens ?? DEFAULT_MAX_TOKENS);
 
+	const hasParameterInventory = Array.isArray(model.supported_parameters);
 	const parameters = model.supported_parameters?.map((parameter) => parameter.toLowerCase()) ?? [];
 	const reasoning = model.reasoning !== undefined || parameters.some((parameter) => parameter.includes("reasoning"));
 	const thinking = reasoning ? modelThinking(model) : undefined;
 	const supportsTools = parameters.some((parameter) => /tool|function/u.test(parameter));
 	const inputModalities = model.architecture?.input_modalities?.map((modality) => modality.toLowerCase()) ?? [];
+	const hasInputModalities = inputModalities.length > 0;
 	const inputPrice = pricePerMillion(model.pricing?.prompt) ?? 0;
 	const outputPrice = pricePerMillion(model.pricing?.completion) ?? 0;
 
@@ -297,6 +326,14 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		contextWindow,
 		maxTokens,
 		supportsTools,
+		capabilitySources: {
+			contextWindow: liveContextWindow ? "live" : "fallback",
+			maxTokens: liveMaxTokens ? "live" : "fallback",
+			image: hasInputModalities ? "live" : "fallback",
+			reasoning: model.reasoning !== undefined || hasParameterInventory ? "live" : "fallback",
+			reasoningEfforts: (model.reasoning?.supported_efforts?.length ?? 0) > 0 ? "live" : "fallback",
+			tools: hasParameterInventory ? "live" : "fallback",
+		},
 		compat: {
 			// A heterogeneous route must stay safe when a fallback only accepts system messages.
 			supportsDeveloperRole: false,
@@ -347,23 +384,18 @@ export async function fetchBifrostModels(
 	return uniqueModels;
 }
 
-function normalizedReferenceCandidates(reference: string): string[] {
-	const value = reference.trim().toLowerCase();
-	const slash = value.indexOf("/");
-	return slash > 0 ? [value, value.slice(slash + 1)] : [value];
+export function resolveAliasReferenceDetailed(
+	reference: string,
+	models: readonly BifrostProviderModel[],
+) {
+	return resolveModelReference(reference, models);
 }
 
 export function resolveAliasReference(
 	reference: string,
 	models: readonly BifrostProviderModel[],
 ): BifrostProviderModel | undefined {
-	const candidates = normalizedReferenceCandidates(reference);
-	return models.find((model) => {
-		const id = model.id.toLowerCase();
-		return candidates.some(
-			(candidate) => id === candidate || id.endsWith(`/${candidate}`) || candidate.endsWith(`/${id}`),
-		);
-	});
+	return resolveAliasReferenceDetailed(reference, models).model;
 }
 
 function intersectThinking(models: readonly BifrostProviderModel[]): OmpThinkingConfig | undefined {
@@ -382,27 +414,52 @@ function intersectThinking(models: readonly BifrostProviderModel[]): OmpThinking
 	};
 }
 
+function routeDiagnosticFor(
+	reference: string,
+	diagnostics: readonly RouteMemberCapabilityDiagnostic[] | undefined,
+): RouteMemberCapabilityDiagnostic | undefined {
+	return diagnostics?.find((item) => item.reference.trim().toLowerCase() === reference.trim().toLowerCase());
+}
+
 export function synthesizeAlias(
 	id: string,
 	definition: PifrostAliasDefinition | string[],
 	physicalModels: readonly BifrostProviderModel[],
+	routeDiagnostics?: readonly RouteMemberCapabilityDiagnostic[],
 ): { model?: BifrostProviderModel; diagnostic: AliasDiagnostic } {
 	const normalized: PifrostAliasDefinition = Array.isArray(definition) ? { chain: definition } : definition;
 	const name = normalized.name ?? id;
-	const resolved = normalized.chain
-		.map((reference) => ({ reference, model: resolveAliasReference(reference, physicalModels) }))
-		.filter((entry): entry is { reference: string; model: BifrostProviderModel } => entry.model !== undefined);
-	const unresolved = normalized.chain.filter((reference) => !resolved.some((entry) => entry.reference === reference));
-	const members = resolved.map((entry) => entry.model);
+	const resolutionEntries = normalized.chain.map((reference) => ({
+		reference,
+		resolution: resolveAliasReferenceDetailed(reference, physicalModels),
+		rich: routeDiagnosticFor(reference, routeDiagnostics),
+	}));
+	const resolved = resolutionEntries
+		.filter((entry): entry is typeof entry & { resolution: ReturnType<typeof resolveAliasReferenceDetailed> & { model: BifrostProviderModel } } => entry.resolution.model !== undefined);
+	const unresolved = resolutionEntries.filter((entry) => !entry.resolution.model).map((entry) => entry.reference);
+	const members = resolved.map((entry) => entry.resolution.model);
 	const thinking = intersectThinking(members);
 	const reasoning = members.length > 0 && members.every((model) => model.reasoning);
 	const reasoningEfforts = thinkingEffortNames(thinking);
+	const memberDiagnostics: AliasMemberDiagnostic[] = resolutionEntries.map((entry) => {
+		const model = entry.resolution.model;
+		const rich = entry.rich;
+		const ambiguous = entry.resolution.reason === "ambiguous" ? `ambiguous live matches: ${entry.resolution.ambiguousIds?.join(", ")}` : undefined;
+		return {
+			reference: entry.reference,
+			resolvedModelId: model?.id ?? rich?.liveModelId,
+			resolution: rich?.resolution ?? entry.resolution.kind,
+			status: model ? "resolved" : "unresolved",
+			reason: model ? rich?.reason : rich?.reason ?? ambiguous ?? "no safe live/capability match",
+			sources: model?.capabilitySources ?? rich?.sources,
+		};
+	});
 
 	const diagnostic: AliasDiagnostic = {
 		id,
 		name,
 		chain: normalized.chain,
-		resolved: resolved.map((entry) => `${entry.reference} -> ${entry.model.id}`),
+		resolved: resolved.map((entry) => `${entry.reference} -> ${entry.resolution.model.id}`),
 		unresolved,
 		contextWindow: members.length ? Math.min(...members.map((model) => model.contextWindow)) : undefined,
 		maxTokens: members.length ? Math.min(...members.map((model) => model.maxTokens)) : undefined,
@@ -410,6 +467,7 @@ export function synthesizeAlias(
 		reasoning,
 		reasoningEfforts: [...reasoningEfforts],
 		tools: members.length > 0 && members.every((model) => model.supportsTools),
+		members: memberDiagnostics,
 	};
 
 	if (members.length === 0 || unresolved.length > 0) return { diagnostic };
@@ -444,6 +502,7 @@ export function synthesizeAlias(
 export function buildPifrostCatalog(
 	physicalModels: readonly BifrostProviderModel[],
 	aliasConfig?: PifrostAliasConfig,
+	routeDiagnostics?: readonly RouteMemberCapabilityDiagnostic[],
 ): PifrostCatalog {
 	if (!aliasConfig || Object.keys(aliasConfig.aliases ?? {}).length === 0) {
 		return { models: [...physicalModels], diagnostics: [] };
@@ -452,7 +511,7 @@ export function buildPifrostCatalog(
 	const diagnostics: AliasDiagnostic[] = [];
 	const aliases: BifrostProviderModel[] = [];
 	for (const [id, definition] of Object.entries(aliasConfig.aliases)) {
-		const synthesized = synthesizeAlias(id, definition, physicalModels);
+		const synthesized = synthesizeAlias(id, definition, physicalModels, routeDiagnostics);
 		diagnostics.push(synthesized.diagnostic);
 		if (synthesized.model) aliases.push(synthesized.model);
 	}
@@ -539,6 +598,14 @@ function formatNumber(value: number | undefined): string {
 	return String(value);
 }
 
+function formatSources(sources: CapabilityProvenance | undefined): string {
+	if (!sources) return "unknown";
+	return (["contextWindow", "maxTokens", "image", "reasoning", "reasoningEfforts", "tools"] as CapabilityKey[])
+		.filter((key) => sources[key])
+		.map((key) => `${key}=${sources[key]}`)
+		.join(",") || "unknown";
+}
+
 export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], aliasPath?: string): string {
 	const lines = [`Pifrost doctor${aliasPath ? ` — ${aliasPath}` : ""}`];
 	if (!diagnostics.length) return `${lines[0]}\nNo aliases configured; physical Bifrost models are exposed directly.`;
@@ -547,7 +614,13 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 		lines.push(
 			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"}`,
 		);
-		if (item.unresolved.length) lines.push(`  unresolved: ${item.unresolved.join(" | ")}`);
+		for (const member of item.members ?? []) {
+			const target = member.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";
+			const resolution = member.resolution ? ` resolution=${member.resolution}` : "";
+			const reason = member.reason ? ` reason=${member.reason}` : "";
+			lines.push(`  ${member.status} ${member.reference}${target}${resolution} sources=${formatSources(member.sources)}${reason}`);
+		}
+		if (item.unresolved.length && !(item.members?.length)) lines.push(`  unresolved: ${item.unresolved.join(" | ")}`);
 	}
 	return lines.join("\n");
 }

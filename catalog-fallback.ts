@@ -1,6 +1,18 @@
 import type { Model as OmpModel } from "@oh-my-pi/pi-ai";
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
 
+import {
+	canonicalModelFamily,
+	equivalentModelId,
+	modelIdentityCandidates,
+} from "./model-resolution.ts";
+
+export {
+	canonicalModelFamily,
+	equivalentModelId,
+	modelIdentityCandidates,
+} from "./model-resolution.ts";
+
 const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type EffortName = (typeof EFFORTS)[number];
 type Thinking = NonNullable<OmpModel["thinking"]>;
@@ -46,50 +58,6 @@ function normalized(value: string): string {
 	return value.trim().toLowerCase();
 }
 
-function tail(value: string): string {
-	const parts = normalized(value).split("/").filter(Boolean);
-	return parts[parts.length - 1] ?? normalized(value);
-}
-
-const MODEL_EQUIVALENCE = new Map<string, string>([
-	["stealth/ox-alpha", "ox-alpha"],
-	["ox-alpha", "ox-alpha"],
-	["ox-alpha-free", "ox-alpha"],
-	["x-preview-f-free", "ox-alpha"],
-	["laguna-s-2.1-free", "laguna-s-2.1"],
-	["laguna-s-2.1", "laguna-s-2.1"],
-]);
-
-export function canonicalModelFamily(value: string): string {
-	const full = normalized(value).replace(/:batch$/u, "");
-	const fullAlias = MODEL_EQUIVALENCE.get(full);
-	if (fullAlias) return fullAlias;
-	const model = tail(full);
-	return MODEL_EQUIVALENCE.get(model) ?? model;
-}
-
-export function modelIdentityCandidates(...values: Array<string | undefined>): string[] {
-	const result: string[] = [];
-	for (const raw of values) {
-		if (!raw) continue;
-		let current = normalized(raw);
-		while (current) {
-			result.push(current);
-			result.push(canonicalModelFamily(current));
-			const slash = current.indexOf("/");
-			if (slash < 0) break;
-			current = current.slice(slash + 1);
-		}
-	}
-	return [...new Set(result.filter(Boolean))];
-}
-
-export function equivalentModelId(left: string, right: string): boolean {
-	const leftCandidates = new Set(modelIdentityCandidates(left));
-	return modelIdentityCandidates(right).some((candidate) => leftCandidates.has(candidate)) ||
-		canonicalModelFamily(left) === canonicalModelFamily(right);
-}
-
 function routeProvider(reference: string): string | undefined {
 	const slash = reference.indexOf("/");
 	return slash > 0 ? normalized(reference.slice(0, slash)) : undefined;
@@ -117,6 +85,9 @@ function thinking(efforts: EffortName[], requiresEffort = false): Thinking {
 	};
 }
 
+// Narrow vendor-backed capability records. These are intentionally separate
+// from the OMP bundled-catalog fallback so the resolver can honour the explicit
+// priority: live -> Bifrost -> canonical family -> vendor override -> fallback.
 const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 	"ox-alpha": {
 		source: "verified-model-hint",
@@ -145,6 +116,18 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsUsageInStreaming: true,
 	},
 };
+
+export function findVendorCapabilityOverride(
+	reference: string,
+	liveModelId?: string,
+): CatalogCapabilityFallback | undefined {
+	for (const value of [reference, liveModelId]) {
+		if (!value) continue;
+		const hint = VERIFIED_MODEL_HINTS[canonicalModelFamily(value)];
+		if (hint) return hint;
+	}
+	return undefined;
+}
 
 let catalogCache: CatalogModelLike[] | undefined;
 
@@ -237,20 +220,17 @@ export function findCatalogCapabilityFallback(
 	liveModelId?: string,
 	catalogOverride?: readonly CatalogModelLike[],
 ): CatalogCapabilityFallback | undefined {
-	const candidates = new Set(modelIdentityCandidates(reference, liveModelId));
-	const family = canonicalModelFamily(liveModelId ?? reference);
 	const all = catalogOverride ? [...catalogOverride] : bundledCatalog();
 	const preferred = new Set(preferredCatalogProviders(reference));
-	const matchesIdentity = (model: CatalogModelLike): boolean => {
-		const modelCandidates = modelIdentityCandidates(model.id);
-		return modelCandidates.some((candidate) => candidates.has(candidate)) || canonicalModelFamily(model.id) === family;
-	};
+	const targets = [reference, liveModelId].filter((value): value is string => Boolean(value));
+	const matchesIdentity = (model: CatalogModelLike): boolean =>
+		targets.some((target) => equivalentModelId(target, model.id));
+
 	if (preferred.size) {
 		const providerMatches = all.filter((model) => preferred.has(normalized(model.provider ?? "")) && matchesIdentity(model));
 		const exactProviderFallback = toFallback(providerMatches, "omp-catalog-provider");
 		if (exactProviderFallback) return exactProviderFallback;
 	}
-	const familyFallback = toFallback(all.filter(matchesIdentity), "omp-catalog-family");
-	if (familyFallback) return familyFallback;
-	return VERIFIED_MODEL_HINTS[family];
+
+	return toFallback(all.filter(matchesIdentity), "omp-catalog-family");
 }

@@ -18,7 +18,11 @@ import type {
 	PifrostCatalog,
 } from "./index.ts";
 
-const CACHE_SCHEMA_VERSION = 1;
+/**
+ * Increment whenever cached model/diagnostic semantics change in a way that can
+ * make an older catalog unsafe or hide newly-supported routes after an upgrade.
+ */
+export const CATALOG_CACHE_SCHEMA_VERSION = 2;
 export const DEFAULT_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
 export const DEFAULT_REFRESH_INTERVAL_MS = 6 * 60 * 60_000;
 
@@ -49,6 +53,10 @@ export interface CatalogCacheOptions {
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
+}
+
+function forceRefreshRequested(env: NodeJS.ProcessEnv = process.env): boolean {
+	return /^(?:1|true|yes)$/iu.test(nonEmpty(env.PIFROST_FORCE_REFRESH) ?? "");
 }
 
 function agentDir(env: NodeJS.ProcessEnv = process.env): string {
@@ -122,6 +130,11 @@ function validDiagnostics(value: unknown): value is AliasDiagnostic[] {
 }
 
 export function loadCatalogCache(options: CatalogCacheOptions): LoadedCatalogCache | undefined {
+	// `pifrost routes sync` and `pifrost models refresh --force` launch OMP with
+	// this flag. Ignoring the cache here is important: otherwise registering the
+	// old static catalog can prevent OMP from invoking fetchDynamicModels at all.
+	if (forceRefreshRequested()) return undefined;
+
 	const path = options.path ?? catalogCachePath();
 	if (!existsSync(path)) return undefined;
 
@@ -132,7 +145,7 @@ export function loadCatalogCache(options: CatalogCacheOptions): LoadedCatalogCac
 		return undefined;
 	}
 
-	if (parsed.schemaVersion !== CACHE_SCHEMA_VERSION) return undefined;
+	if (parsed.schemaVersion !== CATALOG_CACHE_SCHEMA_VERSION) return undefined;
 	if (parsed.url !== options.config.url) return undefined;
 	if (parsed.virtualKeyFingerprint !== virtualKeyFingerprint(options.config.virtualKey)) return undefined;
 	if (parsed.aliasFingerprint !== aliasConfigFingerprint(options.aliasConfig)) return undefined;
@@ -163,7 +176,7 @@ export function writeCatalogCache(
 	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
 
 	const payload: CatalogCacheFile = {
-		schemaVersion: CACHE_SCHEMA_VERSION,
+		schemaVersion: CATALOG_CACHE_SCHEMA_VERSION,
 		generatedAt: new Date(options.now ?? Date.now()).toISOString(),
 		url: options.config.url,
 		virtualKeyFingerprint: virtualKeyFingerprint(options.config.virtualKey),

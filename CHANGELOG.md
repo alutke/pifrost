@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.7
+
+- Reworked model identity resolution so provider, aggregator and vendor prefixes, mixed capitalization, and explicitly equivalent entitlement aliases can drift without requiring a Pifrost release for every spelling change.
+- Added collision protection: vendor-qualified models with the same tail are no longer treated as interchangeable, and ambiguous live matches are diagnosed instead of selecting the first candidate.
+- Capability resolution now follows an explicit trust order per field: rich live Bifrost metadata, direct Bifrost datasheet metadata, equivalent canonical-family metadata, narrow vendor-backed overrides, then conservative catalog fallback.
+- Generic sparse `/v1/models` defaults such as 128K context / 8K output remain usable for direct physical-model compatibility but are tagged as fallback and are never accepted as authoritative route limits.
+- Added capability provenance to route diagnostics (`live`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, `fallback`) and preserved those diagnostics in the last-known-good catalog cache.
+- Added a metadata-only route-inventory bridge for configured Bifrost route members temporarily absent from `/v1/models`. The bridge carries no trusted capabilities; a route still requires safe context/output evidence before it can synthesize.
+- Added current metadata support for CommandCode `stealth/ox-alpha`, OpenCode Go `ox-alpha-free` / `x-preview-f-free`, and DeepSeek `deepseek-v4-flash-vision-exp`, including image support for the DeepSeek vision model.
+- Bumped the catalog-cache schema so stale pre-provenance caches are rejected after upgrade; `PIFROST_FORCE_REFRESH` also bypasses an otherwise valid cache.
+- Expanded regression coverage for provider/vendor prefixes, mixed case, known `-free` aliases without blanket suffix stripping, same-model multi-provider routes, unsafe family collisions, live-metadata precedence, canonical-family discovery, inventory lag, and conservative context/output/vision/reasoning/tool intersections.
+- Updated the integration validator to the current ten implemented `omp-*` routes; `omp-task` must resolve and `omp-vision` must advertise image input.
+
 ## 0.2.6
 
 - Added a layered capability resolver for route members: Bifrost public datasheets remain primary, while OMP's bundled model catalog supplies safe context/output, modality, reasoning, thinking, tool and compatibility metadata when Bifrost's public feeds lag a current provider model.

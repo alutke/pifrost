@@ -129,6 +129,22 @@ OMP only sees `bifrost/omp-slow`. Pifrost therefore calculates a conservative ca
 
 If a route member cannot be resolved safely, Pifrost withholds the alias instead of fabricating metadata.
 
+### Capability discovery and model identity
+
+Pifrost 0.2.7 resolves capability facts per field rather than assuming one source is complete. The trust order is:
+
+1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
+2. the Bifrost public pricing/model-parameter datasheets;
+3. an equivalent canonical model-family row in those datasheets;
+4. a narrowly scoped vendor-backed capability override for a known upstream omission; and
+5. conservative catalog fallback when the model identity and capability are safe to establish.
+
+Diagnostics preserve that origin as `live`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback` for each route member and capability.
+
+The generic compatibility defaults used for a sparse physical `/v1/models` entry (`128K` context / `8K` output) are **not** accepted as authoritative route limits. A configured route member that is temporarily absent from `/v1/models` may receive a metadata-only identity anchor, but that anchor carries no trusted capabilities. Pifrost still withholds the logical alias unless safe context and output limits can be established from a stronger source.
+
+Model identity matching tolerates provider/aggregator prefix changes, mixed capitalization, and explicitly known entitlement aliases such as the current Ox Alpha spellings. It does not blindly strip arbitrary `-free` suffixes, and it rejects ambiguous vendor-qualified matches rather than assuming two same-tailed model names are identical.
+
 ### Effective thinking display
 
 Pifrost stores the pre-normalization provider catalog. OMP 18 may subsequently derive a thinking-control surface for sparse reasoning models. `pifrost models doctor` and `pifrost doctor` report the **OMP-effective** result:
@@ -187,7 +203,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.2.5
+0.2.7
 ```
 
 Bun can also install the package globally:
@@ -211,6 +227,7 @@ npm install --global github:alutke/pifrost
 hash -r
 omp install --force github:alutke/pifrost
 pifrost --version
+pifrost routes sync
 pifrost doctor
 ```
 
@@ -446,7 +463,7 @@ Its identity is bound to:
 - a one-way fingerprint of the global inference VK
 - a fingerprint of the alias manifest
 
-Changing one of those invalidates the cache.
+Changing one of those invalidates the cache. Resolver/schema upgrades can also invalidate older cache formats so stale capability assumptions are not carried across releases.
 
 ### Why it exists
 
@@ -470,7 +487,7 @@ PIFROST_FORCE_REFRESH=1 omp models refresh
 pifrost models doctor
 ```
 
-The report includes context, maximum output, effective thinking levels, image support, and the origin of the thinking ladder.
+The report includes context, maximum output, effective thinking levels, image support, and thinking origin. Route diagnostics also show how each member was resolved and the per-capability source (`live`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback`) so an unresolved route can explain what evidence was missing.
 
 ---
 
@@ -593,7 +610,7 @@ Rotation is explicit. Pifrost does not silently rotate an existing key just beca
 
 ## Repository reset and cleanup
 
-Pifrost 0.2.5 supports both a **local-only reset** and a **full reset including the Bifrost Virtual Key**.
+Since Pifrost 0.2.5, both a **local-only reset** and a **full reset including the Bifrost Virtual Key** are supported.
 
 ### Local-only reset
 
@@ -948,7 +965,7 @@ npm install
 npm run check
 npm test
 node scripts/validate-public-datasheets.mjs
-node scripts/validate-target-routes.mjs
+npx tsx scripts/validate-current-routing.ts
 ```
 
 CI validates:
@@ -957,7 +974,7 @@ CI validates:
 - standalone Node CLI syntax
 - unit/CLI tests
 - public Bifrost datasheet coverage
-- target OMP routing envelopes
+- current OMP routing envelopes
 - loading through the real OMP 18.0.4 plugin loader
 
 Management credentials and raw VK values must never be added to provider runtime configuration, model catalogs, route manifests, diagnostics, or committed test fixtures.

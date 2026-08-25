@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
 	cacheIsFresh,
+	CATALOG_CACHE_SCHEMA_VERSION,
 	loadCatalogCache,
 	writeCatalogCache,
 } from "../cache.ts";
@@ -90,6 +91,7 @@ test("last-known-good catalog round-trips without persisting credentials", () =>
 		const raw = readFileSync(path, "utf8");
 		assert.doesNotMatch(raw, /api-secret-do-not-cache/);
 		assert.doesNotMatch(raw, /vk-secret-do-not-cache/);
+		assert.equal(JSON.parse(raw).schemaVersion, CATALOG_CACHE_SCHEMA_VERSION);
 	});
 });
 
@@ -122,6 +124,32 @@ test("cache older than the safety horizon is ignored", () => {
 			loadCatalogCache({ config, aliasConfig, path, now: 20_001, maxAgeMs: 10_000 }),
 			undefined,
 		);
+	});
+});
+
+test("older cache schemas are rejected after resolver upgrades", () => {
+	withTempCache((path) => {
+		const { config, aliasConfig, catalog } = fixture();
+		writeCatalogCache(catalog, { config, aliasConfig, path, now: 10_000 });
+		const raw = JSON.parse(readFileSync(path, "utf8"));
+		raw.schemaVersion = CATALOG_CACHE_SCHEMA_VERSION - 1;
+		writeFileSync(path, `${JSON.stringify(raw)}\n`);
+		assert.equal(loadCatalogCache({ config, aliasConfig, path, now: 11_000 }), undefined);
+	});
+});
+
+test("PIFROST_FORCE_REFRESH bypasses an otherwise valid startup cache", () => {
+	withTempCache((path) => {
+		const { config, aliasConfig, catalog } = fixture();
+		writeCatalogCache(catalog, { config, aliasConfig, path, now: 10_000 });
+		const previous = process.env.PIFROST_FORCE_REFRESH;
+		try {
+			process.env.PIFROST_FORCE_REFRESH = "1";
+			assert.equal(loadCatalogCache({ config, aliasConfig, path, now: 11_000 }), undefined);
+		} finally {
+			if (previous === undefined) delete process.env.PIFROST_FORCE_REFRESH;
+			else process.env.PIFROST_FORCE_REFRESH = previous;
+		}
 	});
 });
 

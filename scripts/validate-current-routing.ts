@@ -9,8 +9,8 @@ import {
 
 // This intentionally tracks the routes currently implemented in the user's
 // Bifrost instance, not an aspirational routing table. CI therefore protects
-// the exact combinations Pifrost must support today while the generic catalog
-// fallback covers other provider/model choices.
+// the exact combinations Pifrost must support today while generic resolution
+// handles provider/aggregator spelling drift.
 const aliasConfig: PifrostAliasConfig = {
   includePhysicalModels: false,
   aliases: {
@@ -71,6 +71,14 @@ const liveModels: BifrostProviderModel[] = refs.map((id) => ({
   contextWindow: 128_000,
   maxTokens: 8_192,
   supportsTools: false,
+  capabilitySources: {
+    contextWindow: "fallback",
+    maxTokens: "fallback",
+    image: "fallback",
+    reasoning: "fallback",
+    reasoningEfforts: "fallback",
+    tools: "fallback",
+  },
   compat: { supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true },
 }));
 
@@ -79,7 +87,7 @@ const rich = buildRichRouteCatalog(liveModels, aliasConfig, {
   pricing: normalizePricingDatasheet(sheets.pricing),
   parameters: normalizeModelParametersDatasheet(sheets.parameters),
 });
-const catalog = buildPifrostCatalog(rich.models, aliasConfig);
+const catalog = buildPifrostCatalog(rich.models, aliasConfig, rich.diagnostics);
 
 for (const diagnostic of rich.diagnostics.filter((item) => item.status === "not-live" || item.status === "missing-pricing")) {
   console.error("route metadata failure", diagnostic);
@@ -88,7 +96,11 @@ for (const diagnostic of rich.diagnostics.filter((item) => item.status === "not-
 const byId = new Map(catalog.models.map((model) => [model.id, model]));
 for (const id of Object.keys(aliasConfig.aliases).sort()) {
   const model = byId.get(id);
-  console.log(`${id}: context=${model?.contextWindow ?? "MISSING"} output=${model?.maxTokens ?? "MISSING"} image=${model?.input.includes("image") ?? false} reasoning=${model?.reasoning ?? false} efforts=${model?.thinking?.efforts.map(String).join(",") ?? "none"}`);
+  console.log(`${id}: context=${model?.contextWindow ?? "MISSING"} output=${model?.maxTokens ?? "MISSING"} image=${model?.input.includes("image") ?? false} reasoning=${model?.reasoning ?? false} efforts=${model?.thinking?.efforts.map(String).join(",") ?? "none"} tools=${model?.supportsTools ?? false}`);
+  const diagnostic = catalog.diagnostics.find((item) => item.id === id);
+  for (const member of diagnostic?.members ?? []) {
+    console.log(`  ${member.reference}: ${member.status} -> ${member.resolvedModelId ?? "MISSING"} resolution=${member.resolution ?? "n/a"} sources=${JSON.stringify(member.sources ?? {})}${member.reason ? ` reason=${member.reason}` : ""}`);
+  }
 }
 
 assert.equal(catalog.models.length, 10, "all ten current OMP aliases must synthesize");
@@ -97,6 +109,7 @@ assert.equal(
   0,
   "all current route members must have a safe capability source",
 );
+assert.ok(catalog.diagnostics.every((item) => item.unresolved.length === 0), "no current omp-* alias may contain an unresolved member");
 assert.ok((byId.get("omp-default")?.contextWindow ?? 0) >= 1_000_000, "omp-default should retain a 1M-class context envelope");
 assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) >= 1_000_000, "omp-slow should retain a 1M-class context envelope");
 assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) < 1_100_000, "context must not add max output on top of the published window");
@@ -104,10 +117,6 @@ assert.ok(byId.get("omp-vision")?.input.includes("image"), "omp-vision must adve
 assert.ok(byId.get("omp-designer")?.input.includes("image"), "omp-designer must advertise image input");
 assert.ok(byId.get("omp-task"), "omp-task must not be withheld when Ox Alpha aliases are used");
 assert.ok((byId.get("omp-task")?.contextWindow ?? 0) >= 1_000_000, "omp-task should retain a 1M-class context envelope");
-// The currently implemented OpenCode ox-alpha-free fallback publishes a 32K
-// output limit. Preserve that real restriction instead of inheriting the
-// 131K paid/base Ox Alpha limit. Replacing this fallback with DeepSeek V4 Flash
-// in Bifrost will automatically raise the route envelope without a Pifrost change.
-assert.ok((byId.get("omp-task")?.maxTokens ?? 0) >= 32_768, "omp-task should retain the published Ox Alpha Free output envelope");
+assert.ok((byId.get("omp-task")?.maxTokens ?? 0) >= 32_768, "omp-task must retain a safe published Ox Alpha output envelope");
 assert.deepEqual(byId.get("omp-task")?.thinking?.efforts.map(String), ["high", "max"], "omp-task effort envelope should be high/max");
 assert.ok(byId.get("omp-advisor")?.reasoning, "omp-advisor must retain reasoning support");

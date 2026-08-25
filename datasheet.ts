@@ -1,15 +1,21 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 
 import {
-	equivalentModelId,
 	findCatalogCapabilityFallback,
+	findVendorCapabilityOverride,
 	modelIdentityCandidates,
+	equivalentModelId,
+	type CatalogCapabilityFallback,
 	type CatalogModelLike,
 } from "./catalog-fallback.ts";
 import {
-	resolveAliasReference,
+	resolveAliasReferenceDetailed,
 	type BifrostProviderModel,
+	type CapabilityKey,
+	type CapabilityProvenance,
+	type CapabilitySource,
 	type PifrostAliasConfig,
+	type RouteMemberCapabilityDiagnostic,
 } from "./index.ts";
 
 export const BIFROST_PRICING_DATASHEET_URL = "https://getbifrost.ai/datasheet";
@@ -26,6 +32,15 @@ export interface DatasheetArchitecture {
 	output_modalities?: string[];
 }
 
+export interface DatasheetCapabilitySources {
+	contextWindow?: CapabilitySource;
+	maxTokens?: CapabilitySource;
+	image?: CapabilitySource;
+	reasoning?: CapabilitySource;
+	reasoningEfforts?: CapabilitySource;
+	tools?: CapabilitySource;
+}
+
 export interface PricingDatasheetEntry {
 	provider?: string;
 	mode?: string;
@@ -39,6 +54,8 @@ export interface PricingDatasheetEntry {
 	output_cost_per_token?: number;
 	cache_creation_input_token_cost?: number;
 	cache_read_input_token_cost?: number;
+	/** Internal provenance added by pricing-normalize.ts; never sent upstream. */
+	_pifrost_sources?: DatasheetCapabilitySources;
 }
 
 export interface ModelParameterDescriptor {
@@ -64,6 +81,8 @@ export interface ModelParameterEntry {
 	max_output_tokens?: number;
 	model_parameters?: ModelParameterDescriptor[];
 	supported_endpoints?: string[];
+	/** Internal provenance added by pricing-normalize.ts; never sent upstream. */
+	_pifrost_sources?: DatasheetCapabilitySources;
 }
 
 export type PricingDatasheet = Record<string, PricingDatasheetEntry>;
@@ -74,9 +93,7 @@ export interface BifrostDatasheets {
 	parameters: ModelParametersDatasheet;
 }
 
-export interface RichRouteDiagnostic {
-	reference: string;
-	liveModelId?: string;
+export interface RichRouteDiagnostic extends RouteMemberCapabilityDiagnostic {
 	pricingKey?: string;
 	parametersKey?: string;
 	fallbackMatches?: string[];
@@ -92,6 +109,12 @@ interface MatchedEntry<T> {
 	key: string;
 	value: T;
 	score: number;
+	source: "bifrost-datasheet" | "canonical-family";
+}
+
+interface Selected<T> {
+	value?: T;
+	source?: CapabilitySource;
 }
 
 function normalized(value: string): string {
@@ -104,16 +127,11 @@ function unique<T>(values: readonly T[]): T[] {
 
 /**
  * Build provider-qualified, progressively stripped and known-equivalent model
- * identifiers. Known equivalence is deliberately narrow: Pifrost never assumes
- * every `-free` model has the same limits as its paid/base sibling.
+ * identifiers. Equivalence stays deliberately narrow: arbitrary `-free`
+ * variants are never merged automatically.
  */
 export function modelReferenceCandidates(...values: Array<string | undefined>): string[] {
 	return modelIdentityCandidates(...values);
-}
-
-function modelTail(value: string): string {
-	const parts = normalized(value).split("/");
-	return parts[parts.length - 1] ?? normalized(value);
 }
 
 function providerHint(reference: string): string | undefined {
@@ -121,27 +139,44 @@ function providerHint(reference: string): string | undefined {
 	return slash > 0 ? normalized(reference.slice(0, slash)) : undefined;
 }
 
+function exactPathMatch(left: string, right: string): boolean {
+	const leftNormalized = normalized(left);
+	const rightNormalized = normalized(right);
+	return leftNormalized === rightNormalized ||
+		leftNormalized.endsWith(`/${rightNormalized}`) ||
+		rightNormalized.endsWith(`/${leftNormalized}`);
+}
+
 function matchScore<T extends { provider?: string; base_model?: string; mode?: string }>(
 	key: string,
 	entry: T,
-	candidates: readonly string[],
 	reference: string,
-): number {
-	const normalizedKey = normalized(key);
-	if (entry.mode && normalized(entry.mode) !== "chat") return -1;
-
+	liveModelId?: string,
+): { score: number; source: MatchedEntry<T>["source"] } | undefined {
+	if (entry.mode && normalized(entry.mode) !== "chat") return undefined;
+	const targets = [reference, liveModelId].filter((value): value is string => Boolean(value));
 	let score = -1;
-	for (const candidate of candidates) {
-		if (normalizedKey === candidate) score = Math.max(score, 100);
-		if (normalizedKey.endsWith(`/${candidate}`)) score = Math.max(score, 90);
-		if (candidate.endsWith(`/${normalizedKey}`)) score = Math.max(score, 85);
-		if (modelTail(normalizedKey) === modelTail(candidate)) score = Math.max(score, 60);
-		if (entry.base_model && normalized(entry.base_model) === modelTail(candidate)) score = Math.max(score, 55);
+	let source: MatchedEntry<T>["source"] = "canonical-family";
+
+	for (const target of targets) {
+		if (normalized(key) === normalized(target)) {
+			score = Math.max(score, 1_000);
+			source = "bifrost-datasheet";
+			continue;
+		}
+		if (!equivalentModelId(target, key) && !(entry.base_model && equivalentModelId(target, entry.base_model))) continue;
+		if (exactPathMatch(key, target)) score = Math.max(score, 900);
+		else if (entry.base_model && exactPathMatch(entry.base_model, target)) score = Math.max(score, 800);
+		else score = Math.max(score, 600);
 	}
+	if (score < 0) return undefined;
 
 	const hint = providerHint(reference);
-	if (score >= 0 && hint && entry.provider && normalized(entry.provider) === hint) score += 20;
-	return score;
+	if (hint && entry.provider && normalized(entry.provider) === hint) {
+		score += 50;
+		if (score >= 900) source = "bifrost-datasheet";
+	}
+	return { score, source };
 }
 
 export function findDatasheetEntry<T extends { provider?: string; base_model?: string; mode?: string }>(
@@ -149,13 +184,14 @@ export function findDatasheetEntry<T extends { provider?: string; base_model?: s
 	reference: string,
 	liveModelId?: string,
 ): MatchedEntry<T> | undefined {
-	const candidates = modelReferenceCandidates(reference, liveModelId);
 	let best: MatchedEntry<T> | undefined;
 	for (const [key, value] of Object.entries(sheet)) {
-		const score = matchScore(key, value, candidates, reference);
-		if (score < 0) continue;
-		if (!best || score > best.score || (score === best.score && key.length < best.key.length)) {
-			best = { key, value, score };
+		const match = matchScore(key, value, reference, liveModelId);
+		if (!match) continue;
+		const candidate: MatchedEntry<T> = { key, value, ...match };
+		if (!best || candidate.score > best.score ||
+			(candidate.score === best.score && candidate.key.length < best.key.length)) {
+			best = candidate;
 		}
 	}
 	return best;
@@ -195,6 +231,19 @@ function thinkingFromParameters(parameters: ModelParameterEntry | undefined): Om
 	};
 }
 
+function hasReasoningMetadata(parameters: ModelParameterEntry | undefined): boolean {
+	if (!parameters) return false;
+	return [
+		parameters.supports_reasoning,
+		parameters.supports_reasoning_effort,
+		parameters.is_reasoning_model,
+		parameters.always_reasoning,
+		parameters.reasoning_required,
+	].some((value) => value !== undefined) ||
+		(parameters.reasoning_effort_levels?.length ?? 0) > 0 ||
+		parameters.model_parameters?.some((item) => item.id?.toLowerCase().includes("reasoning")) === true;
+}
+
 function reasoningFromParameters(parameters: ModelParameterEntry | undefined): boolean {
 	if (!parameters) return false;
 	return Boolean(
@@ -202,9 +251,18 @@ function reasoningFromParameters(parameters: ModelParameterEntry | undefined): b
 		parameters.supports_reasoning_effort ||
 		parameters.is_reasoning_model ||
 		parameters.always_reasoning ||
+		parameters.reasoning_required ||
 		(parameters.reasoning_effort_levels?.length ?? 0) > 0 ||
 		parameters.model_parameters?.some((item) => item.id?.toLowerCase().includes("reasoning")),
 	);
+}
+
+function hasToolMetadata(parameters: ModelParameterEntry | undefined): boolean {
+	if (!parameters) return false;
+	return parameters.supports_function_calling !== undefined ||
+		parameters.supports_parallel_function_calling !== undefined ||
+		parameters.supports_tool_choice !== undefined ||
+		parameters.model_parameters?.some((item) => /tool|function/u.test(item.id?.toLowerCase() ?? "")) === true;
 }
 
 function toolsFromParameters(parameters: ModelParameterEntry | undefined): boolean {
@@ -226,8 +284,116 @@ function routeReferences(aliasConfig: PifrostAliasConfig): string[] {
 	return unique(result);
 }
 
-function resolveLiveRouteModel(reference: string, liveModels: readonly BifrostProviderModel[]): BifrostProviderModel | undefined {
-	return resolveAliasReference(reference, liveModels) ?? liveModels.find((model) => equivalentModelId(reference, model.id));
+function fallbackSource(fallback: CatalogCapabilityFallback | undefined): CapabilitySource | undefined {
+	if (!fallback) return undefined;
+	if (fallback.source === "verified-model-hint") return "vendor-override";
+	if (fallback.source === "omp-catalog-family") return "canonical-family";
+	return "fallback";
+}
+
+function sheetSource(
+	match: MatchedEntry<PricingDatasheetEntry> | MatchedEntry<ModelParameterEntry> | undefined,
+	key: CapabilityKey,
+): CapabilitySource | undefined {
+	if (!match) return undefined;
+	return match.value._pifrost_sources?.[key] ?? match.source;
+}
+
+function selectNumber(
+	liveValue: number,
+	liveSource: CapabilitySource | undefined,
+	sheetValue: number | undefined,
+	sheetCapabilitySource: CapabilitySource | undefined,
+	vendorValue: number | undefined,
+	catalogValue: number | undefined,
+	catalogSource: CapabilitySource | undefined,
+): Selected<number> {
+	if (liveSource === "live" && positiveInteger(liveValue)) return { value: liveValue, source: "live" };
+	const sheet = positiveInteger(sheetValue);
+	if (sheet) return { value: sheet, source: sheetCapabilitySource ?? "bifrost-datasheet" };
+	const vendor = positiveInteger(vendorValue);
+	if (vendor) return { value: vendor, source: "vendor-override" };
+	const catalog = positiveInteger(catalogValue);
+	if (catalog) return { value: catalog, source: catalogSource ?? "fallback" };
+	return {};
+}
+
+function selectImage(
+	liveModel: BifrostProviderModel,
+	pricing: MatchedEntry<PricingDatasheetEntry> | undefined,
+	vendor: CatalogCapabilityFallback | undefined,
+	catalog: CatalogCapabilityFallback | undefined,
+): Selected<boolean> {
+	if (liveModel.capabilitySources?.image === "live") {
+		return { value: liveModel.input.includes("image"), source: "live" };
+	}
+	const modalities = pricing?.value.architecture?.input_modalities?.map(normalized) ?? [];
+	if (modalities.length) {
+		return {
+			value: modalities.some((modality) => modality.includes("image")),
+			source: sheetSource(pricing, "image") ?? "bifrost-datasheet",
+		};
+	}
+	if (vendor) return { value: vendor.input.includes("image"), source: "vendor-override" };
+	if (catalog) return { value: catalog.input.includes("image"), source: fallbackSource(catalog) };
+	return { value: false };
+}
+
+function selectReasoning(
+	liveModel: BifrostProviderModel,
+	parameters: MatchedEntry<ModelParameterEntry> | undefined,
+	vendor: CatalogCapabilityFallback | undefined,
+	catalog: CatalogCapabilityFallback | undefined,
+): Selected<boolean> {
+	if (liveModel.capabilitySources?.reasoning === "live") return { value: liveModel.reasoning, source: "live" };
+	if (hasReasoningMetadata(parameters?.value)) {
+		return {
+			value: reasoningFromParameters(parameters?.value),
+			source: sheetSource(parameters, "reasoning") ?? "bifrost-datasheet",
+		};
+	}
+	if (vendor) return { value: vendor.reasoning, source: "vendor-override" };
+	if (catalog) return { value: catalog.reasoning, source: fallbackSource(catalog) };
+	return { value: false };
+}
+
+function selectThinking(
+	liveModel: BifrostProviderModel,
+	parameters: MatchedEntry<ModelParameterEntry> | undefined,
+	vendor: CatalogCapabilityFallback | undefined,
+	catalog: CatalogCapabilityFallback | undefined,
+): Selected<OmpThinkingConfig> {
+	if (liveModel.capabilitySources?.reasoningEfforts === "live" && liveModel.thinking) {
+		return { value: liveModel.thinking, source: "live" };
+	}
+	const parameterThinking = thinkingFromParameters(parameters?.value);
+	if (parameterThinking) {
+		return {
+			value: parameterThinking,
+			source: sheetSource(parameters, "reasoningEfforts") ?? "bifrost-datasheet",
+		};
+	}
+	if (vendor?.thinking) return { value: vendor.thinking, source: "vendor-override" };
+	if (catalog?.thinking) return { value: catalog.thinking, source: fallbackSource(catalog) };
+	return {};
+}
+
+function selectTools(
+	liveModel: BifrostProviderModel,
+	parameters: MatchedEntry<ModelParameterEntry> | undefined,
+	vendor: CatalogCapabilityFallback | undefined,
+	catalog: CatalogCapabilityFallback | undefined,
+): Selected<boolean> {
+	if (liveModel.capabilitySources?.tools === "live") return { value: liveModel.supportsTools, source: "live" };
+	if (hasToolMetadata(parameters?.value)) {
+		return {
+			value: toolsFromParameters(parameters?.value),
+			source: sheetSource(parameters, "tools") ?? "bifrost-datasheet",
+		};
+	}
+	if (vendor) return { value: vendor.supportsTools, source: "vendor-override" };
+	if (catalog) return { value: catalog.supportsTools, source: fallbackSource(catalog) };
+	return { value: false };
 }
 
 export function buildRichRouteCatalog(
@@ -240,69 +406,97 @@ export function buildRichRouteCatalog(
 	const diagnostics: RichRouteDiagnostic[] = [];
 
 	for (const reference of routeReferences(aliasConfig)) {
-		const liveModel = resolveLiveRouteModel(reference, liveModels);
+		const liveResolution = resolveAliasReferenceDetailed(reference, liveModels);
+		const liveModel = liveResolution.model;
 		if (!liveModel) {
-			diagnostics.push({ reference, status: "not-live" });
+			diagnostics.push({
+				reference,
+				status: "not-live",
+				resolution: liveResolution.kind,
+				reason: liveResolution.reason === "ambiguous"
+					? `ambiguous live model identity: ${liveResolution.ambiguousIds?.join(", ")}`
+					: "no equivalent model was found in Bifrost /v1/models",
+			});
 			continue;
 		}
 
 		const pricing = findDatasheetEntry(datasheets.pricing, reference, liveModel.id);
 		const parameters = findDatasheetEntry(datasheets.parameters, reference, liveModel.id);
-		const fallback = findCatalogCapabilityFallback(reference, liveModel.id, catalogOverride);
+		const vendor = findVendorCapabilityOverride(reference, liveModel.id);
+		const catalog = findCatalogCapabilityFallback(reference, liveModel.id, catalogOverride);
+		const catalogCapabilitySource = fallbackSource(catalog);
 
-		const contextWindow = positiveInteger(
-			pricing?.value.context_length,
-			// max_input_tokens is already the usable request/context ceiling. Do not
-			// add max_output_tokens on top of it.
-			pricing?.value.max_input_tokens,
-			fallback?.contextWindow,
+		const context = selectNumber(
+			liveModel.contextWindow,
+			liveModel.capabilitySources?.contextWindow,
+			positiveInteger(pricing?.value.context_length, pricing?.value.max_input_tokens),
+			sheetSource(pricing, "contextWindow"),
+			vendor?.contextWindow,
+			catalog?.contextWindow,
+			catalogCapabilitySource,
 		);
-		const maxTokens = positiveInteger(
-			pricing?.value.max_output_tokens,
-			parameters?.value.max_output_tokens,
-			pricing?.value.max_tokens,
-			fallback?.maxTokens,
+		const output = selectNumber(
+			liveModel.maxTokens,
+			liveModel.capabilitySources?.maxTokens,
+			positiveInteger(pricing?.value.max_output_tokens, parameters?.value.max_output_tokens, pricing?.value.max_tokens),
+			positiveInteger(pricing?.value.max_output_tokens, pricing?.value.max_tokens)
+				? sheetSource(pricing, "maxTokens")
+				: sheetSource(parameters, "maxTokens"),
+			vendor?.maxTokens,
+			catalog?.maxTokens,
+			catalogCapabilitySource,
 		);
 
-		// Withhold only when neither Bifrost nor OMP's bundled model catalog nor a
-		// narrow verified model hint can establish safe limits. No generic 128K/8K
-		// guessed envelope is reintroduced.
-		if (!contextWindow || !maxTokens) {
+		if (!context.value || !output.value) {
+			const missing = [!context.value ? "context limit" : undefined, !output.value ? "output limit" : undefined]
+				.filter((value): value is string => Boolean(value));
 			diagnostics.push({
 				reference,
 				liveModelId: liveModel.id,
+				resolution: liveResolution.kind,
 				pricingKey: pricing?.key,
 				parametersKey: parameters?.key,
-				fallbackMatches: fallback?.matched,
+				fallbackMatches: unique([...(vendor?.matched ?? []), ...(catalog?.matched ?? [])]),
 				status: "missing-pricing",
+				reason: `no safe authoritative ${missing.join(" and ")} could be established; generic /v1 defaults are ignored`,
+				sources: {
+					contextWindow: context.source,
+					maxTokens: output.source,
+				},
 			});
 			continue;
 		}
 
-		const pricingModalities = pricing?.value.architecture?.input_modalities?.map(normalized) ?? [];
-		const image = pricingModalities.length
-			? pricingModalities.some((modality) => modality.includes("image"))
-			: fallback?.input.includes("image") ?? liveModel.input.includes("image");
-		const reasoning = reasoningFromParameters(parameters?.value) || fallback?.reasoning || liveModel.reasoning;
-		const thinking = thinkingFromParameters(parameters?.value) ?? fallback?.thinking ?? liveModel.thinking;
-		const inputCost = perMillion(pricing?.value.input_cost_per_token) ?? fallback?.cost.input ?? liveModel.cost.input;
-		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? fallback?.cost.output ?? liveModel.cost.output;
-		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? fallback?.cost.cacheRead ?? inputCost;
-		const cacheWrite = perMillion(pricing?.value.cache_creation_input_token_cost) ?? fallback?.cost.cacheWrite ?? inputCost;
-		const supportsTools = toolsFromParameters(parameters?.value) || fallback?.supportsTools || liveModel.supportsTools;
+		const image = selectImage(liveModel, pricing, vendor, catalog);
+		const reasoning = selectReasoning(liveModel, parameters, vendor, catalog);
+		const thinking = reasoning.value ? selectThinking(liveModel, parameters, vendor, catalog) : {};
+		const tools = selectTools(liveModel, parameters, vendor, catalog);
+		const inputCost = perMillion(pricing?.value.input_cost_per_token) ?? liveModel.cost.input ?? vendor?.cost.input ?? catalog?.cost.input ?? 0;
+		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? liveModel.cost.output ?? vendor?.cost.output ?? catalog?.cost.output ?? 0;
+		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? liveModel.cost.cacheRead ?? vendor?.cost.cacheRead ?? catalog?.cost.cacheRead ?? inputCost;
+		const cacheWrite = perMillion(pricing?.value.cache_creation_input_token_cost) ?? liveModel.cost.cacheWrite ?? vendor?.cost.cacheWrite ?? catalog?.cost.cacheWrite ?? inputCost;
+		const sources: CapabilityProvenance = {
+			contextWindow: context.source,
+			maxTokens: output.source,
+			image: image.source,
+			reasoning: reasoning.source,
+			reasoningEfforts: thinking.source,
+			tools: tools.source,
+		};
 
 		models.push({
 			...liveModel,
 			// Keep each Bifrost route member distinct. The alias synthesizer therefore
-			// cannot accidentally collapse two provider routes that serve the same model ID.
+			// cannot collapse two provider routes that serve the same underlying model.
 			id: reference,
 			name: reference,
-			contextWindow,
-			maxTokens: Math.min(contextWindow, maxTokens),
-			input: image ? ["text", "image"] : ["text"],
-			reasoning,
-			thinking: reasoning ? thinking : undefined,
-			supportsTools,
+			contextWindow: context.value,
+			maxTokens: Math.min(context.value, output.value),
+			input: image.value ? ["text", "image"] : ["text"],
+			reasoning: Boolean(reasoning.value),
+			thinking: reasoning.value ? thinking.value : undefined,
+			supportsTools: Boolean(tools.value),
+			capabilitySources: sources,
 			cost: {
 				input: inputCost,
 				output: outputCost,
@@ -312,17 +506,21 @@ export function buildRichRouteCatalog(
 			compat: {
 				...liveModel.compat,
 				supportsDeveloperRole: false,
-				supportsReasoningEffort: Boolean(thinking),
-				supportsUsageInStreaming: fallback?.supportsUsageInStreaming ?? liveModel.compat.supportsUsageInStreaming,
+				supportsReasoningEffort: Boolean(reasoning.value && thinking.value),
+				supportsUsageInStreaming: catalog?.supportsUsageInStreaming ?? liveModel.compat.supportsUsageInStreaming,
 			},
 		});
+
+		const usesCatalogFallback = Object.values(sources).some((source) => source === "fallback");
 		diagnostics.push({
 			reference,
 			liveModelId: liveModel.id,
+			resolution: liveResolution.kind,
 			pricingKey: pricing?.key,
 			parametersKey: parameters?.key,
-			fallbackMatches: !pricing || !pricing.value.architecture || !parameters ? fallback?.matched : undefined,
-			status: pricing ? "ok" : "fallback-catalog",
+			fallbackMatches: unique([...(vendor?.matched ?? []), ...(catalog?.matched ?? [])]),
+			status: usesCatalogFallback ? "fallback-catalog" : "ok",
+			sources,
 		});
 	}
 

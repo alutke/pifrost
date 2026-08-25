@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import {
@@ -16,7 +17,8 @@ import {
 import { printModelDoctor } from "./model-diagnostics.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
-const VERSION = "0.2.6";
+const PACKAGE = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8"));
+const VERSION = String(PACKAGE.version ?? "unknown");
 const OLD_CLI = fileURLToPath(new URL("./cli.mjs", import.meta.url));
 const REPO_CLI = fileURLToPath(new URL("./repo-cli.mjs", import.meta.url));
 
