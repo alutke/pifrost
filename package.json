@@ -54,7 +54,8 @@
     "cli": "node cli-entry.mjs"
   },
   "dependencies": {
-    "@oh-my-pi/pi-ai": "18.0.4"
+    "@oh-my-pi/pi-ai": "18.0.4",
+    "@oh-my-pi/pi-catalog": "18.0.4"
   },
   "devDependencies": {
     "@oh-my-pi/pi-coding-agent": "18.0.4",
