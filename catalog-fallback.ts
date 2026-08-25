@@ -85,9 +85,9 @@ function thinking(efforts: EffortName[], requiresEffort = false): Thinking {
 	};
 }
 
-// These are deliberately narrow, externally verified capability records used
-// only when richer live/Bifrost/canonical catalog data is unavailable. They are
-// not a general alias table and must not be expanded by guessing family limits.
+// Narrow vendor-backed capability records. These are intentionally separate
+// from the OMP bundled-catalog fallback so the resolver can honour the explicit
+// priority: live -> Bifrost -> canonical family -> vendor override -> fallback.
 const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 	"ox-alpha": {
 		source: "verified-model-hint",
@@ -116,6 +116,18 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsUsageInStreaming: true,
 	},
 };
+
+export function findVendorCapabilityOverride(
+	reference: string,
+	liveModelId?: string,
+): CatalogCapabilityFallback | undefined {
+	for (const value of [reference, liveModelId]) {
+		if (!value) continue;
+		const hint = VERIFIED_MODEL_HINTS[canonicalModelFamily(value)];
+		if (hint) return hint;
+	}
+	return undefined;
+}
 
 let catalogCache: CatalogModelLike[] | undefined;
 
@@ -220,10 +232,5 @@ export function findCatalogCapabilityFallback(
 		if (exactProviderFallback) return exactProviderFallback;
 	}
 
-	const familyMatches = all.filter(matchesIdentity);
-	const familyFallback = toFallback(familyMatches, "omp-catalog-family");
-	if (familyFallback) return familyFallback;
-
-	const family = canonicalModelFamily(liveModelId ?? reference);
-	return VERIFIED_MODEL_HINTS[family];
+	return toFallback(all.filter(matchesIdentity), "omp-catalog-family");
 }
