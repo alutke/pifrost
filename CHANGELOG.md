@@ -9,7 +9,7 @@
 - Extended metadata fallback to reseller/custom-provider routes such as CommandCode by conservatively intersecting matching OMP catalog surfaces when no direct provider catalog exists.
 - Preserved the safety rule for genuinely unknown models: if neither Bifrost, OMP's installed catalog nor a narrow verified hint can establish safe context and output limits, the route member remains withheld rather than receiving generic guessed values.
 - Updated the current-routing integration test to the ten Bifrost routes presently in use, including Ox Alpha and DeepSeek V4 Flash Vision Exp, and added regression coverage for alias drift, future OMP-catalog models, vision preservation, tool support and unknown-model withholding.
-- Added `@oh-my-pi/pi-ai` as a runtime dependency because its bundled model catalog is now an intentional capability source.
+- Added `@oh-my-pi/pi-catalog` as a runtime dependency for bundled model metadata; `@oh-my-pi/pi-ai` remains the runtime model type dependency.
 
 ## 0.2.5
 
