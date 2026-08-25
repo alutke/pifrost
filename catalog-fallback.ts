@@ -1,5 +1,5 @@
 import type { Model as OmpModel } from "@oh-my-pi/pi-ai";
-import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
+import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
 
 const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type EffortName = (typeof EFFORTS)[number];
@@ -51,10 +51,6 @@ function tail(value: string): string {
 	return parts[parts.length - 1] ?? normalized(value);
 }
 
-/**
- * Only aliases known to be the same capability surface belong here. Do not
- * generically strip `-free`: some free routes have materially smaller limits.
- */
 const MODEL_EQUIVALENCE = new Map<string, string>([
 	["stealth/ox-alpha", "ox-alpha"],
 	["ox-alpha", "ox-alpha"],
@@ -99,25 +95,16 @@ function routeProvider(reference: string): string | undefined {
 	return slash > 0 ? normalized(reference.slice(0, slash)) : undefined;
 }
 
-/** Map Pifrost/Bifrost provider labels to the closest OMP catalog provider. */
 export function preferredCatalogProviders(reference: string): string[] {
 	switch (routeProvider(reference)) {
-		case "opencode-go":
-			return ["opencode-go"];
+		case "opencode-go": return ["opencode-go"];
 		case "opencode":
-		case "opencode-zen":
-			return ["opencode", "opencode-zen"];
-		case "deepseek":
-			return ["deepseek"];
+		case "opencode-zen": return ["opencode", "opencode-zen"];
+		case "deepseek": return ["deepseek"];
 		case "xiaomi mimo":
-		case "xiaomi":
-			return ["xiaomi"];
-		case "openai":
-			// Pifrost's OpenAI route is intentionally Codex/ChatGPT backed. Bifrost
-			// datasheets remain the primary source; this is only a safe fallback.
-			return ["openai-codex", "openai"];
-		default:
-			return [];
+		case "xiaomi": return ["xiaomi"];
+		case "openai": return ["openai-codex", "openai"];
+		default: return [];
 	}
 }
 
@@ -130,11 +117,6 @@ function thinking(efforts: EffortName[], requiresEffort = false): Thinking {
 	};
 }
 
-/**
- * Small, versioned exception table for models whose official/current metadata can
- * appear in provider listings before Bifrost or the installed OMP catalog catches
- * up. This is deliberately not a general guessing mechanism.
- */
 const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 	"ox-alpha": {
 		source: "verified-model-hint",
@@ -244,20 +226,12 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 			cacheRead: Math.max(...costs.map((cost) => cost.cacheRead)),
 			cacheWrite: Math.max(...costs.map((cost) => cost.cacheWrite)),
 		},
-		// OMP treats supportsTools === false as the exceptional case that requires
-		// in-band tool syntax. Undefined therefore means normal/native tool support.
 		supportsTools: complete.every((model) => model.supportsTools !== false),
 		supportsReasoningEffort: Boolean(modelThinking),
 		supportsUsageInStreaming: complete.every((model) => model.compat?.supportsUsageInStreaming !== false),
 	};
 }
 
-/**
- * Resolve a route member against OMP's bundled catalog. Bifrost metadata remains
- * primary; this fills newly-added/reseller aliases that Bifrost's public feeds
- * have not indexed yet. `catalogOverride` exists for deterministic tests and
- * offline diagnostics; production callers use OMP's installed catalog.
- */
 export function findCatalogCapabilityFallback(
 	reference: string,
 	liveModelId?: string,
@@ -271,17 +245,12 @@ export function findCatalogCapabilityFallback(
 		const modelCandidates = modelIdentityCandidates(model.id);
 		return modelCandidates.some((candidate) => candidates.has(candidate)) || canonicalModelFamily(model.id) === family;
 	};
-
 	if (preferred.size) {
 		const providerMatches = all.filter((model) => preferred.has(normalized(model.provider ?? "")) && matchesIdentity(model));
 		const exactProviderFallback = toFallback(providerMatches, "omp-catalog-provider");
 		if (exactProviderFallback) return exactProviderFallback;
 	}
-
-	// For reseller/custom providers (for example CommandCode), use all matching
-	// OMP catalog surfaces and take the conservative intersection/minimum.
 	const familyFallback = toFallback(all.filter(matchesIdentity), "omp-catalog-family");
 	if (familyFallback) return familyFallback;
-
 	return VERIFIED_MODEL_HINTS[family];
 }
