@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.5
+
+- Added `pifrost repo reset --delete-remote` for a complete repository reset that removes the repo's Bifrost Virtual Key before deleting local Pifrost state and the generated `bifrost` MCP entry.
+- Remote deletion is destructive and therefore requires typing `DELETE` interactively by default; `--yes` provides an explicit non-interactive path for automation.
+- A failed remote management request leaves local repo configuration untouched. HTTP 404 is treated idempotently as an already-complete remote deletion so local cleanup can continue.
+- Added `--recover-by-name` as an explicit recovery mode for repositories whose local association was removed before the remote VK. Recovery matches only the exact canonical `omp-<repo>-mcp` name and rejects ambiguous duplicates rather than guessing.
+- Plain `pifrost repo reset` remains backward-compatible and local-only; it does not require management connectivity and continues to leave the remote VK intact.
+- Added regression coverage for confirmation/cancellation, `--yes`, exact-name recovery, ambiguous recovery refusal, 404 handling, delete failures, and Virtual Key DELETE request construction.
+
+## 0.2.4
+
+- Fixed `pifrost models doctor` and the model section of `pifrost doctor` so thinking levels match OMP's effective model metadata rather than only the raw pre-normalization cache.
+- Sparse OpenAI-compatible reasoning aliases now report OMP-derived `minimal,low,medium,high` when OMP would derive that control surface; explicit Pifrost ladders such as `high,max` remain unchanged.
+- Diagnostic output labels derived surfaces with `source=omp-derived` and explicit surfaces with `source=explicit`.
+- Added regression coverage for explicit, OMP-derived, and non-reasoning diagnostic display paths.
+
 ## 0.2.3
 
 - Fixed Bifrost MCP client discovery against the current nested management response shape, where client identity/configuration is returned under `client.config` while tools/state remain top-level.
