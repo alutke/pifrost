@@ -15,17 +15,26 @@ import {
 } from "./cli-lib.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
-const VERSION = "0.2.2";
+const VERSION = "0.2.3";
 const OLD_CLI = fileURLToPath(new URL("./cli.mjs", import.meta.url));
+const REPO_CLI = fileURLToPath(new URL("./repo-cli.mjs", import.meta.url));
 
-function delegate(args, { allowFailure = false } = {}) {
-  const result = spawnSync(process.execPath, [OLD_CLI, ...args], {
+function spawnCli(script, args, { allowFailure = false } = {}) {
+  const result = spawnSync(process.execPath, [script, ...args], {
     stdio: "inherit",
     env: process.env,
   });
   if (result.error) throw result.error;
   if (!allowFailure && result.status !== 0) process.exit(result.status ?? 1);
   return result.status ?? 1;
+}
+
+function delegate(args, options) {
+  return spawnCli(OLD_CLI, args, options);
+}
+
+function delegateRepo(args, options) {
+  return spawnCli(REPO_CLI, args, options);
 }
 
 function requireManagement() {
@@ -170,6 +179,7 @@ async function main() {
   }
   if (args[0] === "init") return init(args.slice(1));
   if (args[0] === "doctor") return doctor();
+  if (args[0] === "repo") return delegateRepo(args.slice(1));
 
   if (args[0] === "routes") {
     if (args[1] === "list") return routesList();

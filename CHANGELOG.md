@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.3
+
+- Fixed Bifrost MCP client discovery against the current nested management response shape, where client identity/configuration is returned under `client.config` while tools/state remain top-level.
+- `pifrost repo mcp list` now displays the actual MCP client names and IDs instead of blank entries.
+- `pifrost repo init` now sends the real Bifrost MCP client display name in `mcp_client_name`, preventing the `HTTP 500: failed to get MCP client: not found` failure caused by empty client names.
+- Repo MCP add/init paths now validate that a selected MCP client has a usable name before mutating a Virtual Key.
+- Preserved compatibility with older flat MCP client response shapes.
+- Added regression tests for current nested Bifrost clients, legacy flat clients, tool-name normalization, client listing, and Virtual Key MCP assignment payloads.
+
 ## 0.2.2
 
 - Fixed `pifrost routes list|diff|sync` returning zero aliases on Bifrost installations where one routing management path returns an empty `200` while the compatibility path contains the persisted rules.

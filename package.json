@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -32,6 +32,8 @@
     "cli-entry.mjs",
     "cli-lib.mjs",
     "routing-discovery.mjs",
+    "mcp-client-normalization.mjs",
+    "repo-cli.mjs",
     "README.md",
     "CHANGELOG.md",
     "NOTICE.md",
@@ -44,7 +46,7 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check routing-discovery.mjs",
+    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-cli.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "cli": "node cli-entry.mjs"
   },
