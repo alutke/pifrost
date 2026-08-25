@@ -2,14 +2,14 @@
 
 Pifrost is a native **OhMyPi 18** provider and terminal control plane for **Maxim Bifrost**.
 
-It has two jobs:
+It has two responsibilities:
 
-1. expose Bifrost routing aliases such as `omp-default`, `omp-slow`, `omp-plan`, and `omp-vision` to OMP with conservative model metadata; and
+1. expose Bifrost routing aliases such as `omp-default`, `omp-slow`, `omp-plan`, and `omp-vision` to OMP with conservative capability metadata; and
 2. configure and operate the OMP ↔ Bifrost integration from a normal terminal, including global inference credentials, OMP model roles, route synchronization, model-cache refresh, and repository-specific MCP Virtual Keys.
 
-Pifrost is based on [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam/pi-bifrost-provider), but uses the current OMP 18 `pi.registerProvider(name, config)` API rather than the legacy Pi compatibility layer.
+Pifrost is derived from [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam/pi-bifrost-provider), but uses the current OMP 18 native provider API.
 
-> **Important for Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS protects dashboard/admin API calls with the configured **admin username and password over HTTP Basic auth**. Pifrost 0.2.1 supports that directly. Enterprise scoped API keys remain supported as Bearer auth.
+> **Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS management endpoints use the configured dashboard/admin username and password over HTTP Basic auth. Pifrost supports OSS Basic auth and Enterprise Bearer/scoped-key auth separately.
 
 ---
 
@@ -18,18 +18,16 @@ Pifrost is based on [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam/pi-
 - [Architecture](#architecture)
 - [Requirements](#requirements)
 - [Installation and upgrade](#installation-and-upgrade)
-- [Quick start — Bifrost OSS](#quick-start--bifrost-oss)
-- [Quick start — Bifrost Enterprise](#quick-start--bifrost-enterprise)
-- [Credential and security model](#credential-and-security-model)
+- [First-time setup](#first-time-setup)
 - [Global configuration](#global-configuration)
 - [OMP configuration](#omp-configuration)
 - [Routing aliases](#routing-aliases)
 - [Model metadata and startup cache](#model-metadata-and-startup-cache)
 - [Repository-specific MCP](#repository-specific-mcp)
+- [Repository reset and cleanup](#repository-reset-and-cleanup)
+- [Credential and security model](#credential-and-security-model)
 - [CLI reference](#cli-reference)
-- [OMP slash commands](#omp-slash-commands)
-- [Configuration files and precedence](#configuration-files-and-precedence)
-- [Migration from Pifrost 0.2.0](#migration-from-pifrost-020)
+- [Configuration files](#configuration-files)
 - [Troubleshooting](#troubleshooting)
 - [Development](#development)
 
@@ -57,11 +55,11 @@ Bifrost /v1
  │
  ├─ routing rules
  ├─ provider fallback
- ├─ provider keys
- └─ model providers
+ ├─ provider credentials
+ └─ physical model providers
 ```
 
-Management is a separate control-plane path:
+The management/control-plane path is separate:
 
 ```text
 pifrost CLI
@@ -80,7 +78,7 @@ Bifrost /api/*
  └─ MCP client metadata
 ```
 
-Repository-specific MCP is separate again:
+Repository MCP access is separate again:
 
 ```text
 <repo>/.omp/mcp.json
@@ -89,17 +87,17 @@ Repository-specific MCP is separate again:
  ▼
 Pifrost local secret store
  │
- │ dedicated repo MCP Virtual Key
+ │ dedicated repository MCP Virtual Key
  ▼
 Bifrost /mcp
  │
  └─ only MCP clients/tools allowed on that repo VK
 ```
 
-The intended separation is therefore:
+The intended identity separation is:
 
 ```text
-Global LLM access     -> global inference VK
+Global LLM inference  -> global inference VK
 Bifrost administration -> OSS admin Basic auth OR Enterprise API key
 Repository MCP access -> one dedicated MCP VK per repository
 ```
@@ -110,7 +108,7 @@ Do not reuse a repository MCP VK as the global inference VK.
 
 ## Why Pifrost derives alias metadata
 
-A Bifrost routing rule can expose a logical model such as:
+A Bifrost route may expose a logical model such as:
 
 ```text
 omp-slow
@@ -119,29 +117,38 @@ omp-slow
   -> deepseek/deepseek-v4-pro
 ```
 
-OMP sees only `bifrost/omp-slow`. Without additional metadata it cannot know the safe context window, maximum output, image support, or controllable reasoning levels of every member of the fallback chain.
+OMP only sees `bifrost/omp-slow`. Pifrost therefore calculates a conservative capability envelope across every route member:
 
-Pifrost calculates a conservative alias capability envelope:
-
-- `contextWindow` = minimum safe context window across every route member
-- `maxTokens` = minimum safe output limit across every route member
-- image input = enabled only when every route member supports images
-- reasoning = enabled only when every route member supports reasoning
-- reasoning efforts = intersection of published effort levels
-- tool support = true only when every route member advertises tool support
+- `contextWindow` = minimum safe context window across the chain
+- `maxTokens` = minimum safe output limit
+- image input = enabled only when every member supports images
+- reasoning = enabled only when every member supports reasoning
+- explicit thinking efforts = intersection of published effort levels
+- tool support = true only when every member advertises tool support
 - displayed cost = conservative maximum across route members
 
-If a configured route member cannot be resolved safely, Pifrost withholds the alias instead of publishing guessed metadata.
+If a route member cannot be resolved safely, Pifrost withholds the alias instead of fabricating metadata.
 
-### Metadata sources
+### Effective thinking display
 
-Pifrost separates live availability from capability metadata:
+Pifrost stores the pre-normalization provider catalog. OMP 18 may subsequently derive a thinking-control surface for sparse reasoning models. `pifrost models doctor` and `pifrost doctor` report the **OMP-effective** result:
 
-1. authenticated Bifrost `/v1/models` determines which physical models are visible to the global inference identity;
-2. `https://getbifrost.ai/datasheet` supplies context, output, modality and pricing metadata; and
-3. `https://getbifrost.ai/datasheet/model-parameters` supplies parameter/tool/reasoning metadata when published.
+```text
+source=explicit     -> Pifrost published the effort ladder directly
+source=omp-derived  -> OMP derives the effective ladder from the sparse model metadata
+```
 
-The public model-parameters feed is not complete for every model. Missing capabilities are treated conservatively.
+For example, a sparse OpenAI-compatible reasoning alias can appear as:
+
+```text
+thinking=minimal,low,medium,high source=omp-derived
+```
+
+while a route with a known explicit intersection may show:
+
+```text
+thinking=high,max source=explicit
+```
 
 ---
 
@@ -150,52 +157,26 @@ The public model-parameters feed is not complete for every model. Missing capabi
 - Node.js **22.19 or later**
 - OhMyPi **18.0.4 or later** in the 18.x line
 - Maxim Bifrost with OpenAI-compatible Chat Completions enabled
-- a Bifrost inference API/Bearer credential if inference auth is enabled
-- a Bifrost global inference Virtual Key with access to the physical models used by your `omp-*` routes
-- outbound HTTPS access to `getbifrost.ai` when refreshing capability metadata
+- a Bifrost inference API/Bearer credential when inference auth is enabled
+- a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
+- outbound HTTPS access to `getbifrost.ai` when refreshing public capability metadata
 
-For route synchronization and repo MCP automation, Pifrost also needs management authentication:
+For route synchronization and repository MCP automation, Pifrost also needs management authentication:
 
-- **Bifrost OSS:** the configured dashboard/admin username and password
+- **Bifrost OSS:** dashboard/admin username and password
 - **Bifrost Enterprise:** optionally, a scoped management API key
 
-### Bifrost OSS admin authentication
+### Transport-security warning
 
-Bifrost OSS's own API Keys page states that dashboard and admin API calls use Basic auth with the configured admin credentials. The corresponding Bifrost configuration is under:
+HTTP Basic auth is encoding, not encryption. If Bifrost is exposed over plain `http://`, the admin credential is recoverable by an observer who can inspect that traffic.
 
-```json
-{
-  "governance": {
-    "auth_config": {
-      "admin_username": "env.BIFROST_ADMIN_USERNAME",
-      "admin_password": "env.BIFROST_ADMIN_PASSWORD",
-      "is_enabled": true
-    }
-  }
-}
-```
-
-Those are the credentials Pifrost asks for in OSS mode.
-
-### Transport security warning
-
-HTTP Basic auth is **encoding, not encryption**. On an unencrypted `http://` connection, the admin username/password travel across the network in a recoverable form.
-
-Use one of the following:
-
-- Bifrost on localhost;
-- a trusted private/LAN network whose risk you explicitly accept; or preferably
-- HTTPS/TLS in front of Bifrost.
-
-Pifrost never sends the management credentials to an LLM provider, but network transport security remains your responsibility.
+Prefer localhost, a tightly controlled private network, or TLS/HTTPS in front of Bifrost.
 
 ---
 
 ## Installation and upgrade
 
-### Recommended installation
-
-Install the terminal CLI globally, then let it install/update the OMP extension:
+### Install the terminal CLI
 
 ```bash
 npm install --global github:alutke/pifrost
@@ -206,10 +187,10 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.2.1
+0.2.5
 ```
 
-Bun is also supported:
+Bun can also install the package globally:
 
 ```bash
 bun add --global github:alutke/pifrost
@@ -217,48 +198,29 @@ hash -r
 pifrost --version
 ```
 
-### Install the OMP extension only
+### Install/update the OMP extension
 
 ```bash
-omp install github:alutke/pifrost
+omp install --force github:alutke/pifrost
 ```
 
-The standalone `pifrost` shell command is available only when the package itself is on `PATH`.
-
-### Upgrade
+### Normal upgrade sequence
 
 ```bash
 npm install --global github:alutke/pifrost
 hash -r
 omp install --force github:alutke/pifrost
 pifrost --version
-```
-
-Then validate:
-
-```bash
 pifrost doctor
 ```
 
 ---
 
-## Quick start — Bifrost OSS
+## First-time setup
 
-This is the normal path for the open-source Bifrost build.
+### Bifrost OSS
 
-### 1. Confirm Bifrost dashboard security exists
-
-In Bifrost, open:
-
-```text
-Settings -> Security
-```
-
-Ensure an admin username/password is configured. These are also the credentials used to sign in to the protected dashboard/admin API.
-
-You do **not** need to create a scoped API key. The OSS API Keys page shows scoped keys as an Enterprise feature.
-
-### 2. Run Pifrost setup
+Run:
 
 ```bash
 pifrost init
@@ -270,13 +232,13 @@ The wizard asks for:
 Bifrost URL
 Inference API/Bearer key
 Global inference Virtual Key
-Configure management auth?                 -> Yes
-Management auth mode                       -> basic
+Configure management auth? -> Yes
+Management auth mode        -> basic
 Bifrost admin username
 Bifrost admin password
 ```
 
-For example, a Bifrost URL may be:
+Example Bifrost URL:
 
 ```text
 http://192.168.1.221:8180/v1
@@ -284,61 +246,18 @@ http://192.168.1.221:8180/v1
 
 Pifrost then:
 
-1. installs/updates the Pifrost OMP extension;
-2. tests `/v1/models` using the inference credentials;
-3. tests the management API using HTTP Basic auth;
-4. stores the credentials under `~/.config/pifrost/`;
-5. configures OMP's Bifrost model roles;
-6. reads the live `omp-*` routing rules from Bifrost;
+1. installs/updates the OMP extension;
+2. validates `/v1/models` with the inference identity;
+3. validates the management API using Basic auth;
+4. stores durable configuration under `~/.config/pifrost/`;
+5. applies the recommended OMP settings;
+6. reads live `omp-*` routing rules;
 7. writes `~/.omp/agent/pifrost.aliases.json`; and
-8. performs a network-backed model refresh to seed the last-known-good startup catalog.
+8. performs a network-backed model refresh to seed the startup catalog.
 
-### 3. Verify
+### Bifrost Enterprise
 
-```bash
-pifrost global status
-pifrost routes diff
-pifrost models doctor
-```
-
-A healthy global status should include:
-
-```text
-Management auth:        basic (OSS admin credentials)
-Admin username:         set
-Admin password:         set
-Management connection:  OK
-```
-
-### 4. Configure a repository for MCP
-
-From inside the repository:
-
-```bash
-cd ~/workspace/my-project
-pifrost repo init
-```
-
-Pifrost lists the MCP clients configured in Bifrost, lets you select clients/tools, creates or updates a dedicated repo MCP Virtual Key, writes `.omp/mcp.json`, stores the raw key outside the repository, and tests `/mcp`.
-
----
-
-## Quick start — Bifrost Enterprise
-
-Enterprise deployments can use a scoped management API key instead of admin Basic auth.
-
-```bash
-pifrost init
-```
-
-Choose:
-
-```text
-Management auth mode -> bearer
-Enterprise scoped management API key -> <key>
-```
-
-Or configure non-interactively:
+Use Bearer/scoped management auth:
 
 ```bash
 pifrost global setup \
@@ -350,148 +269,21 @@ pifrost global setup \
   --yes
 ```
 
-The 0.2.0 `managementApiKey` storage format remains supported and is interpreted as Bearer auth automatically.
-
----
-
-## Credential and security model
-
-Pifrost separates four credential classes.
-
-### 1. Inference API/Bearer key
-
-Used by the OMP provider to authenticate to Bifrost's inference API:
-
-```text
-Authorization: Bearer <inference API key>
-```
-
-This is stored as `inferenceApiKey` in Pifrost's secret store.
-
-### 2. Global inference Virtual Key
-
-Used for Bifrost model/provider governance:
-
-```text
-x-bf-vk: <global inference VK>
-```
-
-This is stored as `inferenceVirtualKey`.
-
-### 3. Management authentication
-
-#### OSS
-
-```text
-Authorization: Basic base64(admin_username:admin_password)
-```
-
-Stored as:
-
-```json
-{
-  "managementAdminUsername": "...",
-  "managementAdminPassword": "..."
-}
-```
-
-The non-secret config records:
-
-```json
-{
-  "bifrost": {
-    "managementAuthMode": "basic"
-  }
-}
-```
-
-#### Enterprise
-
-```text
-Authorization: Bearer <scoped management API key>
-```
-
-Stored as:
-
-```json
-{
-  "managementApiKey": "..."
-}
-```
-
-with:
-
-```json
-{
-  "bifrost": {
-    "managementAuthMode": "bearer"
-  }
-}
-```
-
-Management credentials are used only by the **standalone Pifrost CLI**. `config-store.ts` intentionally exposes only inference URL/API-key/Virtual-Key data to the OMP provider extension.
-
-### 4. Repository MCP Virtual Keys
-
-Each repository gets an independent Bifrost Virtual Key, for example:
-
-```text
-omp-homelab-mcp
-omp-dockeddeals-mcp
-```
-
-Pifrost creates repo keys without provider configurations and with explicit `mcp_configs`, so they are intended for narrow MCP access rather than global inference.
-
-### Local storage
-
-Pifrost stores configuration in:
-
-```text
-~/.config/pifrost/config.json
-~/.config/pifrost/secrets.json
-```
-
-Both files are written with mode `0600`; the directory is created privately.
-
-`0600` prevents other ordinary users on the same Unix host from reading the file. It is **not encryption at rest**. If your host threat model requires encrypted credential storage, prefer environment variables supplied by your secret manager rather than persistent Pifrost secrets.
-
-### Never commit repo secrets
-
-Generated repo configuration contains command indirection rather than a secret:
-
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
-  "mcpServers": {
-    "bifrost": {
-      "type": "http",
-      "url": "http://bifrost.lan:8180/mcp",
-      "timeout": 120000,
-      "headers": {
-        "x-bf-vk": "!pifrost secret repo-mcp --id myrepo-a1b2c3d4e5"
-      }
-    }
-  }
-}
-```
-
-OMP executes the `!pifrost secret ...` command locally and uses stdout as the header value. The raw repo VK therefore does not need to be present in the repository or a project `.env` file.
-
 ---
 
 ## Global configuration
 
-### Interactive setup
+### Interactive
 
 ```bash
 pifrost global setup
 ```
 
-The setup is safe to rerun. Existing secrets are not displayed; the wizard asks whether to keep them.
+Existing secrets are not printed. The setup can be rerun safely.
 
-### OSS non-interactive setup
+### OSS non-interactive
 
-Prefer environment variables for passwords in automation so the password does not appear in shell history or the process command line:
+Prefer environment variables for admin credentials in automation:
 
 ```bash
 export BIFROST_ADMIN_USERNAME='admin'
@@ -505,65 +297,48 @@ pifrost global setup \
   --yes
 ```
 
-Supported explicit flags are:
+Relevant flags:
 
 ```text
---management-auth basic
+--url <url>
+--api-key <key>
+--virtual-key <key>
+--management-auth <basic|bearer>
 --management-username <username>
 --management-password <password>
+--management-key <enterprise-key>
+--skip-omp
+--skip-test
+--yes
 ```
 
-`--management-password` exists for scripting, but interactive input or a secret-provided environment variable is safer than putting a password in shell history.
-
-### Enterprise non-interactive setup
-
-```bash
-pifrost global setup \
-  --url 'https://bifrost.example.com/v1' \
-  --api-key "$BIFROST_API_KEY" \
-  --virtual-key "$BIFROST_VIRTUAL_KEY" \
-  --management-auth bearer \
-  --management-key "$BIFROST_MANAGEMENT_API_KEY" \
-  --yes
-```
-
-### Skip selected setup actions
-
-```bash
-pifrost global setup --skip-test
-pifrost global setup --skip-omp
-```
-
-Use `--skip-test` only when the endpoint is temporarily unavailable or you are deliberately staging configuration. Normal setup should validate credentials immediately.
-
-### Status
+### Verify
 
 ```bash
 pifrost global status
 ```
 
-Checks:
+A healthy OSS setup includes:
 
-- config directory
-- Bifrost URL
-- inference credentials
-- management auth mode
-- inference connectivity
-- management API connectivity
-- OMP availability
-- alias manifest presence
+```text
+Inference connection:   OK (... models)
+Management auth:        basic (OSS admin credentials)
+Admin username:         set
+Admin password:         set
+Management connection:  OK
+```
 
 ---
 
 ## OMP configuration
 
-Pifrost configures OMP using OMP's own schema-aware CLI rather than rewriting YAML directly:
+Apply the recommended OMP settings with:
 
 ```bash
 pifrost global configure-omp
 ```
 
-It backs up the existing global OMP config first and sets:
+Pifrost uses OMP's schema-aware CLI and backs up the previous global config. The effective settings are equivalent to:
 
 ```yaml
 modelProviderOrder:
@@ -592,7 +367,7 @@ task:
   enableLsp: true
 ```
 
-`retry.modelFallback` must remain `false` when Bifrost owns provider/model fallback. Otherwise OMP and Bifrost can both retry through separate chains.
+`retry.modelFallback` should remain `false` when Bifrost owns provider/model fallback.
 
 ---
 
@@ -604,21 +379,22 @@ task:
 pifrost routes list
 ```
 
-This reads enabled Bifrost routing rules and prints their physical chain.
+### Diagnose Bifrost routing discovery
 
-Pifrost tries the current endpoint first:
+```bash
+pifrost routes diagnose
+```
+
+Pifrost probes both routing management surfaces because Bifrost versions/installations can expose different compatibility behavior:
 
 ```text
 /api/routing/rules
-```
-
-and falls back to the older endpoint used by earlier Bifrost versions:
-
-```text
 /api/governance/routing-rules
 ```
 
-### Compare live Bifrost with the local manifest
+The diagnostic reports response shape, raw rule count, derived alias count, and rules that are not `omp-*` aliases.
+
+### Compare live routes with the local manifest
 
 ```bash
 pifrost routes diff
@@ -626,11 +402,13 @@ pifrost routes diff
 
 Exit status:
 
-- `0` = routes match
-- `2` = differences found
-- `1` = operational/configuration error
+```text
+0 = in sync
+2 = differences found
+1 = operational/configuration error
+```
 
-### Synchronize routes
+### Synchronize
 
 ```bash
 pifrost routes sync
@@ -638,43 +416,41 @@ pifrost routes sync
 
 This:
 
-1. reads live `omp-*` routing rules from Bifrost;
-2. derives the route chains;
-3. backs up the previous manifest;
+1. reads the live enabled Bifrost routing rules;
+2. derives the `omp-*` chains;
+3. backs up the old manifest;
 4. writes `~/.omp/agent/pifrost.aliases.json`; and
 5. refreshes the model catalog.
 
-Skip the final refresh when desired:
+Skip the final model refresh when required:
 
 ```bash
 pifrost routes sync --no-refresh
 ```
 
-Pifrost does not modify the Bifrost routing rules themselves. Bifrost remains the source of truth.
+Pifrost does not modify the Bifrost routing rules themselves.
 
 ---
 
 ## Model metadata and startup cache
 
-Pifrost keeps a non-secret last-known-good catalog at:
+The non-secret last-known-good catalog is stored at:
 
 ```text
 ~/.omp/agent/pifrost.catalog.json
 ```
 
-The cache contains model metadata and alias diagnostics only. It does not store any inference or management credential.
-
-Cache identity is bound to:
+Its identity is bound to:
 
 - normalized Bifrost URL
-- SHA-256 fingerprint of the global inference Virtual Key
-- SHA-256 fingerprint of the alias manifest
+- a one-way fingerprint of the global inference VK
+- a fingerprint of the alias manifest
 
-Changing any of those invalidates the cache.
+Changing one of those invalidates the cache.
 
-### Why the local catalog exists
+### Why it exists
 
-Without the synchronous local catalog, OMP can start before dynamic Bifrost discovery finishes and initially report `no-model`. The cached catalog lets the extension register models immediately, while live discovery can happen outside the interactive startup critical path.
+Without a synchronous local catalog, OMP can start before network-backed Bifrost discovery finishes and initially show `no-model`. The local catalog allows aliases to register immediately at startup.
 
 ### Refresh
 
@@ -682,7 +458,7 @@ Without the synchronous local catalog, OMP can start before dynamic Bifrost disc
 pifrost models refresh --force
 ```
 
-Equivalent low-level OMP form:
+Equivalent low-level form:
 
 ```bash
 PIFROST_FORCE_REFRESH=1 omp models refresh
@@ -694,26 +470,30 @@ PIFROST_FORCE_REFRESH=1 omp models refresh
 pifrost models doctor
 ```
 
-The report includes context, max output, thinking levels, image support, and unresolved route members.
-
-Default cache behavior:
-
-- refresh due after about six hours
-- maximum last-known-good age: 30 days
-
-Advanced environment options:
-
-```text
-PIFROST_CACHE_FILE
-PIFROST_REFRESH_INTERVAL_MS
-PIFROST_FORCE_REFRESH
-```
+The report includes context, maximum output, effective thinking levels, image support, and the origin of the thinking ladder.
 
 ---
 
 ## Repository-specific MCP
 
-### Initialize the current repository
+Each repository gets its own Bifrost MCP Virtual Key and only the MCP clients/tools explicitly assigned to that key.
+
+### List available Bifrost MCP clients
+
+From any configured repo:
+
+```bash
+pifrost repo mcp list
+```
+
+Example:
+
+```text
+n8n      state=connected  tools=34
+railway  state=connected  tools=30
+```
+
+### Interactive initialization
 
 ```bash
 cd /path/to/repo
@@ -722,51 +502,77 @@ pifrost repo init
 
 Pifrost:
 
-1. identifies the Git repository using its root and sanitized `origin` identity;
+1. identifies the Git root and sanitized `origin` identity;
 2. creates a stable local repo ID;
-3. lists Bifrost MCP clients;
+3. lists the current Bifrost MCP clients;
 4. asks which clients/tools should be exposed;
 5. creates or updates `omp-<repo>-mcp` in Bifrost;
-6. stores the raw repo VK in `~/.config/pifrost/secrets.json`;
+6. stores the raw repo VK only in `~/.config/pifrost/secrets.json`;
 7. writes/merges `<repo>/.omp/mcp.json`; and
 8. tests Bifrost `/mcp` with the repo key.
 
-### Non-interactive repo initialization
+### Non-interactive initialization
+
+One client with all its exposed tools:
 
 ```bash
-pifrost repo init --clients home-assistant --tools '*'
+pifrost repo init --clients railway --tools '*'
 ```
 
 Multiple clients:
 
 ```bash
-pifrost repo init --clients home-assistant,railway --tools '*'
+pifrost repo init --clients n8n,railway --tools '*'
 ```
 
-For interactive setup, you can specify a different tool list per selected client.
+### Generated repo config
 
-### Inspect repo status
+Pifrost does not put the raw VK in the repository. It generates command indirection:
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
+  "mcpServers": {
+    "bifrost": {
+      "type": "http",
+      "url": "http://bifrost.lan:8180/mcp",
+      "timeout": 120000,
+      "headers": {
+        "x-bf-vk": "!pifrost secret repo-mcp --id myrepo-a1b2c3d4e5"
+      }
+    }
+  }
+}
+```
+
+OMP executes the local `!pifrost secret ...` command and uses stdout as the MCP header value.
+
+### Status
 
 ```bash
 pifrost repo status
 ```
 
-### List Bifrost MCP clients
+A healthy repo reports:
 
-```bash
-pifrost repo mcp list
+```text
+Virtual Key id:   <uuid>
+Virtual Key name: omp-<repo>-mcp
+Repo secret:      set
+MCP initialize:   HTTP 200 OK
+MCP clients:      railway[*]
 ```
 
-### Add a client to this repo VK
+### Add a client
 
 ```bash
 pifrost repo mcp add railway --tools '*'
 ```
 
-Or restrict tools:
+Restrict tools when appropriate:
 
 ```bash
-pifrost repo mcp add railway --tools project_list,service_list,deployment_logs
+pifrost repo mcp add railway --tools list-projects,list-services,get-logs
 ```
 
 ### Remove a client
@@ -781,21 +587,150 @@ pifrost repo mcp remove railway
 pifrost repo rotate-key
 ```
 
-Pifrost updates the local secret store with the returned raw key.
+Rotation is explicit. Pifrost does not silently rotate an existing key just because its raw value is unavailable locally.
 
-Pifrost deliberately does **not** silently rotate a pre-existing Virtual Key just because its raw value is unavailable locally. Rotation is an explicit security-sensitive action.
+---
 
-### Reset local repo integration
+## Repository reset and cleanup
+
+Pifrost 0.2.5 supports both a **local-only reset** and a **full reset including the Bifrost Virtual Key**.
+
+### Local-only reset
 
 ```bash
 pifrost repo reset
 ```
 
-This removes Pifrost's local repo association and the generated `bifrost` entry from `.omp/mcp.json`. It intentionally leaves the Bifrost Virtual Key intact so deletion remains an explicit server-side action.
+This is backward-compatible behavior. It:
 
-### Tool safety
+- removes the Pifrost repo association from the local config/secret store; and
+- removes only the generated `bifrost` entry from `<repo>/.omp/mcp.json`.
 
-A repository VK should expose only the MCP clients/tools needed by that repository. If OMP is running with permissive/yolo approvals, every exposed tool becomes more consequential. Keep the Bifrost MCP allow-list narrow.
+It deliberately leaves the Bifrost Virtual Key intact.
+
+### Full reset including the remote Bifrost VK
+
+```bash
+pifrost repo reset --delete-remote
+```
+
+Pifrost displays the exact stored VK name/id and requires:
+
+```text
+Type DELETE to permanently remove this Virtual Key:
+```
+
+Only after remote deletion succeeds does Pifrost remove local state.
+
+This ordering is deliberate: a management/API failure cannot silently remove the local association and orphan the remote key again.
+
+### Non-interactive full reset
+
+For deliberate automation:
+
+```bash
+pifrost repo reset --delete-remote --yes
+```
+
+`--yes` bypasses the interactive `DELETE` prompt. It should be treated as a destructive flag.
+
+### Recovery when local state was already removed
+
+If an older/manual cleanup removed the local repo association before deleting the remote Pifrost VK, the normal full reset cannot know the remote id. Pifrost will refuse to guess:
+
+```text
+Current repo has no stored Bifrost Virtual Key id
+```
+
+Use the explicit recovery mode:
+
+```bash
+pifrost repo reset --delete-remote --recover-by-name
+```
+
+or, for scripted cleanup:
+
+```bash
+pifrost repo reset --delete-remote --recover-by-name --yes
+```
+
+Recovery is intentionally narrow:
+
+- it calculates the canonical key name `omp-<repo>-mcp`;
+- it accepts only an **exact** name match;
+- it does not delete fuzzy/near matches such as `omp-<repo>-mcp-old`;
+- it refuses deletion when duplicate exact names make the target ambiguous; and
+- if the exact key is already absent, that is treated as the desired remote end-state and local cleanup can proceed.
+
+### HTTP 404 behavior
+
+If Bifrost returns `404 Virtual key not found` during a stored-id reset, Pifrost treats that as idempotent success: the remote key is already absent, so local cleanup continues.
+
+### Other management errors
+
+For authentication, transport, server, or validation failures, Pifrost stops and leaves the local repo state/config untouched.
+
+---
+
+## Credential and security model
+
+Pifrost separates four credential classes.
+
+### Inference API/Bearer key
+
+Used by the OMP provider:
+
+```text
+Authorization: Bearer <inference API key>
+```
+
+### Global inference Virtual Key
+
+Used for Bifrost inference governance:
+
+```text
+x-bf-vk: <global inference VK>
+```
+
+### Management authentication
+
+Bifrost OSS:
+
+```text
+Authorization: Basic base64(admin_username:admin_password)
+```
+
+Bifrost Enterprise:
+
+```text
+Authorization: Bearer <scoped management API key>
+```
+
+Management credentials are standalone-CLI-only and are not exposed to the OMP provider runtime.
+
+### Repository MCP Virtual Keys
+
+Each repo gets a separate key such as:
+
+```text
+omp-homelab-mcp
+omp-dockeddeals-mcp
+```
+
+Repo keys are created with MCP assignments and no broad provider configuration.
+
+### Local storage permissions
+
+Pifrost writes:
+
+```text
+~/.config/pifrost/config.json
+~/.config/pifrost/secrets.json
+```
+
+with mode `0600` and creates the configuration directory privately.
+
+`0600` is filesystem access control, not encryption at rest.
 
 ---
 
@@ -803,59 +738,42 @@ A repository VK should expose only the MCP clients/tools needed by that reposito
 
 | Command | Purpose |
 | --- | --- |
-| `pifrost init` | Install/update the OMP extension and perform guided first-time setup |
+| `pifrost init` | Guided first-time setup and OMP extension install/update |
 | `pifrost global setup` | Configure inference and management credentials |
-| `pifrost global status` | Validate global config and live connectivity |
-| `pifrost global configure-omp` | Apply the recommended OMP provider/model-role settings |
-| `pifrost routes list` | Show live Bifrost `omp-*` route chains |
-| `pifrost routes diff` | Compare live routes with the local Pifrost manifest |
-| `pifrost routes sync` | Regenerate the local alias manifest from Bifrost |
-| `pifrost models refresh --force` | Perform live model/datasheet discovery and refresh the startup cache |
-| `pifrost models doctor` | Inspect the current local model catalog and unresolved members |
-| `pifrost repo init` | Create/update repo-specific MCP governance and OMP config |
-| `pifrost repo status` | Validate the current repo's MCP integration |
-| `pifrost repo mcp list` | List MCP clients visible through the Bifrost management API |
-| `pifrost repo mcp add <client>` | Add an MCP client/tool allow-list to the current repo VK |
-| `pifrost repo mcp remove <client>` | Remove an MCP client from the current repo VK |
+| `pifrost global status` | Validate global config and connectivity |
+| `pifrost global configure-omp` | Apply recommended OMP provider/model-role settings |
+| `pifrost routes list` | Show live Bifrost `omp-*` routes |
+| `pifrost routes diagnose` | Show routing endpoint shapes/counts and alias derivation |
+| `pifrost routes diff` | Compare live routes with the local alias manifest |
+| `pifrost routes sync` | Rebuild the local alias manifest and refresh models |
+| `pifrost models refresh --force` | Perform live model/datasheet discovery |
+| `pifrost models doctor` | Inspect effective cached model capabilities |
+| `pifrost repo init` | Create/update repo-specific MCP governance and config |
+| `pifrost repo status` | Validate the current repo MCP integration |
+| `pifrost repo mcp list` | List Bifrost MCP clients/tools |
+| `pifrost repo mcp add <client>` | Add an MCP client/tool allow-list to the repo VK |
+| `pifrost repo mcp remove <client>` | Remove an MCP client from the repo VK |
 | `pifrost repo rotate-key` | Explicitly rotate the repo MCP VK |
-| `pifrost repo reset` | Remove local repo integration without deleting the server VK |
-| `pifrost doctor` | Run global, model and current-repo diagnostics |
-| `pifrost secret repo-mcp --id <id>` | Internal secret resolver used by OMP `!command` MCP headers |
+| `pifrost repo reset` | Remove local repo integration only |
+| `pifrost repo reset --delete-remote` | Delete the stored remote repo VK, then local integration |
+| `pifrost repo reset --delete-remote --recover-by-name` | Recover an orphaned canonical repo VK by exact name, then delete it |
+| `pifrost doctor` | Run global, model, current-repo, and routing diagnostics |
+| `pifrost secret repo-mcp --id <id>` | Internal repo-key resolver used by OMP MCP headers |
 | `pifrost --version` | Show installed Pifrost version |
 
-### Global setup flags
+### Repo-reset flags
 
 ```text
---url <url>
---api-key <key>
---virtual-key <key>
---management-auth <basic|bearer>
---management-username <username>
---management-password <password>
---management-key <enterprise-key>
---skip-omp
---skip-test
---yes
+--delete-remote   delete the Bifrost repo VK before local cleanup
+--recover-by-name explicitly recover an orphaned canonical repo VK by exact name
+--yes             bypass destructive confirmation (automation only)
 ```
+
+`--recover-by-name` is valid only with `--delete-remote`.
 
 ---
 
-## OMP slash commands
-
-Inside an OMP session:
-
-```text
-/pifrost doctor
-/pifrost refresh
-```
-
-`/pifrost doctor` is cache-first and reports alias diagnostics.
-
-`/pifrost refresh` performs network-backed model refresh and updates the last-known-good catalog. Restart OMP afterward if you want to guarantee that a newly changed capability envelope is the startup-selected one.
-
----
-
-## Configuration files and precedence
+## Configuration files
 
 ### Pifrost global files
 
@@ -864,43 +782,11 @@ Inside an OMP session:
 ~/.config/pifrost/secrets.json
 ```
 
-Example non-secret config:
-
-```json
-{
-  "schemaVersion": 1,
-  "bifrost": {
-    "url": "http://192.168.1.221:8180/v1",
-    "managementAuthMode": "basic"
-  },
-  "repos": {}
-}
-```
-
-Example secret structure:
-
-```json
-{
-  "schemaVersion": 1,
-  "inferenceApiKey": "<secret>",
-  "inferenceVirtualKey": "<secret>",
-  "managementAdminUsername": "<secret>",
-  "managementAdminPassword": "<secret>",
-  "repos": {
-    "repo-id": {
-      "mcpVirtualKey": "<secret>"
-    }
-  }
-}
-```
-
 ### Alias manifest
 
 ```text
 ~/.omp/agent/pifrost.aliases.json
 ```
-
-Pifrost also searches project/local override locations supported by the provider, including `PIFROST_ALIASES` and `.omp/pifrost.aliases.json`.
 
 ### Startup catalog
 
@@ -908,7 +794,7 @@ Pifrost also searches project/local override locations supported by the provider
 ~/.omp/agent/pifrost.catalog.json
 ```
 
-This file is non-secret.
+The startup catalog is non-secret.
 
 ### Repository MCP config
 
@@ -916,11 +802,9 @@ This file is non-secret.
 <repo>/.omp/mcp.json
 ```
 
-The generated Bifrost header contains command indirection, not the raw VK.
+The generated Pifrost Bifrost entry contains command indirection rather than the raw repo VK.
 
-### Inference configuration precedence
-
-For the OMP provider runtime:
+### Inference precedence
 
 ```text
 OMP CLI flag
@@ -928,7 +812,7 @@ OMP CLI flag
   -> ~/.config/pifrost store
 ```
 
-Supported inference environment variables:
+Relevant inference environment variables:
 
 ```text
 BIFROST_URL
@@ -938,9 +822,7 @@ PIFROST_ALIASES
 PIFROST_CONFIG_DIR
 ```
 
-### Management configuration precedence
-
-For the standalone Pifrost CLI:
+### Management precedence
 
 ```text
 explicit global-setup flags
@@ -957,122 +839,30 @@ BIFROST_ADMIN_PASSWORD
 BIFROST_MANAGEMENT_API_KEY
 ```
 
-If no explicit management mode is supplied:
-
-- an Enterprise management API-key environment variable implies `bearer`;
-- admin username/password environment variables imply `basic`;
-- an old stored `managementApiKey` implies `bearer` for 0.2.0 compatibility.
-
-Management credentials are never returned by `loadStoredRuntimeConfig()` and therefore are not injected into the OMP provider runtime.
-
 ---
 
-## Migration from Pifrost 0.2.0
+## Troubleshooting
 
-Pifrost 0.2.0 incorrectly presented an Enterprise scoped management API key as the general management-authentication path.
-
-Pifrost 0.2.1 corrects this.
-
-### If you use Bifrost OSS
-
-Upgrade:
+### `pifrost --version` is old
 
 ```bash
 npm install --global github:alutke/pifrost
 hash -r
 omp install --force github:alutke/pifrost
-```
-
-Then rerun:
-
-```bash
-pifrost global setup
-```
-
-Choose:
-
-```text
-Management auth mode -> basic
-```
-
-and enter the same admin username/password used for the Bifrost dashboard/admin API.
-
-### If you already stored a 0.2.0 management API key
-
-Pifrost preserves backward compatibility. A stored:
-
-```json
-{
-  "managementApiKey": "..."
-}
-```
-
-continues to resolve as Bearer management auth unless you rerun setup and choose Basic mode.
-
-### If you use Bifrost Enterprise
-
-No migration is required. Bearer/scoped API-key mode remains supported.
-
----
-
-## Troubleshooting
-
-### `pifrost --version` still shows an older release
-
-```bash
-npm install --global github:alutke/pifrost
-hash -r
-which pifrost
 pifrost --version
 ```
 
-If using Bun, inspect the Bun global bin path instead.
+### Bifrost OSS management returns 401
 
-### `Management connection: FAIL (HTTP 401...)` on Bifrost OSS
-
-Run:
+Rerun:
 
 ```bash
 pifrost global setup
 ```
 
-Choose:
-
-```text
-basic
-```
-
-and use the Bifrost dashboard/admin username and password.
-
-A direct diagnostic is:
-
-```bash
-curl -u 'ADMIN_USERNAME:ADMIN_PASSWORD' \
-  http://BIFROST_HOST:8180/api/governance/virtual-keys?limit=1\&offset=0
-```
-
-Do not paste your real password into shared logs or issue reports.
-
-If Basic auth still fails, verify Bifrost's `governance.auth_config` and that you are using the active dashboard credentials.
-
-### The Bifrost API Keys page only says “Scope Based API Keys” / Enterprise
-
-That is expected in OSS. Do not invent a management API key. Use `basic` management mode with the admin credentials.
-
-### `Management auth mode must be basic or bearer`
-
-Valid choices are:
-
-```text
-basic   -> Bifrost OSS admin username/password
-bearer  -> Bifrost Enterprise scoped API key
-```
-
-Aliases such as `oss`, `admin`, `enterprise`, and `api-key` are accepted interactively/through the CLI parser and normalized to the two canonical modes.
+Choose `basic` and use the active Bifrost dashboard/admin credentials.
 
 ### OMP starts with `no-model`
-
-Check:
 
 ```bash
 pifrost global status
@@ -1081,35 +871,19 @@ pifrost models doctor
 omp models bifrost
 ```
 
-The local `pifrost.catalog.json` should be populated so aliases can be registered synchronously at startup.
+Verify `~/.omp/agent/pifrost.catalog.json` exists and contains the aliases.
 
-### `/models` eventually works but OMP startup is initially slow
-
-Confirm you are on Pifrost 0.1.3 or newer and that the startup catalog exists:
+### Route commands show zero aliases
 
 ```bash
-ls -lh ~/.omp/agent/pifrost.catalog.json
+pifrost routes diagnose
 ```
 
-Refresh once outside the interactive UI:
+Pifrost checks both the canonical and compatibility Bifrost routing endpoints. A healthy result may show one empty endpoint and the actual rules on the other.
 
-```bash
-pifrost models refresh --force
-```
+### MCP shows `virtual key required`
 
-### `pifrost routes ...` reports management auth missing
-
-Configure management access:
-
-```bash
-pifrost global setup
-```
-
-OSS uses Basic admin credentials; Enterprise may use a scoped Bearer key.
-
-### MCP returns `virtual key required`
-
-The MCP client did not send a VK header. A Pifrost-managed repo file should contain:
+The MCP request did not contain a usable VK. A Pifrost-managed repo should contain:
 
 ```json
 "x-bf-vk": "!pifrost secret repo-mcp --id ..."
@@ -1121,9 +895,9 @@ Check:
 pifrost repo status
 ```
 
-### MCP returns `virtual key not found`
+### MCP shows `virtual key not found`
 
-The client is now sending a VK, but Bifrost does not recognize its value. Reinitialize the repo or explicitly rotate the repo key:
+The request contains a VK but Bifrost no longer recognizes the value. Reinitialize or explicitly rotate:
 
 ```bash
 pifrost repo init
@@ -1131,27 +905,39 @@ pifrost repo init
 pifrost repo rotate-key
 ```
 
-### MCP client is valid but no tools are available
+### Repo init finds an old remote key whose raw value is unavailable
 
-Check the repo's Bifrost MCP allow-list:
-
-```bash
-pifrost repo mcp list
-pifrost repo status
-```
-
-Then add the required client/tools explicitly.
-
-### Route manifest is stale
+Pifrost deliberately does not rotate it silently. If it is an obsolete repo integration and you want a clean recreation, use:
 
 ```bash
-pifrost routes diff
-pifrost routes sync
+pifrost repo reset --delete-remote --recover-by-name
+pifrost repo init --clients <client> --tools '*'
 ```
+
+For an intentionally scripted clean recreation:
+
+```bash
+pifrost repo reset --delete-remote --recover-by-name --yes
+pifrost repo init --clients railway --tools '*'
+```
+
+### `repo reset --delete-remote` says no stored VK id
+
+Local Pifrost state was probably removed earlier. If you deliberately want Pifrost to look up the exact canonical key name, add:
+
+```bash
+--recover-by-name
+```
+
+Pifrost will not use fuzzy matching and will refuse ambiguous duplicates.
+
+### Full reset fails with HTTP 500/401/etc.
+
+Pifrost intentionally leaves local repo state intact when requested remote deletion fails. Fix management connectivity/authentication and rerun the reset.
 
 ### OAuth MCP clients
 
-Pifrost manages Bifrost-side VK/tool assignment and OMP configuration. It cannot bypass upstream OAuth consent. OAuth MCP servers may still require a browser authorization flow and callback handling.
+Pifrost manages Bifrost-side VK/tool assignment and OMP configuration. It cannot bypass upstream OAuth consent. OAuth MCP servers can still require a browser authorization and callback flow.
 
 ---
 
@@ -1168,20 +954,16 @@ node scripts/validate-target-routes.mjs
 CI validates:
 
 - TypeScript compilation
-- Node syntax for the standalone CLI
+- standalone Node CLI syntax
 - unit/CLI tests
-- Bifrost public datasheet coverage
+- public Bifrost datasheet coverage
 - target OMP routing envelopes
-- loading with the real OMP 18.0.4 plugin loader
+- loading through the real OMP 18.0.4 plugin loader
 
-### Release discipline
-
-Management credentials must never be added to provider runtime configuration, model catalogs, route manifests, diagnostics, or test fixtures that could expose real values.
+Management credentials and raw VK values must never be added to provider runtime configuration, model catalogs, route manifests, diagnostics, or committed test fixtures.
 
 ---
 
 ## Attribution
 
 Pifrost is derived from `lxdlam/pi-bifrost-provider` under the MIT license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
-
-The diagnostic-command concept is inspired by `the-matt-moo/pi-bifrost`; Pifrost does not incorporate that project's prompt classification or Pi-side model-routing architecture.
