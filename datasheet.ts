@@ -1,6 +1,10 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 
 import {
+	findCatalogCapabilityFallback,
+	modelIdentityCandidates,
+} from "./catalog-fallback.ts";
+import {
 	resolveAliasReference,
 	type BifrostProviderModel,
 	type PifrostAliasConfig,
@@ -73,7 +77,8 @@ export interface RichRouteDiagnostic {
 	liveModelId?: string;
 	pricingKey?: string;
 	parametersKey?: string;
-	status: "ok" | "not-live" | "missing-pricing";
+	fallbackMatches?: string[];
+	status: "ok" | "fallback-catalog" | "not-live" | "missing-pricing";
 }
 
 export interface RichRouteCatalog {
@@ -96,23 +101,12 @@ function unique<T>(values: readonly T[]): T[] {
 }
 
 /**
- * Build the same useful identifier family Bifrost itself uses for catalog lookup:
- * exact provider-qualified form, progressively provider-stripped forms, then bare model name.
+ * Build provider-qualified, progressively stripped and known-equivalent model
+ * identifiers. Known equivalence is deliberately narrow: Pifrost never assumes
+ * every `-free` model has the same limits as its paid/base sibling.
  */
 export function modelReferenceCandidates(...values: Array<string | undefined>): string[] {
-	const candidates: string[] = [];
-	for (const raw of values) {
-		if (!raw) continue;
-		let current = normalized(raw);
-		if (!current) continue;
-		while (current) {
-			candidates.push(current);
-			const slash = current.indexOf("/");
-			if (slash < 0) break;
-			current = current.slice(slash + 1);
-		}
-	}
-	return unique(candidates);
+	return modelIdentityCandidates(...values);
 }
 
 function modelTail(value: string): string {
@@ -246,43 +240,48 @@ export function buildRichRouteCatalog(
 		}
 
 		const pricing = findDatasheetEntry(datasheets.pricing, reference, liveModel.id);
-		if (!pricing) {
-			diagnostics.push({ reference, liveModelId: liveModel.id, status: "missing-pricing" });
-			continue;
-		}
 		const parameters = findDatasheetEntry(datasheets.parameters, reference, liveModel.id);
+		const fallback = findCatalogCapabilityFallback(reference, liveModel.id);
 
 		const contextWindow = positiveInteger(
-			pricing.value.context_length,
-			pricing.value.max_input_tokens && pricing.value.max_output_tokens
-				? pricing.value.max_input_tokens + pricing.value.max_output_tokens
-				: undefined,
-			pricing.value.max_input_tokens,
+			pricing?.value.context_length,
+			// max_input_tokens is already the usable request/context ceiling. Do not
+			// add max_output_tokens on top of it.
+			pricing?.value.max_input_tokens,
+			fallback?.contextWindow,
 		);
 		const maxTokens = positiveInteger(
-			pricing.value.max_output_tokens,
+			pricing?.value.max_output_tokens,
 			parameters?.value.max_output_tokens,
-			pricing.value.max_tokens,
+			pricing?.value.max_tokens,
+			fallback?.maxTokens,
 		);
 
-		// A context envelope is the central reason Pifrost exists. Do not publish a route
-		// member if the authoritative Bifrost datasheet cannot give both limits.
+		// Withhold only when neither Bifrost nor OMP's bundled model catalog can
+		// establish safe context/output limits. This lets newly-added reseller and
+		// preview model ids work without restoring the old generic 128K/8K guess.
 		if (!contextWindow || !maxTokens) {
 			diagnostics.push({
 				reference,
 				liveModelId: liveModel.id,
-				pricingKey: pricing.key,
+				pricingKey: pricing?.key,
 				parametersKey: parameters?.key,
+				fallbackMatches: fallback?.matched,
 				status: "missing-pricing",
 			});
 			continue;
 		}
 
-		const inputModalities = pricing.value.architecture?.input_modalities?.map(normalized) ?? [];
-		const reasoning = reasoningFromParameters(parameters?.value) || liveModel.reasoning;
-		const thinking = thinkingFromParameters(parameters?.value) ?? liveModel.thinking;
-		const inputCost = perMillion(pricing.value.input_cost_per_token) ?? liveModel.cost.input;
-		const outputCost = perMillion(pricing.value.output_cost_per_token) ?? liveModel.cost.output;
+		const pricingModalities = pricing?.value.architecture?.input_modalities?.map(normalized) ?? [];
+		const image = pricingModalities.length
+			? pricingModalities.some((modality) => modality.includes("image"))
+			: fallback?.input.includes("image") ?? liveModel.input.includes("image");
+		const reasoning = reasoningFromParameters(parameters?.value) || fallback?.reasoning || liveModel.reasoning;
+		const thinking = thinkingFromParameters(parameters?.value) ?? fallback?.thinking ?? liveModel.thinking;
+		const inputCost = perMillion(pricing?.value.input_cost_per_token) ?? fallback?.cost.input ?? liveModel.cost.input;
+		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? fallback?.cost.output ?? liveModel.cost.output;
+		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? fallback?.cost.cacheRead ?? inputCost;
+		const cacheWrite = perMillion(pricing?.value.cache_creation_input_token_cost) ?? fallback?.cost.cacheWrite ?? inputCost;
 
 		models.push({
 			...liveModel,
@@ -292,30 +291,30 @@ export function buildRichRouteCatalog(
 			name: reference,
 			contextWindow,
 			maxTokens: Math.min(contextWindow, maxTokens),
-			input: inputModalities.some((modality) => modality.includes("image"))
-				? ["text", "image"]
-				: ["text"],
+			input: image ? ["text", "image"] : ["text"],
 			reasoning,
 			thinking: reasoning ? thinking : undefined,
 			supportsTools: toolsFromParameters(parameters?.value) || liveModel.supportsTools,
 			cost: {
 				input: inputCost,
 				output: outputCost,
-				cacheRead: perMillion(pricing.value.cache_read_input_token_cost) ?? inputCost,
-				cacheWrite: perMillion(pricing.value.cache_creation_input_token_cost) ?? inputCost,
+				cacheRead,
+				cacheWrite,
 			},
 			compat: {
 				...liveModel.compat,
 				supportsDeveloperRole: false,
 				supportsReasoningEffort: Boolean(thinking),
+				supportsUsageInStreaming: fallback?.supportsUsageInStreaming ?? liveModel.compat.supportsUsageInStreaming,
 			},
 		});
 		diagnostics.push({
 			reference,
 			liveModelId: liveModel.id,
-			pricingKey: pricing.key,
+			pricingKey: pricing?.key,
 			parametersKey: parameters?.key,
-			status: "ok",
+			fallbackMatches: !pricing || !pricing.value.architecture || !parameters ? fallback?.matched : undefined,
+			status: pricing ? "ok" : "fallback-catalog",
 		});
 	}
 
