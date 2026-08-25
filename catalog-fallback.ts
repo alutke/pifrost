@@ -4,16 +4,17 @@ const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type EffortName = (typeof EFFORTS)[number];
 type Thinking = NonNullable<OmpModel["thinking"]>;
 
-interface CatalogModelLike {
+export interface CatalogModelLike {
 	id: string;
 	name?: string;
 	provider?: string;
-	contextWindow?: number;
-	maxTokens?: number;
+	contextWindow?: number | null;
+	maxTokens?: number | null;
 	reasoning?: boolean;
 	thinking?: Thinking;
 	thinkingLevelMap?: Record<string, string | null | undefined>;
 	input?: string[];
+	supportsTools?: boolean;
 	cost?: {
 		input?: number;
 		output?: number;
@@ -35,6 +36,7 @@ export interface CatalogCapabilityFallback {
 	reasoning: boolean;
 	thinking?: Thinking;
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	supportsTools: boolean;
 	supportsReasoningEffort: boolean;
 	supportsUsageInStreaming: boolean;
 }
@@ -183,8 +185,8 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 	return {
 		source,
 		matched: complete.map((model) => `${model.provider ?? "unknown"}/${model.id}`),
-		contextWindow: Math.min(...complete.map((model) => model.contextWindow!)),
-		maxTokens: Math.min(...complete.map((model) => model.maxTokens!)),
+		contextWindow: Math.min(...complete.map((model) => model.contextWindow as number)),
+		maxTokens: Math.min(...complete.map((model) => model.maxTokens as number)),
 		input: image ? ["text", "image"] : ["text"],
 		reasoning,
 		thinking,
@@ -194,6 +196,9 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 			cacheRead: Math.max(...costs.map((cost) => cost.cacheRead)),
 			cacheWrite: Math.max(...costs.map((cost) => cost.cacheWrite)),
 		},
+		// OMP treats supportsTools === false as the exceptional case that requires
+		// in-band tool syntax. Undefined therefore means normal/native tool support.
+		supportsTools: complete.every((model) => model.supportsTools !== false),
 		supportsReasoningEffort: Boolean(thinking),
 		supportsUsageInStreaming: complete.every((model) => model.compat?.supportsUsageInStreaming !== false),
 	};
@@ -202,15 +207,17 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 /**
  * Resolve a route member against OMP's bundled catalog. Bifrost metadata remains
  * primary; this fills newly-added/reseller aliases that Bifrost's public feeds
- * have not indexed yet.
+ * have not indexed yet. `catalogOverride` exists for deterministic tests and
+ * offline diagnostics; production callers use OMP's installed catalog.
  */
 export function findCatalogCapabilityFallback(
 	reference: string,
 	liveModelId?: string,
+	catalogOverride?: readonly CatalogModelLike[],
 ): CatalogCapabilityFallback | undefined {
 	const candidates = new Set(modelIdentityCandidates(reference, liveModelId));
 	const family = canonicalModelFamily(liveModelId ?? reference);
-	const all = bundledCatalog();
+	const all = catalogOverride ? [...catalogOverride] : bundledCatalog();
 	const preferred = new Set(preferredCatalogProviders(reference));
 	const matchesIdentity = (model: CatalogModelLike): boolean => {
 		const modelCandidates = modelIdentityCandidates(model.id);
