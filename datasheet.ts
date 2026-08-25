@@ -1,6 +1,7 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 
 import {
+	equivalentModelId,
 	findCatalogCapabilityFallback,
 	modelIdentityCandidates,
 	type CatalogModelLike,
@@ -225,6 +226,10 @@ function routeReferences(aliasConfig: PifrostAliasConfig): string[] {
 	return unique(result);
 }
 
+function resolveLiveRouteModel(reference: string, liveModels: readonly BifrostProviderModel[]): BifrostProviderModel | undefined {
+	return resolveAliasReference(reference, liveModels) ?? liveModels.find((model) => equivalentModelId(reference, model.id));
+}
+
 export function buildRichRouteCatalog(
 	liveModels: readonly BifrostProviderModel[],
 	aliasConfig: PifrostAliasConfig,
@@ -235,7 +240,7 @@ export function buildRichRouteCatalog(
 	const diagnostics: RichRouteDiagnostic[] = [];
 
 	for (const reference of routeReferences(aliasConfig)) {
-		const liveModel = resolveAliasReference(reference, liveModels);
+		const liveModel = resolveLiveRouteModel(reference, liveModels);
 		if (!liveModel) {
 			diagnostics.push({ reference, status: "not-live" });
 			continue;
@@ -259,9 +264,9 @@ export function buildRichRouteCatalog(
 			fallback?.maxTokens,
 		);
 
-		// Withhold only when neither Bifrost nor OMP's bundled model catalog can
-		// establish safe context/output limits. This lets newly-added reseller and
-		// preview model ids work without restoring the old generic 128K/8K guess.
+		// Withhold only when neither Bifrost nor OMP's bundled model catalog nor a
+		// narrow verified model hint can establish safe limits. No generic 128K/8K
+		// guessed envelope is reintroduced.
 		if (!contextWindow || !maxTokens) {
 			diagnostics.push({
 				reference,
