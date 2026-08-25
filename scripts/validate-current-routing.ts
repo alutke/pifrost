@@ -7,24 +7,25 @@ import {
   normalizePricingDatasheet,
 } from "../pricing-normalize.ts";
 
+// This intentionally tracks the routes currently implemented in the user's
+// Bifrost instance, not an aspirational routing table. CI therefore protects
+// the exact combinations Pifrost must support today while the generic catalog
+// fallback covers other provider/model choices.
 const aliasConfig: PifrostAliasConfig = {
   includePhysicalModels: false,
   aliases: {
     "omp-advisor": [
-      "CommandCode GOAT/deepseek/deepseek-v4-flash",
-      "openai/gpt-5.6-luna",
-      "deepseek/deepseek-v4-flash",
+      "CommandCode GOAT/google/gemini-3.7-flash",
+      "deepseek/deepseek-v4-pro",
     ],
     "omp-commit": [
-      "opencode-go/mimo-v2.5",
-      "CommandCode GOAT/xiaomi/mimo-v2.5",
       "Xiaomi MIMO/mimo-v2.5",
+      "deepseek/deepseek-v4-flash",
     ],
     "omp-default": [
-      "opencode-go/kimi-k2.7-code",
-      "CommandCode GOAT/moonshotai/Kimi-K2.7-Code",
-      "openai/gpt-5.6-luna",
-      "Xiaomi MIMO/mimo-v2.5-pro",
+      "opencode-go/deepseek-v4-flash",
+      "CommandCode GOAT/zai-org/GLM-5.2",
+      "deepseek/deepseek-v4-flash",
     ],
     "omp-designer": [
       "openai/gpt-5.6-terra",
@@ -34,34 +35,28 @@ const aliasConfig: PifrostAliasConfig = {
     "omp-plan": [
       "openai/gpt-5.6-terra",
       "CommandCode GOAT/zai-org/GLM-5.2",
-      "opencode-go/glm-5.2",
       "deepseek/deepseek-v4-pro",
     ],
     "omp-slow": [
       "openai/gpt-5.6-luna",
-      "CommandCode GOAT/deepseek/deepseek-v4-pro",
       "deepseek/deepseek-v4-pro",
     ],
     "omp-smol": [
       "CommandCode GOAT/poolside/laguna-s-2.1-free",
-      "CommandCode GOAT/deepseek/deepseek-v4-flash",
-      "openai/gpt-5.6-luna",
-      "deepseek/deepseek-v4-flash",
+      "Xiaomi MIMO/mimo-v2.5",
     ],
     "omp-task": [
-      "CommandCode GOAT/deepseek/deepseek-v4-flash",
-      "openai/gpt-5.6-luna",
+      "CommandCode GOAT/stealth/ox-alpha",
+      "opencode-go/ox-alpha-free",
       "deepseek/deepseek-v4-flash",
     ],
     "omp-tiny": [
+      "CommandCode GOAT/poolside/laguna-s-2.1-free",
       "Xiaomi MIMO/mimo-v2.5",
-      "opencode-go/mimo-v2.5",
-      "CommandCode GOAT/xiaomi/mimo-v2.5",
     ],
     "omp-vision": [
-      "opencode-go/mimo-v2.5",
-      "CommandCode GOAT/xiaomi/mimo-v2.5",
       "Xiaomi MIMO/mimo-v2.5",
+      "deepseek/deepseek-v4-flash-vision-exp",
     ],
   },
 };
@@ -86,7 +81,7 @@ const rich = buildRichRouteCatalog(liveModels, aliasConfig, {
 });
 const catalog = buildPifrostCatalog(rich.models, aliasConfig);
 
-for (const diagnostic of rich.diagnostics.filter((item) => item.status !== "ok")) {
+for (const diagnostic of rich.diagnostics.filter((item) => item.status === "not-live" || item.status === "missing-pricing")) {
   console.error("route metadata failure", diagnostic);
 }
 
@@ -97,10 +92,18 @@ for (const id of Object.keys(aliasConfig.aliases).sort()) {
 }
 
 assert.equal(catalog.models.length, 10, "all ten current OMP aliases must synthesize");
-assert.ok((byId.get("omp-default")?.contextWindow ?? 0) > 128_000, "omp-default must not use generic 128K fallback metadata");
+assert.equal(
+  rich.diagnostics.filter((item) => item.status === "not-live" || item.status === "missing-pricing").length,
+  0,
+  "all current route members must have a safe capability source",
+);
+assert.ok((byId.get("omp-default")?.contextWindow ?? 0) >= 1_000_000, "omp-default should retain a 1M-class context envelope");
 assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) >= 1_000_000, "omp-slow should retain a 1M-class context envelope");
-assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) < 1_100_000, "omp-slow must not add max output on top of the published context window");
+assert.ok((byId.get("omp-slow")?.contextWindow ?? 0) < 1_100_000, "context must not add max output on top of the published window");
 assert.ok(byId.get("omp-vision")?.input.includes("image"), "omp-vision must advertise image input");
 assert.ok(byId.get("omp-designer")?.input.includes("image"), "omp-designer must advertise image input");
-assert.deepEqual(byId.get("omp-slow")?.thinking?.efforts.map(String), ["high", "max"], "omp-slow effort envelope should be high/max");
+assert.ok(byId.get("omp-task"), "omp-task must not be withheld when Ox Alpha aliases are used");
+assert.ok((byId.get("omp-task")?.contextWindow ?? 0) >= 1_000_000, "omp-task should retain a 1M-class context envelope");
+assert.ok((byId.get("omp-task")?.maxTokens ?? 0) >= 131_072, "omp-task should retain at least 131K output");
 assert.deepEqual(byId.get("omp-task")?.thinking?.efforts.map(String), ["high", "max"], "omp-task effort envelope should be high/max");
+assert.ok(byId.get("omp-advisor")?.reasoning, "omp-advisor must retain reasoning support");
