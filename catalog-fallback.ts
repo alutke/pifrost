@@ -1,4 +1,5 @@
-import { getModels, getProviders, type Model as OmpModel } from "@oh-my-pi/pi-ai";
+import type { Model as OmpModel } from "@oh-my-pi/pi-ai";
+import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 
 const EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
 type EffortName = (typeof EFFORTS)[number];
@@ -167,13 +168,11 @@ let catalogCache: CatalogModelLike[] | undefined;
 
 function bundledCatalog(): CatalogModelLike[] {
 	if (catalogCache) return catalogCache;
-	const providers = getProviders() as unknown as string[];
-	const getModelsUntyped = getModels as unknown as (provider: string) => CatalogModelLike[];
 	const models: CatalogModelLike[] = [];
-	for (const provider of providers) {
-		for (const model of getModelsUntyped(provider) ?? []) {
+	for (const provider of getBundledProviders()) {
+		for (const model of getBundledModels(provider)) {
 			if (!model?.id) continue;
-			models.push({ ...model, provider: model.provider ?? provider });
+			models.push({ ...model, provider: model.provider ?? provider } as CatalogModelLike);
 		}
 	}
 	catalogCache = models;
