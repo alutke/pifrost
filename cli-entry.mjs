@@ -16,7 +16,7 @@ import {
 import { printModelDoctor } from "./model-diagnostics.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
-const VERSION = "0.2.5";
+const VERSION = "0.2.6";
 const OLD_CLI = fileURLToPath(new URL("./cli.mjs", import.meta.url));
 const REPO_CLI = fileURLToPath(new URL("./repo-cli.mjs", import.meta.url));
 
