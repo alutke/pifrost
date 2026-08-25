@@ -13,6 +13,8 @@ interface ModelIdentity {
 	vendor?: string;
 }
 
+// Entitlement/preview aliases are equivalent only when independently known to
+// expose the same underlying capability family. Never strip `-free` globally.
 const MODEL_EQUIVALENCE = new Map<string, string>([
 	["stealth/ox-alpha", "ox-alpha"],
 	["ox-alpha", "ox-alpha"],
@@ -22,36 +24,53 @@ const MODEL_EQUIVALENCE = new Map<string, string>([
 	["laguna-s-2.1", "laguna-s-2.1"],
 ]);
 
+/** Normalize only provider/vendor qualifiers; model IDs retain punctuation. */
+function qualifierKey(value: string): string {
+	return value
+		.trim()
+		.toLowerCase()
+		.replace(/[._-]+/gu, " ")
+		.replace(/\s+/gu, " ");
+}
+
 const AGGREGATOR_QUALIFIERS = new Set([
 	"commandcode",
 	"commandcode goat",
 	"command code",
 	"command code goat",
-	"command-code",
-	"command-code goat",
 	"opencode",
-	"opencode-go",
+	"opencode go",
 	"opencode zen",
-	"opencode-zen",
+	"open code",
+	"open code go",
+	"open code zen",
 	"openrouter",
+	"open router",
 ]);
 
 const VENDOR_ALIASES = new Map<string, string>([
-	["z.ai", "zai"],
+	["z ai", "zai"],
 	["zai", "zai"],
-	["zai-org", "zai"],
+	["zai org", "zai"],
 	["zhipu", "zai"],
-	["zhipu-ai", "zai"],
+	["zhipu ai", "zai"],
 	["google", "google"],
+	["google ai", "google"],
 	["gemini", "google"],
 	["moonshot", "moonshotai"],
+	["moonshot ai", "moonshotai"],
 	["moonshotai", "moonshotai"],
 	["kimi", "moonshotai"],
 	["xiaomi", "xiaomi"],
 	["xiaomi mimo", "xiaomi"],
 	["mimo", "xiaomi"],
 	["deepseek", "deepseek"],
+	["deep seek", "deepseek"],
 	["openai", "openai"],
+	["open ai", "openai"],
+	["openai codex", "openai"],
+	["open ai codex", "openai"],
+	["codex", "openai"],
 	["poolside", "poolside"],
 	["stealth", "stealth"],
 ]);
@@ -72,12 +91,12 @@ function tail(value: string): string {
 }
 
 function canonicalVendor(value: string): string {
-	const normalized = normalizeModelReference(value);
-	return VENDOR_ALIASES.get(normalized) ?? normalized;
+	const key = qualifierKey(value);
+	return VENDOR_ALIASES.get(key) ?? key;
 }
 
 function isAggregator(value: string): boolean {
-	return AGGREGATOR_QUALIFIERS.has(normalizeModelReference(value));
+	return AGGREGATOR_QUALIFIERS.has(qualifierKey(value));
 }
 
 export function canonicalModelFamily(value: string): string {
@@ -182,9 +201,9 @@ function safeTie<T extends { id: string }>(entries: Array<{ model: T; score: num
 
 /**
  * Resolve a route reference against live model IDs without assuming that every
- * matching tail denotes the same model. Provider/vendor prefixes may drift or
- * disappear, but genuinely conflicting vendor-qualified families are rejected
- * as ambiguous rather than selecting the first match.
+ * matching tail denotes the same model. Provider/aggregator prefixes may drift
+ * or change punctuation/case; genuinely conflicting vendor-qualified families
+ * are rejected as ambiguous rather than selecting the first tail match.
  */
 export function resolveModelReference<T extends { id: string }>(
 	reference: string,
