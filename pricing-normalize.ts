@@ -1,4 +1,4 @@
-import { equivalentModelId } from "./catalog-fallback.ts";
+import { canonicalModelFamily, equivalentModelId } from "./catalog-fallback.ts";
 import type {
 	DatasheetCapabilitySources,
 	ModelParametersDatasheet,
@@ -99,6 +99,32 @@ function applyKnownArchitecture(entry: PricingDatasheetEntry, key: string): Pric
 	return entry;
 }
 
+interface PricingRow {
+	key: string;
+	entry: PricingDatasheetEntry;
+}
+
+function familyKeys(key: string, entry: PricingDatasheetEntry): string[] {
+	return [...new Set(
+		[key, entry.base_model]
+			.filter((value): value is string => Boolean(value))
+			.map(canonicalModelFamily)
+			.filter(Boolean),
+	)];
+}
+
+function buildFamilyIndex(rows: readonly PricingRow[]): Map<string, PricingRow[]> {
+	const index = new Map<string, PricingRow[]>();
+	for (const row of rows) {
+		for (const family of familyKeys(row.key, row.entry)) {
+			const bucket = index.get(family);
+			if (bucket) bucket.push(row);
+			else index.set(family, [row]);
+		}
+	}
+	return index;
+}
+
 /**
  * Bifrost's public datasheet can contain provider-specific rows that carry only
  * price information while another row for the same underlying model carries
@@ -107,23 +133,32 @@ function applyKnownArchitecture(entry: PricingDatasheetEntry, key: string): Pric
  *
  * Arbitrary `-free` suffixes are not stripped. Only model identities explicitly
  * declared equivalent by model-resolution.ts can inherit one another.
+ *
+ * Candidate donors are first indexed by canonical family. The final
+ * `equivalentModelId` check remains authoritative, so this optimization does not
+ * weaken vendor-collision protection while avoiding an all-rows × all-rows scan.
  */
 export function normalizePricingDatasheet(sheet: PricingDatasheet): PricingDatasheet {
-	const source = Object.entries(sheet);
+	const source: PricingRow[] = Object.entries(sheet).map(([key, entry]) => ({ key, entry }));
+	const familyIndex = buildFamilyIndex(source);
 	const result: PricingDatasheet = { ...sheet };
 
-	for (const [targetKey, target] of source) {
+	for (const { key: targetKey, entry: target } of source) {
 		let enriched = target;
 		if (!hasContext(target) || !hasOutput(target) || !(target.architecture?.input_modalities?.length)) {
-			const donors = source
-				.filter(([donorKey, donor]) =>
+			const candidateRows = new Map<string, PricingRow>();
+			for (const family of familyKeys(targetKey, target)) {
+				for (const row of familyIndex.get(family) ?? []) candidateRows.set(row.key, row);
+			}
+			const donors = [...candidateRows.values()]
+				.filter(({ key: donorKey, entry: donor }) =>
 					donorKey !== targetKey &&
 					sameFamily(targetKey, target, donorKey, donor) &&
 					hasContext(donor) &&
 					hasOutput(donor),
 				)
-				.sort((a, b) => capabilityScore(b[1]) - capabilityScore(a[1]) || a[0].length - b[0].length);
-			const donor = donors[0]?.[1];
+				.sort((a, b) => capabilityScore(b.entry) - capabilityScore(a.entry) || a.key.length - b.key.length);
+			const donor = donors[0]?.entry;
 			if (donor) enriched = mergeCapabilities(target, donor);
 		}
 
