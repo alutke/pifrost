@@ -1,5 +1,6 @@
-import { canonicalModelFamily } from "./catalog-fallback.ts";
+import { canonicalModelFamily, equivalentModelId } from "./catalog-fallback.ts";
 import type {
+	DatasheetCapabilitySources,
 	ModelParametersDatasheet,
 	ModelParameterEntry,
 	PricingDatasheet,
@@ -35,19 +36,24 @@ function sameFamily(
 	rightKey: string,
 	right: PricingDatasheetEntry,
 ): boolean {
-	const leftTail = canonicalModelFamily(leftKey);
-	const rightTail = canonicalModelFamily(rightKey);
-	if (leftTail === rightTail) return true;
+	const leftIds = [leftKey, left.base_model].filter((value): value is string => Boolean(value));
+	const rightIds = [rightKey, right.base_model].filter((value): value is string => Boolean(value));
+	return leftIds.some((leftId) => rightIds.some((rightId) => equivalentModelId(leftId, rightId)));
+}
 
-	const leftBase = left.base_model ? canonicalModelFamily(left.base_model) : undefined;
-	const rightBase = right.base_model ? canonicalModelFamily(right.base_model) : undefined;
-	if (leftBase && rightBase && leftBase === rightBase) return true;
-	if (leftBase && leftBase === rightTail) return true;
-	if (rightBase && rightBase === leftTail) return true;
-	return false;
+function capabilitySources(entry: PricingDatasheetEntry): DatasheetCapabilitySources {
+	return { ...(entry._pifrost_sources ?? {}) };
 }
 
 function mergeCapabilities(target: PricingDatasheetEntry, donor: PricingDatasheetEntry): PricingDatasheetEntry {
+	const sources = capabilitySources(target);
+	const inheritContext = !hasContext(target) && hasContext(donor);
+	const inheritOutput = !hasOutput(target) && hasOutput(donor);
+	const inheritArchitecture = !(target.architecture?.input_modalities?.length) && Boolean(donor.architecture?.input_modalities?.length);
+	if (inheritContext) sources.contextWindow = "canonical-family";
+	if (inheritOutput) sources.maxTokens = "canonical-family";
+	if (inheritArchitecture) sources.image = "canonical-family";
+
 	return {
 		...target,
 		base_model: target.base_model ?? donor.base_model,
@@ -56,69 +62,47 @@ function mergeCapabilities(target: PricingDatasheetEntry, donor: PricingDatashee
 		max_output_tokens: target.max_output_tokens ?? donor.max_output_tokens,
 		max_tokens: target.max_tokens ?? donor.max_tokens,
 		architecture: target.architecture ?? donor.architecture,
+		...(Object.keys(sources).length ? { _pifrost_sources: sources } : {}),
+	};
+}
+
+function withVendorImage(entry: PricingDatasheetEntry, modalities: string[]): PricingDatasheetEntry {
+	if (entry.architecture?.input_modalities?.length) return entry;
+	return {
+		...entry,
+		architecture: {
+			...entry.architecture,
+			input_modalities: modalities,
+		},
+		_pifrost_sources: {
+			...(entry._pifrost_sources ?? {}),
+			image: "vendor-override",
+		},
 	};
 }
 
 function applyKnownArchitecture(entry: PricingDatasheetEntry, key: string): PricingDatasheetEntry {
 	const family = canonicalModelFamily(entry.base_model ?? key);
 
-	// Xiaomi's official Pi integration publishes MiMo-V2.5 as text+image and
-	// MiMo-V2.5-Pro as text-only. Bifrost's pricing feed can omit architecture.
-	if (family === "mimo-v2.5") {
-		return {
-			...entry,
-			architecture: {
-				...entry.architecture,
-				input_modalities: ["text", "image"],
-			},
-		};
-	}
-	if (family === "mimo-v2.5-pro") {
-		return {
-			...entry,
-			architecture: {
-				...entry.architecture,
-				input_modalities: ["text"],
-			},
-		};
-	}
-
-	// Current OMP/OpenRouter metadata publishes both preview models as image
-	// capable. These hints are only used when Bifrost omits architecture.
+	// These are narrow vendor-backed facts used only when Bifrost omits the
+	// architecture. A non-empty Bifrost modality list always wins.
+	if (family === "mimo-v2.5") return withVendorImage(entry, ["text", "image"]);
+	if (family === "mimo-v2.5-pro") return withVendorImage(entry, ["text"]);
 	if (family === "deepseek-v4-flash-vision-exp" || family === "ox-alpha") {
-		return {
-			...entry,
-			architecture: {
-				...entry.architecture,
-				input_modalities: ["text", "image"],
-			},
-		};
+		return withVendorImage(entry, ["text", "image"]);
 	}
-
-	// OpenAI's current GPT-5.6 model cards explicitly support image input on
-	// Luna, Terra and Sol. The Bifrost pricing rows can omit architecture.
-	if (/^gpt-5\.6-(?:luna|terra|sol)$/u.test(family)) {
-		return {
-			...entry,
-			architecture: {
-				...entry.architecture,
-				input_modalities: ["text", "image"],
-			},
-		};
-	}
+	if (/^gpt-5\.6-(?:luna|terra|sol)$/u.test(family)) return withVendorImage(entry, ["text", "image"]);
 	return entry;
 }
 
 /**
- * Bifrost's public datasheet can contain provider-specific rows that deliberately
- * carry only price information while another row for the same underlying model
- * carries canonical limits. Preserve provider-specific prices while filling only
- * missing capability fields from a genuinely equivalent row.
+ * Bifrost's public datasheet can contain provider-specific rows that carry only
+ * price information while another row for the same underlying model carries
+ * canonical limits. Preserve provider prices while filling only missing
+ * capability fields from collision-safe equivalent rows.
  *
- * Equivalence is intentionally conservative. In particular, Pifrost no longer
- * strips `-free` globally: free variants such as DeepSeek V4 Flash Free can have
- * materially smaller context windows than the paid/base model. Only aliases in
- * catalog-fallback.ts that are known to share a capability surface are merged.
+ * Arbitrary `-free` suffixes are not stripped. Only model identities explicitly
+ * declared equivalent by model-resolution.ts can inherit one another.
  */
 export function normalizePricingDatasheet(sheet: PricingDatasheet): PricingDatasheet {
 	const source = Object.entries(sheet);
@@ -126,7 +110,7 @@ export function normalizePricingDatasheet(sheet: PricingDatasheet): PricingDatas
 
 	for (const [targetKey, target] of source) {
 		let enriched = target;
-		if (!hasContext(target) || !hasOutput(target) || !target.architecture) {
+		if (!hasContext(target) || !hasOutput(target) || !(target.architecture?.input_modalities?.length)) {
 			const donors = source
 				.filter(([donorKey, donor]) =>
 					donorKey !== targetKey &&
@@ -150,106 +134,79 @@ export function normalizePricingDatasheet(sheet: PricingDatasheet): PricingDatas
 	return result;
 }
 
+function hasReasoningMetadata(entry: ModelParameterEntry | undefined): boolean {
+	if (!entry) return false;
+	return [
+		entry.supports_reasoning,
+		entry.supports_reasoning_effort,
+		entry.is_reasoning_model,
+		entry.always_reasoning,
+		entry.reasoning_required,
+	].some((value) => value !== undefined) || (entry.reasoning_effort_levels?.length ?? 0) > 0;
+}
+
+function hasToolMetadata(entry: ModelParameterEntry | undefined): boolean {
+	if (!entry) return false;
+	return entry.supports_function_calling !== undefined ||
+		entry.supports_parallel_function_calling !== undefined ||
+		entry.supports_tool_choice !== undefined ||
+		entry.model_parameters?.some((item) => /tool|function/u.test(item.id?.toLowerCase() ?? "")) === true;
+}
+
 function mergeParameterHint(target: ModelParameterEntry | undefined, hint: ModelParameterEntry): ModelParameterEntry {
+	const sources: DatasheetCapabilitySources = { ...(target?._pifrost_sources ?? {}) };
+	if (!hasReasoningMetadata(target) && hasReasoningMetadata(hint)) sources.reasoning = "vendor-override";
+	if (!(target?.reasoning_effort_levels?.length) && (hint.reasoning_effort_levels?.length ?? 0) > 0) {
+		sources.reasoningEfforts = "vendor-override";
+	}
+	if (!hasToolMetadata(target) && hasToolMetadata(hint)) sources.tools = "vendor-override";
+	if (!positive(target?.max_output_tokens) && positive(hint.max_output_tokens)) sources.maxTokens = "vendor-override";
+
 	return {
 		...hint,
 		...target,
 		model_parameters: target?.model_parameters ?? hint.model_parameters,
 		reasoning_effort_levels: target?.reasoning_effort_levels ?? hint.reasoning_effort_levels,
 		reasoning_effort_renames: target?.reasoning_effort_renames ?? hint.reasoning_effort_renames,
+		...(Object.keys(sources).length ? { _pifrost_sources: sources } : {}),
 	};
+}
+
+interface ParameterHint {
+	family: string;
+	qualified: string;
+	value: ModelParameterEntry;
 }
 
 /**
  * Fill narrowly-scoped capability facts that are documented upstream but may
- * lag in Bifrost's model-parameters feed. Existing Bifrost values always win;
- * the broad fallback for other models is OMP's own bundled catalog.
+ * lag in Bifrost's model-parameters feed. Existing Bifrost values always win.
+ * Qualified identities prevent a same-named model from another vendor from
+ * receiving the hint accidentally.
  */
 export function normalizeModelParametersDatasheet(sheet: ModelParametersDatasheet): ModelParametersDatasheet {
 	const result: ModelParametersDatasheet = { ...sheet };
-	const hints: Record<string, ModelParameterEntry> = {
-		"gpt-5.6-luna": {
-			provider: "openai",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh", "max"],
-			supports_function_calling: true,
-		},
-		"gpt-5.6-terra": {
-			provider: "openai",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh", "max"],
-			supports_function_calling: true,
-		},
-		"gpt-5.6-sol": {
-			provider: "openai",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh", "max"],
-			supports_function_calling: true,
-		},
-		"deepseek-v4-flash": {
-			provider: "deepseek",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["high", "max"],
-			supports_function_calling: true,
-		},
-		"deepseek-v4-pro": {
-			provider: "deepseek",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["high", "max"],
-			supports_function_calling: true,
-		},
-		"deepseek-v4-flash-vision-exp": {
-			provider: "deepseek",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["high", "xhigh"],
-			supports_function_calling: true,
-		},
-		"ox-alpha": {
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_required: true,
-			reasoning_effort_levels: ["low", "high", "max"],
-			supports_function_calling: true,
-		},
-		"gemini-3.7-flash": {
-			provider: "google",
-			supports_reasoning: true,
-			supports_function_calling: true,
-		},
-		"glm-5.2": {
-			provider: "zai",
-			supports_reasoning: true,
-			supports_reasoning_effort: true,
-			reasoning_effort_levels: ["high", "max"],
-			supports_function_calling: true,
-		},
-		"mimo-v2.5": {
-			provider: "xiaomi",
-			supports_reasoning: true,
-			supports_function_calling: true,
-		},
-		"mimo-v2.5-pro": {
-			provider: "xiaomi",
-			supports_reasoning: true,
-			supports_function_calling: true,
-		},
-		"kimi-k2.7-code": {
-			supports_reasoning: true,
-			supports_function_calling: true,
-		},
-	};
+	const hints: ParameterHint[] = [
+		{ family: "gpt-5.6-luna", qualified: "openai/gpt-5.6-luna", value: { provider: "openai", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh", "max"], supports_function_calling: true } },
+		{ family: "gpt-5.6-terra", qualified: "openai/gpt-5.6-terra", value: { provider: "openai", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh", "max"], supports_function_calling: true } },
+		{ family: "gpt-5.6-sol", qualified: "openai/gpt-5.6-sol", value: { provider: "openai", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["none", "low", "medium", "high", "xhigh", "max"], supports_function_calling: true } },
+		{ family: "deepseek-v4-flash", qualified: "deepseek/deepseek-v4-flash", value: { provider: "deepseek", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["high", "max"], supports_function_calling: true } },
+		{ family: "deepseek-v4-pro", qualified: "deepseek/deepseek-v4-pro", value: { provider: "deepseek", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["high", "max"], supports_function_calling: true } },
+		{ family: "deepseek-v4-flash-vision-exp", qualified: "deepseek/deepseek-v4-flash-vision-exp", value: { provider: "deepseek", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["high", "xhigh"], supports_function_calling: true } },
+		{ family: "ox-alpha", qualified: "stealth/ox-alpha", value: { supports_reasoning: true, supports_reasoning_effort: true, reasoning_required: true, reasoning_effort_levels: ["low", "high", "max"], supports_function_calling: true } },
+		{ family: "gemini-3.7-flash", qualified: "google/gemini-3.7-flash", value: { provider: "google", supports_reasoning: true, supports_function_calling: true } },
+		{ family: "glm-5.2", qualified: "zai/glm-5.2", value: { provider: "zai", supports_reasoning: true, supports_reasoning_effort: true, reasoning_effort_levels: ["high", "max"], supports_function_calling: true } },
+		{ family: "mimo-v2.5", qualified: "xiaomi/mimo-v2.5", value: { provider: "xiaomi", supports_reasoning: true, supports_function_calling: true } },
+		{ family: "mimo-v2.5-pro", qualified: "xiaomi/mimo-v2.5-pro", value: { provider: "xiaomi", supports_reasoning: true, supports_function_calling: true } },
+		{ family: "kimi-k2.7-code", qualified: "moonshotai/kimi-k2.7-code", value: { supports_reasoning: true, supports_function_calling: true } },
+	];
 
-	for (const [family, hint] of Object.entries(hints)) {
-		result[family] = mergeParameterHint(result[family], hint);
+	for (const hint of hints) {
+		result[hint.family] = mergeParameterHint(result[hint.family], hint.value);
 		for (const [key, value] of Object.entries(result)) {
-			if (canonicalModelFamily(value.base_model ?? key) === family) {
-				result[key] = mergeParameterHint(value, hint);
+			const identities = [key, value.base_model].filter((candidate): candidate is string => Boolean(candidate));
+			if (identities.some((candidate) => equivalentModelId(candidate, hint.qualified))) {
+				result[key] = mergeParameterHint(value, hint.value);
 			}
 		}
 	}
