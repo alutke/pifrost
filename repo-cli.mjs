@@ -22,11 +22,7 @@ import {
   writeRepoMcpConfig,
 } from "./cli-lib.mjs";
 import { listMcpClients, mcpAssignment } from "./mcp-client-normalization.mjs";
-import {
-  canonicalRepoVirtualKeyName,
-  deleteVirtualKey,
-  recoverRepoVirtualKeyByName,
-} from "./repo-reset.mjs";
+import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 
 function parseArgs(argv) {
   const positional = [];
@@ -270,7 +266,7 @@ function removeLocalRepoMcpEntry(current) {
   return path;
 }
 
-async function confirmRemoteDeletion(name, id) {
+async function confirmRemoteDeletion({ name, id }) {
   if (!input.isTTY) {
     throw new Error("Remote Virtual Key deletion requires an interactive terminal or explicit `--yes`");
   }
@@ -297,39 +293,24 @@ async function commandRepoReset(flags) {
 
   if (deleteRemote) {
     const { url, managementKey } = requireManagement(state);
-    let virtualKeyId = current.config?.virtualKeyId;
-    let virtualKeyName = current.config?.virtualKeyName ?? canonicalRepoVirtualKeyName(current.repo);
-    let remoteAlreadyMissing = false;
+    const remote = await deleteRepoVirtualKeyForReset({
+      url,
+      managementAuth: managementKey,
+      repo: current.repo,
+      repoConfig: current.config,
+      recoverByName,
+      yes,
+      confirm: confirmRemoteDeletion,
+    });
 
-    if (!virtualKeyId) {
-      if (!recoverByName) {
-        throw new Error(
-          "Current repo has no stored Bifrost Virtual Key id. Local state was not changed. If local state was previously removed, re-run with `--delete-remote --recover-by-name` to look up only the exact canonical Pifrost VK name.",
-        );
-      }
-      const recovered = await recoverRepoVirtualKeyByName(url, managementKey, current.repo);
-      virtualKeyName = recovered.expectedName;
-      virtualKeyId = recovered.id;
-      remoteAlreadyMissing = recovered.alreadyMissing;
+    if (remote.cancelled) {
+      console.log("Remote deletion cancelled. Local repo configuration was not changed.");
+      return;
     }
-
-    if (remoteAlreadyMissing) {
-      console.log(`Remote Bifrost Virtual Key ${virtualKeyName} is already absent.`);
+    if (remote.alreadyMissing) {
+      console.log(`Remote Bifrost Virtual Key ${remote.name}${remote.id ? ` (${remote.id})` : ""} is already absent.`);
     } else {
-      if (!yes) {
-        const confirmed = await confirmRemoteDeletion(virtualKeyName, virtualKeyId);
-        if (!confirmed) {
-          console.log("Remote deletion cancelled. Local repo configuration was not changed.");
-          return;
-        }
-      }
-
-      const result = await deleteVirtualKey(url, managementKey, virtualKeyId);
-      if (result.alreadyMissing) {
-        console.log(`Remote Bifrost Virtual Key ${virtualKeyName} (${virtualKeyId}) was already absent.`);
-      } else {
-        console.log(`Deleted remote Bifrost Virtual Key ${virtualKeyName} (${virtualKeyId}).`);
-      }
+      console.log(`Deleted remote Bifrost Virtual Key ${remote.name} (${remote.id}).`);
     }
   }
 
