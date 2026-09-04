@@ -345,25 +345,51 @@ export async function testManagement(url, auth) {
   return body;
 }
 
+function pageTotal(body) {
+  const raw = body?.total_count ?? body?.totalCount;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+async function fetchAllPages(endpoint, headers, keys, extra = {}) {
+  const limit = 100;
+  const result = [];
+  let offset = 0;
+
+  while (true) {
+    const query = new URLSearchParams({
+      limit: String(limit),
+      offset: String(offset),
+      ...extra,
+    });
+    const body = await requestJson(`${endpoint}?${query}`, { headers });
+    const page = arrayFromResponse(body, keys);
+    result.push(...page);
+
+    const total = pageTotal(body);
+    if (total !== undefined && result.length >= total) break;
+    if (page.length === 0 || page.length < limit) break;
+
+    offset += page.length;
+    if (offset > 100_000) throw new Error(`Refusing excessive pagination from ${endpoint}`);
+  }
+
+  return result;
+}
+
 export async function getRoutingRules(url, auth) {
   const base = bifrostManagementBase(url);
   const headers = managementHeaders(auth);
   const candidates = [
-    `${base}/api/routing/rules?limit=100&offset=0`,
-    `${base}/api/governance/routing-rules?limit=100&offset=0`,
+    `${base}/api/routing/rules`,
+    `${base}/api/governance/routing-rules`,
   ];
   let lastError;
   for (const endpoint of candidates) {
     try {
-      const body = await requestJson(endpoint, { headers });
-      const rules = Array.isArray(body?.rules)
-        ? body.rules
-        : Array.isArray(body?.data)
-          ? body.data
-          : Array.isArray(body)
-            ? body
-            : [];
-      return rules;
+      const rules = await fetchAllPages(endpoint, headers, ["rules", "routing_rules", "items"]);
+      if (endpoint.includes("/api/routing/") && rules.length > 0) return rules;
+      if (!endpoint.includes("/api/routing/")) return rules;
     } catch (error) {
       lastError = error;
       if (!(error instanceof PifrostHttpError) || ![404, 405].includes(error.status)) throw error;
@@ -650,20 +676,23 @@ export function normalizeMcpClient(client) {
 
 export async function listMcpClients(url, managementAuth) {
   const base = bifrostManagementBase(url);
-  const body = await requestJson(`${base}/api/mcp/clients?limit=100&offset=0`, {
-    headers: managementHeaders(managementAuth),
-  });
-  return arrayFromResponse(body, ["clients", "mcp_clients", "items"]).map(normalizeMcpClient);
+  const clients = await fetchAllPages(
+    `${base}/api/mcp/clients`,
+    managementHeaders(managementAuth),
+    ["clients", "mcp_clients", "items"],
+  );
+  return clients.map(normalizeMcpClient);
 }
 
 export async function listVirtualKeys(url, managementAuth, search) {
   const base = bifrostManagementBase(url);
-  const query = new URLSearchParams({ limit: "100", offset: "0" });
-  if (nonEmpty(search)) query.set("search", search.trim());
-  const body = await requestJson(`${base}/api/governance/virtual-keys?${query}`, {
-    headers: managementHeaders(managementAuth),
-  });
-  return arrayFromResponse(body, ["virtual_keys", "keys", "items"]);
+  const extra = nonEmpty(search) ? { search: search.trim() } : {};
+  return fetchAllPages(
+    `${base}/api/governance/virtual-keys`,
+    managementHeaders(managementAuth),
+    ["virtual_keys", "keys", "items"],
+    extra,
+  );
 }
 
 export async function getVirtualKey(url, managementAuth, id) {
