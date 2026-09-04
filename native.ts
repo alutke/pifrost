@@ -25,6 +25,7 @@ import {
 	normalizePricingDatasheet,
 } from "./pricing-normalize.ts";
 import { augmentLiveInventoryForRoutes } from "./route-inventory.ts";
+import { createBifrostUsageProvider } from "./bifrost-usage.ts";
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -49,15 +50,27 @@ async function fetchFreshCatalog(
 ): Promise<PifrostCatalog> {
 	const liveConfig: BifrostConfig = {
 		url: config.url,
-		apiKey: nonEmpty(resolvedApiKey) ?? config.apiKey,
+		// In VK-only mode OMP's resolved provider key is the VK itself; do not
+		// reinterpret it as a second Bearer credential for discovery.
+		apiKey: config.apiKey ? (nonEmpty(resolvedApiKey) ?? config.apiKey) : undefined,
 		virtualKey: nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? config.virtualKey,
 	};
-	const liveModels = await fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(20_000) });
+	const hasAliases = Boolean(aliasSource.config && Object.keys(aliasSource.config.aliases ?? {}).length);
+	let liveModels: Awaited<ReturnType<typeof fetchBifrostModels>>;
+	let datasheets: Awaited<ReturnType<typeof fetchBifrostDatasheets>> | undefined;
+	if (hasAliases) {
+		[liveModels, datasheets] = await Promise.all([
+			fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(10_000) }),
+			fetchBifrostDatasheets({ signal: AbortSignal.timeout(10_000) }),
+		]);
+	} else {
+		liveModels = await fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(10_000) });
+	}
+
 	let catalog: PifrostCatalog;
-	if (!aliasSource.config || Object.keys(aliasSource.config.aliases ?? {}).length === 0) {
+	if (!hasAliases || !datasheets || !aliasSource.config) {
 		catalog = buildPifrostCatalog(liveModels, aliasSource.config);
 	} else {
-		const datasheets = await fetchBifrostDatasheets({ signal: AbortSignal.timeout(30_000) });
 		const routeInventory = augmentLiveInventoryForRoutes(liveModels, aliasSource.config);
 		const richRoutes = buildRichRouteCatalog(routeInventory, aliasSource.config, {
 			pricing: normalizePricingDatasheet(datasheets.pricing),
@@ -122,7 +135,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	let refreshInFlight: Promise<PifrostCatalog> | undefined;
 	const refreshIntervalMs = positiveEnvMilliseconds("PIFROST_REFRESH_INTERVAL_MS", DEFAULT_REFRESH_INTERVAL_MS);
 
-	if (config?.apiKey && config.virtualKey) {
+	if (config?.virtualKey) {
 		const startupCache = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 		if (startupCache) diagnostics = startupCache.diagnostics;
 
@@ -147,12 +160,22 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 				});
 		};
 
+		const providerApiKey = config.apiKey ?? config.virtualKey;
+		const virtualKeyBearerCompatible = /^sk-bf-/u.test(config.virtualKey);
+		const usage = createBifrostUsageProvider(config);
 		pi.registerProvider(PROVIDER_ID, {
 			baseUrl: config.url,
-			apiKey: config.apiKey,
+			apiKey: providerApiKey,
 			api: "openai-completions",
-			authHeader: true,
-			headers: { "x-bf-vk": config.virtualKey },
+			// Bifrost 2.x accepts sk-bf-* VKs as OpenAI Bearer credentials.
+			// Legacy VK values remain x-bf-vk-only and therefore suppress the
+			// generated Authorization header.
+			authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
+			headers: {
+				"x-bf-vk": config.virtualKey,
+				"User-Agent": `pifrost/${process.env.npm_package_version ?? "0.3.0"} OMP`,
+			},
+			...(usage ? { usage } : {}),
 			...(startupCache ? { models: startupCache.models } : {}),
 			async fetchDynamicModels(resolvedApiKey) {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
@@ -169,7 +192,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 		});
 	} else {
 		process.stderr.write(
-			"pifrost: provider not registered; run `pifrost global setup` or set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY\n",
+			"pifrost: provider not registered; run `pifrost global setup` or set BIFROST_URL and BIFROST_VIRTUAL_KEY (BIFROST_API_KEY is optional on Bifrost 2.x)\n",
 		);
 	}
 
@@ -181,9 +204,9 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 				ctx.ui.notify("Usage: /pifrost doctor | /pifrost refresh", "warning");
 				return;
 			}
-			if (!config?.apiKey || !config.virtualKey) {
+			if (!config?.virtualKey) {
 				ctx.ui.notify(
-					"Pifrost is not configured. Run `pifrost global setup` or set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY.",
+					"Pifrost is not configured. Run `pifrost global setup` or set BIFROST_URL and BIFROST_VIRTUAL_KEY (BIFROST_API_KEY is optional on Bifrost 2.x).",
 					"warning",
 				);
 				return;

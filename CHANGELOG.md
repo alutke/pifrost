@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0
+
+- Raised the supported integration baseline to Bifrost **2.0.0+** and OhMyPi **18.1.10**, while retaining compatibility fallbacks for older Bifrost routing surfaces where they are harmless.
+- Migrated the package manifest from OMP's legacy `pi.extensions` compatibility key to the current `omp.extensions` contract and changed CI to load the package through the released OMP 18.1.10 CLI.
+- Added Bifrost 2.x Virtual-Key-native inference authentication: an `sk-bf-*` Virtual Key can operate Pifrost without a separate inference API key; existing Bearer + `x-bf-vk` configurations remain supported.
+- Added an OMP native usage provider backed by Bifrost's self-service `/api/governance/virtual-keys/quota` endpoint, exposing Virtual Key budgets, request/token rate limits, and provider/model scoped governance as read-only OMP usage limits.
+- Added Bifrost version and health discovery plus doctor/status reporting for routing scopes, weighted/chained rules, complexity-analyzer availability, MCP Code Mode, Agent Mode auto-execution, per-user auth/token exchange, endpoint slugs and session stickiness.
+- Bifrost session-aware complexity/routing is detected but Pifrost does not fabricate `x-bf-session-id` under OMP 18.1: extension provider headers are shared/static while subagents may share a model registry, so mutating them per session would be racy. A caller-supplied header or future OMP per-request header hook can enable that Bifrost feature safely.
+- Bifrost `service_tier` is not projected onto heterogeneous `omp-*` aliases: OMP 18.1 resolves tiers by model family before Bifrost chooses the final routed target, so assigning one family to a multi-family alias would misrepresent valid fallbacks. Direct/homogeneous routes retain their native tier behavior.
+- Updated route synchronization for Bifrost 2.x: canonical `/api/routing/rules` is authoritative when populated; scoped rules for one `omp-*` alias are unioned conservatively instead of overwriting each other, and `chain_rule` routes include a conservative downstream capability closure.
+- Added safe handling for Bifrost 2.x `reasoning.effort: "none"`: Pifrost maps it onto OMP's `minimal` control only when the model does not expose a distinct `minimal` wire value, and fallback intersections retain only effort mappings every member agrees on.
+- Expanded MCP discovery to understand current 2.x client fields including `is_code_mode_client`, `tools_to_auto_execute`, `auth_type`, `endpoint_slug`, `needs_session_stickiness`, ping capability and per-user header metadata. Pifrost surfaces these modes but does not overwrite MCP-client-global configuration when assigning a client to a repository key.
+- New repository MCP Virtual Keys explicitly set Bifrost 2.x deny-by-default inference governance (`allow_all_providers: false`, empty provider configs), preserving the existing MCP-only security model. Existing keys are not destructively rewritten.
+- Reduced network-backed dynamic discovery timeouts and parallelized live-model/datasheet retrieval so Pifrost stays within OMP 18.1's 15-second dynamic-provider discovery budget.
+- Bumped the catalog cache schema to invalidate pre-2.x capability assumptions after upgrade.
+- Added a CI canary against the Bifrost 2.0/current-2.x routing, governance and MCP contracts, alongside regression coverage for VK-only auth, quota parsing, scoped/chained routing, MCP 2.x modes, current OMP packaging, and MCP-only VK creation.
+
 ## 0.2.7
 
 - Reworked model identity resolution so provider, aggregator and vendor prefixes, mixed capitalization, and explicitly equivalent entitlement aliases can drift without requiring a Pifrost release for every spelling change.

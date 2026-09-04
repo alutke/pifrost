@@ -23,9 +23,12 @@ jobs:
         run: node scripts/validate-public-datasheets.mjs
       - name: Validate current OMP route envelopes
         run: npx tsx scripts/validate-current-routing.ts
-      - name: Validate with OMP 18 plugin loader
+      - name: Validate Bifrost 2.0 and current 2.x contracts
+        run: node scripts/validate-bifrost-v2-contract.mjs
+      - name: Validate with released OMP 18.1.10 CLI/plugin loader
         run: |
           export HOME="$RUNNER_TEMP/omp-home"
           mkdir -p "$HOME"
-          bun node_modules/@oh-my-pi/pi-coding-agent/src/cli.ts install . --force
-          bun node_modules/@oh-my-pi/pi-coding-agent/src/cli.ts plugin list
+          ./node_modules/.bin/omp --version
+          ./node_modules/.bin/omp install . --force
+          ./node_modules/.bin/omp plugin list

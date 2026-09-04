@@ -71,6 +71,31 @@ export function normalizeMcpClient(client) {
     allowOnAllVirtualKeys: Boolean(
       config?.allow_on_all_virtual_keys ?? client?.allow_on_all_virtual_keys,
     ),
+    endpointSlug: nonEmpty(config?.endpoint_slug) ?? nonEmpty(client?.endpoint_slug),
+    connectionType: nonEmpty(config?.connection_type) ?? nonEmpty(client?.connection_type),
+    authType: nonEmpty(config?.auth_type) ?? nonEmpty(client?.auth_type),
+    isCodeModeClient: Boolean(config?.is_code_mode_client ?? client?.is_code_mode_client),
+    toolsToExecute: Array.isArray(config?.tools_to_execute)
+      ? config.tools_to_execute.map(String)
+      : Array.isArray(client?.tools_to_execute)
+        ? client.tools_to_execute.map(String)
+        : [],
+    toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute)
+      ? config.tools_to_auto_execute.map(String)
+      : Array.isArray(client?.tools_to_auto_execute)
+        ? client.tools_to_auto_execute.map(String)
+        : [],
+    needsSessionStickiness:
+      typeof (config?.needs_session_stickiness ?? client?.needs_session_stickiness) === "boolean"
+        ? Boolean(config?.needs_session_stickiness ?? client?.needs_session_stickiness)
+        : undefined,
+    isPingAvailable:
+      typeof (config?.is_ping_available ?? client?.is_ping_available) === "boolean"
+        ? Boolean(config?.is_ping_available ?? client?.is_ping_available)
+        : undefined,
+    perUserHeaderKeys: Array.isArray(config?.per_user_header_keys)
+      ? config.per_user_header_keys.map(String)
+      : [],
     tools,
     raw: client,
   };

@@ -79,6 +79,51 @@ test("maps rich Bifrost model metadata to canonical OMP thinking metadata", () =
 	assert.equal(String(mapped.thinking?.defaultLevel), "high");
 });
 
+test("maps Bifrost 2.x reasoning effort none onto OMP minimal wire semantics", () => {
+	const mapped = toProviderModel({
+		id: "provider/reasoning-off",
+		context_length: 128_000,
+		max_output_tokens: 16_000,
+		supported_parameters: ["reasoning_effort"],
+		reasoning: { supported_efforts: ["none", "low", "high"], default_effort: "none" },
+	});
+	assert.ok(mapped);
+	assert.deepEqual(mapped.thinking?.efforts.map(String), ["minimal", "low", "high"]);
+	assert.equal(mapped.thinking?.effortMap?.minimal, "none");
+	assert.equal(String(mapped.thinking?.defaultLevel), "minimal");
+});
+
+test("does not conflate distinct none and minimal wire efforts", () => {
+	const mapped = toProviderModel({
+		id: "provider/both",
+		context_length: 128_000,
+		max_output_tokens: 16_000,
+		reasoning: { supported_efforts: ["none", "minimal", "low"] },
+	});
+	assert.ok(mapped);
+	assert.deepEqual(mapped.thinking?.efforts.map(String), ["minimal", "low"]);
+	assert.equal(mapped.thinking?.effortMap?.minimal, "minimal");
+});
+
+test("native provider accepts Bifrost 2.x Virtual-Key-only inference auth", async () => {
+	const provider = createNativeProviderConfig({
+		config: { url: "http://bifrost/v1", virtualKey: "sk-bf-vk-only" },
+		aliasConfig: { includePhysicalModels: false, aliases: {} },
+		fetch: async (_input, init) => {
+			const headers = new Headers(init?.headers);
+			assert.equal(headers.get("authorization"), null);
+			assert.equal(headers.get("x-bf-vk"), "sk-bf-vk-only");
+			return new Response(JSON.stringify({
+				data: [{ id: "model", context_length: 128_000, max_output_tokens: 8192 }],
+			}), { status: 200, headers: { "content-type": "application/json" } });
+		},
+	});
+	assert.equal(provider.apiKey, "sk-bf-vk-only");
+	assert.equal(provider.authHeader, true);
+	const models = await provider.fetchDynamicModels("sk-bf-vk-only");
+	assert.equal(models[0]?.id, "model");
+});
+
 test("resolves provider-prefixed Bifrost fallback references by physical model id", () => {
 	const physical = [model("deepseek/deepseek-v4-pro"), model("mimo-v2.5")];
 	assert.equal(

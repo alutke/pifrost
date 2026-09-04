@@ -104,6 +104,18 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+New Pifrost repository MCP keys on Bifrost 2.x are explicitly created with `allow_all_providers: false` and no provider configs, making the intended MCP-only posture explicit. Existing repository keys are not silently rewritten, because that could destroy operator-managed governance.
+
+---
+
+### Bifrost 2.x feature ownership
+
+Pifrost integrates the Bifrost features that affect the OMP boundary: Virtual-Key auth/governance, routing metadata, complexity-routing awareness, model capability discovery, MCP gateway access and diagnostics, version/health detection, and quota reporting.
+
+Features that are transparent gateway responsibilities remain owned by Bifrost and require no duplicate Pifrost implementation: provider adapters, semantic caching, request/response logging, OpenTelemetry, cost accounting, guardrails, fallback execution, batch handling, storage backends, and Bifrost's own dashboard/configuration. Pifrost should observe those contracts where relevant, not become a second Bifrost.
+
+One Bifrost request control is deliberately **not projected onto heterogeneous `omp-*` aliases**: `service_tier`. OMP 18.1 stores service tiers by provider family and only resolves a wire tier when the selected model has a known family. A Pifrost logical alias can resolve inside Bifrost to OpenAI, Google, DeepSeek, Xiaomi, GLM, or another family after the request has already left OMP. Inventing one family for the alias would make OMP's `/fast` state and pricing semantics wrong for valid fallbacks. Pifrost therefore leaves service-tier selection to direct/homogeneous provider routes until OMP or Bifrost exposes a route-aware tier contract.
+
 ---
 
 ## Why Pifrost derives alias metadata
@@ -131,7 +143,7 @@ If a route member cannot be resolved safely, Pifrost withholds the alias instead
 
 ### Capability discovery and model identity
 
-Pifrost 0.2.7 resolves capability facts per field rather than assuming one source is complete. The trust order is:
+Pifrost 0.3.0 resolves capability facts per field rather than assuming one source is complete. The trust order is:
 
 1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
 2. the Bifrost public pricing/model-parameter datasheets;
@@ -171,10 +183,10 @@ thinking=high,max source=explicit
 ## Requirements
 
 - Node.js **22.19 or later**
-- OhMyPi **18.0.4 or later** in the 18.x line
-- Maxim Bifrost with OpenAI-compatible Chat Completions enabled
-- a Bifrost inference API/Bearer credential when inference auth is enabled
+- OhMyPi **18.1.10 or later** in the 18.x line
+- Maxim Bifrost **2.0.0 or later** with OpenAI-compatible Chat Completions enabled
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
+- optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
 - outbound HTTPS access to `getbifrost.ai` when refreshing public capability metadata
 
 For route synchronization and repository MCP automation, Pifrost also needs management authentication:
@@ -203,7 +215,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.2.7
+0.3.0
 ```
 
 Bun can also install the package globally:
@@ -247,7 +259,7 @@ The wizard asks for:
 
 ```text
 Bifrost URL
-Inference API/Bearer key
+Inference API/Bearer key (optional on Bifrost 2.x)
 Global inference Virtual Key
 Configure management auth? -> Yes
 Management auth mode        -> basic
@@ -260,6 +272,8 @@ Example Bifrost URL:
 ```text
 http://192.168.1.221:8180/v1
 ```
+
+On Bifrost 2.x, the inference API/Bearer key may be left blank when the global Virtual Key is an `sk-bf-*` key. Pifrost still sends `x-bf-vk` for governance identity; when a separate Bearer credential is configured it is preserved.
 
 Pifrost then:
 
@@ -447,6 +461,23 @@ pifrost routes sync --no-refresh
 
 Pifrost does not modify the Bifrost routing rules themselves.
 
+### Bifrost 2.x routing semantics
+
+Bifrost 2.x routing is richer than a single ordered fallback list. Rules can be scoped to global, customer, team, Virtual Key or user traffic; contain weighted targets; use priority; reference the complexity analyzer; and opt into `chain_rule` re-evaluation.
+
+Pifrost keeps Bifrost as the runtime routing authority. For OMP metadata it computes a **conservative reachability envelope**:
+
+- multiple enabled rules for the same `omp-*` logical model are unioned rather than allowing the last rule to overwrite earlier scopes;
+- weighted targets and fallbacks are all included because any of them can serve the request;
+- a chained alias includes a conservative downstream routing closure;
+- OMP then receives the minimum safe context/output and the intersection of portable image/reasoning/tool capabilities across that envelope.
+
+This may deliberately under-advertise a highly scoped route. It must never over-advertise a capability that a valid Bifrost 2.x fallback cannot satisfy.
+
+Bifrost can also persist routing/complexity decisions by request session via `x-bf-session-id`. OMP 18.1 exposes the active session to extension event contexts, but extension-registered provider headers are shared/static rather than a safe per-request header hook. Because OMP subagents can share one model registry concurrently, Pifrost **does not fabricate or mutate a global session header**: doing so could pin one session to another session's routing state. Session-persistent Bifrost routing therefore remains available only when the caller or a future OMP per-request transport hook supplies the session identity. Pifrost detects and reports session-enabled complexity configuration.
+
+`pifrost global status` / `pifrost doctor` also report the number of enabled rules, scopes, weighted/chained rules and complexity-based rules, plus whether the complexity-analyzer configuration surface is available.
+
 ---
 
 ## Model metadata and startup cache
@@ -489,6 +520,23 @@ pifrost models doctor
 
 The report includes context, maximum output, effective thinking levels, image support, and thinking origin. Route diagnostics also show how each member was resolved and the per-capability source (`live`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback`) so an unresolved route can explain what evidence was missing.
 
+### Bifrost 2.x usage and governance in OMP
+
+Pifrost registers OMP's native usage provider against Bifrost's self-service:
+
+```text
+GET /api/governance/virtual-keys/quota
+```
+
+The request is authenticated with the configured global Virtual Key; admin credentials are not passed into the OMP extension. Where configured in Bifrost, OMP can display:
+
+- Virtual Key budget consumption;
+- token and request rate-limit windows;
+- provider-scoped budget/rate limits; and
+- model-scoped budget/rate limits.
+
+This is read-only. Pifrost does not change Bifrost budgets, access profiles, provider/model allow-lists or rate limits.
+
 ---
 
 ## Repository-specific MCP
@@ -509,6 +557,8 @@ Example:
 n8n      state=connected  tools=34
 railway  state=connected  tools=30
 ```
+
+On Bifrost 2.x, Pifrost also surfaces MCP-client-global capabilities such as connection/auth type, per-user OAuth/headers or token exchange, Code Mode, Agent Mode auto-execute tools, endpoint slug and session stickiness. Repository Virtual Keys continue to control only **which MCP clients/tools the repository may execute**. Pifrost deliberately does not rewrite an MCP client's global auth, Code Mode or Agent Mode configuration when assigning it to a repo.
 
 ### Interactive initialization
 
@@ -975,7 +1025,8 @@ CI validates:
 - unit/CLI tests
 - public Bifrost datasheet coverage
 - current OMP routing envelopes
-- loading through the real OMP 18.0.4 plugin loader
+- loading through the released OMP 18.1.10 CLI/plugin loader
+- current Bifrost 2.0/current-2.x routing, governance and MCP contract canaries
 
 Management credentials and raw VK values must never be added to provider runtime configuration, model catalogs, route manifests, diagnostics, or committed test fixtures.
 
