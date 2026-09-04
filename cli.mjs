@@ -20,6 +20,7 @@ import {
   getRoutingRules,
   getBifrostVersion,
   getBifrostHealth,
+  getBifrostConfig,
   getVirtualKeyQuota,
   getComplexityAnalyzerConfig,
   getVirtualKey,
@@ -436,6 +437,23 @@ async function commandGlobalStatus() {
       console.log(`Bifrost routing 2.x:    OK (rules=${features.enabledRules}, scopes=${features.scopes.join(",") || "global"}, chained=${features.chainRules}, weighted=${features.weightedRules}, complexity-rules=${features.complexityRules})`);
     } catch (error) {
       console.log(`Bifrost routing 2.x:    FAIL (${formatError(error)})`);
+    }
+
+    try {
+      const gateway = await getBifrostConfig(runtime.url, managementAuth);
+      const client = gateway?.client_config ?? gateway?.clientConfig ?? gateway?.data?.client_config ?? {};
+      const mcpAuthMode = client?.mcp_server_auth_mode ?? "headers";
+      const chainDepth = client?.routing_chain_max_depth ?? "default";
+      const requiredHeaders = Array.isArray(client?.required_headers) ? client.required_headers : [];
+      console.log(`Gateway config 2.x:     MCP-auth=${mcpAuthMode}, chain-depth=${chainDepth}, required-headers=${requiredHeaders.length}`);
+      if (mcpAuthMode === "oauth") {
+        console.log("  WARN repo MCP configs use x-bf-vk; OAuth-only MCP gateway mode requires OMP OAuth instead of VK/header auth.");
+      }
+      if (requiredHeaders.length) {
+        console.log(`  WARN Bifrost requires request headers not managed by Pifrost: ${requiredHeaders.join(", ")}`);
+      }
+    } catch (error) {
+      console.log(`Gateway config 2.x:     unavailable (${formatError(error)})`);
     }
 
     try {
