@@ -61,12 +61,16 @@ async function fetchRoutingPages(base, path, headers) {
   const limit = 100;
   const rules = [];
   const shapes = [];
+  const seenPages = new Set();
   let offset = 0;
 
   while (true) {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     const body = await requestJson(`${base}${path}?${query}`, { headers });
     const page = extractRoutingRules(body);
+    const signature = JSON.stringify(page.map((rule) => rule?.id ?? rule?.name ?? rule));
+    if (seenPages.has(signature)) break;
+    seenPages.add(signature);
     rules.push(...page);
     shapes.push(bodyShape(body));
 
