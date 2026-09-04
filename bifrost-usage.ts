@@ -214,7 +214,10 @@ export function createBifrostUsageProvider(config: BifrostConfig): UsageProvider
 
 	return {
 		id: "bifrost" as Provider,
-		validatesCredentials: true,
+		// Quota auth validates the provider credential only in VK-only mode. With
+		// a separate inference API key configured, quota health proves the VK but
+		// says nothing about that distinct Bearer credential.
+		validatesCredentials: !config.apiKey,
 		retainLastGoodOnFailure: true,
 		supports: () => true,
 		async fetchUsage(_params, ctx) {
