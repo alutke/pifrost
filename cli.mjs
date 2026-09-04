@@ -18,6 +18,10 @@ import {
   diffAliases,
   getRepoRoot,
   getRoutingRules,
+  getBifrostVersion,
+  getBifrostHealth,
+  getVirtualKeyQuota,
+  getComplexityAnalyzerConfig,
   getVirtualKey,
   installOmpPlugin,
   listMcpClients,
@@ -30,6 +34,7 @@ import {
   repoIdentity,
   requestJson,
   rotateVirtualKey,
+  routingFeatureSummary,
   runCommand,
   runtimeConfigFromState,
   saveState,
@@ -69,7 +74,7 @@ Usage:
 
 Global setup options:
   --url <url>                    Bifrost URL, e.g. http://192.168.1.221:8180/v1
-  --api-key <key>                Inference Bearer/API key
+  --api-key <key>                Optional separate inference Bearer/API key (Bifrost 2.x can use VK-only auth)
   --virtual-key <key>            Global inference Virtual Key
   --management-auth <mode>       basic (Bifrost OSS) or bearer (Enterprise)
   --management-username <user>   OSS admin/dashboard username
@@ -222,8 +227,8 @@ function buildManagementAuth(mode, username, password, apiKey) {
 
 function requireRuntime(state) {
   const runtime = runtimeConfigFromState(state);
-  if (!runtime.url || !runtime.apiKey || !runtime.virtualKey) {
-    throw new Error("Global inference configuration is incomplete; run `pifrost global setup`");
+  if (!runtime.url || !runtime.virtualKey) {
+    throw new Error("Global inference configuration is incomplete; Bifrost URL and Virtual Key are required. Run `pifrost global setup`");
   }
   return runtime;
 }
@@ -280,7 +285,7 @@ async function commandGlobalSetup(flags) {
   if (!nonInteractive) {
     await withPrompter(async (rl) => {
       url = await ask(rl, "Bifrost URL", url ?? "http://127.0.0.1:8180/v1");
-      apiKey = await askSecret(rl, "Inference API/Bearer key", apiKey);
+      apiKey = await askSecret(rl, "Inference API/Bearer key (optional on Bifrost 2.x; leave blank for VK-only)", apiKey);
       virtualKey = await askSecret(rl, "Global inference Virtual Key", virtualKey);
       const wantManagement = await confirm(
         rl,
@@ -312,8 +317,8 @@ async function commandGlobalSetup(flags) {
     });
   }
 
-  if (!url || !apiKey || !virtualKey) {
-    throw new Error("Bifrost URL, inference API key and global inference Virtual Key are required");
+  if (!url || !virtualKey) {
+    throw new Error("Bifrost URL and global inference Virtual Key are required");
   }
   url = normalizeBifrostUrl(url);
   const managementAuth = buildManagementAuth(
@@ -335,7 +340,8 @@ async function commandGlobalSetup(flags) {
   }
 
   state.config.bifrost = { ...(state.config.bifrost ?? {}), url };
-  state.secrets.inferenceApiKey = apiKey;
+  if (apiKey) state.secrets.inferenceApiKey = apiKey;
+  else delete state.secrets.inferenceApiKey;
   state.secrets.inferenceVirtualKey = virtualKey;
 
   delete state.secrets.managementApiKey;
@@ -371,8 +377,9 @@ async function commandGlobalStatus() {
   printHeader("Global Pifrost status");
   console.log(`Config directory:       ${state.paths.root}`);
   console.log(`Bifrost URL:            ${runtime.url ?? "missing"}`);
-  console.log(`Inference API key:      ${runtime.apiKey ? "set" : "missing"}`);
+  console.log(`Inference API key:      ${runtime.apiKey ? "set" : "not used"}`);
   console.log(`Inference Virtual Key:  ${runtime.virtualKey ? "set" : "missing"}`);
+  console.log(`Inference auth mode:    ${runtime.virtualKey ? (runtime.apiKey ? "Bearer + Virtual Key" : "Bifrost 2.x Virtual Key") : "missing"}`);
   console.log(`Management auth:        ${managementAuthLabel(managementAuth)}`);
   if (managementAuth?.mode === "basic") {
     console.log(`Admin username:         ${managementAuth.username ? "set" : "missing"}`);
@@ -381,20 +388,80 @@ async function commandGlobalStatus() {
     console.log(`Management API key:     ${managementAuth.apiKey ? "set" : "missing"}`);
   }
   console.log(`OMP installed:          ${boolMark(commandExists("omp"))}`);
-  if (runtime.url && runtime.apiKey && runtime.virtualKey) {
+
+  if (runtime.url) {
+    try {
+      console.log(`Bifrost version:        ${await getBifrostVersion(runtime.url) ?? "unknown"}`);
+    } catch (error) {
+      console.log(`Bifrost version:        unavailable (${formatError(error)})`);
+    }
+    try {
+      await getBifrostHealth(runtime.url);
+      console.log("Bifrost health:         OK");
+    } catch (error) {
+      console.log(`Bifrost health:         FAIL (${formatError(error)})`);
+    }
+  }
+
+  if (runtime.url && runtime.virtualKey) {
     try {
       const result = await testInference(runtime);
       console.log(`Inference connection:   OK (${result.models} models)`);
     } catch (error) {
       console.log(`Inference connection:   FAIL (${formatError(error)})`);
     }
+    try {
+      const quota = await getVirtualKeyQuota(runtime.url, runtime.virtualKey);
+      const budgets = Array.isArray(quota?.budgets) ? quota.budgets.length : 0;
+      const modelConfigs = Array.isArray(quota?.model_configs) ? quota.model_configs.length : 0;
+      const providerConfigs = Array.isArray(quota?.provider_configs) ? quota.provider_configs.length : 0;
+      const rateLimits = (quota?.rate_limit ? 1 : 0) + (Array.isArray(quota?.rate_limits) ? quota.rate_limits.length : 0);
+      console.log(`VK governance/quota:    OK (budgets=${budgets}, rate-limits=${rateLimits}, providers=${providerConfigs}, models=${modelConfigs})`);
+    } catch (error) {
+      console.log(`VK governance/quota:    unavailable (${formatError(error)})`);
+    }
   }
+
   if (runtime.url && managementAuth) {
     try {
       await testManagement(runtime.url, managementAuth);
       console.log("Management connection:  OK");
     } catch (error) {
       console.log(`Management connection:  FAIL (${formatError(error)})`);
+    }
+
+    try {
+      const rules = await getRoutingRules(runtime.url, managementAuth);
+      const features = routingFeatureSummary(rules);
+      console.log(`Bifrost routing 2.x:    OK (rules=${features.enabledRules}, scopes=${features.scopes.join(",") || "global"}, chained=${features.chainRules}, weighted=${features.weightedRules}, complexity-rules=${features.complexityRules})`);
+    } catch (error) {
+      console.log(`Bifrost routing 2.x:    FAIL (${formatError(error)})`);
+    }
+
+    try {
+      const complexity = await getComplexityAnalyzerConfig(runtime.url, managementAuth);
+      if (!complexity) {
+        console.log("Complexity analyzer:    not exposed by this Bifrost version");
+      } else {
+        const mechanisms = [
+          complexity?.semantic ? "semantic" : undefined,
+          complexity?.llm ? "llm" : undefined,
+          complexity?.session?.enabled ? "session" : undefined,
+        ].filter(Boolean);
+        console.log(`Complexity analyzer:    available (${mechanisms.join(",") || "keywords/configured"})`);
+      }
+    } catch (error) {
+      console.log(`Complexity analyzer:    unavailable (${formatError(error)})`);
+    }
+
+    try {
+      const clients = await listMcpClients(runtime.url, managementAuth);
+      const codeMode = clients.filter((client) => client.isCodeModeClient).length;
+      const agentMode = clients.filter((client) => client.toolsToAutoExecute?.length).length;
+      const perUser = clients.filter((client) => ["per_user_oauth", "per_user_headers", "token_exchange"].includes(client.authType)).length;
+      console.log(`MCP gateway 2.x:        OK (clients=${clients.length}, code-mode=${codeMode}, agent-mode=${agentMode}, per-user-auth=${perUser})`);
+    } catch (error) {
+      console.log(`MCP gateway 2.x:        unavailable (${formatError(error)})`);
     }
   }
   console.log(`Alias manifest:         ${aliasManifestPath()}${existsSync(aliasManifestPath()) ? "" : " (missing)"}`);
@@ -599,8 +666,17 @@ async function commandRepoMcpList() {
   const clients = await listMcpClients(url, managementKey);
   printHeader(`Bifrost MCP clients (${clients.length})`);
   for (const client of clients.sort((a, b) => a.name.localeCompare(b.name))) {
-    console.log(`${client.name}  state=${client.state ?? "unknown"}  tools=${client.tools.length || "unknown"}`);
-    if (client.tools.length) console.log(`  ${client.tools.join(", ")}`);
+    const modes = [
+      client.isCodeModeClient ? "code-mode" : undefined,
+      client.toolsToAutoExecute?.length ? "agent-mode" : undefined,
+      client.authType ? `auth=${client.authType}` : undefined,
+      client.connectionType ? `transport=${client.connectionType}` : undefined,
+      client.needsSessionStickiness === true ? "sticky" : undefined,
+    ].filter(Boolean);
+    console.log(`${client.name}  state=${client.state ?? "unknown"}  tools=${client.tools.length || "unknown"}${modes.length ? `  ${modes.join(" ")}` : ""}`);
+    if (client.endpointSlug) console.log(`  endpoint=/mcp/${client.endpointSlug}`);
+    if (client.toolsToAutoExecute?.length) console.log(`  auto-execute: ${client.toolsToAutoExecute.join(", ")}`);
+    if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
   }
 }
 
