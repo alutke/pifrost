@@ -1,7 +1,36 @@
+const BIFROST_2_0_0_COMMIT = "e4a30d6041c0446603aea615bc5da340dac001b1";
+
 const SOURCES = [
   {
-    name: "Bifrost 2.0 changelog",
-    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/docs/changelogs/v2.0.0.mdx",
+    name: "Bifrost 2.0.0 routing contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/ui/lib/types/routingRules.ts`,
+    required: ["chain_rule", "virtual_key", "priority", "fallbacks", "weight"],
+  },
+  {
+    name: "Bifrost 2.0.0 MCP contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/ui/lib/types/mcp.ts`,
+    required: [
+      "is_code_mode_client",
+      "tools_to_auto_execute",
+      "per_user_oauth",
+      "per_user_headers",
+      "token_exchange",
+      "needs_session_stickiness",
+    ],
+  },
+  {
+    name: "Bifrost 2.0.0 governance contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/transports/bifrost-http/handlers/governance.go`,
+    required: [
+      "/api/governance/virtual-keys/quota",
+      "provider_configs",
+      "model_configs",
+      "rate_limits",
+    ],
+  },
+  {
+    name: "Bifrost 2.0.0 release contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/docs/changelogs/v2.0.0.mdx`,
     required: [
       "/api/routing/rules",
       "/api/routing/complexity-analyzer-config",
@@ -9,12 +38,12 @@ const SOURCES = [
     ],
   },
   {
-    name: "current Bifrost routing contract",
+    name: "current Bifrost dev routing canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/routingRules.ts",
     required: ["chain_rule", "virtual_key", "priority", "fallbacks", "weight"],
   },
   {
-    name: "current Bifrost MCP contract",
+    name: "current Bifrost dev MCP canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/mcp.ts",
     required: [
       "is_code_mode_client",
@@ -27,7 +56,7 @@ const SOURCES = [
     ],
   },
   {
-    name: "current Bifrost governance contract",
+    name: "current Bifrost dev governance canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/transports/bifrost-http/handlers/governance.go",
     required: [
       "/api/governance/virtual-keys/quota",
