@@ -56,16 +56,21 @@ async function fetchFreshCatalog(
 		virtualKey: nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? config.virtualKey,
 	};
 	const hasAliases = Boolean(aliasSource.config && Object.keys(aliasSource.config.aliases ?? {}).length);
-	const modelPromise = fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(10_000) });
-	const datasheetPromise = hasAliases
-		? fetchBifrostDatasheets({ signal: AbortSignal.timeout(10_000) })
-		: undefined;
-	const liveModels = await modelPromise;
+	let liveModels: Awaited<ReturnType<typeof fetchBifrostModels>>;
+	let datasheets: Awaited<ReturnType<typeof fetchBifrostDatasheets>> | undefined;
+	if (hasAliases) {
+		[liveModels, datasheets] = await Promise.all([
+			fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(10_000) }),
+			fetchBifrostDatasheets({ signal: AbortSignal.timeout(10_000) }),
+		]);
+	} else {
+		liveModels = await fetchBifrostModels(liveConfig, { signal: AbortSignal.timeout(10_000) });
+	}
+
 	let catalog: PifrostCatalog;
-	if (!hasAliases || !datasheetPromise || !aliasSource.config) {
+	if (!hasAliases || !datasheets || !aliasSource.config) {
 		catalog = buildPifrostCatalog(liveModels, aliasSource.config);
 	} else {
-		const datasheets = await datasheetPromise;
 		const routeInventory = augmentLiveInventoryForRoutes(liveModels, aliasSource.config);
 		const richRoutes = buildRichRouteCatalog(routeInventory, aliasSource.config, {
 			pricing: normalizePricingDatasheet(datasheets.pricing),
