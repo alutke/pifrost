@@ -472,6 +472,8 @@ Pifrost keeps Bifrost as the runtime routing authority. For OMP metadata it comp
 
 This may deliberately under-advertise a highly scoped route. It must never over-advertise a capability that a valid Bifrost 2.x fallback cannot satisfy.
 
+Bifrost can also persist routing/complexity decisions by request session via `x-bf-session-id`. OMP 18.1 exposes the active session to extension event contexts, but extension-registered provider headers are shared/static rather than a safe per-request header hook. Because OMP subagents can share one model registry concurrently, Pifrost **does not fabricate or mutate a global session header**: doing so could pin one session to another session's routing state. Session-persistent Bifrost routing therefore remains available only when the caller or a future OMP per-request transport hook supplies the session identity. Pifrost detects and reports session-enabled complexity configuration.
+
 `pifrost global status` / `pifrost doctor` also report the number of enabled rules, scopes, weighted/chained rules and complexity-based rules, plus whether the complexity-analyzer configuration surface is available.
 
 ---
