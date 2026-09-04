@@ -360,7 +360,6 @@ export async function fetchBifrostModels(
 	config: BifrostConfig,
 	options: { fetch?: Fetch; signal?: AbortSignal } = {},
 ): Promise<BifrostProviderModel[]> {
-	if (!config.apiKey) throw new Error("BIFROST_API_KEY is required for model discovery");
 	if (!config.virtualKey) throw new Error("BIFROST_VIRTUAL_KEY is required for model discovery");
 
 	const fetchImpl = options.fetch ?? globalThis.fetch;
@@ -405,15 +404,22 @@ export function resolveAliasReference(
 function intersectThinking(models: readonly BifrostProviderModel[]): OmpThinkingConfig | undefined {
 	if (!models.length || models.some((model) => !model.reasoning || !model.thinking)) return undefined;
 
-	const names = THINKING_EFFORTS.filter((effort) =>
-		models.every((model) => thinkingEffortNames(model.thinking).includes(effort)),
-	);
+	const names = THINKING_EFFORTS.filter((effort) => {
+		if (!models.every((model) => thinkingEffortNames(model.thinking).includes(effort))) return false;
+		const wireValues = new Set(
+			models.map((model) => String(model.thinking?.effortMap?.[effort] ?? effort)),
+		);
+		return wireValues.size === 1;
+	});
 	if (names.length === 0) return undefined;
 
+	const effortMap = Object.fromEntries(
+		names.map((effort) => [effort, models[0]?.thinking?.effortMap?.[effort] ?? effort]),
+	) as OmpThinkingConfig["effortMap"];
 	return {
 		mode: "effort",
 		efforts: names.map(toOmpEffort),
-		effortMap: Object.fromEntries(names.map((effort) => [effort, effort])) as OmpThinkingConfig["effortMap"],
+		effortMap,
 		...(models.some((model) => model.thinking?.requiresEffort) ? { requiresEffort: true } : {}),
 	};
 }
@@ -569,24 +575,25 @@ export interface CreateNativeProviderOptions {
 /** Build the native OMP 18 provider config consumed by pi.registerProvider(). */
 export function createNativeProviderConfig(options: CreateNativeProviderOptions): NativeProviderConfig {
 	const { config } = options;
-	if (!config.apiKey) throw new Error("Pifrost requires BIFROST_API_KEY");
 	if (!config.virtualKey) throw new Error("Pifrost requires BIFROST_VIRTUAL_KEY");
+	const providerApiKey = config.apiKey ?? config.virtualKey;
+	const virtualKeyBearerCompatible = /^sk-bf-/u.test(config.virtualKey);
 
 	return {
 		baseUrl: config.url,
-		apiKey: config.apiKey,
+		apiKey: providerApiKey,
 		api: "openai-completions",
-		authHeader: true,
+		authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
 		headers: { "x-bf-vk": config.virtualKey },
 		async fetchDynamicModels(resolvedApiKey) {
 			const liveConfig: BifrostConfig = {
 				url: config.url,
-				apiKey: nonEmpty(resolvedApiKey) ?? config.apiKey,
+				apiKey: config.apiKey ? (nonEmpty(resolvedApiKey) ?? config.apiKey) : undefined,
 				virtualKey: nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? config.virtualKey,
 			};
 			const physical = await fetchBifrostModels(liveConfig, {
 				fetch: options.fetch,
-				signal: AbortSignal.timeout(20_000),
+				signal: AbortSignal.timeout(10_000),
 			});
 			const catalog = buildPifrostCatalog(physical, options.aliasConfig);
 			options.onDiagnostics?.(catalog.diagnostics);
@@ -662,7 +669,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 
 	let diagnostics: AliasDiagnostic[] = [];
 
-	if (config?.apiKey && config.virtualKey) {
+	if (config?.virtualKey) {
 		const nativeConfig = createNativeProviderConfig({
 			config,
 			aliasConfig: aliasSource.config,
@@ -673,7 +680,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 		pi.registerProvider(PROVIDER_ID, nativeConfig);
 	} else {
 		process.stderr.write(
-			"pifrost: provider not registered; set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY\n",
+			"pifrost: provider not registered; set BIFROST_URL and BIFROST_VIRTUAL_KEY (BIFROST_API_KEY is optional on Bifrost 2.x)\n",
 		);
 	}
 
@@ -685,9 +692,9 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 				ctx.ui.notify("Usage: /pifrost doctor", "warning");
 				return;
 			}
-			if (!config?.apiKey || !config.virtualKey) {
+			if (!config?.virtualKey) {
 				ctx.ui.notify(
-					"Pifrost is not configured. Set BIFROST_URL, BIFROST_API_KEY and BIFROST_VIRTUAL_KEY.",
+					"Pifrost is not configured. Set BIFROST_URL and BIFROST_VIRTUAL_KEY (BIFROST_API_KEY is optional on Bifrost 2.x).",
 					"warning",
 				);
 				return;
