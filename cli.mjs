@@ -485,6 +485,7 @@ async function commandGlobalStatus() {
       console.log(`MCP gateway 2.x:        unavailable (${formatError(error)})`);
     }
   }
+  console.log("Service-tier aliases:   delegated (OMP 18.1 family tiers cannot be mapped safely onto heterogeneous Bifrost logical routes)");
   console.log(`Alias manifest:         ${aliasManifestPath()}${existsSync(aliasManifestPath()) ? "" : " (missing)"}`);
 }
 
