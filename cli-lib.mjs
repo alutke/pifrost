@@ -13,7 +13,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 
-export const VERSION = "0.2.1";
+export const VERSION = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
 export const MCP_SCHEMA_URL =
   "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json";
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
@@ -262,13 +262,47 @@ export async function requestJson(url, options = {}) {
 }
 
 export async function testInference({ url, apiKey, virtualKey }) {
-  if (!url || !apiKey || !virtualKey) throw new Error("Inference URL, API key and Virtual Key are required");
-  const body = await requestJson(`${normalizeBifrostUrl(url)}/models`, {
-    headers: { Authorization: `Bearer ${apiKey}`, "x-bf-vk": virtualKey },
-  });
+  if (!url || !virtualKey) throw new Error("Inference URL and Virtual Key are required");
+  const headers = { "x-bf-vk": virtualKey };
+  if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
+  const body = await requestJson(`${normalizeBifrostUrl(url)}/models`, { headers });
   const models = Array.isArray(body?.data) ? body.data : [];
   if (!models.length) throw new Error("Bifrost inference test returned no models");
-  return { models: models.length };
+  return { models: models.length, authMode: apiKey ? "bearer+vk" : "virtual-key" };
+}
+
+export async function getBifrostVersion(url) {
+  const base = bifrostManagementBase(url);
+  const body = await requestJson(`${base}/api/version`, { timeoutMs: 8_000 });
+  return nonEmpty(body?.version) ?? nonEmpty(body?.data?.version) ?? (typeof body === "string" ? nonEmpty(body) : undefined);
+}
+
+export async function getBifrostHealth(url) {
+  const base = bifrostManagementBase(url);
+  return requestJson(`${base}/health`, { timeoutMs: 8_000 });
+}
+
+export async function getVirtualKeyQuota(url, virtualKey) {
+  const key = nonEmpty(virtualKey);
+  if (!key) throw new Error("Bifrost Virtual Key is required for quota discovery");
+  const base = bifrostManagementBase(url);
+  return requestJson(`${base}/api/governance/virtual-keys/quota`, {
+    headers: { "x-bf-vk": key },
+    timeoutMs: 10_000,
+  });
+}
+
+export async function getComplexityAnalyzerConfig(url, auth) {
+  const base = bifrostManagementBase(url);
+  try {
+    return await requestJson(`${base}/api/routing/complexity-analyzer-config`, {
+      headers: managementHeaders(auth),
+      timeoutMs: 10_000,
+    });
+  } catch (error) {
+    if (error instanceof PifrostHttpError && [404, 405].includes(error.status)) return undefined;
+    throw error;
+  }
 }
 
 export function managementHeaders(auth) {
@@ -351,20 +385,36 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function routingRuleMembers(rule) {
+  const targets = Array.isArray(rule?.targets) ? [...rule.targets] : [];
+  targets.sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
+  return unique([
+    ...targets.map(targetReference),
+    ...(Array.isArray(rule?.fallbacks) ? rule.fallbacks.map(nonEmpty) : []),
+  ]);
+}
+
 export function deriveAliasesFromRules(rules) {
+  const enabled = (rules ?? []).filter((rule) => rule?.enabled !== false);
   const aliases = {};
-  for (const rule of rules ?? []) {
-    if (rule?.enabled === false) continue;
+  const aliasRules = new Map();
+  for (const rule of enabled) {
     const id = aliasIdFromRule(rule);
     if (!id) continue;
-    const targets = Array.isArray(rule?.targets) ? [...rule.targets] : [];
-    targets.sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
-    const chain = unique([
-      ...targets.map(targetReference),
-      ...(Array.isArray(rule?.fallbacks) ? rule.fallbacks.map(nonEmpty) : []),
-    ]);
-    if (!chain.length) continue;
-    aliases[id] = { name: id, chain };
+    const members = routingRuleMembers(rule);
+    if (!members.length) continue;
+    const existing = aliases[id]?.chain ?? [];
+    aliases[id] = { name: id, chain: unique([...existing, ...members]) };
+    const bucket = aliasRules.get(id) ?? [];
+    bucket.push(rule);
+    aliasRules.set(id, bucket);
+  }
+
+  const allReachable = unique(enabled.flatMap(routingRuleMembers));
+  for (const [id, related] of aliasRules) {
+    if (related.some((rule) => rule?.chain_rule === true || rule?.chainRule === true)) {
+      aliases[id] = { name: id, chain: unique([...(aliases[id]?.chain ?? []), ...allReachable]) };
+    }
   }
   return { includePhysicalModels: false, aliases };
 }
@@ -686,6 +736,10 @@ export async function upsertRepoVirtualKey({
       vk = await createVirtualKey(url, managementKey, {
         name: keyName,
         description: `Pifrost MCP-only key for ${repo.name}`,
+        // Explicit deny-by-default inference posture on Bifrost 2.x. The repo
+        // key exists only to authenticate the MCP gateway.
+        allow_all_providers: false,
+        provider_configs: [],
         mcp_configs: clients.map((client) => ({
           mcp_client_name: client.name,
           tools_to_execute: client.tools,
