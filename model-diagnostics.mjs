@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 // Keep in step with cache.ts. This module is plain .mjs because the terminal CLI
 // runs under Node without a TypeScript loader.
-export const EXPECTED_CACHE_SCHEMA_VERSION = 2;
+export const EXPECTED_CACHE_SCHEMA_VERSION = 3;
 
 // OMP 18's OpenAI-compatible fallback ladder for a sparse reasoning model.
 // Pifrost's provider uses openai-completions, so when a cached model has
