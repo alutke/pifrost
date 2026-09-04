@@ -29,13 +29,18 @@ const SOURCES = [
     ],
   },
   {
-    name: "Bifrost 2.0.0 release contract",
-    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/docs/changelogs/v2.0.0.mdx`,
+    name: "Bifrost 2.0.0 routing endpoints",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/transports/bifrost-http/handlers/routing.go`,
     required: [
       "/api/routing/rules",
       "/api/routing/complexity-analyzer-config",
-      "Reasoning Effort None",
+      "/api/governance/routing-rules",
     ],
+  },
+  {
+    name: "Bifrost 2.0.0 reasoning contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/core/schemas/modelcapsreasoning.go`,
+    required: ["ReasoningEffortNone", "\"none\"", "ReasoningEffortMinimal"],
   },
   {
     name: "current Bifrost dev routing canary",
