@@ -138,9 +138,9 @@ export interface PifrostCatalog {
 
 export interface NativeProviderConfig {
 	baseUrl: string;
-	apiKey: string;
+	apiKey?: string;
 	api: "openai-completions";
-	authHeader: true;
+	authHeader?: boolean;
 	headers: Record<string, string>;
 	fetchDynamicModels(apiKey: string | undefined): Promise<readonly BifrostProviderModel[]>;
 }
@@ -264,14 +264,18 @@ function isChatModel(model: BifrostModel): boolean {
 
 function modelThinking(model: BifrostModel): OmpThinkingConfig | undefined {
 	const supported = new Set(model.reasoning?.supported_efforts?.map((effort) => effort.toLowerCase()) ?? []);
-	const names = THINKING_EFFORTS.filter((effort) => supported.has(effort));
+	const mapsNoneToMinimal = supported.has("none") && !supported.has("minimal");
+	const names = THINKING_EFFORTS.filter((effort) => supported.has(effort) || (effort === "minimal" && mapsNoneToMinimal));
 	if (names.length === 0) return undefined;
 
 	const efforts = names.map(toOmpEffort);
 	const rawDefault = model.reasoning?.default_effort?.toLowerCase();
-	const defaultName = names.find((effort) => effort === rawDefault);
+	const normalizedDefault = rawDefault === "none" && mapsNoneToMinimal ? "minimal" : rawDefault;
+	const defaultName = names.find((effort) => effort === normalizedDefault);
 	const defaultLevel = defaultName ? toOmpEffort(defaultName) : undefined;
-	const effortMap = Object.fromEntries(names.map((effort) => [effort, effort])) as OmpThinkingConfig["effortMap"];
+	const effortMap = Object.fromEntries(
+		names.map((effort) => [effort, effort === "minimal" && mapsNoneToMinimal ? "none" : effort]),
+	) as OmpThinkingConfig["effortMap"];
 
 	return {
 		mode: "effort",
