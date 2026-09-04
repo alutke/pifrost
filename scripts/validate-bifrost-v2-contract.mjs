@@ -6,7 +6,6 @@ const SOURCES = [
       "/api/routing/rules",
       "/api/routing/complexity-analyzer-config",
       "Reasoning Effort None",
-      "tools_to_auto_execute",
     ],
   },
   {
