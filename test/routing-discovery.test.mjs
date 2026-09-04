@@ -176,3 +176,45 @@ test("chain_rule aliases include a conservative downstream routing closure", () 
     "openai/gpt",
   ]);
 });
+
+
+test("discoverRoutingRules paginates beyond 100 canonical Bifrost 2.x rules", async () => {
+  const previousFetch = globalThis.fetch;
+  const all = Array.from({ length: 150 }, (_, index) => ({
+    id: `route-${index}`,
+    name: index === 149 ? "omp-last" : `rule-${index}`,
+    enabled: true,
+    targets: [{ provider: "provider", model: `model-${index}`, weight: 1 }],
+  }));
+  const offsets = [];
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname.includes("/api/governance/routing-rules")) {
+      throw new Error("legacy endpoint must not be needed for populated canonical routing");
+    }
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const limit = Number(url.searchParams.get("limit") ?? 100);
+    offsets.push(offset);
+    const page = all.slice(offset, offset + limit);
+    return new Response(JSON.stringify({
+      rules: page,
+      count: page.length,
+      total_count: all.length,
+      limit,
+      offset,
+    }), { status: 200, headers: { "content-type": "application/json" } });
+  };
+  try {
+    const result = await discoverRoutingRules("http://bifrost:8180/v1", {
+      mode: "basic",
+      username: "admin",
+      password: "secret",
+    });
+    assert.equal(result.rules.length, 150);
+    assert.deepEqual(offsets, [0, 100]);
+    assert.equal(result.diagnostics[0]?.pages, 2);
+    assert.equal(result.diagnostics[0]?.count, 150);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
