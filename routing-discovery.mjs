@@ -68,18 +68,22 @@ export async function discoverRoutingRules(url, auth) {
   const base = bifrostManagementBase(url);
   const headers = managementHeaders(auth);
   const diagnostics = [];
-  const merged = new Map();
-  let successfulEndpoint = false;
   let lastError;
 
-  for (const path of ROUTE_PATHS) {
+  for (let index = 0; index < ROUTE_PATHS.length; index += 1) {
+    const path = ROUTE_PATHS[index];
     const endpoint = `${base}${path}`;
     try {
       const body = await requestJson(endpoint, { headers });
-      successfulEndpoint = true;
       const rules = extractRoutingRules(body);
       diagnostics.push({ path, ok: true, count: rules.length, shape: bodyShape(body) });
-      for (const rule of rules) merged.set(ruleIdentity(rule), rule);
+
+      // Bifrost 2.x owns routing under /api/routing. Its governance alias is
+      // deprecated, so a non-empty canonical response is authoritative. Probe
+      // the legacy path only for older installations or the historic empty-200
+      // compatibility case Pifrost already supports.
+      if (index === 0 && rules.length > 0) return { rules, diagnostics };
+      if (index === ROUTE_PATHS.length - 1) return { rules, diagnostics };
     } catch (error) {
       lastError = error;
       diagnostics.push({
@@ -88,14 +92,11 @@ export async function discoverRoutingRules(url, auth) {
         status: error instanceof PifrostHttpError ? error.status : undefined,
         error: error instanceof Error ? error.message : String(error),
       });
-      // Authentication errors and unexpected server failures are real errors.
-      // 404/405 only mean this Bifrost version does not expose that alias path.
       if (!(error instanceof PifrostHttpError) || ![404, 405].includes(error.status)) throw error;
     }
   }
 
-  if (!successfulEndpoint) throw lastError ?? new Error("Unable to read Bifrost routing rules");
-  return { rules: [...merged.values()], diagnostics };
+  throw lastError ?? new Error("Unable to read Bifrost routing rules");
 }
 
 function aliasFromText(value) {
@@ -153,28 +154,83 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-/** Derive the Pifrost alias manifest while tolerating Bifrost query-builder rule shapes. */
+function ruleMembers(rule) {
+  const rawTargets = Array.isArray(rule?.targets)
+    ? rule.targets
+    : Array.isArray(rule?.routing_targets)
+      ? rule.routing_targets
+      : [];
+  const targets = [...rawTargets].sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
+  const fallbacks = Array.isArray(rule?.fallbacks)
+    ? rule.fallbacks
+    : Array.isArray(rule?.fallback_models)
+      ? rule.fallback_models
+      : [];
+  return unique([...targets.map(targetReference), ...fallbacks.map(nonEmpty)]);
+}
+
+/**
+ * Derive a conservative OMP alias envelope from Bifrost routing rules.
+ *
+ * Bifrost 2.x permits multiple rules for the same logical model across global,
+ * customer/team/VK/user scopes, weighted targets, complexity predicates and
+ * chain_rule re-entry. Pifrost cannot know which request scope will be active
+ * when OMP selects an alias, so it unions every possible member for that alias
+ * instead of letting the last rule overwrite earlier scopes.
+ *
+ * If an alias rule is chained, any enabled downstream routing rule may become
+ * reachable after the first rewrite. Include those members as a conservative
+ * closure; capability synthesis will then take the safe minimum/intersection.
+ */
 export function deriveAliasesRobust(rules) {
+  const enabled = (rules ?? []).filter((rule) => rule?.enabled !== false);
   const aliases = {};
-  for (const rule of rules ?? []) {
-    if (rule?.enabled === false) continue;
+  const aliasRules = new Map();
+
+  for (const rule of enabled) {
     const id = aliasIdFromRuleRobust(rule);
     if (!id) continue;
-
-    const rawTargets = Array.isArray(rule?.targets)
-      ? rule.targets
-      : Array.isArray(rule?.routing_targets)
-        ? rule.routing_targets
-        : [];
-    const targets = [...rawTargets].sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
-    const fallbacks = Array.isArray(rule?.fallbacks)
-      ? rule.fallbacks
-      : Array.isArray(rule?.fallback_models)
-        ? rule.fallback_models
-        : [];
-    const chain = unique([...targets.map(targetReference), ...fallbacks.map(nonEmpty)]);
-    if (!chain.length) continue;
-    aliases[id] = { name: id, chain };
+    const members = ruleMembers(rule);
+    if (!members.length) continue;
+    const bucket = aliasRules.get(id) ?? [];
+    bucket.push(rule);
+    aliasRules.set(id, bucket);
+    const existing = aliases[id]?.chain ?? [];
+    aliases[id] = { name: id, chain: unique([...existing, ...members]) };
   }
+
+  const allReachableMembers = unique(enabled.flatMap(ruleMembers));
+  for (const [id, related] of aliasRules) {
+    if (related.some((rule) => rule?.chain_rule === true || rule?.chainRule === true)) {
+      aliases[id] = {
+        name: id,
+        chain: unique([...(aliases[id]?.chain ?? []), ...allReachableMembers]),
+      };
+    }
+  }
+
   return { includePhysicalModels: false, aliases };
+}
+
+export function routingFeatureSummary(rules) {
+  const enabled = (rules ?? []).filter((rule) => rule?.enabled !== false);
+  const scopes = unique(enabled.map((rule) => nonEmpty(rule?.scope) ?? "global")).sort();
+  const aliasCounts = new Map();
+  for (const rule of enabled) {
+    const id = aliasIdFromRuleRobust(rule);
+    if (id) aliasCounts.set(id, (aliasCounts.get(id) ?? 0) + 1);
+  }
+  return {
+    enabledRules: enabled.length,
+    scopes,
+    chainRules: enabled.filter((rule) => rule?.chain_rule === true || rule?.chainRule === true).length,
+    weightedRules: enabled.filter((rule) => {
+      const targets = Array.isArray(rule?.targets) ? rule.targets : [];
+      return targets.length > 1 || targets.some((target) => Number(target?.weight ?? 1) !== 1);
+    }).length,
+    complexityRules: enabled.filter((rule) =>
+      /complexity_tier/iu.test(String(rule?.cel_expression ?? rule?.celExpression ?? JSON.stringify(rule?.query ?? ""))),
+    ).length,
+    multiScopeAliases: [...aliasCounts.values()].filter((count) => count > 1).length,
+  };
 }
