@@ -13,6 +13,13 @@ test("normalizes current Bifrost nested MCP client response", () => {
       client_id: "9c2d0d39-railway",
       name: "railway",
       connection_type: "http",
+      endpoint_slug: "railway",
+      auth_type: "per_user_oauth",
+      is_code_mode_client: true,
+      tools_to_execute: ["*"],
+      tools_to_auto_execute: ["get-logs"],
+      needs_session_stickiness: false,
+      is_ping_available: true,
       disabled: false,
       allow_on_all_virtual_keys: false,
     },
@@ -31,6 +38,14 @@ test("normalizes current Bifrost nested MCP client response", () => {
   assert.equal(client.state, "connected");
   assert.equal(client.disabled, false);
   assert.equal(client.allowOnAllVirtualKeys, false);
+  assert.equal(client.endpointSlug, "railway");
+  assert.equal(client.connectionType, "http");
+  assert.equal(client.authType, "per_user_oauth");
+  assert.equal(client.isCodeModeClient, true);
+  assert.deepEqual(client.toolsToExecute, ["*"]);
+  assert.deepEqual(client.toolsToAutoExecute, ["get-logs"]);
+  assert.equal(client.needsSessionStickiness, false);
+  assert.equal(client.isPingAvailable, true);
   assert.deepEqual(client.tools, ["create-deployment", "get-logs", "list-projects"]);
 });
 
