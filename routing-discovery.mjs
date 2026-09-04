@@ -7,8 +7,8 @@ import {
 } from "./cli-lib.mjs";
 
 const ROUTE_PATHS = [
-  "/api/routing/rules?limit=100&offset=0",
-  "/api/governance/routing-rules?limit=100&offset=0",
+  "/api/routing/rules",
+  "/api/governance/routing-rules",
 ];
 
 function nestedArray(body, path) {
@@ -51,6 +51,40 @@ function bodyShape(body) {
   return `object keys=[${keys.join(",")}]${count !== undefined ? ` reported-count=${count}` : ""}`;
 }
 
+function totalCount(body) {
+  const raw = body?.total_count ?? body?.totalCount;
+  const value = Number(raw);
+  return Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+async function fetchRoutingPages(base, path, headers) {
+  const limit = 100;
+  const rules = [];
+  const shapes = [];
+  let offset = 0;
+
+  while (true) {
+    const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const body = await requestJson(`${base}${path}?${query}`, { headers });
+    const page = extractRoutingRules(body);
+    rules.push(...page);
+    shapes.push(bodyShape(body));
+
+    const total = totalCount(body);
+    if (total !== undefined && rules.length >= total) break;
+    if (page.length === 0 || page.length < limit) break;
+
+    offset += page.length;
+    if (offset > 100_000) throw new Error(`Refusing excessive routing pagination from ${path}`);
+  }
+
+  return {
+    rules,
+    pages: shapes.length,
+    shape: shapes.length === 1 ? shapes[0] : `${shapes[0]} pages=${shapes.length}`,
+  };
+}
+
 function ruleIdentity(rule) {
   const id = nonEmpty(rule?.id);
   if (id) return `id:${id}`;
@@ -72,11 +106,16 @@ export async function discoverRoutingRules(url, auth) {
 
   for (let index = 0; index < ROUTE_PATHS.length; index += 1) {
     const path = ROUTE_PATHS[index];
-    const endpoint = `${base}${path}`;
     try {
-      const body = await requestJson(endpoint, { headers });
-      const rules = extractRoutingRules(body);
-      diagnostics.push({ path, ok: true, count: rules.length, shape: bodyShape(body) });
+      const pageResult = await fetchRoutingPages(base, path, headers);
+      const rules = pageResult.rules;
+      diagnostics.push({
+        path,
+        ok: true,
+        count: rules.length,
+        pages: pageResult.pages,
+        shape: pageResult.shape,
+      });
 
       // Bifrost 2.x owns routing under /api/routing. Its governance alias is
       // deprecated, so a non-empty canonical response is authoritative. Probe
