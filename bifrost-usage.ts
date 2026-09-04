@@ -44,22 +44,46 @@ function statusFor(used: number | undefined, limit: number | undefined): "ok" | 
 	return "ok";
 }
 
-function durationMs(value: unknown): number | undefined {
+function parseWindow(value: unknown): { amount: number; unit: "s" | "m" | "h" | "d" | "w" | "M" | "Q" | "Y" } | undefined {
 	const raw = text(value);
 	if (!raw) return undefined;
-	const match = raw.match(/^(\d+(?:\.\d+)?)(s|m|h|d|w)$/u);
+	const match = raw.match(/^(\d+(?:\.\d+)?)(s|m|h|d|w|M|Q|Y)$/u);
 	if (!match) return undefined;
 	const amount = Number(match[1]);
-	const factor = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[match[2] as "s" | "m" | "h" | "d" | "w"];
-	return Math.round(amount * factor);
+	if (!Number.isFinite(amount) || amount <= 0) return undefined;
+	return { amount, unit: match[2] as "s" | "m" | "h" | "d" | "w" | "M" | "Q" | "Y" };
+}
+
+function durationMs(value: unknown): number | undefined {
+	const parsed = parseWindow(value);
+	if (!parsed || ["M", "Q", "Y"].includes(parsed.unit)) return undefined;
+	const factor = { s: 1_000, m: 60_000, h: 3_600_000, d: 86_400_000, w: 604_800_000 }[
+		parsed.unit as "s" | "m" | "h" | "d" | "w"
+	];
+	return Math.round(parsed.amount * factor);
 }
 
 function resetsAt(lastReset: unknown, duration: unknown): number | undefined {
 	const start = text(lastReset);
-	const span = durationMs(duration);
-	if (!start || !span) return undefined;
+	const window = parseWindow(duration);
+	if (!start || !window) return undefined;
 	const parsed = Date.parse(start);
-	return Number.isFinite(parsed) ? parsed + span : undefined;
+	if (!Number.isFinite(parsed)) return undefined;
+
+	const fixed = durationMs(duration);
+	if (fixed !== undefined) return parsed + fixed;
+
+	// Bifrost's variable budget windows are calendar arithmetic, not fixed day
+	// approximations. LastReset is the actual start of the current rolling or
+	// calendar-aligned cycle, so advancing it by months/quarters/years yields
+	// the correct next boundary without needing the owner's alignment flag.
+	const date = new Date(parsed);
+	if (!Number.isInteger(window.amount)) return undefined;
+	if (window.unit === "M") date.setUTCMonth(date.getUTCMonth() + window.amount);
+	else if (window.unit === "Q") date.setUTCMonth(date.getUTCMonth() + (window.amount * 3));
+	else if (window.unit === "Y") date.setUTCFullYear(date.getUTCFullYear() + window.amount);
+	else return undefined;
+	return date.getTime();
 }
 
 function amount(used: number | undefined, limit: number | undefined, unit: "usd" | "tokens" | "requests") {
