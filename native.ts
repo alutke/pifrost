@@ -168,7 +168,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 			authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
 			headers: {
 				"x-bf-vk": config.virtualKey,
-				"User-Agent": `pifrost/${process.env.npm_package_version ?? "0.3"} OMP`,
+				"User-Agent": `pifrost/${process.env.npm_package_version ?? "0.3.0"} OMP`,
 			},
 			...(usage ? { usage } : {}),
 			...(startupCache ? { models: startupCache.models } : {}),
