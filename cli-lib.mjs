@@ -419,6 +419,23 @@ export function deriveAliasesFromRules(rules) {
   return { includePhysicalModels: false, aliases };
 }
 
+export function routingFeatureSummary(rules) {
+  const enabled = (rules ?? []).filter((rule) => rule?.enabled !== false);
+  const scopes = unique(enabled.map((rule) => nonEmpty(rule?.scope) ?? "global")).sort();
+  return {
+    enabledRules: enabled.length,
+    scopes,
+    chainRules: enabled.filter((rule) => rule?.chain_rule === true || rule?.chainRule === true).length,
+    weightedRules: enabled.filter((rule) => {
+      const targets = Array.isArray(rule?.targets) ? rule.targets : [];
+      return targets.length > 1 || targets.some((target) => Number(target?.weight ?? 1) !== 1);
+    }).length,
+    complexityRules: enabled.filter((rule) =>
+      /complexity_tier/iu.test(String(rule?.cel_expression ?? rule?.celExpression ?? JSON.stringify(rule?.query ?? ""))),
+    ).length,
+  };
+}
+
 export function loadAliasManifest(path = aliasManifestPath()) {
   if (!existsSync(path)) return { includePhysicalModels: false, aliases: {} };
   return readJson(path, { includePhysicalModels: false, aliases: {} });
@@ -603,12 +620,21 @@ export function normalizeMcpClient(client) {
         : nonEmpty(tool?.name) ?? nonEmpty(tool?.function?.name) ?? nonEmpty(tool?.tool_name),
     ),
   );
+  const config = client?.config && typeof client.config === "object" && !Array.isArray(client.config)
+    ? client.config
+    : client;
   return {
-    id: client?.id ?? client?.client_id,
-    name,
+    id: config?.client_id ?? client?.client_id ?? client?.id,
+    name: nonEmpty(config?.name) ?? name,
     state: client?.state ?? client?.status ?? client?.connection_state,
-    disabled: Boolean(client?.disabled),
-    allowOnAllVirtualKeys: Boolean(client?.allow_on_all_virtual_keys),
+    disabled: Boolean(config?.disabled ?? client?.disabled),
+    allowOnAllVirtualKeys: Boolean(config?.allow_on_all_virtual_keys ?? client?.allow_on_all_virtual_keys),
+    endpointSlug: nonEmpty(config?.endpoint_slug),
+    connectionType: nonEmpty(config?.connection_type),
+    authType: nonEmpty(config?.auth_type),
+    isCodeModeClient: Boolean(config?.is_code_mode_client),
+    toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute) ? config.tools_to_auto_execute.map(String) : [],
+    needsSessionStickiness: typeof config?.needs_session_stickiness === "boolean" ? config.needs_session_stickiness : undefined,
     tools,
     raw: client,
   };
