@@ -354,6 +354,7 @@ function pageTotal(body) {
 async function fetchAllPages(endpoint, headers, keys, extra = {}) {
   const limit = 100;
   const result = [];
+  const seenPages = new Set();
   let offset = 0;
 
   while (true) {
@@ -364,6 +365,11 @@ async function fetchAllPages(endpoint, headers, keys, extra = {}) {
     });
     const body = await requestJson(`${endpoint}?${query}`, { headers });
     const page = arrayFromResponse(body, keys);
+    const signature = JSON.stringify(page.map((item) =>
+      item?.id ?? item?.client_id ?? item?.name ?? item?.key ?? item,
+    ));
+    if (seenPages.has(signature)) break;
+    seenPages.add(signature);
     result.push(...page);
 
     const total = pageTotal(body);
