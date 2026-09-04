@@ -58,19 +58,24 @@ test("discoverRoutingRules does not stop on an empty canonical 200 response", as
   }
 });
 
-test("discoverRoutingRules merges and deduplicates rules returned by both paths", async () => {
+test("discoverRoutingRules treats non-empty Bifrost 2.x canonical routing as authoritative", async () => {
   const previousFetch = globalThis.fetch;
-  const shared = { id: "shared", name: "omp-default", enabled: true, targets: [] };
-  const legacyOnly = { id: "legacy", name: "omp-task", enabled: true, targets: [] };
+  const requested = [];
+  const canonical = { id: "canonical", name: "omp-default", enabled: true, targets: [] };
   globalThis.fetch = async (url) => {
-    const body = String(url).includes("/api/governance/routing-rules")
-      ? { routing_rules: [shared, legacyOnly] }
-      : { rules: [shared] };
-    return new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } });
+    requested.push(String(url));
+    if (String(url).includes("/api/governance/routing-rules")) {
+      throw new Error("deprecated routing alias should not be probed after a non-empty canonical response");
+    }
+    return new Response(JSON.stringify({ rules: [canonical] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
   };
   try {
     const result = await discoverRoutingRules("http://bifrost:8180/v1", "legacy-enterprise-key");
-    assert.deepEqual(result.rules.map((rule) => rule.id).sort(), ["legacy", "shared"]);
+    assert.deepEqual(result.rules, [canonical]);
+    assert.equal(requested.length, 1);
   } finally {
     globalThis.fetch = previousFetch;
   }
@@ -116,4 +121,58 @@ test("deriveAliasesRobust builds ordered chains from compatibility field names",
       },
     },
   });
+});
+
+
+test("Bifrost 2.x scoped rules for one alias are unioned conservatively", () => {
+  const result = deriveAliasesRobust([
+    {
+      id: "global",
+      name: "omp-default",
+      scope: "global",
+      priority: 10,
+      enabled: true,
+      targets: [{ provider: "deepseek", model: "flash", weight: 1 }],
+    },
+    {
+      id: "vk",
+      name: "omp-default",
+      scope: "virtual_key",
+      scope_id: "vk-1",
+      priority: 1,
+      enabled: true,
+      targets: [{ provider: "openai", model: "gpt", weight: 1 }],
+      fallbacks: ["deepseek/pro"],
+    },
+  ]);
+  assert.deepEqual(result.aliases["omp-default"].chain, [
+    "deepseek/flash",
+    "openai/gpt",
+    "deepseek/pro",
+  ]);
+});
+
+test("chain_rule aliases include a conservative downstream routing closure", () => {
+  const result = deriveAliasesRobust([
+    {
+      id: "alias",
+      name: "omp-plan",
+      enabled: true,
+      chain_rule: true,
+      targets: [{ provider: "router", model: "stage-one", weight: 1 }],
+    },
+    {
+      id: "downstream",
+      name: "provider rewrite",
+      enabled: true,
+      cel_expression: "request.provider == 'router'",
+      targets: [{ provider: "deepseek", model: "pro", weight: 1 }],
+      fallbacks: ["openai/gpt"],
+    },
+  ]);
+  assert.deepEqual(result.aliases["omp-plan"].chain, [
+    "router/stage-one",
+    "deepseek/pro",
+    "openai/gpt",
+  ]);
 });
