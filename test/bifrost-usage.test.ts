@@ -66,3 +66,45 @@ test("quota parser reports inactive keys and ignores malformed unlimited rows", 
 	assert.equal(report.limits.length, 0);
 	assert.ok(report.notes?.some((note) => note.includes("inactive")));
 });
+
+
+test("preserves Bifrost variable monthly, quarterly and yearly reset boundaries", () => {
+	const report = parseBifrostQuota({
+		budgets: [
+			{
+				id: "month",
+				max_limit: 10,
+				current_usage: 1,
+				reset_duration: "1M",
+				last_reset: "2026-09-01T00:00:00Z",
+			},
+			{
+				id: "quarter",
+				max_limit: 20,
+				current_usage: 2,
+				reset_duration: "1Q",
+				last_reset: "2026-07-01T00:00:00Z",
+				reset_config: { quarter_start_month: 4 },
+			},
+			{
+				id: "year",
+				max_limit: 30,
+				current_usage: 3,
+				reset_duration: "1Y",
+				last_reset: "2026-04-01T00:00:00Z",
+			},
+		],
+	});
+
+	assert.ok(report);
+	const month = report.limits.find((limit) => limit.id.includes("month"));
+	const quarter = report.limits.find((limit) => limit.id.includes("quarter"));
+	const year = report.limits.find((limit) => limit.id.includes("year"));
+
+	assert.equal(month?.window?.durationMs, undefined);
+	assert.equal(month?.window?.resetsAt, Date.parse("2026-10-01T00:00:00Z"));
+	assert.equal(quarter?.window?.durationMs, undefined);
+	assert.equal(quarter?.window?.resetsAt, Date.parse("2026-10-01T00:00:00Z"));
+	assert.equal(year?.window?.durationMs, undefined);
+	assert.equal(year?.window?.resetsAt, Date.parse("2027-04-01T00:00:00Z"));
+});
