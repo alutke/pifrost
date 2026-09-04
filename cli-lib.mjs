@@ -305,6 +305,14 @@ export async function getComplexityAnalyzerConfig(url, auth) {
   }
 }
 
+export async function getBifrostConfig(url, auth) {
+  const base = bifrostManagementBase(url);
+  return requestJson(`${base}/api/config`, {
+    headers: managementHeaders(auth),
+    timeoutMs: 10_000,
+  });
+}
+
 export function managementHeaders(auth) {
   // 0.2.0 compatibility: a bare string is an Enterprise Bearer key.
   if (typeof auth === "string") {
