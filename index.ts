@@ -146,10 +146,10 @@ export interface AliasDiagnostic {
 	reasoning: boolean;
 	reasoningEfforts: string[];
 	tools: boolean;
-	toolChoice: boolean;
-	forcedToolChoice: boolean;
-	namedToolChoice: boolean;
-	reasoningWithTools: boolean;
+	toolChoice?: boolean;
+	forcedToolChoice?: boolean;
+	namedToolChoice?: boolean;
+	reasoningWithTools?: boolean;
 	members?: AliasMemberDiagnostic[];
 }
 
@@ -394,6 +394,7 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			reasoning: model.reasoning !== undefined || hasParameterInventory ? "live" : "fallback",
 			reasoningEfforts: (model.reasoning?.supported_efforts?.length ?? 0) > 0 ? "live" : "fallback",
 			tools: hasParameterInventory ? "live" : "fallback",
+			toolChoice: hasParameterInventory ? "live" : "fallback",
 		},
 		compat: {
 			// A heterogeneous route must stay safe when a fallback only accepts system messages.
@@ -686,7 +687,18 @@ function formatNumber(value: number | undefined): string {
 
 function formatSources(sources: CapabilityProvenance | undefined): string {
 	if (!sources) return "unknown";
-	return (["contextWindow", "maxTokens", "image", "reasoning", "reasoningEfforts", "tools"] as CapabilityKey[])
+	return ([
+		"contextWindow",
+		"maxTokens",
+		"image",
+		"reasoning",
+		"reasoningEfforts",
+		"tools",
+		"toolChoice",
+		"forcedToolChoice",
+		"namedToolChoice",
+		"reasoningWithTools",
+	] as CapabilityKey[])
 		.filter((key) => sources[key])
 		.map((key) => `${key}=${sources[key]}`)
 		.join(",") || "unknown";
@@ -698,7 +710,7 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 	for (const item of diagnostics) {
 		const status = item.unresolved.length ? "WARN" : "OK";
 		lines.push(
-			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"} toolChoice=${item.toolChoice ? "yes" : "no"} forcedTool=${item.forcedToolChoice ? "yes" : "no"} reasoningWithTools=${item.reasoningWithTools ? "yes" : "no"}`,
+			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"} toolChoice=${item.toolChoice === undefined ? "n/a" : item.toolChoice ? "yes" : "no"} forcedTool=${item.forcedToolChoice === undefined ? "n/a" : item.forcedToolChoice ? "yes" : "no"} reasoningWithTools=${item.reasoningWithTools === undefined ? "n/a" : item.reasoningWithTools ? "yes" : "no"}`,
 		);
 		for (const member of item.members ?? []) {
 			const target = member.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";
