@@ -248,8 +248,8 @@ test("native OMP provider uses the Pifrost transport and separate x-bf-vk govern
 	assert.equal(provider.authHeader, true);
 	assert.deepEqual(provider.headers, {
 		"x-bf-vk": "vk",
-		"User-Agent": "pifrost/0.3.3 OMP",
-		"x-bf-eh-user-agent": "pifrost/0.3.3 OMP",
+		"User-Agent": "pifrost/0.3.4 OMP",
+		"x-bf-eh-user-agent": "pifrost/0.3.4 OMP",
 	});
 	const models = await provider.fetchDynamicModels("resolved-api");
 	assert.deepEqual(models.map((entry) => entry.id), ["omp-task"]);

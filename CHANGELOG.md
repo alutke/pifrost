@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.4
+
+- Added an exact, vendor-backed capability override for `CommandCode GOAT/meituan/LongCat-2.0:free`, restoring the `omp-advisor` alias when Bifrost exposes only generic sparse limits for that entitlement.
+- The override uses the upstream LongCat-2.0 contract's 1,000,000-token context window and 131,072-token output ceiling, text input, native tool calling and reasoning support.
+- Kept reasoning-effort and forced/named tool-choice semantics conservative because the upstream contract documents thinking as enabled/disabled rather than a portable effort ladder, and does not guarantee every reseller-specific forced-tool sub-form.
+- The override is deliberately scoped to the CommandCode GOAT free SKU. OpenRouter and arbitrary `:free` variants remain isolated and must provide their own live/datasheet evidence.
+
 ## 0.3.3
 
 - Hardened OpenRouter-through-Bifrost support without moving provider routing into Pifrost.

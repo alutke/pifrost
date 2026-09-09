@@ -132,6 +132,30 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsNamedToolChoice: true,
 		disableReasoningOnToolChoice: false,
 	},
+	"longcat-2.0-commandcode-free": {
+		source: "verified-model-hint",
+		matched: ["verified/commandcode-goat/meituan/longcat-2.0:free"],
+		// CommandCode GOAT currently exposes this exact free entitlement. The
+		// upstream LongCat-2.0 contract publishes a 1M context window and a
+		// 131,072-token output ceiling. Keep the hint exact to this provider/SKU:
+		// arbitrary :free variants must not inherit paid-model limits.
+		contextWindow: 1_000_000,
+		maxTokens: 131_072,
+		input: ["text"],
+		reasoning: true,
+		// LongCat exposes thinking as enabled/disabled, not a portable effort
+		// ladder. Do not invent low/medium/high reasoning-effort semantics.
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: false,
+		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		// The vendor documents native tool calling but not every forced/named
+		// tool_choice sub-form through this reseller entitlement. Stay conservative.
+		supportsForcedToolChoice: false,
+		supportsNamedToolChoice: false,
+		disableReasoningOnToolChoice: false,
+	},
 	"laguna-s-2.1-free": {
 		source: "verified-model-hint",
 		matched: ["verified/poolside/laguna-s-2.1-free"],
@@ -169,6 +193,12 @@ export function findVendorCapabilityOverride(
 	}
 	if (values.some((value) => equivalentModelId(value, "deepseek/deepseek-v4-flash-vision-exp"))) {
 		return VERIFIED_MODEL_HINTS["deepseek-v4-flash-vision-exp"];
+	}
+	if (
+		routeProvider(reference) === "commandcode goat" &&
+		equivalentModelId(reference, "meituan/longcat-2.0:free")
+	) {
+		return VERIFIED_MODEL_HINTS["longcat-2.0-commandcode-free"];
 	}
 	if (values.some((value) => equivalentModelId(value, "poolside/laguna-s-2.1-free"))) {
 		return VERIFIED_MODEL_HINTS["laguna-s-2.1-free"];

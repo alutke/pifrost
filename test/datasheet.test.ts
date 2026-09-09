@@ -321,3 +321,45 @@ test("OpenRouter catalog fallback prefers the OpenRouter provider row", () => {
 	assert.equal(rich.models[0]?.contextWindow, 900_000);
 	assert.deepEqual(rich.diagnostics[0]?.fallbackMatches, ["openrouter/google/gemini-3.7-flash"]);
 });
+
+
+test("CommandCode GOAT LongCat 2.0 free gets an exact safe vendor-backed envelope", () => {
+	const advisorAliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-advisor": ["CommandCode GOAT/meituan/LongCat-2.0:free"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("CommandCode GOAT/meituan/LongCat-2.0:free")],
+		advisorAliases,
+		{ pricing: {}, parameters: {} },
+		[],
+	);
+	assert.equal(rich.models.length, 1);
+	assert.equal(rich.models[0]?.contextWindow, 1_000_000);
+	assert.equal(rich.models[0]?.maxTokens, 131_072);
+	assert.deepEqual(rich.models[0]?.input, ["text"]);
+	assert.equal(rich.models[0]?.reasoning, true);
+	assert.equal(rich.models[0]?.thinking, undefined);
+	assert.equal(rich.models[0]?.supportsTools, true);
+	assert.equal(rich.models[0]?.compat.supportsReasoningEffort, false);
+	assert.equal(rich.models[0]?.compat.supportsToolChoice, true);
+	assert.equal(rich.models[0]?.compat.supportsForcedToolChoice, false);
+	assert.equal(rich.models[0]?.capabilitySources?.contextWindow, "vendor-override");
+	assert.equal(rich.models[0]?.capabilitySources?.maxTokens, "vendor-override");
+	assert.notEqual(rich.diagnostics[0]?.status, "missing-pricing");
+});
+
+test("LongCat free override does not leak to OpenRouter or arbitrary free variants", () => {
+	const openRouterAliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-or": ["openrouter/meituan/longcat-2.0:free"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("openrouter/meituan/longcat-2.0:free")],
+		openRouterAliases,
+		{ pricing: {}, parameters: {} },
+		[],
+	);
+	assert.equal(rich.models.length, 0);
+	assert.equal(rich.diagnostics[0]?.status, "missing-pricing");
+});
