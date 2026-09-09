@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+- Fixed an OMP runtime crash on forced-tool turns (`disableReasoningOnForcedToolChoice` read from an undefined compat record).
+- Pifrost now rebuilds its custom logical route as a resolved `openai-completions` model before entering OMP's built-in Chat Completions transport, restoring the complete OpenAI compatibility policy while preserving the new per-conversation OpenCode Go session-header forwarding.
+- No Bifrost routing, provider selection, fallback, or model-envelope behavior changed.
+
 ## 0.3.1
 
 - Added a Pifrost-specific OpenAI Chat Completions transport so every routed inference request can use OMP's per-request `sessionId` without mutating shared provider headers.

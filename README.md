@@ -149,7 +149,7 @@ If a route member cannot be resolved safely, Pifrost withholds the alias instead
 
 ### Capability discovery and model identity
 
-Pifrost 0.3.1 resolves capability facts per field rather than assuming one source is complete. The trust order is:
+Pifrost 0.3.2 resolves capability facts per field rather than assuming one source is complete. The trust order is:
 
 1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
 2. the Bifrost public pricing/model-parameter datasheets;
@@ -221,7 +221,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.3.1
+0.3.2
 ```
 
 Bun can also install the package globally:
@@ -918,7 +918,7 @@ BIFROST_MANAGEMENT_API_KEY
 
 ### OpenCode Go returns `MissingSessionID`
 
-Pifrost 0.3.1 forwards OMP's per-conversation session id through Bifrost using `x-bf-eh-x-opencode-session`, and forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. If Bifrost has a non-empty client header allowlist, it must permit both dynamic extra-header names; otherwise Bifrost will drop them before provider dispatch and OpenCode Go will reject the request.
+Pifrost 0.3.2 forwards OMP's per-conversation session id through Bifrost using `x-bf-eh-x-opencode-session`, and forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. The custom transport rebuilds the logical Pifrost model as a resolved OpenAI Chat Completions model before dispatch, so OMP's complete compatibility policy is present during forced-tool and reasoning handling. If Bifrost has a non-empty client header allowlist, it must permit both dynamic extra-header names; otherwise Bifrost will drop them before provider dispatch and OpenCode Go will reject the request.
 
 This is deliberately separate from Bifrost's own `x-bf-session-id`: the OpenCode header identifies the OMP conversation to the upstream OpenCode Go service.
 

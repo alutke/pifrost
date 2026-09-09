@@ -1,9 +1,10 @@
-import type { Context, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
+import type { Context, Model, ModelSpec, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
 import {
 	streamOpenAICompletions,
 	type OpenAICompletionsOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-completions";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
 import {
 	buildPifrostCatalog,
@@ -110,10 +111,15 @@ function streamPifrostOpenAI(
 		throw new Error("Pifrost requires OMP to supply an inference session id");
 	}
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
-	const transportModel = {
+	// The custom Pifrost API intentionally resolves no OMP compat record.
+	// Rebuild the logical route as a real OpenAI Chat Completions model before
+	// handing it to the built-in transport so OMP materializes the complete
+	// ResolvedOpenAICompat object (tool-choice/reasoning policy included).
+	const transportModel = buildModel({
 		...model,
-		api: "openai-completions" as const,
-	} as Model<"openai-completions">;
+		api: "openai-completions",
+		compat: model.compatConfig,
+	} as ModelSpec<"openai-completions">);
 	const streamOptions: OpenAICompletionsOptions = {
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
