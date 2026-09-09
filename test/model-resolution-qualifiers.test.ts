@@ -20,3 +20,10 @@ test("OpenAI/Codex provider aliases normalize without affecting the model id", (
 	assert.equal(resolveModelReference("Codex/gpt-5.6-terra", openai).model?.id, "openai/gpt-5.6-terra");
 	assert.equal(resolveModelReference("openai-codex/gpt-5.6-terra", openai).model?.id, "openai/gpt-5.6-terra");
 });
+
+
+test("OpenRouter routing suffixes normalize without stripping free-tier identity", () => {
+	const base = [{ id: "openrouter/deepseek/deepseek-v4-pro" }];
+	assert.equal(resolveModelReference("openrouter/deepseek/deepseek-v4-pro:nitro", base).model?.id, base[0]?.id);
+	assert.equal(resolveModelReference("openrouter/deepseek/deepseek-v4-pro:free", base).model, undefined);
+});

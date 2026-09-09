@@ -37,6 +37,10 @@ export interface CatalogModelLike {
 	compat?: {
 		supportsReasoningEffort?: boolean;
 		supportsUsageInStreaming?: boolean;
+		supportsToolChoice?: boolean;
+		supportsForcedToolChoice?: boolean;
+		supportsNamedToolChoice?: boolean;
+		disableReasoningOnToolChoice?: boolean;
 	};
 }
 
@@ -52,6 +56,10 @@ export interface CatalogCapabilityFallback {
 	supportsTools: boolean;
 	supportsReasoningEffort: boolean;
 	supportsUsageInStreaming: boolean;
+	supportsToolChoice: boolean;
+	supportsForcedToolChoice: boolean;
+	supportsNamedToolChoice: boolean;
+	disableReasoningOnToolChoice: boolean;
 }
 
 function normalized(value: string): string {
@@ -69,6 +77,7 @@ export function preferredCatalogProviders(reference: string): string[] {
 		case "opencode":
 		case "opencode-zen": return ["opencode", "opencode-zen"];
 		case "deepseek": return ["deepseek"];
+		case "openrouter": return ["openrouter"];
 		case "xiaomi mimo":
 		case "xiaomi": return ["xiaomi"];
 		case "openai": return ["openai-codex", "openai"];
@@ -101,6 +110,10 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsTools: true,
 		supportsReasoningEffort: true,
 		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		supportsForcedToolChoice: true,
+		supportsNamedToolChoice: true,
+		disableReasoningOnToolChoice: false,
 	},
 	"deepseek-v4-flash-vision-exp": {
 		source: "verified-model-hint",
@@ -114,6 +127,10 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsTools: true,
 		supportsReasoningEffort: true,
 		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		supportsForcedToolChoice: true,
+		supportsNamedToolChoice: true,
+		disableReasoningOnToolChoice: false,
 	},
 	"laguna-s-2.1-free": {
 		source: "verified-model-hint",
@@ -130,6 +147,10 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsTools: true,
 		supportsReasoningEffort: false,
 		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		supportsForcedToolChoice: true,
+		supportsNamedToolChoice: true,
+		disableReasoningOnToolChoice: false,
 	},
 };
 
@@ -238,6 +259,10 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		supportsTools: complete.every((model) => model.supportsTools !== false),
 		supportsReasoningEffort: Boolean(modelThinking),
 		supportsUsageInStreaming: complete.every((model) => model.compat?.supportsUsageInStreaming !== false),
+		supportsToolChoice: complete.every((model) => model.compat?.supportsToolChoice !== false),
+		supportsForcedToolChoice: complete.every((model) => model.compat?.supportsForcedToolChoice !== false),
+		supportsNamedToolChoice: complete.every((model) => model.compat?.supportsNamedToolChoice !== false),
+		disableReasoningOnToolChoice: complete.some((model) => model.compat?.disableReasoningOnToolChoice === true),
 	};
 }
 

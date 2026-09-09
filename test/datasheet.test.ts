@@ -267,3 +267,57 @@ test("truly unknown route member is withheld when neither source has safe limits
 	assert.equal(rich.models.length, 0);
 	assert.equal(rich.diagnostics[0]?.status, "missing-pricing");
 });
+
+
+test("OpenRouter catalog fallback prefers the OpenRouter provider row", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-or": ["openrouter/google/gemini-3.7-flash"] },
+	};
+	const liveModel: BifrostProviderModel = {
+		id: "openrouter/google/gemini-3.7-flash",
+		name: "openrouter/google/gemini-3.7-flash",
+		reasoning: false,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 128_000,
+		maxTokens: 8_192,
+		supportsTools: false,
+		capabilitySources: {
+			contextWindow: "fallback",
+			maxTokens: "fallback",
+			image: "fallback",
+			reasoning: "fallback",
+			reasoningEfforts: "fallback",
+			tools: "fallback",
+		},
+		compat: { supportsDeveloperRole: false, supportsReasoningEffort: false, supportsUsageInStreaming: true },
+	};
+	const catalogOverride = [
+		{
+			id: "google/gemini-3.7-flash",
+			provider: "openrouter",
+			contextWindow: 900_000,
+			maxTokens: 60_000,
+			reasoning: true,
+			input: ["text", "image"],
+			supportsTools: true,
+			cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
+			compat: { supportsReasoningEffort: true, supportsToolChoice: true, supportsUsageInStreaming: true },
+		},
+		{
+			id: "gemini-3.7-flash",
+			provider: "google",
+			contextWindow: 1_000_000,
+			maxTokens: 65_536,
+			reasoning: true,
+			input: ["text", "image"],
+			supportsTools: true,
+			cost: { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 },
+			compat: { supportsReasoningEffort: true, supportsToolChoice: true, supportsUsageInStreaming: true },
+		},
+	];
+	const rich = buildRichRouteCatalog([liveModel], aliases, { pricing: {}, parameters: {} }, catalogOverride);
+	assert.equal(rich.models[0]?.contextWindow, 900_000);
+	assert.deepEqual(rich.diagnostics[0]?.fallbackMatches, ["openrouter/google/gemini-3.7-flash"]);
+});

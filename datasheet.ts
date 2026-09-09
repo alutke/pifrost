@@ -39,6 +39,10 @@ export interface DatasheetCapabilitySources {
 	reasoning?: CapabilitySource;
 	reasoningEfforts?: CapabilitySource;
 	tools?: CapabilitySource;
+	toolChoice?: CapabilitySource;
+	forcedToolChoice?: CapabilitySource;
+	namedToolChoice?: CapabilitySource;
+	reasoningWithTools?: CapabilitySource;
 }
 
 export interface PricingDatasheetEntry {
@@ -69,6 +73,10 @@ export interface ModelParameterEntry {
 	supports_function_calling?: boolean;
 	supports_parallel_function_calling?: boolean;
 	supports_tool_choice?: boolean;
+	supports_forced_tool_choice?: boolean;
+	supports_reasoning_with_tool_calls?: boolean;
+	tool_choice_struct_supported?: boolean;
+	unsupported_fields?: Record<string, boolean>;
 	supports_reasoning?: boolean;
 	supports_reasoning_effort?: boolean;
 	supports_reasoning_disable?: boolean;
@@ -275,6 +283,28 @@ function toolsFromParameters(parameters: ModelParameterEntry | undefined): boole
 	);
 }
 
+function toolChoiceFromParameters(parameters: ModelParameterEntry | undefined): boolean | undefined {
+	if (!parameters) return undefined;
+	if (parameters.supports_tool_choice !== undefined) return parameters.supports_tool_choice;
+	if (parameters.model_parameters?.some((item) => item.id?.toLowerCase() === "tool_choice")) return true;
+	return undefined;
+}
+
+function forcedToolChoiceFromParameters(parameters: ModelParameterEntry | undefined): boolean | undefined {
+	return parameters?.supports_forced_tool_choice;
+}
+
+function namedToolChoiceFromParameters(parameters: ModelParameterEntry | undefined): boolean | undefined {
+	if (!parameters) return undefined;
+	if (parameters.tool_choice_struct_supported !== undefined) return parameters.tool_choice_struct_supported;
+	if (parameters.unsupported_fields?.tool_choice_struct === true) return false;
+	return undefined;
+}
+
+function reasoningWithToolsFromParameters(parameters: ModelParameterEntry | undefined): boolean | undefined {
+	return parameters?.supports_reasoning_with_tool_calls;
+}
+
 function routeReferences(aliasConfig: PifrostAliasConfig): string[] {
 	const result: string[] = [];
 	for (const definition of Object.values(aliasConfig.aliases)) {
@@ -378,6 +408,22 @@ function selectThinking(
 	return {};
 }
 
+function selectBooleanCapability(
+	liveValue: boolean | undefined,
+	liveSource: CapabilitySource | undefined,
+	sheetValue: boolean | undefined,
+	sheetSourceValue: CapabilitySource | undefined,
+	vendorValue: boolean | undefined,
+	catalogValue: boolean | undefined,
+	catalogSource: CapabilitySource | undefined,
+): Selected<boolean> {
+	if (liveSource === "live" && liveValue !== undefined) return { value: liveValue, source: "live" };
+	if (sheetValue !== undefined) return { value: sheetValue, source: sheetSourceValue ?? "bifrost-datasheet" };
+	if (vendorValue !== undefined) return { value: vendorValue, source: "vendor-override" };
+	if (catalogValue !== undefined) return { value: catalogValue, source: catalogSource ?? "fallback" };
+	return {};
+}
+
 function selectTools(
 	liveModel: BifrostProviderModel,
 	parameters: MatchedEntry<ModelParameterEntry> | undefined,
@@ -471,6 +517,42 @@ export function buildRichRouteCatalog(
 		const reasoning = selectReasoning(liveModel, parameters, vendor, catalog);
 		const thinking = reasoning.value ? selectThinking(liveModel, parameters, vendor, catalog) : {};
 		const tools = selectTools(liveModel, parameters, vendor, catalog);
+		const toolChoice = selectBooleanCapability(
+			liveModel.compat.supportsToolChoice,
+			liveModel.capabilitySources?.toolChoice,
+			toolChoiceFromParameters(parameters?.value),
+			sheetSource(parameters, "toolChoice"),
+			vendor?.supportsToolChoice,
+			catalog?.supportsToolChoice,
+			catalogCapabilitySource,
+		);
+		const forcedToolChoice = selectBooleanCapability(
+			liveModel.compat.supportsForcedToolChoice,
+			liveModel.capabilitySources?.forcedToolChoice,
+			forcedToolChoiceFromParameters(parameters?.value),
+			sheetSource(parameters, "forcedToolChoice"),
+			vendor?.supportsForcedToolChoice,
+			catalog?.supportsForcedToolChoice,
+			catalogCapabilitySource,
+		);
+		const namedToolChoice = selectBooleanCapability(
+			liveModel.compat.supportsNamedToolChoice,
+			liveModel.capabilitySources?.namedToolChoice,
+			namedToolChoiceFromParameters(parameters?.value),
+			sheetSource(parameters, "namedToolChoice"),
+			vendor?.supportsNamedToolChoice,
+			catalog?.supportsNamedToolChoice,
+			catalogCapabilitySource,
+		);
+		const reasoningWithTools = selectBooleanCapability(
+			liveModel.compat.disableReasoningOnToolChoice === undefined ? undefined : !liveModel.compat.disableReasoningOnToolChoice,
+			liveModel.capabilitySources?.reasoningWithTools,
+			reasoningWithToolsFromParameters(parameters?.value),
+			sheetSource(parameters, "reasoningWithTools"),
+			vendor?.disableReasoningOnToolChoice === undefined ? undefined : !vendor.disableReasoningOnToolChoice,
+			catalog?.disableReasoningOnToolChoice === undefined ? undefined : !catalog.disableReasoningOnToolChoice,
+			catalogCapabilitySource,
+		);
 		const inputCost = perMillion(pricing?.value.input_cost_per_token) ?? liveModel.cost.input ?? vendor?.cost.input ?? catalog?.cost.input ?? 0;
 		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? liveModel.cost.output ?? vendor?.cost.output ?? catalog?.cost.output ?? 0;
 		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? liveModel.cost.cacheRead ?? vendor?.cost.cacheRead ?? catalog?.cost.cacheRead ?? inputCost;
@@ -482,6 +564,10 @@ export function buildRichRouteCatalog(
 			reasoning: reasoning.source,
 			reasoningEfforts: thinking.source,
 			tools: tools.source,
+			toolChoice: toolChoice.source,
+			forcedToolChoice: forcedToolChoice.source,
+			namedToolChoice: namedToolChoice.source,
+			reasoningWithTools: reasoningWithTools.source,
 		};
 
 		models.push({
@@ -508,6 +594,11 @@ export function buildRichRouteCatalog(
 				supportsDeveloperRole: false,
 				supportsReasoningEffort: Boolean(reasoning.value && thinking.value),
 				supportsUsageInStreaming: catalog?.supportsUsageInStreaming ?? liveModel.compat.supportsUsageInStreaming,
+				supportsToolChoice: toolChoice.value ?? liveModel.compat.supportsToolChoice ?? true,
+				supportsForcedToolChoice: forcedToolChoice.value ?? liveModel.compat.supportsForcedToolChoice ?? true,
+				supportsNamedToolChoice: namedToolChoice.value ?? liveModel.compat.supportsNamedToolChoice ?? true,
+				disableReasoningOnToolChoice:
+					reasoning.value ? !(reasoningWithTools.value ?? !liveModel.compat.disableReasoningOnToolChoice) : false,
 			},
 		});
 

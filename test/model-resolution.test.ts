@@ -53,6 +53,26 @@ test("known entitlement aliases resolve without blanket -free stripping", () => 
 	assert.equal(resolveModelReference("vendor/new-model-free", [sparseLive("vendor/new-model")]).model, undefined);
 });
 
+test("OpenRouter routing variants share base-model identity but billing variants stay isolated", () => {
+	for (const variant of ["nitro", "floor", "online", "exacto", "extended"]) {
+		assert.equal(
+			equivalentModelId(`openrouter/deepseek/deepseek-v4-pro:${variant}`, "openrouter/deepseek/deepseek-v4-pro"),
+			true,
+		);
+	}
+	assert.equal(
+		equivalentModelId("openrouter/deepseek/deepseek-v4-pro:free", "openrouter/deepseek/deepseek-v4-pro"),
+		false,
+	);
+	assert.equal(
+		resolveModelReference(
+			"openrouter/deepseek/deepseek-v4-pro:nitro",
+			[sparseLive("openrouter/deepseek/deepseek-v4-pro")],
+		).model?.id,
+		"openrouter/deepseek/deepseek-v4-pro",
+	);
+});
+
 test("vendor-qualified same-name models do not collide", () => {
 	const models = [sparseLive("moonshotai/shared-preview"), sparseLive("google/shared-preview")];
 	assert.equal(
@@ -175,6 +195,55 @@ test("sparse live generic defaults are not treated as authoritative limits", () 
 	assert.equal(rich.models.length, 0);
 	assert.equal(rich.diagnostics[0]?.status, "missing-pricing");
 	assert.match(rich.diagnostics[0]?.reason ?? "", /generic \/v1 defaults are ignored/u);
+});
+
+test("OpenRouter tool/reasoning compatibility is projected conservatively into an alias", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: {
+			"omp-openrouter": [
+				"openrouter/moonshotai/kimi-k2.7-code",
+				"openrouter/deepseek/deepseek-v4-pro",
+			],
+		},
+	};
+	const live = [
+		sparseLive("openrouter/moonshotai/kimi-k2.7-code"),
+		sparseLive("openrouter/deepseek/deepseek-v4-pro"),
+	];
+	const sheets: BifrostDatasheets = {
+		pricing: {
+			"openrouter/moonshotai/kimi-k2.7-code": { provider: "openrouter", context_length: 262_144, max_output_tokens: 65_536 },
+			"openrouter/deepseek/deepseek-v4-pro": { provider: "openrouter", context_length: 1_000_000, max_output_tokens: 128_000 },
+		},
+		parameters: {
+			"openrouter/moonshotai/kimi-k2.7-code": {
+				provider: "openrouter",
+				supports_function_calling: true,
+				supports_tool_choice: true,
+				supports_forced_tool_choice: false,
+				supports_reasoning: true,
+				supports_reasoning_with_tool_calls: false,
+			},
+			"openrouter/deepseek/deepseek-v4-pro": {
+				provider: "openrouter",
+				supports_function_calling: true,
+				supports_tool_choice: true,
+				supports_forced_tool_choice: true,
+				supports_reasoning: true,
+				supports_reasoning_with_tool_calls: true,
+			},
+		},
+	};
+	const rich = buildRichRouteCatalog(live, aliases, sheets, []);
+	const catalog = buildPifrostCatalog(rich.models, aliases, rich.diagnostics);
+	const model = catalog.models[0];
+	assert.ok(model);
+	assert.equal(model.compat.supportsToolChoice, true);
+	assert.equal(model.compat.supportsForcedToolChoice, false);
+	assert.equal(model.compat.disableReasoningOnToolChoice, true);
+	assert.equal(catalog.diagnostics[0]?.forcedToolChoice, false);
+	assert.equal(catalog.diagnostics[0]?.reasoningWithTools, false);
 });
 
 test("capability intersections stay conservative after rich resolution", () => {

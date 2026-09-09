@@ -47,6 +47,20 @@ const AGGREGATOR_QUALIFIERS = new Set([
 	"open router",
 ]);
 
+const OPENROUTER_ROUTING_VARIANTS = new Set(["nitro", "floor", "online", "exacto", "extended"]);
+
+function stripTransportVariant(value: string): string {
+	const normalized = normalizeModelReference(value);
+	const lastSlash = normalized.lastIndexOf("/");
+	const lastColon = normalized.lastIndexOf(":");
+	if (lastColon <= lastSlash) return normalized;
+	const suffix = normalized.slice(lastColon + 1);
+	// These suffixes choose an OpenRouter routing strategy but do not identify a
+	// different base model. Billing/entitlement variants such as :free are
+	// intentionally NOT stripped because they may have different limits.
+	return OPENROUTER_ROUTING_VARIANTS.has(suffix) ? normalized.slice(0, lastColon) : normalized;
+}
+
 const VENDOR_ALIASES = new Map<string, string>([
 	["z ai", "zai"],
 	["zai", "zai"],
@@ -99,7 +113,7 @@ function isAggregator(value: string): boolean {
 }
 
 export function canonicalModelFamily(value: string): string {
-	const full = normalizeModelReference(value).replace(/:batch$/u, "");
+	const full = stripTransportVariant(value).replace(/:batch$/u, "");
 	const fullAlias = MODEL_EQUIVALENCE.get(full);
 	if (fullAlias) return fullAlias;
 	const model = tail(full);
@@ -107,7 +121,7 @@ export function canonicalModelFamily(value: string): string {
 }
 
 function identity(value: string): ModelIdentity {
-	let parts = normalizeModelReference(value).replace(/:batch$/u, "").split("/").filter(Boolean);
+	let parts = stripTransportVariant(value).replace(/:batch$/u, "").split("/").filter(Boolean);
 	while (parts.length > 1 && isAggregator(parts[0]!)) parts = parts.slice(1);
 	const family = canonicalModelFamily(parts.join("/"));
 	let vendor: string | undefined;

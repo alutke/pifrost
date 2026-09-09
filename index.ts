@@ -11,7 +11,7 @@ import {
 
 export const PROVIDER_ID = "bifrost";
 export const PIFROST_API = "pifrost-openai-completions";
-export const PIFROST_VERSION = "0.3.2";
+export const PIFROST_VERSION = "0.3.3";
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
 const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -22,7 +22,17 @@ type OmpThinkingConfig = NonNullable<OmpModel["thinking"]>;
 type ProviderHeaders = Record<string, string | null>;
 
 export type CapabilitySource = "live" | "bifrost-datasheet" | "canonical-family" | "vendor-override" | "fallback";
-export type CapabilityKey = "contextWindow" | "maxTokens" | "image" | "reasoning" | "reasoningEfforts" | "tools";
+export type CapabilityKey =
+	| "contextWindow"
+	| "maxTokens"
+	| "image"
+	| "reasoning"
+	| "reasoningEfforts"
+	| "tools"
+	| "toolChoice"
+	| "forcedToolChoice"
+	| "namedToolChoice"
+	| "reasoningWithTools";
 export type CapabilityProvenance = Partial<Record<CapabilityKey, CapabilitySource>>;
 
 export interface BifrostConfig {
@@ -87,6 +97,12 @@ export interface BifrostProviderModel {
 		supportsDeveloperRole: boolean;
 		supportsReasoningEffort: boolean;
 		supportsUsageInStreaming: boolean;
+		/** OpenAI-compatible tool-choice surface. Unknown values intentionally follow OMP/Bifrost defaults. */
+		supportsToolChoice?: boolean;
+		supportsForcedToolChoice?: boolean;
+		supportsNamedToolChoice?: boolean;
+		/** Disable per-turn reasoning when the routed model cannot combine reasoning with tool calls. */
+		disableReasoningOnToolChoice?: boolean;
 	};
 }
 
@@ -130,6 +146,10 @@ export interface AliasDiagnostic {
 	reasoning: boolean;
 	reasoningEfforts: string[];
 	tools: boolean;
+	toolChoice: boolean;
+	forcedToolChoice: boolean;
+	namedToolChoice: boolean;
+	reasoningWithTools: boolean;
 	members?: AliasMemberDiagnostic[];
 }
 
@@ -344,6 +364,9 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 	const reasoning = model.reasoning !== undefined || parameters.some((parameter) => parameter.includes("reasoning"));
 	const thinking = reasoning ? modelThinking(model) : undefined;
 	const supportsTools = parameters.some((parameter) => /tool|function/u.test(parameter));
+	const supportsToolChoice = supportsTools && (
+		!hasParameterInventory || parameters.some((parameter) => /tool_choice/u.test(parameter))
+	);
 	const inputModalities = model.architecture?.input_modalities?.map((modality) => modality.toLowerCase()) ?? [];
 	const hasInputModalities = inputModalities.length > 0;
 	const inputPrice = pricePerMillion(model.pricing?.prompt) ?? 0;
@@ -377,6 +400,12 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			supportsDeveloperRole: false,
 			supportsReasoningEffort: Boolean(thinking),
 			supportsUsageInStreaming: true,
+			supportsToolChoice,
+			// /v1/models exposes whether tool_choice exists, but not every forced/named sub-form.
+			// Keep OMP's normal permissive default here; the richer Bifrost datasheet refines it below.
+			supportsForcedToolChoice: supportsToolChoice,
+			supportsNamedToolChoice: supportsToolChoice,
+			disableReasoningOnToolChoice: false,
 		},
 	};
 }
@@ -485,6 +514,10 @@ export function synthesizeAlias(
 	const thinking = intersectThinking(members);
 	const reasoning = members.length > 0 && members.every((model) => model.reasoning);
 	const reasoningEfforts = thinkingEffortNames(thinking);
+	const toolChoice = members.length > 0 && members.every((model) => model.compat.supportsToolChoice !== false);
+	const forcedToolChoice = toolChoice && members.every((model) => model.compat.supportsForcedToolChoice !== false);
+	const namedToolChoice = toolChoice && members.every((model) => model.compat.supportsNamedToolChoice !== false);
+	const reasoningWithTools = members.length > 0 && members.every((model) => model.compat.disableReasoningOnToolChoice !== true);
 	const memberDiagnostics: AliasMemberDiagnostic[] = resolutionEntries.map((entry) => {
 		const model = entry.resolution.model;
 		const rich = entry.rich;
@@ -511,6 +544,10 @@ export function synthesizeAlias(
 		reasoning,
 		reasoningEfforts: [...reasoningEfforts],
 		tools: members.length > 0 && members.every((model) => model.supportsTools),
+		toolChoice,
+		forcedToolChoice,
+		namedToolChoice,
+		reasoningWithTools,
 		members: memberDiagnostics,
 	};
 
@@ -537,6 +574,10 @@ export function synthesizeAlias(
 				supportsReasoningEffort:
 					Boolean(thinking) && members.every((model) => model.compat.supportsReasoningEffort),
 				supportsUsageInStreaming: members.every((model) => model.compat.supportsUsageInStreaming),
+				supportsToolChoice: toolChoice,
+				supportsForcedToolChoice: forcedToolChoice,
+				supportsNamedToolChoice: namedToolChoice,
+				disableReasoningOnToolChoice: !reasoningWithTools,
 			},
 		},
 		diagnostic,
@@ -657,7 +698,7 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 	for (const item of diagnostics) {
 		const status = item.unresolved.length ? "WARN" : "OK";
 		lines.push(
-			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"}`,
+			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"} toolChoice=${item.toolChoice ? "yes" : "no"} forcedTool=${item.forcedToolChoice ? "yes" : "no"} reasoningWithTools=${item.reasoningWithTools ? "yes" : "no"}`,
 		);
 		for (const member of item.members ?? []) {
 			const target = member.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";

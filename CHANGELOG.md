@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- Hardened OpenRouter-through-Bifrost support without moving provider routing into Pifrost.
+- Added OpenRouter as a provider-qualified OMP catalog fallback source so sparse Bifrost metadata prefers OpenRouter's own model envelope instead of a cross-provider family intersection.
+- Added collision-safe identity handling for OpenRouter routing variants (`:nitro`, `:floor`, `:online`, `:exacto`, `:extended`) while deliberately keeping billing/entitlement variants such as `:free` distinct.
+- Projected Bifrost model-parameter compatibility for `tool_choice`, forced/named tool choice and reasoning-with-tools into the logical OMP alias envelope. Heterogeneous fallback chains now downgrade to the weakest portable tool/reasoning combination instead of assuming the primary's behavior.
+- Expanded diagnostics and regression coverage for OpenRouter provider qualification, variant handling, free-tier isolation and mixed reasoning/tool fallback chains.
+
 ## 0.3.2
 
 - Fixed an OMP runtime crash on forced-tool turns (`disableReasoningOnForcedToolChoice` read from an undefined compat record).
