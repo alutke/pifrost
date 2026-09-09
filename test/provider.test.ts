@@ -7,8 +7,7 @@ import {
 	formatDoctorReport,
 	normalizeBifrostUrl,
 	PIFROST_API,
-	pifrostProviderHeaders,
-	streamPifrostOpenAI,
+	pifrostOpenCodeSessionHeaders,
 	resolveAliasReference,
 	synthesizeAlias,
 	toProviderModel,
@@ -42,20 +41,6 @@ function effortThinking(...efforts: string[]): NonNullable<BifrostProviderModel[
 		mode: "effort",
 		efforts: efforts as unknown as NonNullable<BifrostProviderModel["thinking"]>["efforts"],
 	};
-}
-
-function chatSse(): Response {
-	const chunk = (delta: unknown, finishReason: string | null) =>
-		JSON.stringify({
-			id: "x",
-			object: "chat.completion.chunk",
-			created: 0,
-			choices: [{ index: 0, delta, finish_reason: finishReason }],
-		});
-	return new Response(`data: ${chunk({ content: "ok" }, null)}\n\ndata: ${chunk({}, "stop")}\n\ndata: [DONE]\n\n`, {
-		status: 200,
-		headers: { "content-type": "text/event-stream" },
-	});
 }
 
 test("normalizes Bifrost URLs to the native /v1 mount", () => {
@@ -260,7 +245,6 @@ test("native OMP provider uses the Pifrost transport and separate x-bf-vk govern
 	});
 
 	assert.equal(provider.api, PIFROST_API);
-	assert.equal(provider.streamSimple, streamPifrostOpenAI);
 	assert.equal(provider.authHeader, true);
 	assert.deepEqual(provider.headers, {
 		"x-bf-vk": "vk",
@@ -273,40 +257,16 @@ test("native OMP provider uses the Pifrost transport and separate x-bf-vk govern
 	assert.equal(capturedHeaders?.get("x-bf-vk"), "vk");
 });
 
-test("forwards the stable OMP session and client identity through Bifrost for OpenCode Go", async () => {
-	let capturedHeaders: Headers | undefined;
-	const fakeFetch: typeof fetch = async (_input, init) => {
-		capturedHeaders = new Headers(init?.headers);
-		return chatSse();
-	};
-	const base = model("omp-advisor");
-	const wireModel = {
-		...base,
-		provider: "bifrost",
-		api: PIFROST_API,
-		baseUrl: "http://bifrost/v1",
-		headers: pifrostProviderHeaders("vk"),
-	};
-
-	const response = streamPifrostOpenAI(
-		wireModel as never,
-		{ messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+test("OpenCode Go session forwarding is authoritative and preserves unrelated headers", () => {
+	const headers = pifrostOpenCodeSessionHeaders(
 		{
-			apiKey: "api",
-			sessionId: "session-123",
-			headers: {
-				"X-BF-EH-X-OPENCODE-SESSION": "wrong-session",
-				"x-test": "preserved",
-			},
-			fetch: fakeFetch,
+			"X-BF-EH-X-OPENCODE-SESSION": "wrong-session",
+			"x-test": "preserved",
 		},
+		"session-123",
 	);
-	const result = await response.result();
 
-	assert.equal(result.stopReason, "stop");
-	assert.equal(capturedHeaders?.get("x-bf-vk"), "vk");
-	assert.equal(capturedHeaders?.get("user-agent"), "pifrost/0.3.1 OMP");
-	assert.equal(capturedHeaders?.get("x-bf-eh-user-agent"), "pifrost/0.3.1 OMP");
-	assert.equal(capturedHeaders?.get("x-bf-eh-x-opencode-session"), "session-123");
-	assert.equal(capturedHeaders?.get("x-test"), "preserved");
+	assert.equal(headers["x-bf-eh-x-opencode-session"], "session-123");
+	assert.equal(headers["X-BF-EH-X-OPENCODE-SESSION"], undefined);
+	assert.equal(headers["x-test"], "preserved");
 });

@@ -1,16 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type {
-	Context,
-	Effort as OmpEffort,
-	Model as OmpModel,
-	SimpleStreamOptions,
-} from "@oh-my-pi/pi-ai";
-import {
-	streamOpenAICompletions,
-	type OpenAICompletionsOptions,
-} from "@oh-my-pi/pi-ai/providers/openai-completions";
+import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 import {
@@ -153,7 +144,6 @@ export interface NativeProviderConfig {
 	api: typeof PIFROST_API;
 	authHeader?: boolean;
 	headers: Record<string, string>;
-	streamSimple: typeof streamPifrostOpenAI;
 	fetchDynamicModels(apiKey: string | undefined): Promise<readonly BifrostProviderModel[]>;
 }
 
@@ -275,97 +265,6 @@ export function pifrostOpenCodeSessionHeaders(
 	const result: Record<string, string> = { ...(headers ?? {}) };
 	setHeader(result, "x-bf-eh-x-opencode-session", normalizedSessionId);
 	return result;
-}
-
-function normalizePifrostReasoningOptions(
-	model: OmpModel,
-	options: SimpleStreamOptions | undefined,
-): SimpleStreamOptions | undefined {
-	if (
-		!model.reasoning ||
-		!model.thinking?.requiresEffort ||
-		model.thinking.suppressWhenOff ||
-		(options?.reasoning !== undefined && !options.disableReasoning && !options.forceReasoningOff)
-	) {
-		return options;
-	}
-	const floor = model.thinking.efforts[0];
-	if (floor === undefined) return options;
-	return {
-		...options,
-		reasoning: floor,
-		disableReasoning: undefined,
-		forceReasoningOff: undefined,
-	};
-}
-
-function resolvePifrostReasoningEffort(
-	model: OmpModel,
-	options: SimpleStreamOptions | undefined,
-): OpenAICompletionsOptions["reasoning"] {
-	const reasoning = options?.reasoning;
-	if (!reasoning || !model.reasoning || !model.thinking) return undefined;
-	if (model.thinking.efforts.includes(reasoning) || model.thinking.effortMap?.[reasoning] !== undefined) {
-		return reasoning;
-	}
-	throw new Error(`Pifrost model ${model.id} does not support reasoning effort ${reasoning}`);
-}
-
-function mapPifrostOpenAIToolChoice(
-	choice: SimpleStreamOptions["toolChoice"],
-): OpenAICompletionsOptions["toolChoice"] {
-	if (!choice) return undefined;
-	if (typeof choice === "string") {
-		if (choice === "any") return "required";
-		if (choice === "auto" || choice === "none" || choice === "required") return choice;
-		return undefined;
-	}
-	if (choice.type === "tool") {
-		return choice.name ? { type: "function", function: { name: choice.name } } : undefined;
-	}
-	if (choice.type === "function") {
-		const name = "function" in choice ? choice.function?.name : choice.name;
-		return name ? { type: "function", function: { name } } : undefined;
-	}
-	return undefined;
-}
-
-/**
- * Pifrost-specific OpenAI Chat Completions transport.
- *
- * OMP attaches a stable sessionId before dispatching a custom provider API.
- * Pifrost projects that id through Bifrost's dynamic-extra-header mechanism
- * so an OpenCode Go target receives the required x-opencode-session header,
- * while retaining OpenAI Chat Completions request shaping and Pifrost's route model.
- */
-export function streamPifrostOpenAI(
-	model: OmpModel,
-	context: Context,
-	rawOptions?: SimpleStreamOptions,
-) {
-	const sessionId = nonEmpty(rawOptions?.sessionId);
-	if (!sessionId) {
-		throw new Error("Pifrost requires OMP to supply an inference session id");
-	}
-	const options = normalizePifrostReasoningOptions(model, rawOptions);
-	const transportModel = {
-		...model,
-		api: "openai-completions" as const,
-	} as OmpModel<"openai-completions">;
-	const streamOptions: OpenAICompletionsOptions = {
-		...options,
-		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
-		maxTokens: options?.maxTokens ?? model.maxTokens ?? undefined,
-		headers: pifrostOpenCodeSessionHeaders(options?.headers, sessionId),
-		reasoning: resolvePifrostReasoningEffort(model, options),
-		disableReasoning: options?.disableReasoning,
-		toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),
-		serviceTier: options?.serviceTier,
-		openrouterVariant: options?.openrouterVariant,
-		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
-		promptCache: options?.promptCache,
-	};
-	return streamOpenAICompletions(transportModel, context, streamOptions);
 }
 
 /** Headers used for Pifrost's own discovery probes. */
@@ -720,7 +619,6 @@ export function createNativeProviderConfig(options: CreateNativeProviderOptions)
 		api: PIFROST_API,
 		authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
 		headers: pifrostProviderHeaders(config.virtualKey),
-		streamSimple: streamPifrostOpenAI,
 		async fetchDynamicModels(resolvedApiKey) {
 			const liveConfig: BifrostConfig = {
 				url: config.url,

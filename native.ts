@@ -1,3 +1,8 @@
+import type { Context, Model, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
+import {
+	streamOpenAICompletions,
+	type OpenAICompletionsOptions,
+} from "@oh-my-pi/pi-ai/providers/openai-completions";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 import {
@@ -8,9 +13,9 @@ import {
 	loadAliasConfig,
 	optionalConfigFromEnvironment,
 	PIFROST_API,
+	pifrostOpenCodeSessionHeaders,
 	pifrostProviderHeaders,
 	PROVIDER_ID,
-	streamPifrostOpenAI,
 	type AliasDiagnostic,
 	type BifrostConfig,
 	type PifrostCatalog,
@@ -33,6 +38,96 @@ import { createBifrostUsageProvider } from "./bifrost-usage.ts";
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
+}
+
+function normalizePifrostReasoningOptions(
+	model: Model,
+	options: SimpleStreamOptions | undefined,
+): SimpleStreamOptions | undefined {
+	if (
+		!model.reasoning ||
+		!model.thinking?.requiresEffort ||
+		model.thinking.suppressWhenOff ||
+		(options?.reasoning !== undefined && !options.disableReasoning && !options.forceReasoningOff)
+	) {
+		return options;
+	}
+	const floor = model.thinking.efforts[0];
+	if (floor === undefined) return options;
+	return {
+		...options,
+		reasoning: floor,
+		disableReasoning: undefined,
+		forceReasoningOff: undefined,
+	};
+}
+
+function resolvePifrostReasoningEffort(
+	model: Model,
+	options: SimpleStreamOptions | undefined,
+): OpenAICompletionsOptions["reasoning"] {
+	const reasoning = options?.reasoning;
+	if (!reasoning || !model.reasoning || !model.thinking) return undefined;
+	if (model.thinking.efforts.includes(reasoning) || model.thinking.effortMap?.[reasoning] !== undefined) {
+		return reasoning;
+	}
+	throw new Error(`Pifrost model ${model.id} does not support reasoning effort ${reasoning}`);
+}
+
+function mapPifrostOpenAIToolChoice(
+	choice: SimpleStreamOptions["toolChoice"],
+): OpenAICompletionsOptions["toolChoice"] {
+	if (!choice) return undefined;
+	if (typeof choice === "string") {
+		if (choice === "any") return "required";
+		if (choice === "auto" || choice === "none" || choice === "required") return choice;
+		return undefined;
+	}
+	if (choice.type === "tool") {
+		return choice.name ? { type: "function", function: { name: choice.name } } : undefined;
+	}
+	if (choice.type === "function") {
+		const name = "function" in choice ? choice.function?.name : choice.name;
+		return name ? { type: "function", function: { name } } : undefined;
+	}
+	return undefined;
+}
+
+/**
+ * Custom transport used by Pifrost's logical Bifrost provider.
+ *
+ * OMP supplies a stable per-conversation sessionId before invoking custom
+ * provider transports. Pifrost projects it through Bifrost's x-bf-eh-* escape
+ * hatch so OpenCode Go receives x-opencode-session after Bifrost routing.
+ */
+function streamPifrostOpenAI(
+	model: Model,
+	context: Context,
+	rawOptions?: SimpleStreamOptions,
+) {
+	const sessionId = nonEmpty(rawOptions?.sessionId);
+	if (!sessionId) {
+		throw new Error("Pifrost requires OMP to supply an inference session id");
+	}
+	const options = normalizePifrostReasoningOptions(model, rawOptions);
+	const transportModel = {
+		...model,
+		api: "openai-completions" as const,
+	} as Model<"openai-completions">;
+	const streamOptions: OpenAICompletionsOptions = {
+		...options,
+		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
+		maxTokens: options?.maxTokens ?? model.maxTokens ?? undefined,
+		headers: pifrostOpenCodeSessionHeaders(options?.headers, sessionId),
+		reasoning: resolvePifrostReasoningEffort(model, options),
+		disableReasoning: options?.disableReasoning,
+		toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),
+		serviceTier: options?.serviceTier,
+		openrouterVariant: options?.openrouterVariant,
+		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
+		promptCache: options?.promptCache,
+	};
+	return streamOpenAICompletions(transportModel, context, streamOptions);
 }
 
 function positiveEnvMilliseconds(name: string, fallback: number): number {
