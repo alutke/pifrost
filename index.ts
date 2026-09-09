@@ -11,7 +11,7 @@ import {
 
 export const PROVIDER_ID = "bifrost";
 export const PIFROST_API = "pifrost-openai-completions";
-export const PIFROST_VERSION = "0.3.1";
+export const PIFROST_VERSION = "0.3.2";
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
 const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
