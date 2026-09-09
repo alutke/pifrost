@@ -47,9 +47,12 @@ OMP
  ▼
 Pifrost OMP provider
  │
- │ OpenAI Chat Completions transport
+ │ Pifrost OpenAI Chat Completions transport
  │ Authorization: Bearer <inference API key>
  │ x-bf-vk: <global inference Virtual Key>
+ │ User-Agent: pifrost/<version> OMP
+ │ x-bf-eh-user-agent: pifrost/<version> OMP
+ │ x-bf-eh-x-opencode-session: <OMP session id>
  ▼
 Bifrost /v1
  │
@@ -58,6 +61,9 @@ Bifrost /v1
  ├─ provider credentials
  └─ physical model providers
 ```
+
+For each inference request, OMP supplies a stable conversation `sessionId`. Pifrost forwards it to Bifrost as `x-bf-eh-x-opencode-session`; Bifrost strips the `x-bf-eh-` prefix and the selected upstream receives `x-opencode-session`. This satisfies OpenCode Go's per-conversation session requirement without mutating shared provider headers. Pifrost also forwards its explicit client identity upstream as `x-bf-eh-user-agent`.
+
 
 The management/control-plane path is separate:
 
@@ -143,7 +149,7 @@ If a route member cannot be resolved safely, Pifrost withholds the alias instead
 
 ### Capability discovery and model identity
 
-Pifrost 0.3.0 resolves capability facts per field rather than assuming one source is complete. The trust order is:
+Pifrost 0.3.1 resolves capability facts per field rather than assuming one source is complete. The trust order is:
 
 1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
 2. the Bifrost public pricing/model-parameter datasheets;
@@ -215,7 +221,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.3.0
+0.3.1
 ```
 
 Bun can also install the package globally:
@@ -909,6 +915,13 @@ BIFROST_MANAGEMENT_API_KEY
 ---
 
 ## Troubleshooting
+
+### OpenCode Go returns `MissingSessionID`
+
+Pifrost 0.3.1 forwards OMP's per-conversation session id through Bifrost using `x-bf-eh-x-opencode-session`, and forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. If Bifrost has a non-empty client header allowlist, it must permit both dynamic extra-header names; otherwise Bifrost will drop them before provider dispatch and OpenCode Go will reject the request.
+
+This is deliberately separate from Bifrost's own `x-bf-session-id`: the OpenCode header identifies the OMP conversation to the upstream OpenCode Go service.
+
 
 ### `pifrost --version` is old
 

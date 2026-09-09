@@ -6,6 +6,9 @@ import {
 	createNativeProviderConfig,
 	formatDoctorReport,
 	normalizeBifrostUrl,
+	PIFROST_API,
+	pifrostProviderHeaders,
+	streamPifrostOpenAI,
 	resolveAliasReference,
 	synthesizeAlias,
 	toProviderModel,
@@ -39,6 +42,20 @@ function effortThinking(...efforts: string[]): NonNullable<BifrostProviderModel[
 		mode: "effort",
 		efforts: efforts as unknown as NonNullable<BifrostProviderModel["thinking"]>["efforts"],
 	};
+}
+
+function chatSse(): Response {
+	const chunk = (delta: unknown, finishReason: string | null) =>
+		JSON.stringify({
+			id: "x",
+			object: "chat.completion.chunk",
+			created: 0,
+			choices: [{ index: 0, delta, finish_reason: finishReason }],
+		});
+	return new Response(`data: ${chunk({ content: "ok" }, null)}\n\ndata: ${chunk({}, "stop")}\n\ndata: [DONE]\n\n`, {
+		status: 200,
+		headers: { "content-type": "text/event-stream" },
+	});
 }
 
 test("normalizes Bifrost URLs to the native /v1 mount", () => {
@@ -216,7 +233,7 @@ test("doctor report highlights unresolved chain members", () => {
 	assert.match(report, /missing/);
 });
 
-test("native OMP provider uses Chat Completions and separate x-bf-vk governance", async () => {
+test("native OMP provider uses the Pifrost transport and separate x-bf-vk governance", async () => {
 	let capturedHeaders: Headers | undefined;
 	const fakeFetch: typeof fetch = async (_input, init) => {
 		capturedHeaders = new Headers(init?.headers);
@@ -242,11 +259,54 @@ test("native OMP provider uses Chat Completions and separate x-bf-vk governance"
 		fetch: fakeFetch,
 	});
 
-	assert.equal(provider.api, "openai-completions");
+	assert.equal(provider.api, PIFROST_API);
+	assert.equal(provider.streamSimple, streamPifrostOpenAI);
 	assert.equal(provider.authHeader, true);
-	assert.deepEqual(provider.headers, { "x-bf-vk": "vk" });
+	assert.deepEqual(provider.headers, {
+		"x-bf-vk": "vk",
+		"User-Agent": "pifrost/0.3.1 OMP",
+		"x-bf-eh-user-agent": "pifrost/0.3.1 OMP",
+	});
 	const models = await provider.fetchDynamicModels("resolved-api");
 	assert.deepEqual(models.map((entry) => entry.id), ["omp-task"]);
 	assert.equal(capturedHeaders?.get("authorization"), "Bearer resolved-api");
 	assert.equal(capturedHeaders?.get("x-bf-vk"), "vk");
+});
+
+test("forwards the stable OMP session and client identity through Bifrost for OpenCode Go", async () => {
+	let capturedHeaders: Headers | undefined;
+	const fakeFetch: typeof fetch = async (_input, init) => {
+		capturedHeaders = new Headers(init?.headers);
+		return chatSse();
+	};
+	const base = model("omp-advisor");
+	const wireModel = {
+		...base,
+		provider: "bifrost",
+		api: PIFROST_API,
+		baseUrl: "http://bifrost/v1",
+		headers: pifrostProviderHeaders("vk"),
+	};
+
+	const response = streamPifrostOpenAI(
+		wireModel as never,
+		{ messages: [{ role: "user", content: "hello", timestamp: 0 }] },
+		{
+			apiKey: "api",
+			sessionId: "session-123",
+			headers: {
+				"X-BF-EH-X-OPENCODE-SESSION": "wrong-session",
+				"x-test": "preserved",
+			},
+			fetch: fakeFetch,
+		},
+	);
+	const result = await response.result();
+
+	assert.equal(result.stopReason, "stop");
+	assert.equal(capturedHeaders?.get("x-bf-vk"), "vk");
+	assert.equal(capturedHeaders?.get("user-agent"), "pifrost/0.3.1 OMP");
+	assert.equal(capturedHeaders?.get("x-bf-eh-user-agent"), "pifrost/0.3.1 OMP");
+	assert.equal(capturedHeaders?.get("x-bf-eh-x-opencode-session"), "session-123");
+	assert.equal(capturedHeaders?.get("x-test"), "preserved");
 });

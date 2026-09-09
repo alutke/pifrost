@@ -7,7 +7,10 @@ import {
 	formatDoctorReport,
 	loadAliasConfig,
 	optionalConfigFromEnvironment,
+	PIFROST_API,
+	pifrostProviderHeaders,
 	PROVIDER_ID,
+	streamPifrostOpenAI,
 	type AliasDiagnostic,
 	type BifrostConfig,
 	type PifrostCatalog,
@@ -166,15 +169,13 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 		pi.registerProvider(PROVIDER_ID, {
 			baseUrl: config.url,
 			apiKey: providerApiKey,
-			api: "openai-completions",
+			api: PIFROST_API,
+			streamSimple: streamPifrostOpenAI,
 			// Bifrost 2.x accepts sk-bf-* VKs as OpenAI Bearer credentials.
 			// Legacy VK values remain x-bf-vk-only and therefore suppress the
 			// generated Authorization header.
 			authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
-			headers: {
-				"x-bf-vk": config.virtualKey,
-				"User-Agent": `pifrost/${process.env.npm_package_version ?? "0.3.0"} OMP`,
-			},
+			headers: pifrostProviderHeaders(config.virtualKey),
 			...(usage ? { usage } : {}),
 			...(startupCache ? { models: startupCache.models } : {}),
 			async fetchDynamicModels(resolvedApiKey) {

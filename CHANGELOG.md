@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.3.1
+
+- Added a Pifrost-specific OpenAI Chat Completions transport so every routed inference request can use OMP's per-request `sessionId` without mutating shared provider headers.
+- Fixed OpenCode Go's enforced session contract by forwarding the stable OMP conversation id through Bifrost as `x-bf-eh-x-opencode-session`, which Bifrost strips to upstream `x-opencode-session`.
+- Forwarded Pifrost's explicit `pifrost/0.3.1 OMP` client identity through Bifrost as `x-bf-eh-user-agent` while retaining the normal Bifrost-facing `User-Agent`.
+- Preserved OpenAI Chat Completions reasoning/tool-choice request shaping in the custom transport, including mandatory-reasoning clamping and caller header precedence, and added regression coverage for authoritative session-header replacement.
+- Documented the Bifrost header-allowlist requirement for deployments that restrict dynamic `x-bf-eh-*` forwarding.
+
 ## 0.3.0
 
 - Raised the supported integration baseline to Bifrost **2.0.0+** and OhMyPi **18.1.10**, while retaining compatibility fallbacks for older Bifrost routing surfaces where they are harmless.

@@ -1,7 +1,16 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
+import type {
+	Context,
+	Effort as OmpEffort,
+	Model as OmpModel,
+	SimpleStreamOptions,
+} from "@oh-my-pi/pi-ai";
+import {
+	streamOpenAICompletions,
+	type OpenAICompletionsOptions,
+} from "@oh-my-pi/pi-ai/providers/openai-completions";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 import {
@@ -10,6 +19,8 @@ import {
 } from "./model-resolution.ts";
 
 export const PROVIDER_ID = "bifrost";
+export const PIFROST_API = "pifrost-openai-completions";
+export const PIFROST_VERSION = "0.3.1";
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
 const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -139,9 +150,10 @@ export interface PifrostCatalog {
 export interface NativeProviderConfig {
 	baseUrl: string;
 	apiKey?: string;
-	api: "openai-completions";
+	api: typeof PIFROST_API;
 	authHeader?: boolean;
 	headers: Record<string, string>;
+	streamSimple: typeof streamPifrostOpenAI;
 	fetchDynamicModels(apiKey: string | undefined): Promise<readonly BifrostProviderModel[]>;
 }
 
@@ -231,6 +243,129 @@ function setHeader(headers: ProviderHeaders, name: string, value: string | null)
 		if (key.toLowerCase() === name.toLowerCase()) delete headers[key];
 	}
 	headers[name] = value;
+}
+
+/** Pifrost's explicit client identity for Bifrost and upstream providers. */
+export function pifrostUserAgent(): string {
+	return `pifrost/${PIFROST_VERSION} OMP`;
+}
+
+/** Static provider headers. The x-bf-eh header forwards Pifrost's UA to the routed provider. */
+export function pifrostProviderHeaders(virtualKey: string): Record<string, string> {
+	const userAgent = pifrostUserAgent();
+	return {
+		"x-bf-vk": virtualKey,
+		"User-Agent": userAgent,
+		"x-bf-eh-user-agent": userAgent,
+	};
+}
+
+/**
+ * Attach OMP's authoritative per-conversation session id as a Bifrost dynamic
+ * extra header. Bifrost strips x-bf-eh- and sends x-opencode-session upstream.
+ */
+export function pifrostOpenCodeSessionHeaders(
+	headers: Record<string, string> | undefined,
+	sessionId: string,
+): Record<string, string> {
+	const normalizedSessionId = nonEmpty(sessionId);
+	if (!normalizedSessionId) {
+		throw new Error("Pifrost requires a non-empty OMP inference session id for OpenCode Go routing");
+	}
+	const result: Record<string, string> = { ...(headers ?? {}) };
+	setHeader(result, "x-bf-eh-x-opencode-session", normalizedSessionId);
+	return result;
+}
+
+function normalizePifrostReasoningOptions(
+	model: OmpModel,
+	options: SimpleStreamOptions | undefined,
+): SimpleStreamOptions | undefined {
+	if (
+		!model.reasoning ||
+		!model.thinking?.requiresEffort ||
+		model.thinking.suppressWhenOff ||
+		(options?.reasoning !== undefined && !options.disableReasoning && !options.forceReasoningOff)
+	) {
+		return options;
+	}
+	const floor = model.thinking.efforts[0];
+	if (floor === undefined) return options;
+	return {
+		...options,
+		reasoning: floor,
+		disableReasoning: undefined,
+		forceReasoningOff: undefined,
+	};
+}
+
+function resolvePifrostReasoningEffort(
+	model: OmpModel,
+	options: SimpleStreamOptions | undefined,
+): OpenAICompletionsOptions["reasoning"] {
+	const reasoning = options?.reasoning;
+	if (!reasoning || !model.reasoning || !model.thinking) return undefined;
+	if (model.thinking.efforts.includes(reasoning) || model.thinking.effortMap?.[reasoning] !== undefined) {
+		return reasoning;
+	}
+	throw new Error(`Pifrost model ${model.id} does not support reasoning effort ${reasoning}`);
+}
+
+function mapPifrostOpenAIToolChoice(
+	choice: SimpleStreamOptions["toolChoice"],
+): OpenAICompletionsOptions["toolChoice"] {
+	if (!choice) return undefined;
+	if (typeof choice === "string") {
+		if (choice === "any") return "required";
+		if (choice === "auto" || choice === "none" || choice === "required") return choice;
+		return undefined;
+	}
+	if (choice.type === "tool") {
+		return choice.name ? { type: "function", function: { name: choice.name } } : undefined;
+	}
+	if (choice.type === "function") {
+		const name = "function" in choice ? choice.function?.name : choice.name;
+		return name ? { type: "function", function: { name } } : undefined;
+	}
+	return undefined;
+}
+
+/**
+ * Pifrost-specific OpenAI Chat Completions transport.
+ *
+ * OMP attaches a stable sessionId before dispatching a custom provider API.
+ * Pifrost projects that id through Bifrost's dynamic-extra-header mechanism
+ * so an OpenCode Go target receives the required x-opencode-session header,
+ * while retaining OpenAI Chat Completions request shaping and Pifrost's route model.
+ */
+export function streamPifrostOpenAI(
+	model: OmpModel,
+	context: Context,
+	rawOptions?: SimpleStreamOptions,
+) {
+	const sessionId = nonEmpty(rawOptions?.sessionId);
+	if (!sessionId) {
+		throw new Error("Pifrost requires OMP to supply an inference session id");
+	}
+	const options = normalizePifrostReasoningOptions(model, rawOptions);
+	const transportModel = {
+		...model,
+		api: "openai-completions" as const,
+	} as OmpModel<"openai-completions">;
+	const streamOptions: OpenAICompletionsOptions = {
+		...options,
+		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
+		maxTokens: options?.maxTokens ?? model.maxTokens ?? undefined,
+		headers: pifrostOpenCodeSessionHeaders(options?.headers, sessionId),
+		reasoning: resolvePifrostReasoningEffort(model, options),
+		disableReasoning: options?.disableReasoning,
+		toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),
+		serviceTier: options?.serviceTier,
+		openrouterVariant: options?.openrouterVariant,
+		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
+		promptCache: options?.promptCache,
+	};
+	return streamOpenAICompletions(transportModel, context, streamOptions);
 }
 
 /** Headers used for Pifrost's own discovery probes. */
@@ -582,9 +717,10 @@ export function createNativeProviderConfig(options: CreateNativeProviderOptions)
 	return {
 		baseUrl: config.url,
 		apiKey: providerApiKey,
-		api: "openai-completions",
+		api: PIFROST_API,
 		authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
-		headers: { "x-bf-vk": config.virtualKey },
+		headers: pifrostProviderHeaders(config.virtualKey),
+		streamSimple: streamPifrostOpenAI,
 		async fetchDynamicModels(resolvedApiKey) {
 			const liveConfig: BifrostConfig = {
 				url: config.url,
