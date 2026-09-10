@@ -1,0 +1,50 @@
+name: Dynamic routing 0.4.0 implementation
+
+on:
+  push:
+    branches: [pifrost-dynamic-routing-0.4.0]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-test:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - run: npm install
+      - name: Apply implementation
+        run: node scripts/apply-dynamic-routing-0.4.0.mjs
+      - run: npm run check
+      - run: npm test
+      - name: Validate Bifrost public datasheets
+        run: node scripts/validate-public-datasheets.mjs
+      - name: Validate current OMP route envelopes
+        run: npx tsx scripts/validate-current-routing.ts
+      - name: Validate Bifrost 2.0 and current 2.x contracts
+        run: node scripts/validate-bifrost-v2-contract.mjs
+      - name: Validate with released OMP 18.1.10 CLI/plugin loader
+        run: |
+          export HOME="$RUNNER_TEMP/omp-home"
+          mkdir -p "$HOME"
+          ./node_modules/.bin/omp --version
+          ./node_modules/.bin/omp install . --force
+          ./node_modules/.bin/omp plugin list
+      - name: Commit tested implementation to branch
+        run: |
+          rm -f package-lock.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --stat
+          git commit -m "Add dynamic context-aware Pifrost routing"
+          git push origin HEAD:pifrost-dynamic-routing-0.4.0
