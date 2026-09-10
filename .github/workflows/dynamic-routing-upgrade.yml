@@ -22,6 +22,8 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: npm install
+      - name: Repair bootstrap
+        run: node scripts/repair-dynamic-routing-bootstrap.mjs
       - name: Apply implementation
         run: node scripts/apply-dynamic-routing-0.4.0.mjs
       - run: npm run check
@@ -41,7 +43,7 @@ jobs:
           ./node_modules/.bin/omp plugin list
       - name: Commit tested implementation to branch
         run: |
-          rm -f package-lock.json
+          rm -f package-lock.json scripts/repair-dynamic-routing-bootstrap.mjs
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
