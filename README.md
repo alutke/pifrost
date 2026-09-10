@@ -149,10 +149,10 @@ If a route member cannot be resolved safely, Pifrost withholds the alias instead
 
 ### Capability discovery and model identity
 
-Pifrost 0.3.4 includes one narrowly scoped free-entitlement exception for `CommandCode GOAT/meituan/LongCat-2.0:free`. The live Bifrost inventory currently exposes that route without authoritative limits, while the upstream LongCat-2.0 contract publishes a 1M context window, 131,072 maximum output tokens, text input, reasoning and native tool calling. Pifrost uses those verified limits only for that exact CommandCode GOAT SKU. It does not generalize them to OpenRouter or other `:free` model identifiers.
+Pifrost 0.4.0 includes one narrowly scoped free-entitlement exception for `CommandCode GOAT/meituan/LongCat-2.0:free`. The live Bifrost inventory currently exposes that route without authoritative limits, while the upstream LongCat-2.0 contract publishes a 1M context window, 131,072 maximum output tokens, text input, reasoning and native tool calling. Pifrost uses those verified limits only for that exact CommandCode GOAT SKU. It does not generalize them to OpenRouter or other `:free` model identifiers.
 
 
-Pifrost 0.3.4 resolves capability facts per field rather than assuming one source is complete. The trust order is:
+Pifrost 0.4.0 resolves capability facts per field rather than assuming one source is complete. The trust order is:
 
 1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
 2. the Bifrost public pricing/model-parameter datasheets;
@@ -224,7 +224,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.3.4
+0.4.0
 ```
 
 Bun can also install the package globally:
@@ -921,15 +921,27 @@ BIFROST_MANAGEMENT_API_KEY
 
 Pifrost treats OpenRouter as a Bifrost-owned upstream, not as a second client-side transport. Route members such as `openrouter/vendor/model` therefore remain ordinary Bifrost targets while Pifrost advertises a conservative OMP capability envelope.
 
-Pifrost 0.3.4 adds provider-qualified OpenRouter catalog fallback, explicit handling for OpenRouter routing variants (`:nitro`, `:floor`, `:online`, `:exacto`, `:extended`), and tool/reasoning compatibility projection from Bifrost's model-parameters datasheet. Routing variants may inherit the base model's capability metadata; billing/entitlement variants such as `:free` deliberately may not. A free route must have its own live or datasheet limits so Pifrost never silently borrows a paid SKU's larger context/output envelope.
+Pifrost 0.4.0 adds provider-qualified OpenRouter catalog fallback, explicit handling for OpenRouter routing variants (`:nitro`, `:floor`, `:online`, `:exacto`, `:extended`), and tool/reasoning compatibility projection from Bifrost's model-parameters datasheet. Routing variants may inherit the base model's capability metadata; billing/entitlement variants such as `:free` deliberately may not. A free route must have its own live or datasheet limits so Pifrost never silently borrows a paid SKU's larger context/output envelope.
 
 Bifrost remains responsible for provider credentials, provider selection/fallback, request translation and provider-specific parameter dropping. Pifrost does not inject an OpenRouter API key or emulate OpenRouter routing client-side.
+
+## Dynamic context-aware Bifrost routes
+
+Pifrost 0.4.0 removes the weakest-context-member ceiling for simple Bifrost logical routes. After `pifrost routes sync`, aliases backed by one global, terminal, unweighted routing rule are marked `context-aware`. Pifrost advertises the largest context window available anywhere in that route while keeping the route-wide safe minimum output ceiling.
+
+At request time Pifrost intercepts OMP's final OpenAI-compatible payload, estimates serialized prompt demand with a conservative safety allowance, reserves the requested output budget, and filters the synced route chain. Members that cannot accommodate the request context are excluded. The first eligible member becomes the physical Bifrost request model and the remaining eligible members are supplied through Bifrost's native top-level `fallbacks` array, so Bifrost still executes provider credentials, retries, governance and failover. The original logical role is retained in `x-pifrost-logical-model` for observability.
+
+For example, a route `1M -> 256K -> 1M` is advertised to OMP as 1M. Small requests retain all three members; once the calculated input-plus-output requirement exceeds 256K, the middle member is removed for that request only. Pifrost fails closed if no member can satisfy the calculated requirement.
+
+Dynamic compilation is deliberately disabled for scope-specific, weighted, chained, complexity, budget, quota, header or parameter-dependent rules because bypassing those logical rules could change Bifrost semantics. Those aliases continue to use the static weakest-member envelope. The feature therefore improves simple fallback routes automatically without weakening complex-route correctness.
+
+Run `pifrost doctor` after syncing to see `dynamic-context=<static>-><advertised>` and the derived context bands.
 
 ## Troubleshooting
 
 ### OpenCode Go returns `MissingSessionID`
 
-Pifrost 0.3.4 forwards OMP's per-conversation session id through Bifrost using `x-bf-eh-x-opencode-session`, and forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. The custom transport rebuilds the logical Pifrost model as a resolved OpenAI Chat Completions model before dispatch, so OMP's complete compatibility policy is present during forced-tool and reasoning handling. If Bifrost has a non-empty client header allowlist, it must permit both dynamic extra-header names; otherwise Bifrost will drop them before provider dispatch and OpenCode Go will reject the request.
+Pifrost 0.4.0 forwards OMP's per-conversation session id through Bifrost using `x-bf-eh-x-opencode-session`, and forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. The custom transport rebuilds the logical Pifrost model as a resolved OpenAI Chat Completions model before dispatch, so OMP's complete compatibility policy is present during forced-tool and reasoning handling. If Bifrost has a non-empty client header allowlist, it must permit both dynamic extra-header names; otherwise Bifrost will drop them before provider dispatch and OpenCode Go will reject the request.
 
 This is deliberately separate from Bifrost's own `x-bf-session-id`: the OpenCode header identifies the OMP conversation to the upstream OpenCode Go service.
 
