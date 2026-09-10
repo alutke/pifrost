@@ -27,6 +27,20 @@ replaceRequired(
   "capacity error message",
 );
 
+// Keep TypeScript's unknown-valued recursive walk explicit, and avoid a slash
+// escape being consumed by the bootstrap template before the generated regex is
+// parsed.
+replaceRequired(
+  'return Object.values(record).reduce((sum, item) => sum + imagePartCount(item, depth + 1), 0);',
+  'return Object.values(record).reduce<number>((sum, item) => sum + imagePartCount(item, depth + 1), 0);',
+  "image recursive reducer type",
+);
+replaceRequired(
+  'if (/^data:image\\//iu.test(item)) return "[image-data]";',
+  'if (item.toLowerCase().startsWith("data:image/")) return "[image-data]";',
+  "image data URI detection",
+);
+
 // Bifrost exposes `request` as the request-rate-limit percentage. A rule using
 // it is dynamic governance and must never be bypassed by local route compilation.
 replaceRequired(
