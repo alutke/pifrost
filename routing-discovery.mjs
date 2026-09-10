@@ -197,12 +197,16 @@ function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function ruleMembers(rule) {
-  const rawTargets = Array.isArray(rule?.targets)
+function rawRuleTargets(rule) {
+  return Array.isArray(rule?.targets)
     ? rule.targets
     : Array.isArray(rule?.routing_targets)
       ? rule.routing_targets
       : [];
+}
+
+function ruleMembers(rule) {
+  const rawTargets = rawRuleTargets(rule);
   const targets = [...rawTargets].sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
   const fallbacks = Array.isArray(rule?.fallbacks)
     ? rule.fallbacks
@@ -210,6 +214,69 @@ function ruleMembers(rule) {
       ? rule.fallback_models
       : [];
   return unique([...targets.map(targetReference), ...fallbacks.map(nonEmpty)]);
+}
+
+const DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS = Object.freeze([
+  "headers",
+  "params",
+  "budget_used",
+  "tokens_used",
+  "complexity_tier",
+  "virtual_key_id",
+  "virtual_key_name",
+  "user_id",
+  "team_id",
+  "team_name",
+  "customer_id",
+  "customer_name",
+  "provider",
+  "request",
+]);
+
+function structuredQueryFields(value, result = new Set(), depth = 0) {
+  if (depth > 20 || value == null) return result;
+  if (Array.isArray(value)) {
+    for (const item of value) structuredQueryFields(item, result, depth + 1);
+    return result;
+  }
+  if (typeof value !== "object") return result;
+  if (typeof value.field === "string") result.add(value.field.toLowerCase());
+  for (const item of Object.values(value)) structuredQueryFields(item, result, depth + 1);
+  return result;
+}
+
+/**
+ * Dynamic request-time compilation is safe only when bypassing the logical
+ * Bifrost rule cannot change its semantics: one global terminal rule, one
+ * primary target, static fallbacks, and no request/scope/budget/complexity
+ * predicate other than model/request_type selection. More complex aliases keep
+ * the existing static weakest-member envelope and stay fully Bifrost-routed.
+ */
+export function isContextDynamicRuleSafe(rule, aliasId) {
+  if (!rule || rule.enabled === false || aliasIdFromRuleRobust(rule) !== aliasId) return false;
+  const scope = (nonEmpty(rule?.scope) ?? "global").toLowerCase();
+  const scopeId = nonEmpty(rule?.scope_id) ?? nonEmpty(rule?.scopeId);
+  if (scope !== "global" || scopeId) return false;
+  if (rule?.chain_rule === true || rule?.chainRule === true) return false;
+  if (rawRuleTargets(rule).length !== 1 || !targetReference(rawRuleTargets(rule)[0])) return false;
+
+  const fields = new Set([
+    ...structuredQueryFields(rule?.query),
+    ...structuredQueryFields(rule?.conditions),
+  ]);
+  if ([...fields].some((field) => !["model", "request_type"].includes(field))) return false;
+
+  const conditionText = [
+    rule?.cel_expression,
+    rule?.celExpression,
+    JSON.stringify(rule?.query ?? ""),
+    JSON.stringify(rule?.conditions ?? ""),
+  ].filter(Boolean).join(" ").toLowerCase();
+  for (const identifier of DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS) {
+    const pattern = new RegExp(`\\b${identifier}\\b`, "u");
+    if (pattern.test(conditionText)) return false;
+  }
+  return true;
 }
 
 /**
@@ -248,6 +315,13 @@ export function deriveAliasesRobust(rules) {
       aliases[id] = {
         name: id,
         chain: unique([...(aliases[id]?.chain ?? []), ...allReachableMembers]),
+      };
+      continue;
+    }
+    if (related.length === 1 && isContextDynamicRuleSafe(related[0], id)) {
+      aliases[id] = {
+        ...aliases[id],
+        dynamicRouting: { mode: "context-aware", source: "bifrost-simple-rule" },
       };
     }
   }

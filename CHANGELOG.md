@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Added request-time context-aware route compilation for simple Bifrost logical aliases. A 1M -> 256K -> 1M route can now advertise 1M to OMP while automatically excluding the 256K member only when the actual request no longer fits.
+- Added a conservative final-wire request estimator with output-token reserve, fixed headroom, image allowance and capability guards. No eligible member means fail-closed rather than an unsafe oversized request.
+- Dynamic requests preserve route order and delegate the eligible chain to Bifrost via its native top-level `fallbacks` request field. Provider credentials, retries, governance and failover remain Bifrost-owned.
+- `pifrost routes sync` opts in only single global terminal unweighted rules without scope/budget/quota/complexity/header/parameter-dependent semantics. Complex routes retain the previous weakest-member static envelope.
+- Dynamic profile metadata is persisted in the model cache and exposed by `pifrost doctor` as the original static context, advertised context and request bands.
+- Cache schema bumped to v4.
+
 ## 0.3.4
 
 - Added an exact, vendor-backed capability override for `CommandCode GOAT/meituan/LongCat-2.0:free`, restoring the `omp-advisor` alias when Bifrost exposes only generic sparse limits for that entitlement.

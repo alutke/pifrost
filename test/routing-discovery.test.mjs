@@ -5,6 +5,7 @@ import {
   aliasIdFromRuleRobust,
   deriveAliasesRobust,
   discoverRoutingRules,
+  isContextDynamicRuleSafe,
   extractRoutingRules,
 } from "../routing-discovery.mjs";
 
@@ -217,4 +218,40 @@ test("discoverRoutingRules paginates beyond 100 canonical Bifrost 2.x rules", as
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+
+test("simple global terminal aliases opt into context-aware routing", () => {
+  const rule = {
+    id: "dynamic",
+    name: "omp-default",
+    scope: "global",
+    enabled: true,
+    cel_expression: "model == 'omp-default'",
+    targets: [{ provider: "openai", model: "gpt-large", weight: 1 }],
+    fallbacks: ["deepseek/small"],
+  };
+  assert.equal(isContextDynamicRuleSafe(rule, "omp-default"), true);
+  const result = deriveAliasesRobust([rule]);
+  assert.deepEqual(result.aliases["omp-default"], {
+    name: "omp-default",
+    chain: ["openai/gpt-large", "deepseek/small"],
+    dynamicRouting: { mode: "context-aware", source: "bifrost-simple-rule" },
+  });
+});
+
+test("scope, weighted, chained and request-dependent aliases stay static", () => {
+  const base = {
+    id: "unsafe",
+    name: "omp-default",
+    scope: "global",
+    enabled: true,
+    cel_expression: "model == 'omp-default'",
+    targets: [{ provider: "openai", model: "gpt-large", weight: 1 }],
+  };
+  assert.equal(isContextDynamicRuleSafe({ ...base, scope: "virtual_key", scope_id: "vk" }, "omp-default"), false);
+  assert.equal(isContextDynamicRuleSafe({ ...base, chain_rule: true }, "omp-default"), false);
+  assert.equal(isContextDynamicRuleSafe({ ...base, targets: [...base.targets, { provider: "deepseek", model: "small", weight: 1 }] }, "omp-default"), false);
+  assert.equal(isContextDynamicRuleSafe({ ...base, cel_expression: "model == 'omp-default' && budget_used < 80" }, "omp-default"), false);
+  assert.equal(isContextDynamicRuleSafe({ ...base, cel_expression: "model == 'omp-default' && headers['x-tier'] == 'large'" }, "omp-default"), false);
 });

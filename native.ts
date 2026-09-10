@@ -35,6 +35,18 @@ import {
 } from "./pricing-normalize.ts";
 import { augmentLiveInventoryForRoutes } from "./route-inventory.ts";
 import { createBifrostUsageProvider } from "./bifrost-usage.ts";
+import {
+	applyDynamicRouteProfiles,
+	createDynamicRoutingFetch,
+	extractDynamicRouteProfiles,
+	type DynamicRouteProfile,
+} from "./dynamic-routing.ts";
+
+let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
+
+function installDynamicRouteProfiles(models: readonly import("./index.ts").BifrostProviderModel[]): void {
+	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
+}
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -120,6 +132,7 @@ function streamPifrostOpenAI(
 		api: "openai-completions",
 		compat: model.compatConfig,
 	} as ModelSpec<"openai-completions">);
+	const baseFetch = options?.fetch ?? globalThis.fetch;
 	const streamOptions: OpenAICompletionsOptions = {
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -132,6 +145,10 @@ function streamPifrostOpenAI(
 		openrouterVariant: options?.openrouterVariant,
 		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 		promptCache: options?.promptCache,
+		// The fetch wrapper sees OMP's final serialized OpenAI payload. It can
+		// therefore enforce the exact member envelope before Bifrost executes the
+		// caller-supplied physical fallback chain. Non-dynamic aliases are untouched.
+		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes),
 	};
 	return streamOpenAICompletions(transportModel, context, streamOptions);
 }
@@ -181,8 +198,20 @@ async function fetchFreshCatalog(
 			parameters: normalizeModelParametersDatasheet(datasheets.parameters),
 		});
 		catalog = buildPifrostCatalog(richRoutes.models, aliasSource.config, richRoutes.diagnostics);
+		catalog = applyDynamicRouteProfiles(catalog, richRoutes.models, aliasSource.config, (reference, models) =>
+			models.find((candidate) => candidate.id.toLowerCase() === reference.toLowerCase()) ??
+			undefined,
+		);
 	}
 
+	// The no-datasheet path is uncommon for configured aliases, but keep it
+	// capability-safe and dynamic when all route members exist in /v1/models.
+	if ((!hasAliases || !datasheets) && aliasSource.config) {
+		catalog = applyDynamicRouteProfiles(catalog, liveModels, aliasSource.config, (reference, models) =>
+			models.find((candidate) => candidate.id.toLowerCase() === reference.toLowerCase()) ?? undefined,
+		);
+	}
+	installDynamicRouteProfiles(catalog.models);
 	writeCatalogCache(catalog, { config: liveConfig, aliasConfig: aliasSource.config });
 	return catalog;
 }
@@ -241,7 +270,10 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 
 	if (config?.virtualKey) {
 		const startupCache = loadCatalogCache({ config, aliasConfig: aliasSource.config });
-		if (startupCache) diagnostics = startupCache.diagnostics;
+		if (startupCache) {
+			diagnostics = startupCache.diagnostics;
+			installDynamicRouteProfiles(startupCache.models);
+		}
 
 		const refresh = (resolvedApiKey?: string): Promise<PifrostCatalog> => {
 			if (!refreshInFlight) {
@@ -283,6 +315,7 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached && !forceRefreshRequested()) {
 					diagnostics = cached.diagnostics;
+					installDynamicRouteProfiles(cached.models);
 					if (!cacheIsFresh(cached, refreshIntervalMs)) scheduleBackgroundRefresh(resolvedApiKey);
 					return cached.models;
 				}

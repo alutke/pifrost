@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 // Keep in step with cache.ts. This module is plain .mjs because the terminal CLI
 // runs under Node without a TypeScript loader.
-export const EXPECTED_CACHE_SCHEMA_VERSION = 3;
+export const EXPECTED_CACHE_SCHEMA_VERSION = 4;
 
 // OMP 18's OpenAI-compatible fallback ladder for a sparse reasoning model.
 // Pifrost's provider uses openai-completions, so when a cached model has
@@ -65,7 +65,11 @@ export function formatModelDiagnostic(model) {
   const effortText = thinking.efforts.length ? thinking.efforts.join(",") : "-";
   const images = Array.isArray(model?.input) && model.input.includes("image") ? "yes" : "no";
   const source = thinking.source === "none" ? "" : ` source=${thinking.source}`;
-  return `${String(model?.id ?? "").padEnd(16)} context=${String(model?.contextWindow ?? "-").padEnd(8)} max=${String(model?.maxTokens ?? "-").padEnd(8)} thinking=${effortText.padEnd(24)} images=${images}${source}`;
+  const route = model?.pifrostDynamicRoute;
+  const dynamic = route?.mode === "context-aware"
+    ? ` dynamic-context=${route.staticContextWindow}->${route.advertisedContextWindow}`
+    : "";
+  return `${String(model?.id ?? "").padEnd(16)} context=${String(model?.contextWindow ?? "-").padEnd(8)} max=${String(model?.maxTokens ?? "-").padEnd(8)} thinking=${effortText.padEnd(24)} images=${images}${source}${dynamic}`;
 }
 
 export function formatCapabilitySources(sources) {
@@ -103,6 +107,18 @@ export function printModelDoctor(env = process.env, out = console) {
   for (const model of models) out.log(formatModelDiagnostic(model));
 
   const diagnostics = Array.isArray(cache.diagnostics) ? cache.diagnostics : [];
+  const dynamic = models.filter((model) => model?.pifrostDynamicRoute?.mode === "context-aware");
+  if (dynamic.length) {
+    out.log("\nDynamic context routing:");
+    for (const model of dynamic) {
+      const route = model.pifrostDynamicRoute;
+      out.log(`  ${model.id}: static=${route.staticContextWindow} advertised=${route.advertisedContextWindow}`);
+      for (const band of route.bands ?? []) {
+        out.log(`    <=${band.maxRequiredTokens}: ${(band.members ?? []).join(" -> ")}`);
+      }
+    }
+  }
+
   const withMembers = diagnostics.filter((item) => Array.isArray(item?.members) && item.members.length);
   if (withMembers.length) {
     out.log("\nCapability provenance:");
