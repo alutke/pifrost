@@ -41,12 +41,17 @@ import {
 	extractDynamicRouteProfiles,
 	type DynamicRouteProfile,
 } from "./dynamic-routing.ts";
+import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 
 function installDynamicRouteProfiles(models: readonly import("./index.ts").BifrostProviderModel[]): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
 }
+
+const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
+	(logicalModel) => runtimeDynamicRoutes.get(logicalModel.toLowerCase()),
+);
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -330,6 +335,18 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 			"pifrost: provider not registered; run `pifrost global setup` or set BIFROST_URL and BIFROST_VIRTUAL_KEY (BIFROST_API_KEY is optional on Bifrost 2.x)\n",
 		);
 	}
+
+	// OMP exposes manual compaction to extension contexts. Schedule the check
+	// after a turn (and when a session is opened) instead of awaiting compaction
+	// inside an extension event handler: LLM-backed compaction can legitimately
+	// exceed OMP's generic 30-second handler budget. The coordinator only runs
+	// while the session is idle and fails open to the final-wire skip guard.
+	pi.on("agent_end", (_event, ctx) => {
+		scheduleCompactBeforeContextSkip(ctx);
+	});
+	pi.on("session_start", (_event, ctx) => {
+		scheduleCompactBeforeContextSkip(ctx);
+	});
 
 	pi.registerCommand("pifrost", {
 		description: "Pifrost diagnostics; use /pifrost doctor or /pifrost refresh",
