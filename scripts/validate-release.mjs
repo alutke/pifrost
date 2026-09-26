@@ -15,7 +15,11 @@ if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \
   fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
 }
 
-const expectedRelease = /Expected for this release:\s*\n\s*\`\`\`text\s*\n([^\n]+)\s*\n\`\`\`/mu.exec(readme)?.[1]?.trim();
+const releaseMarker = "Expected for this release:\n\n\`\`\`text\n";
+const releaseOffset = readme.indexOf(releaseMarker);
+const expectedRelease = releaseOffset >= 0
+  ? readme.slice(releaseOffset + releaseMarker.length).split("\n", 1)[0]?.trim()
+  : undefined;
 if (expectedRelease !== pkg.version) {
   fail(`README expected release is ${expectedRelease ?? "missing"}, package.json is ${pkg.version}`);
 }
