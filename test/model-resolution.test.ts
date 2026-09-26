@@ -286,7 +286,7 @@ test("resolver selects the best equivalent candidate without requiring global so
 		sparseLive("deepseek/deepseek-v4-pro"),
 		sparseLive("other/unrelated-model"),
 	];
-	const result = resolveAliasReferenceDetailed("deepseek/deepseek-v4-pro", live);
+	const result = resolveModelReference("deepseek/deepseek-v4-pro", live);
 	assert.equal(result.model?.id, "deepseek/deepseek-v4-pro");
 	assert.equal(result.kind, "exact");
 });
