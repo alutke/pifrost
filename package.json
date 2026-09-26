@@ -33,6 +33,7 @@
     "dynamic-routing.ts",
     "compact-before-skip.ts",
     "omp-cfg.ts",
+    "agent-attribution.ts",
     "bifrost-usage.ts",
     "pricing-normalize.ts",
     "cli.mjs",

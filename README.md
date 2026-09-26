@@ -452,6 +452,39 @@ The bridge is intentionally limited to Pifrost-owned settings. For other OMP set
 
 ---
 
+## OMP agent attribution
+
+Pifrost uses OMP 18.3.2's `ctx.agent` identity strictly for observability. It does **not** use agent name, depth or parentage to select a model or alter Bifrost routing.
+
+The extension binds the OMP session id already used for `x-bf-session-id` to:
+
+```text
+kind:     main | sub
+id:       Main | 0-Explore | 1-Task | ...
+name:     main | explore | task | advisor | ...
+depth:    task nesting depth
+parentId: spawning agent id, when present
+```
+
+Each Pifrost inference records the logical route requested by OMP. `/pifrost doctor` therefore includes process-local attribution such as:
+
+```text
+OMP agent attribution:
+  current: main [main] id=Main depth=0
+  current routes: omp-default=12
+  active sessions: 3
+  process usage:
+    task [sub] -> omp-task: 74 request(s)
+    main [main] -> omp-default: 31 request(s)
+    advisor [sub] -> omp-advisor: 18 request(s)
+```
+
+Attribution is in-memory only. Active session bindings are capped and are removed on OMP `session_shutdown`; aggregate counters survive only for the lifetime of the OMP process. If an inference races ahead of `session_start`, Pifrost temporarily holds the request under the session id and backfills it when `ctx.agent` becomes available.
+
+No extra provider/model routing policy, retry policy or fallback policy is inferred from agent identity.
+
+---
+
 ## Routing aliases
 
 ### List live routes

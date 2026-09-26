@@ -51,6 +51,12 @@ import {
 	readPifrostOmpProfile,
 	writePifrostOmpSetting,
 } from "./omp-cfg.ts";
+import {
+	bindAgentSession,
+	formatAgentAttributionReport,
+	recordAgentRequest,
+	releaseAgentSession,
+} from "./agent-attribution.ts";
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 
@@ -137,6 +143,7 @@ function streamPifrostOpenAI(
 	if (!sessionId) {
 		throw new Error("Pifrost requires OMP to supply an inference session id");
 	}
+	recordAgentRequest(sessionId, model.id);
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
 	// The custom Pifrost API intentionally resolves no OMP compat record.
 	// Rebuild the logical route as a real OpenAI Chat Completions model before
@@ -352,10 +359,15 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	// exceed OMP's generic 30-second handler budget. The coordinator only runs
 	// while the session is idle and fails open to the final-wire skip guard.
 	pi.on("agent_end", (_event, ctx) => {
+		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_start", (_event, ctx) => {
+		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
 		scheduleCompactBeforeContextSkip(ctx);
+	});
+	pi.on("session_shutdown", (_event, ctx) => {
+		releaseAgentSession(ctx.sessionManager.getSessionId());
 	});
 
 	pi.registerCommand("pifrost", {
@@ -473,7 +485,8 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 					const catalog = await fetchFreshCatalog(config, aliasSource);
 					diagnostics = catalog.diagnostics;
 				}
-				let report = formatDoctorReport(diagnostics, aliasSource.path);
+				bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
+				let report = `${formatDoctorReport(diagnostics, aliasSource.path)}\n\n${formatAgentAttributionReport(ctx.sessionManager.getSessionId())}`;
 				if (ctx.agent.kind === "main" && ctx.mode === "tui" && ctx.hasUI) {
 					try {
 						report += `\n\n${formatPifrostOmpProfile(await readPifrostOmpProfile(await cfgSession()))}`;

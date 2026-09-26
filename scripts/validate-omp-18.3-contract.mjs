@@ -19,6 +19,19 @@ const SOURCES = [
     ],
   },
   {
+    name: "OMP 18.3.2 agent identity contract",
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_3_2_COMMIT}/packages/coding-agent/src/extensibility/extensions/types.ts`,
+    required: [
+      "export interface ExtensionAgentIdentity",
+      'kind: "main" | "sub"',
+      "id: string",
+      "name: string",
+      "depth: number",
+      "parentId?: string",
+      "agent: ExtensionAgentIdentity",
+    ],
+  },
+  {
     name: "OMP 18.3.2 cfg:// approval and persistence contract",
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_3_2_COMMIT}/packages/coding-agent/src/internal-urls/cfg-protocol.ts`,
     required: [

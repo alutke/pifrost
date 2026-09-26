@@ -29,6 +29,10 @@
 - The cfg bridge is restricted to the interactive top-level OMP session and verifies cwd scope before reading or writing, preventing a rebound subagent or headless session from mutating the wrong settings instance.
 - `/pifrost doctor` now includes Pifrost-relevant OMP setting provenance, while the standalone `pifrost global configure-omp` command remains the bootstrap/recovery path.
 - CI now pins the released OMP 18.3.2 `CfgProtocolHandler` approval/session/persistence contract in addition to the MCP contract.
+- Added OMP 18.3.2 `ctx.agent` attribution as observability-only metadata. Pifrost binds the existing inference session id to agent kind/id/name/depth/parent identity and records logical route request counts without influencing model selection or Bifrost fallback.
+- `/pifrost doctor` now shows the current agent lineage plus process-local per-agent/per-route request counts. Requests that arrive before `session_start` are backfilled once the agent identity is known.
+- Active agent-session bindings are capped and released on `session_shutdown`; aggregate counters are memory-only and live only for the OMP process lifetime. Concurrent subagent isolation and shutdown cleanup have regression coverage.
+- CI now pins the released OMP 18.3.2 `ExtensionAgentIdentity` / `ctx.agent` contract.
 
 ## 0.4.0
 
