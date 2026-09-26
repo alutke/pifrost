@@ -141,3 +141,53 @@ test("secret subcommand prints only the requested repo VK", () => {
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+
+test("CLI route sync model preserves Bifrost 2.2.3 pinned fallback metadata", () => {
+  const manifest = deriveAliasesFromRules([{
+    name: "omp-default",
+    enabled: true,
+    targets: [{ provider: "openai", model: "gpt-large", weight: 1, key_id: "primary-key" }],
+    fallbacks: [
+      { provider: "deepseek", model: "deepseek-v4-pro", key_id: "fallback-key" },
+      { provider: "mistral", model: "large", provider_key_name: "Mistral Primary" },
+      "openai/gpt-small",
+    ],
+  }]);
+
+  assert.deepEqual(manifest.aliases["omp-default"].chain, [
+    "openai/gpt-large",
+    "deepseek/deepseek-v4-pro",
+    "mistral/large",
+    "openai/gpt-small",
+  ]);
+  assert.deepEqual(manifest.aliases["omp-default"].routingPins, [
+    { source: "target", reference: "openai/gpt-large", keyId: "primary-key" },
+    { source: "fallback", reference: "deepseek/deepseek-v4-pro", keyId: "fallback-key" },
+    { source: "fallback", reference: "mistral/large", providerKeyName: "Mistral Primary" },
+  ]);
+});
+
+test("route diff detects pin-only changes even when the model chain is unchanged", () => {
+  const local = {
+    aliases: {
+      "omp-default": {
+        chain: ["openai/gpt", "deepseek/pro"],
+        routingPins: [{ source: "fallback", reference: "deepseek/pro", keyId: "old-key" }],
+      },
+    },
+  };
+  const remote = {
+    aliases: {
+      "omp-default": {
+        chain: ["openai/gpt", "deepseek/pro"],
+        routingPins: [{ source: "fallback", reference: "deepseek/pro", keyId: "new-key" }],
+      },
+    },
+  };
+  const diff = diffAliases(local, remote);
+  assert.equal(diff.length, 1);
+  assert.equal(diff[0].id, "omp-default");
+  assert.equal(diff[0].localPins[0].keyId, "old-key");
+  assert.equal(diff[0].remotePins[0].keyId, "new-key");
+});

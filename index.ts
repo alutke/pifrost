@@ -106,9 +106,21 @@ export interface BifrostProviderModel {
 	};
 }
 
+export interface PifrostRoutePin {
+	source: "target" | "fallback";
+	reference?: string;
+	keyId?: string;
+	providerKeyName?: string;
+}
+
 export interface PifrostAliasDefinition {
 	name?: string;
 	chain: string[];
+	routingPins?: PifrostRoutePin[];
+	dynamicRouting?: {
+		mode?: string;
+		source?: string;
+	};
 }
 
 export interface PifrostAliasConfig {
@@ -150,6 +162,7 @@ export interface AliasDiagnostic {
 	forcedToolChoice?: boolean;
 	namedToolChoice?: boolean;
 	reasoningWithTools?: boolean;
+	routingPins?: PifrostRoutePin[];
 	members?: AliasMemberDiagnostic[];
 }
 
@@ -562,6 +575,7 @@ export function synthesizeAlias(
 		forcedToolChoice,
 		namedToolChoice,
 		reasoningWithTools,
+		...(normalized.routingPins?.length ? { routingPins: normalized.routingPins.map((pin) => ({ ...pin })) } : {}),
 		members: memberDiagnostics,
 	};
 
@@ -725,6 +739,10 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 		lines.push(
 			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"} toolChoice=${item.toolChoice === undefined ? "n/a" : item.toolChoice ? "yes" : "no"} forcedTool=${item.forcedToolChoice === undefined ? "n/a" : item.forcedToolChoice ? "yes" : "no"} reasoningWithTools=${item.reasoningWithTools === undefined ? "n/a" : item.reasoningWithTools ? "yes" : "no"}`,
 		);
+		for (const pin of item.routingPins ?? []) {
+			const key = pin.providerKeyName ? `provider-key=${pin.providerKeyName}` : pin.keyId ? `key-id=${pin.keyId}` : "key-pin";
+			lines.push(`  pinned-${pin.source}: ${pin.reference ?? "(implicit model)"} [${key}]`);
+		}
 		for (const member of item.members ?? []) {
 			const target = member.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";
 			const resolution = member.resolution ? ` resolution=${member.resolution}` : "";

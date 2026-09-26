@@ -297,3 +297,21 @@ test("legacy OpenCode session helper now carries the same Bifrost affinity ident
 	assert.equal(headers["x-bf-session-id"], "session-compat");
 	assert.equal(headers["x-bf-eh-x-opencode-session"], "session-compat");
 });
+
+
+test("doctor report surfaces routing key pins without exposing credentials", () => {
+	const result = synthesizeAlias(
+		"omp-pinned",
+		{
+			chain: ["one"],
+			routingPins: [
+				{ source: "target", reference: "one", keyId: "key-123" },
+				{ source: "fallback", reference: "one", providerKeyName: "Provider Primary" },
+			],
+		},
+		[model("one")],
+	);
+	const report = formatDoctorReport([result.diagnostic]);
+	assert.match(report, /pinned-target: one \[key-id=key-123\]/);
+	assert.match(report, /pinned-fallback: one \[provider-key=Provider Primary\]/);
+});

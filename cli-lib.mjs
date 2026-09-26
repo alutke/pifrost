@@ -413,12 +413,45 @@ export function aliasIdFromRule(rule) {
 }
 
 export function targetReference(target) {
-  const model = nonEmpty(target?.model);
+  const model = nonEmpty(target?.model) ?? nonEmpty(target?.model_id) ?? nonEmpty(target?.modelId);
   if (!model) return undefined;
-  const provider = nonEmpty(target?.provider);
+  const provider = nonEmpty(target?.provider) ?? nonEmpty(target?.provider_name) ?? nonEmpty(target?.providerName);
   if (!provider) return model;
   if (model.toLowerCase().startsWith(`${provider.toLowerCase()}/`)) return model;
   return `${provider}/${model}`;
+}
+
+function fallbackReference(fallback) {
+  if (typeof fallback === "string") return nonEmpty(fallback);
+  return targetReference(fallback);
+}
+
+function routingPin(entry, source) {
+  if (!entry || typeof entry !== "object") return undefined;
+  const keyId = nonEmpty(entry.key_id) ?? nonEmpty(entry.keyId);
+  const providerKeyName = nonEmpty(entry.provider_key_name) ?? nonEmpty(entry.providerKeyName);
+  if (!keyId && !providerKeyName) return undefined;
+  const reference = targetReference(entry);
+  return {
+    source,
+    ...(reference ? { reference } : {}),
+    ...(keyId ? { keyId } : {}),
+    ...(providerKeyName ? { providerKeyName } : {}),
+  };
+}
+
+function routingRulePins(rule) {
+  const targets = Array.isArray(rule?.targets) ? rule.targets : [];
+  const fallbacks = Array.isArray(rule?.fallbacks)
+    ? rule.fallbacks
+    : Array.isArray(rule?.fallback_models)
+      ? rule.fallback_models
+      : [];
+  const pins = [
+    ...targets.map((entry) => routingPin(entry, "target")),
+    ...fallbacks.map((entry) => routingPin(entry, "fallback")),
+  ].filter(Boolean);
+  return [...new Map(pins.map((pin) => [JSON.stringify(pin), pin])).values()];
 }
 
 function unique(values) {
@@ -426,11 +459,20 @@ function unique(values) {
 }
 
 function routingRuleMembers(rule) {
-  const targets = Array.isArray(rule?.targets) ? [...rule.targets] : [];
+  const targets = Array.isArray(rule?.targets)
+    ? [...rule.targets]
+    : Array.isArray(rule?.routing_targets)
+      ? [...rule.routing_targets]
+      : [];
   targets.sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
+  const fallbacks = Array.isArray(rule?.fallbacks)
+    ? rule.fallbacks
+    : Array.isArray(rule?.fallback_models)
+      ? rule.fallback_models
+      : [];
   return unique([
     ...targets.map(targetReference),
-    ...(Array.isArray(rule?.fallbacks) ? rule.fallbacks.map(nonEmpty) : []),
+    ...fallbacks.map(fallbackReference),
   ]);
 }
 
@@ -444,16 +486,29 @@ export function deriveAliasesFromRules(rules) {
     const members = routingRuleMembers(rule);
     if (!members.length) continue;
     const existing = aliases[id]?.chain ?? [];
-    aliases[id] = { name: id, chain: unique([...existing, ...members]) };
+    const routingPins = [...(aliases[id]?.routingPins ?? []), ...routingRulePins(rule)];
+    aliases[id] = {
+      name: id,
+      chain: unique([...existing, ...members]),
+      ...(routingPins.length ? { routingPins: [...new Map(routingPins.map((pin) => [JSON.stringify(pin), pin])).values()] } : {}),
+    };
     const bucket = aliasRules.get(id) ?? [];
     bucket.push(rule);
     aliasRules.set(id, bucket);
   }
 
   const allReachable = unique(enabled.flatMap(routingRuleMembers));
+  const allReachablePins = [...new Map(
+    enabled.flatMap(routingRulePins).map((pin) => [JSON.stringify(pin), pin]),
+  ).values()];
   for (const [id, related] of aliasRules) {
     if (related.some((rule) => rule?.chain_rule === true || rule?.chainRule === true)) {
-      aliases[id] = { name: id, chain: unique([...(aliases[id]?.chain ?? []), ...allReachable]) };
+      const routingPins = [...(aliases[id]?.routingPins ?? []), ...allReachablePins];
+      aliases[id] = {
+        name: id,
+        chain: unique([...(aliases[id]?.chain ?? []), ...allReachable]),
+        ...(routingPins.length ? { routingPins: [...new Map(routingPins.map((pin) => [JSON.stringify(pin), pin])).values()] } : {}),
+      };
     }
   }
   return { includePhysicalModels: false, aliases };
@@ -473,6 +528,7 @@ export function routingFeatureSummary(rules) {
     complexityRules: enabled.filter((rule) =>
       /complexity_tier/iu.test(String(rule?.cel_expression ?? rule?.celExpression ?? JSON.stringify(rule?.query ?? ""))),
     ).length,
+    pinnedRules: enabled.filter((rule) => routingRulePins(rule).length > 0).length,
   };
 }
 
@@ -504,10 +560,19 @@ export function diffAliases(localManifest, remoteManifest) {
   const remote = remoteManifest?.aliases ?? {};
   const ids = [...new Set([...Object.keys(local), ...Object.keys(remote)])].sort();
   return ids.flatMap((id) => {
-    const left = local[id]?.chain ?? local[id] ?? undefined;
-    const right = remote[id]?.chain ?? remote[id] ?? undefined;
-    if (JSON.stringify(left) === JSON.stringify(right)) return [];
-    return [{ id, local: left, remote: right }];
+    const leftDefinition = local[id];
+    const rightDefinition = remote[id];
+    const left = leftDefinition?.chain ?? leftDefinition ?? undefined;
+    const right = rightDefinition?.chain ?? rightDefinition ?? undefined;
+    const localPins = Array.isArray(leftDefinition?.routingPins) ? leftDefinition.routingPins : [];
+    const remotePins = Array.isArray(rightDefinition?.routingPins) ? rightDefinition.routingPins : [];
+    if (JSON.stringify(left) === JSON.stringify(right) && JSON.stringify(localPins) === JSON.stringify(remotePins)) return [];
+    return [{
+      id,
+      local: left,
+      remote: right,
+      ...(localPins.length || remotePins.length ? { localPins, remotePins } : {}),
+    }];
   });
 }
 

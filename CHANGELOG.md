@@ -8,6 +8,9 @@
 - Preserved the separate OpenCode Go session contract via `x-bf-eh-x-opencode-session`; caller-supplied conflicting session headers are replaced case-insensitively so one request cannot accidentally carry two identities.
 - Added regression coverage for stable same-session identity, cross-session isolation, caller-header immutability, and the backward-compatible OpenCode session helper; updated doctor/README messaging to remove the obsolete OMP 18.1 limitation.
 - Added a released Bifrost 2.2.2 session-affinity contract canary to CI.
+- Added Bifrost 2.2.3 pinned-fallback compatibility: object-form fallbacks now participate in alias capability envelopes instead of being silently omitted, with `key_id` / `provider_key_name` provenance retained in the alias manifest and diagnostics.
+- Pinned primary targets or fallbacks are explicitly excluded from Pifrost's local context-aware route compilation, so provider-key pins remain Bifrost-owned and cannot be lost by flattening the route to plain string fallbacks.
+- Route listing/status/diff now surface pinned-routing state, including pin-only changes, and CI pins the released Bifrost 2.2.3 fallback wire/config contracts.
 
 ## 0.4.0
 

@@ -434,7 +434,7 @@ async function commandGlobalStatus() {
     try {
       const rules = await getRoutingRules(runtime.url, managementAuth);
       const features = routingFeatureSummary(rules);
-      console.log(`Bifrost routing 2.x:    OK (rules=${features.enabledRules}, scopes=${features.scopes.join(",") || "global"}, chained=${features.chainRules}, weighted=${features.weightedRules}, complexity-rules=${features.complexityRules})`);
+      console.log(`Bifrost routing 2.x:    OK (rules=${features.enabledRules}, scopes=${features.scopes.join(",") || "global"}, chained=${features.chainRules}, weighted=${features.weightedRules}, complexity-rules=${features.complexityRules}, pinned=${features.pinnedRules ?? 0})`);
     } catch (error) {
       console.log(`Bifrost routing 2.x:    FAIL (${formatError(error)})`);
     }
@@ -515,7 +515,14 @@ async function commandRoutesList() {
   printHeader(`Bifrost OMP routes (${Object.keys(manifest.aliases).length})`);
   for (const [id, definition] of Object.entries(manifest.aliases).sort(([a], [b]) => a.localeCompare(b))) {
     console.log(id);
-    definition.chain.forEach((member, index) => console.log(`  ${index + 1}. ${member}`));
+    const pins = Array.isArray(definition.routingPins) ? definition.routingPins : [];
+    definition.chain.forEach((member, index) => {
+      const memberPins = pins.filter((pin) => pin.reference === member);
+      const suffix = memberPins.length
+        ? ` [${memberPins.map((pin) => pin.providerKeyName ? `provider-key=${pin.providerKeyName}` : `key-id=${pin.keyId}`).join(", ")}]`
+        : "";
+      console.log(`  ${index + 1}. ${member}${suffix}`);
+    });
   }
 }
 
@@ -534,6 +541,10 @@ async function commandRoutesDiff() {
     console.log(item.id);
     console.log(`  local:  ${item.local ? item.local.join(" -> ") : "missing"}`);
     console.log(`  remote: ${item.remote ? item.remote.join(" -> ") : "missing"}`);
+    if (item.localPins?.length || item.remotePins?.length) {
+      console.log(`  local pins:  ${item.localPins?.length ? JSON.stringify(item.localPins) : "none"}`);
+      console.log(`  remote pins: ${item.remotePins?.length ? JSON.stringify(item.remotePins) : "none"}`);
+    }
   }
   process.exitCode = 2;
 }
@@ -588,6 +599,16 @@ async function commandModelsDoctor() {
     );
   }
   const diagnostics = Array.isArray(cache.diagnostics) ? cache.diagnostics : [];
+  const pinned = diagnostics.filter((item) => Array.isArray(item.routingPins) && item.routingPins.length);
+  if (pinned.length) {
+    console.log("\nBifrost-owned pinned routing:");
+    for (const item of pinned) {
+      for (const pin of item.routingPins) {
+        const key = pin.providerKeyName ? `provider-key=${pin.providerKeyName}` : pin.keyId ? `key-id=${pin.keyId}` : "key-pin";
+        console.log(`  ${item.id}: ${pin.source} ${pin.reference ?? "(implicit model)"} [${key}]`);
+      }
+    }
+  }
   const unresolved = diagnostics.filter((item) => Array.isArray(item.unresolved) && item.unresolved.length);
   if (unresolved.length) {
     console.log("\nUnresolved route members:");

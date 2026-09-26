@@ -58,6 +58,12 @@ export interface DynamicRouteEstimateOptions {
 type DynamicAliasDefinition = {
 	name?: string;
 	chain: string[];
+	routingPins?: Array<{
+		source?: string;
+		reference?: string;
+		keyId?: string;
+		providerKeyName?: string;
+	}>;
 	dynamicRouting?: {
 		mode?: string;
 		source?: string;
@@ -123,7 +129,11 @@ export function applyDynamicRouteProfiles(
 
 	const models = catalog.models.map((model): BifrostProviderModel => {
 		const definition = dynamicDefinition(aliasConfig.aliases[model.id]);
-		if (definition?.dynamicRouting?.mode !== DYNAMIC_ROUTE_MODE || definition.dynamicRouting.source !== "bifrost-simple-rule") {
+		if (
+			definition?.dynamicRouting?.mode !== DYNAMIC_ROUTE_MODE ||
+			definition.dynamicRouting.source !== "bifrost-simple-rule" ||
+			(definition.routingPins?.length ?? 0) > 0
+		) {
 			return model;
 		}
 		const resolved = definition.chain.map((reference) => ({

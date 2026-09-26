@@ -934,7 +934,7 @@ At request time Pifrost intercepts OMP's final OpenAI-compatible payload, estima
 
 For example, a route `1M -> 256K -> 1M` is advertised to OMP as 1M. Small requests retain all three members; once the calculated input-plus-output requirement exceeds 256K, the middle member is removed for that request only. Pifrost fails closed if no member can satisfy the calculated requirement.
 
-Dynamic compilation is deliberately disabled for scope-specific, weighted, chained, complexity, budget, quota, header or parameter-dependent rules because bypassing those logical rules could change Bifrost semantics. Those aliases continue to use the static weakest-member envelope. The feature therefore improves simple fallback routes automatically without weakening complex-route correctness.
+Dynamic compilation is deliberately disabled for scope-specific, weighted, chained, complexity, budget, quota, header or parameter-dependent rules because bypassing those logical rules could change Bifrost semantics. It is also disabled whenever a Bifrost routing target or fallback pins a provider key: Pifrost records the pin for diagnostics but leaves execution of the pinned chain entirely to Bifrost rather than flattening it into a client-side string fallback list. Those aliases continue to use the static weakest-member envelope. The feature therefore improves simple fallback routes automatically without weakening complex-route correctness.
 
 Run `pifrost doctor` after syncing to see `dynamic-context=<static>-><advertised>` and the derived context bands.
 

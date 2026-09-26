@@ -1,5 +1,6 @@
 const BIFROST_2_0_0_COMMIT = "e4a30d6041c0446603aea615bc5da340dac001b1";
 const BIFROST_2_2_2_COMMIT = "9f0d71dba7274d8673de1e69529991035dae49e4";
+const BIFROST_2_2_3_COMMIT = "b840c82caed6919d84c21bd7be5bf7fa27a7ba17";
 
 const SOURCES = [
   {
@@ -47,6 +48,16 @@ const SOURCES = [
     name: "Bifrost 2.2.2 session-affinity contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_2_COMMIT}/docs/providers/session-affinity.mdx`,
     required: ["Session affinity", "x-bf-session-id", "x-bf-session-affinity", "BifrostContextKeySessionID"],
+  },
+  {
+    name: "Bifrost 2.2.3 pinned-fallback API contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/ui/lib/types/routingRules.ts`,
+    required: ["RoutingFallbackObject", "RoutingFallbackWire", "key_id", "fallbacks"],
+  },
+  {
+    name: "Bifrost 2.2.3 pinned-fallback config contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/docs/providers/routing-rules.mdx`,
+    required: ["provider_key_name", "key_id", "fallbacks"],
   },
   {
     name: "current Bifrost dev routing canary",

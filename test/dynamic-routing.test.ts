@@ -137,3 +137,23 @@ test("capability guard excludes non-tool members when the actual wire request us
 	const result = rewriteDynamicOpenAIRequest(route, body, { bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 });
 	assert.equal(result.body.model, "provider/small");
 });
+
+
+test("runtime compiler refuses dynamic routing when the alias carries Bifrost key pins", () => {
+	const pinnedAliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: {
+			"omp-default": {
+				name: "omp-default",
+				chain: ["provider/large", "provider/small", "provider/large-two"],
+				routingPins: [{ source: "fallback", reference: "provider/small", keyId: "pinned-key" }],
+				dynamicRouting: { mode: "context-aware", source: "bifrost-simple-rule" },
+			},
+		},
+	};
+	const catalog = applyDynamicRouteProfiles(baseCatalog(), physical, pinnedAliases, (reference, models) =>
+		models.find((model) => model.id === reference),
+	);
+	assert.equal(catalog.models[0]?.contextWindow, 256_000);
+	assert.equal(extractDynamicRouteProfiles(catalog.models).size, 0);
+});

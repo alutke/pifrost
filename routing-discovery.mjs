@@ -193,6 +193,43 @@ function targetReference(target) {
   return `${provider}/${model}`;
 }
 
+function fallbackReference(fallback) {
+  if (typeof fallback === "string") return nonEmpty(fallback);
+  return targetReference(fallback);
+}
+
+function routingPin(entry, source) {
+  if (!entry || typeof entry !== "object") return undefined;
+  const keyId = nonEmpty(entry.key_id) ?? nonEmpty(entry.keyId);
+  const providerKeyName = nonEmpty(entry.provider_key_name) ?? nonEmpty(entry.providerKeyName);
+  if (!keyId && !providerKeyName) return undefined;
+  const reference = targetReference(entry);
+  return {
+    source,
+    ...(reference ? { reference } : {}),
+    ...(keyId ? { keyId } : {}),
+    ...(providerKeyName ? { providerKeyName } : {}),
+  };
+}
+
+function ruleRoutingPins(rule) {
+  const targetPins = rawRuleTargets(rule).map((entry) => routingPin(entry, "target"));
+  const rawFallbacks = Array.isArray(rule?.fallbacks)
+    ? rule.fallbacks
+    : Array.isArray(rule?.fallback_models)
+      ? rule.fallback_models
+      : [];
+  const fallbackPins = rawFallbacks.map((entry) => routingPin(entry, "fallback"));
+  const seen = new Set();
+  return [...targetPins, ...fallbackPins].filter((pin) => {
+    if (!pin) return false;
+    const identity = JSON.stringify(pin);
+    if (seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+}
+
 function unique(values) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -213,7 +250,7 @@ function ruleMembers(rule) {
     : Array.isArray(rule?.fallback_models)
       ? rule.fallback_models
       : [];
-  return unique([...targets.map(targetReference), ...fallbacks.map(nonEmpty)]);
+  return unique([...targets.map(targetReference), ...fallbacks.map(fallbackReference)]);
 }
 
 const DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS = Object.freeze([
@@ -258,6 +295,7 @@ export function isContextDynamicRuleSafe(rule, aliasId) {
   const scopeId = nonEmpty(rule?.scope_id) ?? nonEmpty(rule?.scopeId);
   if (scope !== "global" || scopeId) return false;
   if (rule?.chain_rule === true || rule?.chainRule === true) return false;
+  if (ruleRoutingPins(rule).length > 0) return false;
   if (rawRuleTargets(rule).length !== 1 || !targetReference(rawRuleTargets(rule)[0])) return false;
 
   const fields = new Set([
@@ -306,15 +344,25 @@ export function deriveAliasesRobust(rules) {
     bucket.push(rule);
     aliasRules.set(id, bucket);
     const existing = aliases[id]?.chain ?? [];
-    aliases[id] = { name: id, chain: unique([...existing, ...members]) };
+    const routingPins = [...(aliases[id]?.routingPins ?? []), ...ruleRoutingPins(rule)];
+    aliases[id] = {
+      name: id,
+      chain: unique([...existing, ...members]),
+      ...(routingPins.length ? { routingPins: [...new Map(routingPins.map((pin) => [JSON.stringify(pin), pin])).values()] } : {}),
+    };
   }
 
   const allReachableMembers = unique(enabled.flatMap(ruleMembers));
+  const allReachablePins = [...new Map(
+    enabled.flatMap(ruleRoutingPins).map((pin) => [JSON.stringify(pin), pin]),
+  ).values()];
   for (const [id, related] of aliasRules) {
     if (related.some((rule) => rule?.chain_rule === true || rule?.chainRule === true)) {
+      const routingPins = [...(aliases[id]?.routingPins ?? []), ...allReachablePins];
       aliases[id] = {
         name: id,
         chain: unique([...(aliases[id]?.chain ?? []), ...allReachableMembers]),
+        ...(routingPins.length ? { routingPins: [...new Map(routingPins.map((pin) => [JSON.stringify(pin), pin])).values()] } : {}),
       };
       continue;
     }
@@ -348,6 +396,7 @@ export function routingFeatureSummary(rules) {
     complexityRules: enabled.filter((rule) =>
       /complexity_tier/iu.test(String(rule?.cel_expression ?? rule?.celExpression ?? JSON.stringify(rule?.query ?? ""))),
     ).length,
+    pinnedRules: enabled.filter((rule) => ruleRoutingPins(rule).length > 0).length,
     multiScopeAliases: [...aliasCounts.values()].filter((count) => count > 1).length,
   };
 }

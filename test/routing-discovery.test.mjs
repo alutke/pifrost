@@ -255,3 +255,56 @@ test("scope, weighted, chained and request-dependent aliases stay static", () =>
   assert.equal(isContextDynamicRuleSafe({ ...base, cel_expression: "model == 'omp-default' && budget_used < 80" }, "omp-default"), false);
   assert.equal(isContextDynamicRuleSafe({ ...base, cel_expression: "model == 'omp-default' && headers['x-tier'] == 'large'" }, "omp-default"), false);
 });
+
+
+test("Bifrost 2.2.3 object fallbacks participate in the alias envelope and retain pin metadata", () => {
+  const result = deriveAliasesRobust([{
+    id: "pinned",
+    name: "omp-default",
+    scope: "global",
+    enabled: true,
+    cel_expression: "model == 'omp-default'",
+    targets: [{ provider: "openai", model: "gpt-large", weight: 1 }],
+    fallbacks: [
+      { provider: "deepseek", model: "deepseek-v4-pro", key_id: "key-123" },
+      { provider: "mistral", model: "large", provider_key_name: "Mistral Primary" },
+      "openai/gpt-small",
+    ],
+  }]);
+
+  assert.deepEqual(result.aliases["omp-default"].chain, [
+    "openai/gpt-large",
+    "deepseek/deepseek-v4-pro",
+    "mistral/large",
+    "openai/gpt-small",
+  ]);
+  assert.deepEqual(result.aliases["omp-default"].routingPins, [
+    { source: "fallback", reference: "deepseek/deepseek-v4-pro", keyId: "key-123" },
+    { source: "fallback", reference: "mistral/large", providerKeyName: "Mistral Primary" },
+  ]);
+  assert.equal(result.aliases["omp-default"].dynamicRouting, undefined);
+});
+
+test("key-pinned targets and fallbacks are never eligible for local dynamic compilation", () => {
+  const base = {
+    id: "pinned",
+    name: "omp-default",
+    scope: "global",
+    enabled: true,
+    cel_expression: "model == 'omp-default'",
+    targets: [{ provider: "openai", model: "gpt-large", weight: 1 }],
+    fallbacks: ["deepseek/small"],
+  };
+  assert.equal(isContextDynamicRuleSafe({
+    ...base,
+    targets: [{ provider: "openai", model: "gpt-large", weight: 1, key_id: "primary-key" }],
+  }, "omp-default"), false);
+  assert.equal(isContextDynamicRuleSafe({
+    ...base,
+    fallbacks: [{ provider: "deepseek", model: "small", key_id: "fallback-key" }],
+  }, "omp-default"), false);
+  assert.equal(isContextDynamicRuleSafe({
+    ...base,
+    fallbacks: [{ provider: "deepseek", model: "small", provider_key_name: "DeepSeek Pro" }],
+  }, "omp-default"), false);
+});
