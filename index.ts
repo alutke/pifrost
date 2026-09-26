@@ -271,20 +271,33 @@ export function pifrostProviderHeaders(virtualKey: string): Record<string, strin
 }
 
 /**
- * Attach OMP's authoritative per-conversation session id as a Bifrost dynamic
- * extra header. Bifrost strips x-bf-eh- and sends x-opencode-session upstream.
+ * Attach OMP's authoritative per-conversation session id to one inference request.
+ *
+ * x-bf-session-id is consumed by Bifrost for session-aware routing/provider-key
+ * affinity. x-bf-eh-x-opencode-session is separately forwarded by Bifrost to
+ * OpenCode Go as x-opencode-session. Both are request-scoped; shared provider
+ * headers are never mutated.
  */
-export function pifrostOpenCodeSessionHeaders(
+export function pifrostSessionHeaders(
 	headers: Record<string, string> | undefined,
 	sessionId: string,
 ): Record<string, string> {
 	const normalizedSessionId = nonEmpty(sessionId);
 	if (!normalizedSessionId) {
-		throw new Error("Pifrost requires a non-empty OMP inference session id for OpenCode Go routing");
+		throw new Error("Pifrost requires a non-empty OMP inference session id for Bifrost session routing");
 	}
 	const result: Record<string, string> = { ...(headers ?? {}) };
+	setHeader(result, "x-bf-session-id", normalizedSessionId);
 	setHeader(result, "x-bf-eh-x-opencode-session", normalizedSessionId);
 	return result;
+}
+
+/** Backward-compatible helper name retained for callers importing Pifrost's session header utility. */
+export function pifrostOpenCodeSessionHeaders(
+	headers: Record<string, string> | undefined,
+	sessionId: string,
+): Record<string, string> {
+	return pifrostSessionHeaders(headers, sessionId);
 }
 
 /** Headers used for Pifrost's own discovery probes. */

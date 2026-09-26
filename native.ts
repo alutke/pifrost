@@ -14,7 +14,7 @@ import {
 	loadAliasConfig,
 	optionalConfigFromEnvironment,
 	PIFROST_API,
-	pifrostOpenCodeSessionHeaders,
+	pifrostSessionHeaders,
 	pifrostProviderHeaders,
 	PROVIDER_ID,
 	type AliasDiagnostic,
@@ -115,8 +115,9 @@ function mapPifrostOpenAIToolChoice(
  * Custom transport used by Pifrost's logical Bifrost provider.
  *
  * OMP supplies a stable per-conversation sessionId before invoking custom
- * provider transports. Pifrost projects it through Bifrost's x-bf-eh-* escape
- * hatch so OpenCode Go receives x-opencode-session after Bifrost routing.
+ * provider transports. Pifrost sends it directly as x-bf-session-id for
+ * Bifrost session affinity and also through the x-bf-eh-* escape hatch so
+ * OpenCode Go receives x-opencode-session after Bifrost routing.
  */
 function streamPifrostOpenAI(
 	model: Model,
@@ -142,7 +143,7 @@ function streamPifrostOpenAI(
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
 		maxTokens: options?.maxTokens ?? model.maxTokens ?? undefined,
-		headers: pifrostOpenCodeSessionHeaders(options?.headers, sessionId),
+		headers: pifrostSessionHeaders(options?.headers, sessionId),
 		reasoning: resolvePifrostReasoningEffort(model, options),
 		disableReasoning: options?.disableReasoning,
 		toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),

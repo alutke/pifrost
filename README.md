@@ -50,6 +50,7 @@ Pifrost OMP provider
  │ Pifrost OpenAI Chat Completions transport
  │ Authorization: Bearer <inference API key>
  │ x-bf-vk: <global inference Virtual Key>
+ │ x-bf-session-id: <OMP session id>
  │ User-Agent: pifrost/<version> OMP
  │ x-bf-eh-user-agent: pifrost/<version> OMP
  │ x-bf-eh-x-opencode-session: <OMP session id>
@@ -62,7 +63,7 @@ Bifrost /v1
  └─ physical model providers
 ```
 
-For each inference request, OMP supplies a stable conversation `sessionId`. Pifrost forwards it to Bifrost as `x-bf-eh-x-opencode-session`; Bifrost strips the `x-bf-eh-` prefix and the selected upstream receives `x-opencode-session`. This satisfies OpenCode Go's per-conversation session requirement without mutating shared provider headers. Pifrost also forwards its explicit client identity upstream as `x-bf-eh-user-agent`.
+For each inference request, OMP supplies a stable conversation `sessionId`. Pifrost sends that value directly as `x-bf-session-id`, which lets Bifrost keep session-aware routing plus provider/key affinity on the same eligible route/key across turns. The same value is also sent as `x-bf-eh-x-opencode-session`; Bifrost strips the `x-bf-eh-` prefix and the selected upstream receives `x-opencode-session`, satisfying OpenCode Go's separate per-conversation session requirement. Both headers are constructed per request, so Pifrost does not mutate shared provider headers. Pifrost also forwards its explicit client identity upstream as `x-bf-eh-user-agent`.
 
 
 The management/control-plane path is separate:
@@ -483,7 +484,7 @@ Pifrost keeps Bifrost as the runtime routing authority. For OMP metadata it comp
 
 This may deliberately under-advertise a highly scoped route. It must never over-advertise a capability that a valid Bifrost 2.x fallback cannot satisfy.
 
-Bifrost can also persist routing/complexity decisions by request session via `x-bf-session-id`. OMP 18.1 exposes the active session to extension event contexts, but extension-registered provider headers are shared/static rather than a safe per-request header hook. Because OMP subagents can share one model registry concurrently, Pifrost **does not fabricate or mutate a global session header**: doing so could pin one session to another session's routing state. Session-persistent Bifrost routing therefore remains available only when the caller or a future OMP per-request transport hook supplies the session identity. Pifrost detects and reports session-enabled complexity configuration.
+Bifrost persists session-aware routing/complexity decisions and provider/key affinity from `x-bf-session-id`. Pifrost's custom OMP transport receives `rawOptions.sessionId` for each inference request and projects it into that header at request time. The header is therefore isolated per request rather than stored on the shared provider registration, avoiding cross-session races while enabling Bifrost's session behavior automatically for Pifrost inference traffic. Pifrost also detects and reports session-enabled complexity configuration.
 
 `pifrost global status` / `pifrost doctor` also report the number of enabled rules, scopes, weighted/chained rules and complexity-based rules, plus whether the complexity-analyzer configuration surface is available.
 
@@ -941,9 +942,9 @@ Run `pifrost doctor` after syncing to see `dynamic-context=<static>-><advertised
 
 ### OpenCode Go returns `MissingSessionID`
 
-Pifrost 0.4.0 forwards OMP's per-conversation session id through Bifrost using `x-bf-eh-x-opencode-session`, and forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. The custom transport rebuilds the logical Pifrost model as a resolved OpenAI Chat Completions model before dispatch, so OMP's complete compatibility policy is present during forced-tool and reasoning handling. If Bifrost has a non-empty client header allowlist, it must permit both dynamic extra-header names; otherwise Bifrost will drop them before provider dispatch and OpenCode Go will reject the request.
+Pifrost forwards OMP's per-conversation session id to Bifrost as `x-bf-session-id` for Bifrost session affinity and separately as `x-bf-eh-x-opencode-session` for OpenCode Go. It also forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. The custom transport rebuilds the logical Pifrost model as a resolved OpenAI Chat Completions model before dispatch, so OMP's complete compatibility policy is present during forced-tool and reasoning handling. If Bifrost has a non-empty client header allowlist, it must permit the dynamic extra-header names; otherwise Bifrost will drop the OpenCode forwarding header before provider dispatch and OpenCode Go will reject the request.
 
-This is deliberately separate from Bifrost's own `x-bf-session-id`: the OpenCode header identifies the OMP conversation to the upstream OpenCode Go service.
+The two session headers deliberately have different consumers: `x-bf-session-id` is consumed by Bifrost itself for routing/provider-key affinity, while the escaped OpenCode header is forwarded to the selected OpenCode Go upstream.
 
 
 ### `pifrost --version` is old

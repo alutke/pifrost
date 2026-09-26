@@ -468,7 +468,7 @@ async function commandGlobalStatus() {
         ].filter(Boolean);
         console.log(`Complexity analyzer:    available (${mechanisms.join(",") || "keywords/configured"})`);
         if (complexity?.session?.enabled) {
-          console.log("  NOTE OMP 18.1 does not expose a safe per-request provider-header hook for Pifrost, so x-bf-session-id is not fabricated; session-persistent complexity routing requires a caller-supplied session header.");
+          console.log("  OK Pifrost sends OMP's per-request sessionId as x-bf-session-id, enabling Bifrost session-persistent complexity routing and provider/key affinity without mutating shared provider headers.");
         }
       }
     } catch (error) {

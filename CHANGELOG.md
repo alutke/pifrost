@@ -3,7 +3,11 @@
 ## Unreleased
 
 - Raised the OhMyPi compatibility baseline from 18.1.10 to **18.3.2** across runtime dependencies, development tooling, the package contract canary, CI plugin-loader validation, and documented requirements.
-- Kept this baseline upgrade behavior-neutral: no Bifrost routing, fallback, MCP, quota, or inference-header semantics change in this step.
+- Kept the OMP baseline upgrade behavior-neutral: no Bifrost routing, fallback, MCP, quota, or inference-header semantics changed as part of that dependency-only step.
+- Added request-scoped Bifrost session affinity: Pifrost now sends OMP's authoritative `sessionId` as `x-bf-session-id` on every inference request, enabling Bifrost 2.2.2+ provider/key affinity and session-aware routing without mutating shared provider headers.
+- Preserved the separate OpenCode Go session contract via `x-bf-eh-x-opencode-session`; caller-supplied conflicting session headers are replaced case-insensitively so one request cannot accidentally carry two identities.
+- Added regression coverage for stable same-session identity, cross-session isolation, caller-header immutability, and the backward-compatible OpenCode session helper; updated doctor/README messaging to remove the obsolete OMP 18.1 limitation.
+- Added a released Bifrost 2.2.2 session-affinity contract canary to CI.
 
 ## 0.4.0
 

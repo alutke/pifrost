@@ -1,4 +1,5 @@
 const BIFROST_2_0_0_COMMIT = "e4a30d6041c0446603aea615bc5da340dac001b1";
+const BIFROST_2_2_2_COMMIT = "9f0d71dba7274d8673de1e69529991035dae49e4";
 
 const SOURCES = [
   {
@@ -41,6 +42,11 @@ const SOURCES = [
     name: "Bifrost 2.0.0 reasoning contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/core/schemas/modelcapsreasoning.go`,
     required: ["ReasoningEffortNone", "\"none\"", "ReasoningEffortMinimal"],
+  },
+  {
+    name: "Bifrost 2.2.2 session-affinity contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_2_COMMIT}/docs/providers/session-affinity.mdx`,
+    required: ["Session affinity", "x-bf-session-id", "x-bf-session-affinity", "BifrostContextKeySessionID"],
   },
   {
     name: "current Bifrost dev routing canary",

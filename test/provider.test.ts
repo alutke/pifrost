@@ -8,6 +8,7 @@ import {
 	normalizeBifrostUrl,
 	PIFROST_API,
 	pifrostOpenCodeSessionHeaders,
+	pifrostSessionHeaders,
 	resolveAliasReference,
 	synthesizeAlias,
 	toProviderModel,
@@ -257,16 +258,42 @@ test("native OMP provider uses the Pifrost transport and separate x-bf-vk govern
 	assert.equal(capturedHeaders?.get("x-bf-vk"), "vk");
 });
 
-test("OpenCode Go session forwarding is authoritative and preserves unrelated headers", () => {
-	const headers = pifrostOpenCodeSessionHeaders(
-		{
-			"X-BF-EH-X-OPENCODE-SESSION": "wrong-session",
-			"x-test": "preserved",
-		},
-		"session-123",
-	);
+test("OMP session identity is authoritative for Bifrost affinity and OpenCode forwarding", () => {
+	const original = {
+		"X-BF-SESSION-ID": "wrong-bifrost-session",
+		"X-BF-EH-X-OPENCODE-SESSION": "wrong-opencode-session",
+		"x-test": "preserved",
+	};
+	const headers = pifrostSessionHeaders(original, "session-123");
 
+	assert.equal(headers["x-bf-session-id"], "session-123");
+	assert.equal(headers["X-BF-SESSION-ID"], undefined);
 	assert.equal(headers["x-bf-eh-x-opencode-session"], "session-123");
 	assert.equal(headers["X-BF-EH-X-OPENCODE-SESSION"], undefined);
 	assert.equal(headers["x-test"], "preserved");
+
+	// Request-scoped construction must not mutate shared/caller-owned headers.
+	assert.equal(original["X-BF-SESSION-ID"], "wrong-bifrost-session");
+	assert.equal(original["X-BF-EH-X-OPENCODE-SESSION"], "wrong-opencode-session");
+});
+
+test("session headers remain stable per OMP session and isolated across concurrent sessions", () => {
+	const firstTurn = pifrostSessionHeaders({ "x-test": "one" }, "session-a");
+	const laterTurn = pifrostSessionHeaders(undefined, "session-a");
+	const otherSession = pifrostSessionHeaders({ "x-bf-session-id": "stale" }, "session-b");
+
+	assert.equal(firstTurn["x-bf-session-id"], "session-a");
+	assert.equal(laterTurn["x-bf-session-id"], "session-a");
+	assert.equal(firstTurn["x-bf-eh-x-opencode-session"], "session-a");
+	assert.equal(laterTurn["x-bf-eh-x-opencode-session"], "session-a");
+	assert.equal(otherSession["x-bf-session-id"], "session-b");
+	assert.equal(otherSession["x-bf-eh-x-opencode-session"], "session-b");
+	assert.equal(firstTurn["x-test"], "one");
+	assert.equal(laterTurn["x-test"], undefined);
+});
+
+test("legacy OpenCode session helper now carries the same Bifrost affinity identity", () => {
+	const headers = pifrostOpenCodeSessionHeaders(undefined, "session-compat");
+	assert.equal(headers["x-bf-session-id"], "session-compat");
+	assert.equal(headers["x-bf-eh-x-opencode-session"], "session-compat");
 });
