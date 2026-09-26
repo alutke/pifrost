@@ -2,9 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-// Keep in step with cache.ts. This module is plain .mjs because the terminal CLI
-// runs under Node without a TypeScript loader.
-export const EXPECTED_CACHE_SCHEMA_VERSION = 4;
+import { CATALOG_CACHE_SCHEMA_VERSION } from "./cache.ts";
+import { createDiagnosticResult, DIAGNOSTIC_STATUS } from "./diagnostic-result.mjs";
+
+export { CATALOG_CACHE_SCHEMA_VERSION as EXPECTED_CACHE_SCHEMA_VERSION } from "./cache.ts";
 
 // OMP 18's OpenAI-compatible fallback ladder for a sparse reasoning model.
 // Pifrost's provider uses openai-completions, so when a cached model has
@@ -51,7 +52,7 @@ export function readCatalog(env = process.env) {
   if (!existsSync(path)) return { path, cache: undefined };
   try {
     const cache = JSON.parse(readFileSync(path, "utf8"));
-    if (cache?.schemaVersion !== EXPECTED_CACHE_SCHEMA_VERSION) {
+    if (cache?.schemaVersion !== CATALOG_CACHE_SCHEMA_VERSION) {
       return { path, cache: undefined, staleSchema: cache?.schemaVersion };
     }
     return { path, cache };
@@ -92,13 +93,26 @@ export function printModelDoctor(env = process.env, out = console) {
   const { path, cache, staleSchema } = readCatalog(env);
   out.log("\n## Pifrost model catalog\n");
   if (!cache) {
+    const summary = staleSchema !== undefined
+      ? `Catalog uses incompatible schema ${staleSchema}; expected ${CATALOG_CACHE_SCHEMA_VERSION}`
+      : "No valid model catalog is available";
     if (staleSchema !== undefined) {
-      out.log(`Catalog at ${path} uses incompatible schema ${staleSchema}; expected ${EXPECTED_CACHE_SCHEMA_VERSION}.`);
+      out.log(`Catalog at ${path} uses incompatible schema ${staleSchema}; expected ${CATALOG_CACHE_SCHEMA_VERSION}.`);
     } else {
       out.log(`No valid catalog file found at ${path}`);
     }
     out.log("Run: pifrost models refresh --force");
-    return { ok: false, path, unresolved: [] };
+    const checks = [createDiagnosticResult({
+      id: "model-catalog",
+      label: "Model catalog",
+      status: DIAGNOSTIC_STATUS.FAIL,
+      summary,
+      impact: "Pifrost cannot validate the OMP-facing alias capability envelope from the local catalog.",
+      remediation: "Refresh the Pifrost model catalog.",
+      suggestedCommand: "pifrost models refresh --force",
+      data: { path, staleSchema, expectedSchema: CATALOG_CACHE_SCHEMA_VERSION },
+    })];
+    return { ok: false, path, unresolved: [], checks };
   }
 
   out.log(`Cache: ${path}`);
@@ -139,5 +153,26 @@ export function printModelDoctor(env = process.env, out = console) {
     }
   }
 
-  return { ok: unresolved.length === 0 && models.length > 0, path, unresolved };
+  const ok = unresolved.length === 0 && models.length > 0;
+  const checks = [createDiagnosticResult({
+    id: "model-catalog",
+    label: "Model catalog",
+    status: ok ? DIAGNOSTIC_STATUS.OK : DIAGNOSTIC_STATUS.FAIL,
+    summary: ok
+      ? `${models.length} OMP-facing aliases are available`
+      : unresolved.length
+        ? `${unresolved.length} alias(es) contain unresolved route members`
+        : "The model catalog contains no OMP-facing aliases",
+    impact: ok ? undefined : "Affected aliases may be withheld or exposed with a reduced safe capability envelope.",
+    remediation: ok ? undefined : "Refresh the catalog and inspect unresolved route-member diagnostics.",
+    suggestedCommand: ok ? undefined : "pifrost models refresh --force",
+    data: {
+      path,
+      schemaVersion: cache.schemaVersion,
+      modelCount: models.length,
+      unresolvedAliases: unresolved.map((item) => item.id),
+    },
+  })];
+
+  return { ok, path, unresolved, checks };
 }

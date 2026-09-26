@@ -9,6 +9,9 @@ import { spawnSync } from "node:child_process";
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
 import { storedRuntimeConfigDiagnostics } from "./config-store.ts";
+import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
+import { printModelDoctor } from "./model-diagnostics.mjs";
+import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -31,12 +34,10 @@ import {
   commandExists,
   configureOmp,
   currentRepoState,
-  deriveAliasesFromRules,
   detachVirtualMcpFromVirtualKey,
   diffAliases,
   effectiveRepoMcpPolicy,
   getRepoRoot,
-  getRoutingRules,
   getBifrostVersion,
   getBifrostHealth,
   getOmpVersion,
@@ -321,27 +322,6 @@ function buildManagementAuth(mode, username, password, apiKey) {
   return { mode: "bearer", apiKey };
 }
 
-function requireRuntime(state) {
-  const runtime = runtimeConfigFromState(state);
-  if (!runtime.url || !runtime.virtualKey) {
-    throw new Error("Global inference configuration is incomplete; Bifrost URL and Virtual Key are required. Run `pifrost global setup`");
-  }
-  return runtime;
-}
-
-function requireManagement(state) {
-  const runtime = requireRuntime(state);
-  const managementAuth = managementAuthFromState(state);
-  if (!managementAuth) {
-    throw new Error(
-      "Bifrost management authentication is missing; run `pifrost global setup`. Use OSS admin username/password (Basic auth), or an Enterprise scoped API key.",
-    );
-  }
-  // Keep the legacy local variable name so the rest of the control-plane code
-  // remains source-compatible; it now carries a management-auth descriptor.
-  return { ...runtime, managementKey: managementAuth };
-}
-
 async function commandGlobalSetup(flags) {
   const state = loadState();
   const current = runtimeConfigFromState(state);
@@ -611,11 +591,18 @@ async function commandInit(flags) {
   await commandGlobalStatus();
 }
 
-async function commandRoutesList() {
+async function routingSnapshot() {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
-  const rules = await getRoutingRules(url, managementKey);
-  const manifest = deriveAliasesFromRules(rules);
+  const discovered = await discoverRoutingRules(url, managementKey);
+  return {
+    ...discovered,
+    manifest: deriveAliasesRobust(discovered.rules),
+  };
+}
+
+async function commandRoutesList() {
+  const { manifest } = await routingSnapshot();
   printHeader(`Bifrost OMP routes (${Object.keys(manifest.aliases).length})`);
   for (const [id, definition] of Object.entries(manifest.aliases).sort(([a], [b]) => a.localeCompare(b))) {
     console.log(id);
@@ -630,10 +617,31 @@ async function commandRoutesList() {
   }
 }
 
+async function commandRoutesDiagnose() {
+  const { rules, diagnostics, manifest } = await routingSnapshot();
+  printHeader("Bifrost routing discovery");
+  for (const item of diagnostics) {
+    if (item.ok) console.log(`${item.path}: OK rules=${item.count} ${item.shape}`);
+    else console.log(`${item.path}: FAIL${item.status ? ` HTTP ${item.status}` : ""} ${item.error}`);
+  }
+  console.log(`\nUnique raw rules: ${rules.length}`);
+  console.log(`Derived omp-* aliases: ${Object.keys(manifest.aliases).length}`);
+
+  const unmatched = rules.filter((rule) => {
+    const one = deriveAliasesRobust([rule]);
+    return Object.keys(one.aliases).length === 0;
+  });
+  if (unmatched.length) {
+    console.log("\nRules not recognized as Pifrost aliases:");
+    for (const rule of unmatched.slice(0, 30)) {
+      console.log(`  - ${rule?.name ?? rule?.id ?? "<unnamed>"}`);
+    }
+    if (unmatched.length > 30) console.log(`  ... ${unmatched.length - 30} more`);
+  }
+}
+
 async function commandRoutesDiff() {
-  const state = loadState();
-  const { url, managementKey } = requireManagement(state);
-  const remote = deriveAliasesFromRules(await getRoutingRules(url, managementKey));
+  const { manifest: remote } = await routingSnapshot();
   const local = loadAliasManifest();
   const differences = diffAliases(local, remote);
   if (!differences.length) {
@@ -654,12 +662,16 @@ async function commandRoutesDiff() {
 }
 
 async function commandRoutesSync(flags = {}) {
-  const state = loadState();
-  const { url, managementKey } = requireManagement(state);
-  const rules = await getRoutingRules(url, managementKey);
-  const manifest = deriveAliasesFromRules(rules);
+  const { manifest, rules, diagnostics } = await routingSnapshot();
   const count = Object.keys(manifest.aliases).length;
-  if (!count) throw new Error("No enabled omp-* routing rules could be derived from Bifrost");
+  if (!count) {
+    const sourceSummary = diagnostics
+      .map((item) => `${item.path}=${item.ok ? item.count : `HTTP-${item.status ?? "error"}`}`)
+      .join(", ");
+    throw new Error(
+      `Bifrost returned ${rules.length} routing rule(s), but none could be derived as omp-* aliases (${sourceSummary}). Run \`pifrost routes diagnose\` for details.`,
+    );
+  }
   const result = writeAliasManifest(manifest);
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
@@ -673,52 +685,10 @@ async function commandModelsRefresh(flags = {}) {
   runCommand("omp", ["models", "refresh"], { env, inherit: true });
 }
 
-function modelTableFromCache() {
-  const cachePath = join(process.env.PI_CODING_AGENT_DIR ?? join(process.env.HOME ?? "", ".omp/agent"), "pifrost.catalog.json");
-  if (!existsSync(cachePath)) return { cachePath, cache: undefined };
-  try {
-    return { cachePath, cache: JSON.parse(readFileSync(cachePath, "utf8")) };
-  } catch {
-    return { cachePath, cache: undefined };
-  }
-}
-
 async function commandModelsDoctor() {
-  const { cachePath, cache } = modelTableFromCache();
-  printHeader("Pifrost model catalog");
-  if (!cache) {
-    console.log(`No valid catalog file found at ${cachePath}`);
-    console.log("Run: pifrost models refresh --force");
-    process.exitCode = 2;
-    return;
-  }
-  console.log(`Cache: ${cachePath}`);
-  console.log(`Generated: ${cache.generatedAt ?? "unknown"}`);
-  const models = Array.isArray(cache.models) ? cache.models : [];
-  for (const model of models) {
-    const efforts = model.thinking?.efforts?.join(",") ?? "-";
-    const images = model.input?.includes("image") ? "yes" : "no";
-    console.log(
-      `${String(model.id).padEnd(16)} context=${String(model.contextWindow).padEnd(8)} max=${String(model.maxTokens).padEnd(8)} thinking=${efforts.padEnd(24)} images=${images}`,
-    );
-  }
-  const diagnostics = Array.isArray(cache.diagnostics) ? cache.diagnostics : [];
-  const pinned = diagnostics.filter((item) => Array.isArray(item.routingPins) && item.routingPins.length);
-  if (pinned.length) {
-    console.log("\nBifrost-owned pinned routing:");
-    for (const item of pinned) {
-      for (const pin of item.routingPins) {
-        const key = pin.providerKeyName ? `provider-key=${pin.providerKeyName}` : pin.keyId ? `key-id=${pin.keyId}` : "key-pin";
-        console.log(`  ${item.id}: ${pin.source} ${pin.reference ?? "(implicit model)"} [${key}]`);
-      }
-    }
-  }
-  const unresolved = diagnostics.filter((item) => Array.isArray(item.unresolved) && item.unresolved.length);
-  if (unresolved.length) {
-    console.log("\nUnresolved route members:");
-    for (const item of unresolved) console.log(`  ${item.id}: ${item.unresolved.join(", ")}`);
-    process.exitCode = 2;
-  }
+  const result = printModelDoctor();
+  if (!result.ok) process.exitCode = 2;
+  return result;
 }
 
 async function chooseClientsInteractively(clients) {
@@ -1297,6 +1267,7 @@ const COMMANDS = new Map([
   ["routes list", () => commandRoutesList()],
   ["routes diff", () => commandRoutesDiff()],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
+  ["routes diagnose", () => commandRoutesDiagnose()],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
   ["models doctor", () => commandModelsDoctor()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],

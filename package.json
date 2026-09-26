@@ -1,10 +1,10 @@
 {
   "name": "pifrost",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
-    "pifrost": "./cli-entry.mjs"
+    "pifrost": "./cli.mjs"
   },
   "keywords": [
     "pi-package",
@@ -41,12 +41,12 @@
     "http-client.mjs",
     "doctor-probes.mjs",
     "skills-bridge.mjs",
+    "cli-preconditions.mjs",
+    "diagnostic-result.mjs",
     "cli.mjs",
-    "cli-entry.mjs",
     "cli-lib.mjs",
     "routing-discovery.mjs",
     "mcp-client-normalization.mjs",
-    "repo-cli.mjs",
     "repo-reset.mjs",
     "model-diagnostics.mjs",
     "README.md",
@@ -64,11 +64,11 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check doctor-probes.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-cli.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
+    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-preconditions.mjs && node --check diagnostic-result.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check doctor-probes.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
-    "cli": "node cli-entry.mjs"
+    "cli": "node cli.mjs"
   },
   "dependencies": {
     "@oh-my-pi/pi-ai": "18.3.2",

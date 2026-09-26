@@ -32,6 +32,8 @@ for (const path of [
   "routing-core.ts",
   "http-client.mjs",
   "doctor-probes.mjs",
+  "diagnostic-result.mjs",
+  "cli-preconditions.mjs",
   "skills-bridge.mjs",
   "README.md",
   "docs/REFERENCE.md",
@@ -42,7 +44,9 @@ for (const path of [
   if (!pkg.files?.includes(path)) fail(`package.json files is missing ${path}`);
 }
 
-const cli = spawnSync(process.execPath, ["cli-entry.mjs", "--version"], {
+const cliEntry = pkg.bin?.pifrost;
+if (typeof cliEntry !== "string" || !cliEntry.trim()) fail("package.json bin.pifrost is missing");
+const cli = spawnSync(process.execPath, [cliEntry, "--version"], {
   cwd: new URL(".", root),
   encoding: "utf8",
 });
@@ -58,7 +62,7 @@ const packed = spawnSync("npm", ["pack", "--dry-run", "--json"], {
 if (packed.status !== 0) fail(`npm pack --dry-run failed: ${packed.stderr || packed.stdout}`);
 const payload = JSON.parse(packed.stdout);
 const files = new Set(payload?.[0]?.files?.map((entry) => entry.path) ?? []);
-for (const path of ["package.json", "native.ts", "routing-core.ts", "http-client.mjs", "doctor-probes.mjs", "skills-bridge.mjs", "pricing-time.ts", "README.md", "docs/REFERENCE.md", "CHANGELOG.md", "scripts/smoke-live.mjs", "scripts/validate-release.mjs"]) {
+for (const path of ["package.json", "native.ts", "routing-core.ts", "http-client.mjs", "doctor-probes.mjs", "diagnostic-result.mjs", "cli-preconditions.mjs", "skills-bridge.mjs", "pricing-time.ts", "README.md", "docs/REFERENCE.md", "CHANGELOG.md", "scripts/smoke-live.mjs", "scripts/validate-release.mjs"]) {
   if (!files.has(path)) fail(`release tarball is missing ${path}`);
 }
 if (payload?.[0]?.version !== pkg.version) {
