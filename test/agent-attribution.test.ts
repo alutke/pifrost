@@ -94,3 +94,17 @@ test("formats current agent lineage and per-agent route usage", () => {
 	assert.match(report, /advisor \[sub\] id=2-Advisor depth=1 parent=Main/);
 	assert.match(report, /advisor \[sub\] -> omp-advisor: 1 request\(s\)/);
 });
+
+
+test("bounds process-level agent aggregate cardinality", () => {
+	for (let index = 0; index < 200; index += 1) {
+		const session = `session-${index}`;
+		bindAgentSession(session, { kind: "sub", id: `agent-${index}`, name: `agent-${index}`, depth: 1, parentId: "Main" });
+		recordAgentRequest(session, "omp-task");
+		releaseAgentSession(session);
+	}
+	const snapshot = agentAttributionSnapshot();
+	assert.ok(snapshot.agents.length <= 129);
+	assert.ok(snapshot.collapsedAgentIdentities > 0);
+	assert.ok(snapshot.agents.some((item) => item.name === "<other>"));
+});

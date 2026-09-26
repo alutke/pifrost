@@ -220,11 +220,8 @@ export async function readPifrostOmpSetting(
 }
 
 export async function readPifrostOmpProfile(session: PifrostCfgSession): Promise<PifrostOmpSettingStatus[]> {
-	const result: PifrostOmpSettingStatus[] = [];
-	for (const setting of PIFROST_OMP_SETTINGS) {
-		result.push(await readPifrostOmpSetting(session, setting));
-	}
-	return result;
+	assertPifrostCfgSession(session);
+	return Promise.all(PIFROST_OMP_SETTINGS.map((setting) => readPifrostOmpSetting(session, setting)));
 }
 
 export async function writePifrostOmpSetting(

@@ -222,9 +222,36 @@ export function managementAuthLabel(auth) {
   return "missing";
 }
 
+function requestSignal(externalSignal, timeoutMs) {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return externalSignal ? AbortSignal.any([externalSignal, timeout]) : timeout;
+}
+
+async function readTextLimited(response, maxBytes = 8 * 1024 * 1024) {
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxBytes) {
+    throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
+  }
+  if (!response.body) return "";
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let text = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel();
+      throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
+    }
+    text += decoder.decode(value, { stream: true });
+  }
+  return text + decoder.decode();
+}
+
 export async function requestJson(url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 20_000);
   try {
     const headers = { Accept: "application/json", ...(options.headers ?? {}) };
     let body;
@@ -236,9 +263,9 @@ export async function requestJson(url, options = {}) {
       method: options.method ?? (body ? "POST" : "GET"),
       headers,
       body,
-      signal: controller.signal,
+      signal: requestSignal(options.signal, options.timeoutMs ?? 20_000),
     });
-    const text = await response.text();
+    const text = await readTextLimited(response, options.maxResponseBytes ?? 8 * 1024 * 1024);
     let parsed;
     try {
       parsed = text ? JSON.parse(text) : undefined;
@@ -256,10 +283,10 @@ export async function requestJson(url, options = {}) {
     }
     return parsed;
   } catch (error) {
-    if (error?.name === "AbortError") throw new Error(`Request timed out: ${url}`);
+    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
+      throw new Error(`Request timed out: ${url}`);
+    }
     throw error;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

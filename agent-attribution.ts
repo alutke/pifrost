@@ -29,6 +29,7 @@ export interface PifrostAgentAttributionSnapshot {
 	current?: PifrostAgentSessionSnapshot;
 	activeSessions: number;
 	unattributedRequests: number;
+	collapsedAgentIdentities: number;
 	agents: PifrostAgentUsage[];
 }
 
@@ -50,9 +51,11 @@ interface AggregateRecord {
 
 const MAX_ACTIVE_SESSIONS = 256;
 const MAX_ROUTES_PER_AGENT = 64;
+const MAX_AGENT_AGGREGATES = 128;
 
 const sessions = new Map<string, SessionRecord>();
 const aggregates = new Map<string, AggregateRecord>();
+let collapsedAgentIdentities = 0;
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -108,7 +111,10 @@ function sessionRecord(sessionId: string, now: number): SessionRecord {
 }
 
 function aggregateKey(agent: PifrostAgentIdentity): string {
-	return `${agent.kind}:${agent.name}`;
+	const wanted = `${agent.kind}:${agent.name}`;
+	if (aggregates.has(wanted) || aggregates.size < MAX_AGENT_AGGREGATES) return wanted;
+	collapsedAgentIdentities += 1;
+	return `${agent.kind}:<other>`;
 }
 
 function incrementBounded(map: Map<string, number>, key: string, amount = 1): void {
@@ -194,6 +200,7 @@ export function agentAttributionSnapshot(currentSessionId?: string): PifrostAgen
 			: {}),
 		activeSessions: sessions.size,
 		unattributedRequests,
+		collapsedAgentIdentities,
 		agents,
 	};
 }
@@ -216,6 +223,9 @@ export function formatAgentAttributionReport(currentSessionId?: string): string 
 	}
 	lines.push(`  active sessions: ${snapshot.activeSessions}`);
 	if (snapshot.unattributedRequests > 0) lines.push(`  unattributed requests awaiting ctx.agent: ${snapshot.unattributedRequests}`);
+	if (snapshot.collapsedAgentIdentities > 0) {
+		lines.push(`  collapsed agent identities: ${snapshot.collapsedAgentIdentities} (bounded aggregate cardinality)`);
+	}
 	if (snapshot.agents.length === 0) {
 		lines.push("  process usage: no attributed Pifrost requests yet");
 	} else {
@@ -236,4 +246,5 @@ export function formatAgentAttributionReport(currentSessionId?: string): string 
 export function resetAgentAttributionForTests(): void {
 	sessions.clear();
 	aggregates.clear();
+	collapsedAgentIdentities = 0;
 }

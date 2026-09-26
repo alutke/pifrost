@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { loadStoredRuntimeConfig } from "../config-store.ts";
+import { loadStoredConfigResult, loadStoredRuntimeConfig } from "../config-store.ts";
 
 test("loads inference-only runtime configuration from the Pifrost store", () => {
 	const root = join(tmpdir(), `pifrost-store-${process.pid}-${Date.now()}`);
@@ -49,6 +49,19 @@ test("malformed stored files fail closed rather than throwing during OMP startup
 			apiKey: undefined,
 			virtualKey: undefined,
 		});
+	} finally {
+		rmSync(root, { recursive: true, force: true });
+	}
+});
+
+
+test("malformed stored config remains fail-closed but exposes a diagnostic", () => {
+	const root = mkdtempSync(join(tmpdir(), "pifrost-config-diagnostic-"));
+	try {
+		writeFileSync(join(root, "config.json"), "{broken");
+		const result = loadStoredConfigResult({ PIFROST_CONFIG_DIR: root });
+		assert.equal(result.value, undefined);
+		assert.match(result.error ?? "", /config\.json/);
 	} finally {
 		rmSync(root, { recursive: true, force: true });
 	}

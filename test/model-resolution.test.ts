@@ -278,3 +278,15 @@ test("capability intersections stay conservative after rich resolution", () => {
 	assert.deepEqual(mixed.thinking?.efforts.map(String), ["high", "max"]);
 	assert.equal(mixed.supportsTools, true);
 });
+
+
+test("resolver selects the best equivalent candidate without requiring global sort order", () => {
+	const live = [
+		sparseLive("openrouter/deepseek/deepseek-v4-pro"),
+		sparseLive("deepseek/deepseek-v4-pro"),
+		sparseLive("other/unrelated-model"),
+	];
+	const result = resolveAliasReferenceDetailed("deepseek/deepseek-v4-pro", live);
+	assert.equal(result.model?.id, "deepseek/deepseek-v4-pro");
+	assert.equal(result.kind, "exact");
+});

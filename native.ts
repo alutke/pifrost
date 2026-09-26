@@ -220,17 +220,24 @@ async function fetchFreshCatalog(
 			parameters: normalizeModelParametersDatasheet(datasheets.parameters),
 		});
 		catalog = buildPifrostCatalog(richRoutes.models, aliasSource.config, richRoutes.diagnostics);
-		catalog = applyDynamicRouteProfiles(catalog, richRoutes.models, aliasSource.config, (reference, models) =>
-			models.find((candidate) => candidate.id.toLowerCase() === reference.toLowerCase()) ??
-			undefined,
+		const richById = new Map(richRoutes.models.map((candidate) => [candidate.id.toLowerCase(), candidate]));
+		catalog = applyDynamicRouteProfiles(
+			catalog,
+			richRoutes.models,
+			aliasSource.config,
+			(reference) => richById.get(reference.trim().toLowerCase()),
 		);
 	}
 
 	// The no-datasheet path is uncommon for configured aliases, but keep it
 	// capability-safe and dynamic when all route members exist in /v1/models.
 	if ((!hasAliases || !datasheets) && aliasSource.config) {
-		catalog = applyDynamicRouteProfiles(catalog, liveModels, aliasSource.config, (reference, models) =>
-			models.find((candidate) => candidate.id.toLowerCase() === reference.toLowerCase()) ?? undefined,
+		const liveById = new Map(liveModels.map((candidate) => [candidate.id.toLowerCase(), candidate]));
+		catalog = applyDynamicRouteProfiles(
+			catalog,
+			liveModels,
+			aliasSource.config,
+			(reference) => liveById.get(reference.trim().toLowerCase()),
 		);
 	}
 	installDynamicRouteProfiles(catalog.models);

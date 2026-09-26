@@ -203,41 +203,52 @@ function kindForScore(score: number): ModelResolutionKind {
 	return "canonical-family";
 }
 
-function safeTie<T extends { id: string }>(entries: Array<{ model: T; score: number }>): boolean {
-	for (let left = 0; left < entries.length; left += 1) {
-		for (let right = left + 1; right < entries.length; right += 1) {
-			if (!equivalentModelId(entries[left]!.model.id, entries[right]!.model.id)) return false;
-		}
-	}
-	return true;
-}
-
 /**
- * Resolve a route reference against live model IDs without assuming that every
- * matching tail denotes the same model. Provider/aggregator prefixes may drift
- * or change punctuation/case; genuinely conflicting vendor-qualified families
- * are rejected as ambiguous rather than selecting the first tail match.
+ * Resolve a route reference against live model IDs without sorting the full
+ * candidate set. The common path is a single O(n) scan; tied candidates are
+ * validated against the first best match because equivalentModelId is
+ * transitive over Pifrost's canonical family/vendor identity.
  */
 export function resolveModelReference<T extends { id: string }>(
 	reference: string,
 	models: readonly T[],
 ): ModelResolution<T> {
-	const matches = models
-		.map((model) => ({ model, score: matchScore(reference, model.id) }))
-		.filter((entry) => entry.score >= 0)
-		.sort((left, right) => right.score - left.score || left.model.id.localeCompare(right.model.id));
-	if (!matches.length) return { reason: "no-match" };
+	let bestScore = -1;
+	const best: T[] = [];
 
-	const bestScore = matches[0]!.score;
-	const best = matches.filter((entry) => entry.score === bestScore);
-	if (best.length === 1 || safeTie(best)) {
-		const selected = [...best].sort((left, right) => left.model.id.length - right.model.id.length || left.model.id.localeCompare(right.model.id))[0]!;
-		return { model: selected.model, score: bestScore, kind: kindForScore(bestScore) };
+	for (const candidate of models) {
+		const score = matchScore(reference, candidate.id);
+		if (score < 0) continue;
+		if (score > bestScore) {
+			bestScore = score;
+			best.length = 0;
+			best.push(candidate);
+		} else if (score === bestScore) {
+			best.push(candidate);
+		}
 	}
 
-	return {
-		reason: "ambiguous",
-		score: bestScore,
-		ambiguousIds: best.map((entry) => entry.model.id),
-	};
+	if (best.length === 0) return { reason: "no-match" };
+
+	const first = best[0]!;
+	if (best.length > 1 && !best.every((candidate) => equivalentModelId(first.id, candidate.id))) {
+		return {
+			reason: "ambiguous",
+			score: bestScore,
+			ambiguousIds: best.map((candidate) => candidate.id),
+		};
+	}
+
+	let selected = first;
+	for (let index = 1; index < best.length; index += 1) {
+		const candidate = best[index]!;
+		if (
+			candidate.id.length < selected.id.length ||
+			(candidate.id.length === selected.id.length && candidate.id.localeCompare(selected.id) < 0)
+		) {
+			selected = candidate;
+		}
+	}
+
+	return { model: selected, score: bestScore, kind: kindForScore(bestScore) };
 }

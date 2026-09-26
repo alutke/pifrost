@@ -52,22 +52,40 @@ export function pifrostConfigDir(env: NodeJS.ProcessEnv = process.env): string {
 	return nonEmpty(env.PIFROST_CONFIG_DIR) ?? resolve(homedir(), ".config/pifrost");
 }
 
-function readJson<T>(path: string): T | undefined {
-	if (!existsSync(path)) return undefined;
+export interface StoredFileResult<T> {
+	value?: T;
+	error?: string;
+}
+
+function readJsonResult<T>(path: string): StoredFileResult<T> {
+	if (!existsSync(path)) return {};
 	try {
-		const parsed = JSON.parse(readFileSync(path, "utf8"));
-		return parsed && typeof parsed === "object" ? (parsed as T) : undefined;
-	} catch {
-		return undefined;
+		const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
+		if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+			return { error: `Expected JSON object: ${path}` };
+		}
+		return { value: parsed as T };
+	} catch (error) {
+		return {
+			error: `${path}: ${error instanceof Error ? error.message : "invalid JSON"}`,
+		};
 	}
 }
 
+export function loadStoredConfigResult(env: NodeJS.ProcessEnv = process.env): StoredFileResult<PifrostStoredConfig> {
+	return readJsonResult<PifrostStoredConfig>(resolve(pifrostConfigDir(env), "config.json"));
+}
+
+export function loadStoredSecretsResult(env: NodeJS.ProcessEnv = process.env): StoredFileResult<PifrostStoredSecrets> {
+	return readJsonResult<PifrostStoredSecrets>(resolve(pifrostConfigDir(env), "secrets.json"));
+}
+
 export function loadStoredConfig(env: NodeJS.ProcessEnv = process.env): PifrostStoredConfig | undefined {
-	return readJson<PifrostStoredConfig>(resolve(pifrostConfigDir(env), "config.json"));
+	return loadStoredConfigResult(env).value;
 }
 
 export function loadStoredSecrets(env: NodeJS.ProcessEnv = process.env): PifrostStoredSecrets | undefined {
-	return readJson<PifrostStoredSecrets>(resolve(pifrostConfigDir(env), "secrets.json"));
+	return loadStoredSecretsResult(env).value;
 }
 
 /**
