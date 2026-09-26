@@ -639,6 +639,31 @@ Pifrost does not put the raw VK in the repository. It generates command indirect
 
 OMP executes the local `!pifrost secret ...` command and uses stdout as the MCP header value.
 
+### MCP server instructions
+
+OMP 18.3.2 can keep an MCP server's tools active while omitting that server's `initialize.instructions` text from the system prompt. Pifrost exposes this only for its generated `bifrost` server entry; unrelated MCP servers in the same `.omp/mcp.json` are left unchanged.
+
+To opt out during repo initialization:
+
+```bash
+pifrost repo init --clients railway --no-mcp-instructions
+```
+
+For an existing repo:
+
+```bash
+pifrost repo mcp instructions off
+```
+
+Re-enable explicitly, or return to OMP's default behavior:
+
+```bash
+pifrost repo mcp instructions on
+pifrost repo mcp instructions default
+```
+
+The generated entry then contains `"instructions": false`. This does **not** disable Bifrost MCP tools, change the repo Virtual Key, or alter Bifrost's MCP permissions; it only controls whether OMP injects Bifrost's server-provided instructions into prompts. Existing repos remain unchanged unless the flag or command is used.
+
 ### Status
 
 ```bash
@@ -651,6 +676,7 @@ A healthy repo reports:
 Virtual Key id:   <uuid>
 Virtual Key name: omp-<repo>-mcp
 Repo secret:      set
+MCP instructions: disabled
 MCP initialize:   HTTP 200 OK
 Direct MCP grants: railway[*]
 Virtual MCPs:     Development Tools
@@ -868,6 +894,7 @@ with mode `0600` and creates the configuration directory privately.
 | `pifrost repo mcp list` | List Bifrost MCP clients/tools |
 | `pifrost repo mcp add <client>` | Add an MCP client/tool allow-list to the repo VK |
 | `pifrost repo mcp remove <client>` | Remove an MCP client from the repo VK |
+| `pifrost repo mcp instructions <on\|off\|default>` | Control OMP injection of Bifrost MCP server instructions for this repo |
 | `pifrost repo vmcp list` | List Bifrost Virtual MCP bundles and current-repo assignment |
 | `pifrost repo vmcp add <name>` | Attach a named Virtual MCP bundle to the repo VK |
 | `pifrost repo vmcp remove <name>` | Detach a named Virtual MCP bundle from the repo VK |

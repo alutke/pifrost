@@ -680,14 +680,25 @@ export function mcpConfigPath(root) {
   return join(root, ".omp/mcp.json");
 }
 
-export function buildRepoMcpConfig(existing, bifrostUrl, repoId) {
+export function buildRepoMcpConfig(existing, bifrostUrl, repoId, options = {}) {
   const result = existing && typeof existing === "object" && !Array.isArray(existing) ? structuredClone(existing) : {};
   result.$schema ??= MCP_SCHEMA_URL;
   result.mcpServers ??= {};
+  const previous =
+    result.mcpServers.bifrost && typeof result.mcpServers.bifrost === "object" && !Array.isArray(result.mcpServers.bifrost)
+      ? result.mcpServers.bifrost
+      : {};
+  const hasInstructionsOverride = Object.prototype.hasOwnProperty.call(options, "instructions");
+  const requestedInstructions = hasInstructionsOverride ? options.instructions : previous.instructions;
+  if (requestedInstructions !== undefined && requestedInstructions !== null && typeof requestedInstructions !== "boolean") {
+    throw new Error("Repo MCP instructions policy must be true, false, null, or undefined");
+  }
+
   result.mcpServers.bifrost = {
     type: "http",
     url: bifrostMcpUrl(bifrostUrl),
     timeout: DEFAULT_MCP_TIMEOUT_MS,
+    ...(typeof requestedInstructions === "boolean" ? { instructions: requestedInstructions } : {}),
     headers: {
       "x-bf-vk": `!pifrost secret repo-mcp --id ${repoId}`,
     },
@@ -695,12 +706,20 @@ export function buildRepoMcpConfig(existing, bifrostUrl, repoId) {
   return result;
 }
 
-export function writeRepoMcpConfig(root, bifrostUrl, repoId) {
+export function repoMcpInstructions(root) {
+  const path = mcpConfigPath(root);
+  if (!existsSync(path)) return undefined;
+  const config = readJson(path, {});
+  const value = config?.mcpServers?.bifrost?.instructions;
+  return typeof value === "boolean" ? value : undefined;
+}
+
+export function writeRepoMcpConfig(root, bifrostUrl, repoId, options = {}) {
   const path = mcpConfigPath(root);
   const existing = existsSync(path) ? readJson(path, {}) : {};
   mkdirSync(dirname(path), { recursive: true });
   const backup = existsSync(path) ? backupFile(path, join(dirname(path), "backups")) : undefined;
-  writeJsonAtomic(path, buildRepoMcpConfig(existing, bifrostUrl, repoId), 0o600);
+  writeJsonAtomic(path, buildRepoMcpConfig(existing, bifrostUrl, repoId, options), 0o600);
   return { path, backup };
 }
 
@@ -1113,6 +1132,7 @@ export async function upsertRepoVirtualKey({
     virtualKeyName: vk.name ?? keyName,
     mcpClients: normalizedClients,
     ...(Array.isArray(local?.virtualMcps) ? { virtualMcps: local.virtualMcps } : {}),
+    ...(typeof local?.mcpInstructions === "boolean" ? { mcpInstructions: local.mcpInstructions } : {}),
   };
 
   let keyValue = usableVirtualKeyValue(vk?.value) ?? localSecret;

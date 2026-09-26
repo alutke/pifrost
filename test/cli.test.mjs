@@ -15,6 +15,7 @@ import {
   loadState,
   normalizeBifrostUrl,
   normalizeVirtualMcp,
+  repoMcpInstructions,
   resolveVirtualMcpNames,
   virtualMcpsForVirtualKey,
   saveState,
@@ -102,6 +103,51 @@ test("repo MCP config contains command indirection and never embeds the VK", () 
     },
   });
   assert.equal(JSON.stringify(config).includes("sk-bf-"), false);
+});
+
+test("repo MCP instruction policy is scoped to the generated Bifrost server and survives regeneration", () => {
+  const existing = {
+    mcpServers: {
+      other: {
+        type: "http",
+        url: "https://example.invalid/mcp",
+        instructions: true,
+        headers: { "x-other": "keep-me" },
+      },
+      bifrost: {
+        type: "http",
+        url: "http://old.invalid/mcp",
+        instructions: false,
+      },
+    },
+  };
+
+  const preserved = buildRepoMcpConfig(existing, "http://bifrost/v1", "repo-1");
+  assert.equal(preserved.mcpServers.bifrost.instructions, false);
+  assert.deepEqual(preserved.mcpServers.other, existing.mcpServers.other);
+
+  const enabled = buildRepoMcpConfig(preserved, "http://bifrost/v1", "repo-1", { instructions: true });
+  assert.equal(enabled.mcpServers.bifrost.instructions, true);
+  assert.deepEqual(enabled.mcpServers.other, existing.mcpServers.other);
+
+  const inherited = buildRepoMcpConfig(enabled, "http://bifrost/v1", "repo-1", { instructions: null });
+  assert.equal(Object.prototype.hasOwnProperty.call(inherited.mcpServers.bifrost, "instructions"), false);
+  assert.deepEqual(inherited.mcpServers.other, existing.mcpServers.other);
+});
+
+test("repo MCP instruction status reads the effective per-server setting from .omp/mcp.json", () => {
+  const root = mkdtempSync(join(tmpdir(), "pifrost-mcp-instructions-"));
+  try {
+    assert.equal(repoMcpInstructions(root), undefined);
+    mkdirSync(join(root, ".omp"), { recursive: true });
+    writeFileSync(
+      join(root, ".omp/mcp.json"),
+      JSON.stringify({ mcpServers: { bifrost: { type: "http", url: "http://bifrost/mcp", instructions: false } } }),
+    );
+    assert.equal(repoMcpInstructions(root), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("state store persists secrets as mode 0600", () => {

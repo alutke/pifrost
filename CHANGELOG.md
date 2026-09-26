@@ -15,6 +15,9 @@
 - Added `pifrost repo vmcp list/add/remove` plus `repo init --virtual-mcps`; existing direct MCP grants are preserved when only Virtual MCP assignments are changed.
 - Added live effective MCP-policy diagnostics that union direct grants, enabled Virtual MCP tool specs and `allow_by_default` clients using Bifrost's wildcard/configured-client semantics, while flagging disabled or unresolved clients.
 - Added released Bifrost 2.2.0 Virtual MCP API/wire contract canaries and HTTP helper regression coverage.
+- Added repo-scoped OMP 18.3 MCP instruction control. `repo init --no-mcp-instructions` and `repo mcp instructions on|off|default` can suppress Bifrost's server-provided instructions without disabling its tools.
+- Pifrost preserves the existing Bifrost instruction policy across repo-config regeneration, modifies only its generated `mcpServers.bifrost` entry, and leaves unrelated MCP servers untouched.
+- `repo status` now reports the effective instruction policy, and CI pins the released OMP 18.3.2 schema/runtime contract for `instructions: false`.
 
 ## 0.4.0
 

@@ -37,6 +37,7 @@ import {
   normalizeBifrostUrl,
   removeRepoState,
   repoIdentity,
+  repoMcpInstructions,
   requestJson,
   resolveVirtualMcpNames,
   rotateVirtualKey,
@@ -69,12 +70,13 @@ Usage:
   pifrost routes sync [--no-refresh]
   pifrost models refresh [--force]
   pifrost models doctor
-  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B']
+  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions]
   pifrost repo status
   pifrost repo rotate-key
   pifrost repo mcp list
   pifrost repo mcp add <client> [--tools '*|tool1,tool2']
   pifrost repo mcp remove <client>
+  pifrost repo mcp instructions <on|off|default>
   pifrost repo vmcp list
   pifrost repo vmcp add <name>
   pifrost repo vmcp remove <name>
@@ -94,6 +96,12 @@ Global setup options:
   --skip-omp                     Do not change OMP settings
   --skip-test                    Save without connectivity tests
   --yes                          Accept existing/default values non-interactively
+
+Repo init options:
+  --clients <a,b>                 Direct MCP clients to grant
+  --tools <*|tool1,tool2>         Tool allow-list for selected direct MCP clients
+  --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
+  --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
 
 Environment overrides:
   BIFROST_URL
@@ -685,6 +693,9 @@ async function commandRepoInit(flags) {
   }
 
   const vk = await upsertRepoVirtualKey({ state, repo, clients, url, managementKey });
+  if (flags["no-mcp-instructions"]) {
+    updateRepoState(state, repo.id, { mcpInstructions: false });
+  }
   if (virtualMcpFlagPresent) {
     await syncVirtualMcpAssignments({
       url,
@@ -696,7 +707,13 @@ async function commandRepoInit(flags) {
     updateRepoState(state, repo.id, { virtualMcps: desiredVirtualMcps.map((item) => item.name) });
   }
 
-  const file = writeRepoMcpConfig(repo.root, url, repo.id);
+  const instructionSetting = state.config.repos?.[repo.id]?.mcpInstructions;
+  const file = writeRepoMcpConfig(
+    repo.root,
+    url,
+    repo.id,
+    typeof instructionSetting === "boolean" ? { instructions: instructionSetting } : {},
+  );
   const refreshed = loadState();
   const secret = refreshed.secrets.repos?.[repo.id]?.mcpVirtualKey;
   if (!secret) throw new Error("Repo MCP Virtual Key was not persisted");
@@ -711,6 +728,8 @@ async function commandRepoInit(flags) {
   console.log(`MCP clients:      ${configuredClients.map((client) => `${client.name}[${client.tools.join(",")}]`).join(", ") || "none"}`);
   console.log(`Virtual MCPs:     ${configuredVirtualMcps.join(", ") || "none"}`);
   console.log(`OMP MCP config:   ${file.path}`);
+  const instructions = repoMcpInstructions(repo.root);
+  console.log(`MCP instructions: ${instructions === false ? "disabled" : instructions === true ? "enabled (explicit)" : "enabled (OMP default)"}`);
   console.log(`MCP initialize:   HTTP ${test.status}${test.ok ? " OK" : " FAIL"}`);
   if (!test.ok) {
     console.log(JSON.stringify(test.body));
@@ -728,6 +747,15 @@ async function commandRepoStatus() {
   console.log(`Virtual Key name: ${repoState.config?.virtualKeyName ?? "missing"}`);
   console.log(`Repo secret:      ${repoState.secret?.mcpVirtualKey ? "set" : "missing"}`);
   console.log(`MCP config:       ${join(repoState.repo.root, ".omp/mcp.json")}${existsSync(join(repoState.repo.root, ".omp/mcp.json")) ? "" : " (missing)"}`);
+  const instructions = repoMcpInstructions(repoState.repo.root);
+  console.log(`MCP instructions: ${instructions === false ? "disabled" : instructions === true ? "enabled (explicit)" : "enabled (OMP default)"}`);
+  if (
+    typeof repoState.config?.mcpInstructions === "boolean" &&
+    instructions !== undefined &&
+    repoState.config.mcpInstructions !== instructions
+  ) {
+    console.log(`  WARN stored MCP-instructions policy (${repoState.config.mcpInstructions ? "on" : "off"}) differs from .omp/mcp.json`);
+  }
   if (repoState.secret?.mcpVirtualKey) {
     try {
       const test = await testMcp(runtime.url, repoState.secret.mcpVirtualKey);
@@ -884,6 +912,35 @@ async function commandRepoMcpRemove(clientName) {
   console.log(`Removed ${clientName} from ${current.config.virtualKeyName}`);
 }
 
+async function commandRepoMcpInstructions(mode) {
+  const normalized = String(mode ?? "").trim().toLowerCase();
+  if (!["on", "off", "default"].includes(normalized)) {
+    throw new Error("Usage: pifrost repo mcp instructions <on|off|default>");
+  }
+  const state = loadState();
+  const runtime = requireRuntime(state);
+  const current = currentRepoState(state);
+  if (!current.config?.virtualKeyId) throw new Error("Current repo is not initialized; run `pifrost repo init`");
+
+  let options;
+  if (normalized === "default") {
+    delete state.config.repos[current.repo.id].mcpInstructions;
+    saveState(state.config, state.secrets);
+    options = { instructions: null };
+  } else {
+    const enabled = normalized === "on";
+    updateRepoState(state, current.repo.id, { mcpInstructions: enabled });
+    options = { instructions: enabled };
+  }
+
+  const file = writeRepoMcpConfig(current.repo.root, runtime.url, current.repo.id, options);
+  const effective = repoMcpInstructions(current.repo.root);
+  console.log(
+    `MCP server instructions for ${current.repo.name}: ${effective === false ? "disabled" : effective === true ? "enabled (explicit)" : "enabled (OMP default)"}`,
+  );
+  console.log(`Updated: ${file.path}`);
+}
+
 async function commandRepoRotateKey() {
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
@@ -968,6 +1025,7 @@ async function main() {
   if (one === "repo" && two === "mcp" && three === "list") return commandRepoMcpList();
   if (one === "repo" && two === "mcp" && three === "add") return commandRepoMcpAdd(four, flags);
   if (one === "repo" && two === "mcp" && three === "remove") return commandRepoMcpRemove(four);
+  if (one === "repo" && two === "mcp" && three === "instructions") return commandRepoMcpInstructions(four);
   if (one === "repo" && two === "vmcp" && three === "list") return commandRepoVirtualMcpList();
   if (one === "repo" && two === "vmcp" && three === "add") return commandRepoVirtualMcpAdd(four);
   if (one === "repo" && two === "vmcp" && three === "remove") return commandRepoVirtualMcpRemove(four);
