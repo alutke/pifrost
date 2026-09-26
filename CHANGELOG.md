@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.2 — 2026-09-26
+
+- Consolidated the terminal control plane onto a single `cli.mjs` package entry point, command parser and command registry; removed the overlapping `cli-entry.mjs` and `repo-cli.mjs` implementations.
+- Preserved the robust dual-endpoint/paginated Bifrost route discovery path while moving route list/diff/sync/diagnose behind the canonical command registry.
+- Restored the full repository command surface through the actual `pifrost` binary, including Virtual MCP, MCP-instruction and Bifrost Skills operations that could previously be shadowed by the reduced repo dispatcher.
+- Centralized runtime and management preconditions so repository operations use the same Bifrost 2.x Virtual-Key-native inference rules as global operations; a separate inference Bearer/API key is no longer incorrectly required for repo management.
+- Removed the duplicated model-catalog schema constant: terminal diagnostics now consume `CATALOG_CACHE_SCHEMA_VERSION` directly from `cache.ts`, fixing the schema-4/schema-5 mismatch.
+- Added a renderer-neutral diagnostic result contract and migrated model-catalog diagnostics to emit structured checks alongside the existing human-readable output.
+- Added package-binary command-surface regression coverage and release validation against the declared `bin.pifrost` entry point so future dispatcher drift fails CI.
+
 ## 0.6.1 — 2026-09-26
 
 - Reworked the repository README around the human onboarding and operating journey, with a clear install → `pifrost init` → `pifrost doctor` happy path.
