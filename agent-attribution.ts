@@ -130,7 +130,12 @@ function addAggregate(agent: PifrostAgentIdentity, route: string, amount: number
 	const key = aggregateKey(agent);
 	let aggregate = aggregates.get(key);
 	if (!aggregate) {
-		aggregate = { kind: agent.kind, name: agent.name, requests: 0, routes: new Map() };
+		aggregate = {
+			kind: agent.kind,
+			name: key.endsWith(":<other>") ? "<other>" : agent.name,
+			requests: 0,
+			routes: new Map(),
+		};
 		aggregates.set(key, aggregate);
 	}
 	aggregate.requests += amount;
