@@ -140,6 +140,10 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
       response.end(JSON.stringify({ virtual_mcps: [], total_count: 0, limit: 1, offset: 0 }));
       return;
     }
+    if (request.url?.startsWith("/api/skills?")) {
+      response.end(JSON.stringify({ skills: [], total: 0, limit: 1, offset: 0 }));
+      return;
+    }
     if (request.url?.startsWith("/api/routing/rules?")) {
       response.end(JSON.stringify({
         rules: [{
@@ -171,6 +175,7 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
     });
     assert.deepEqual(matrix.map((item) => [item.id, item.status]), [
       ["bifrost-virtual-mcp", "supported"],
+      ["bifrost-skills", "supported"],
       ["bifrost-session-affinity", "supported"],
       ["bifrost-pinned-fallbacks", "supported"],
       ["bifrost-quota-sourceref", "supported"],
@@ -187,6 +192,10 @@ test("compatibility doctor distinguishes contract drift, inaccessible probes and
     response.setHeader("content-type", "application/json");
     if (request.url?.startsWith("/api/mcp/virtual-mcps?")) {
       response.end(JSON.stringify({ items: "not-an-array" }));
+      return;
+    }
+    if (request.url?.startsWith("/api/skills?")) {
+      response.end(JSON.stringify({ skills: "not-an-array" }));
       return;
     }
     if (request.url?.startsWith("/api/routing/rules?")) {
@@ -218,6 +227,7 @@ test("compatibility doctor distinguishes contract drift, inaccessible probes and
       virtualKey: "sk-bf-test",
     });
     assert.equal(matrix.find((item) => item.id === "bifrost-virtual-mcp")?.status, "drifted");
+    assert.equal(matrix.find((item) => item.id === "bifrost-skills")?.status, "drifted");
     assert.equal(matrix.find((item) => item.id === "bifrost-pinned-fallbacks")?.status, "inaccessible");
     assert.equal(matrix.find((item) => item.id === "bifrost-quota-sourceref")?.status, "drifted");
 

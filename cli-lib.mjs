@@ -835,6 +835,61 @@ export async function bifrostCompatibilityMatrix({
     }
   }
 
+  const skillsBase = featureUnavailable(
+    "bifrost-skills",
+    "Bifrost Skills",
+    "2.2.0",
+    installedVersion,
+    "Repository Bifrost Skills bridge is unavailable",
+  );
+  if (skillsBase) {
+    results.push(skillsBase);
+  } else if (!managementAuth) {
+    results.push({
+      id: "bifrost-skills",
+      label: "Bifrost Skills",
+      minimum: "2.2.0",
+      status: "inaccessible",
+      detail: "management authentication is not configured",
+      impact: "Bifrost Skill discovery cannot be verified",
+    });
+  } else {
+    const endpoint = "/api/skills";
+    try {
+      const body = await requestJson(
+        `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0&sort_by=name&order=asc`,
+        { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
+      );
+      if (!Array.isArray(body?.skills)) {
+        results.push({
+          id: "bifrost-skills",
+          label: "Bifrost Skills",
+          minimum: "2.2.0",
+          status: "drifted",
+          detail: `${endpoint} responded but no skills array was present`,
+          impact: "Repository Bifrost Skill discovery/install may be incompatible",
+        });
+      } else {
+        results.push({
+          id: "bifrost-skills",
+          label: "Bifrost Skills",
+          minimum: "2.2.0",
+          status: "supported",
+          detail: `live Skills API contract verified (${body.skills.length} row(s) returned)`,
+          impact: undefined,
+        });
+      }
+    } catch (error) {
+      results.push({
+        id: "bifrost-skills",
+        label: "Bifrost Skills",
+        minimum: "2.2.0",
+        ...compatibilityHttpFailure(error, "2.2.0", installedVersion, endpoint),
+        impact: "Repository Bifrost Skill discovery cannot be verified",
+      });
+    }
+  }
+
   const sessionBase = featureUnavailable(
     "bifrost-session-affinity",
     "Session affinity",

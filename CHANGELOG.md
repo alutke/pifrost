@@ -38,6 +38,13 @@
 - Pifrost deliberately leaves OMP model costs at peak/base rates and never reorders routes or selects providers from price; Bifrost remains the billing and routing authority. Catalogue pricing is identified separately from any Bifrost-scoped custom override not exposed by the public datasheet.
 - Catalog cache schema bumped to v5 so old diagnostics without time-of-day pricing metadata are refreshed after upgrade.
 - CI now pins Bifrost 2.2.3's `off_peak_cost_multiplier`, `peak_hours`, request-start-time billing and window-evaluation contracts.
+- Added an opt-in Bifrost Skills → OMP Skills bridge using OMP's native project-level `.agents/skills/<name>` discovery path. No second skill runtime or MCP coupling is introduced.
+- Added `pifrost repo skills list/add/remove/sync`. Pifrost stores portable Bifrost skill names plus observed id/version provenance, fetches attached files from Bifrost's released serving API, and atomically installs updates with an explicit ownership marker.
+- Skill installation revalidates every path and fails closed on authored/project/user skill collisions. Pifrost will only update or remove directories carrying its own Bifrost-skill marker.
+- Bifrost skills with non-empty `allowed_tools` are reported as incompatible because OMP 18.3 does not enforce that Bifrost tool allow-list; Pifrost refuses to weaken the policy silently.
+- `repo status` / `doctor` now expose installed Bifrost skill provenance and upstream-version drift, while repo reset removes only Pifrost-owned bridged skill directories.
+- CI now pins the released Bifrost 2.2.3 Skills CRUD/serving contracts and OMP 18.3.2 project Agent Skills discovery/identity contracts.
+- The upstream compatibility doctor now gates and live-probes Bifrost Skills at >=2.2.0, distinguishing missing credentials, unavailable old versions and Skills API contract drift before repo installation is attempted.
 
 ## 0.4.0
 

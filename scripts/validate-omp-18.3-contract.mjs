@@ -32,6 +32,26 @@ const SOURCES = [
     ],
   },
   {
+    name: "OMP 18.3.2 project Agent Skills discovery contract",
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_3_2_COMMIT}/packages/coding-agent/src/discovery/agents.ts`,
+    required: [
+      'const AGENT_DIR_CANDIDATES = [".agent", ".agents"]',
+      'getProjectPathCandidates(ctx, "skills")',
+      'level: "project"',
+      'registerProvider<Skill>(skillCapability.id',
+    ],
+  },
+  {
+    name: "OMP 18.3.2 skill identity contract",
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_3_2_COMMIT}/packages/coding-agent/src/capability/skill.ts`,
+    required: [
+      "export interface SkillFrontmatter",
+      "name?: string",
+      "description?: string",
+      "toExtensionId: skill => `skill:${skill.name}`",
+    ],
+  },
+  {
     name: "OMP 18.3.2 cfg:// approval and persistence contract",
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_3_2_COMMIT}/packages/coding-agent/src/internal-urls/cfg-protocol.ts`,
     required: [

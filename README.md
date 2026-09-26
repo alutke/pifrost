@@ -672,6 +672,7 @@ OMP version:             18.3.2 (Pifrost minimum 18.3.2)
   [OK] cfg:// protocol >=18.3.1 — available in OMP 18.3.2
 Bifrost version:         2.2.3 (Pifrost baseline 2.0.0)
   [OK] Virtual MCPs >=2.2.0 — live API contract verified
+  [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
   [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable
   [OK] Pinned routing fallbacks >=2.2.3 — version contract satisfied; routing API verified
   [OK] Quota SourceRef provenance >=2.2.3 — live quota contract verified
@@ -681,6 +682,53 @@ Compatibility summary:  OK
 The four states are **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible).
 
 Session affinity has no read-only discovery endpoint, so its check combines the Bifrost >=2.2.2 contract with a live inference-path probe. Pinned fallbacks similarly combine the >=2.2.3 contract with the routing API and validate object fallback shape when such fallbacks are present. The doctor never creates, edits or deletes Bifrost configuration.
+
+---
+
+## Bifrost Skills → OMP Skills bridge
+
+Bifrost 2.2.x can store and serve Agent Skills. Pifrost can opt individual Bifrost skills into a repository and materialize them in OMP's native project skill location:
+
+```text
+<repo>/.agents/skills/<skill-name>/SKILL.md
+```
+
+No separate skill runtime is introduced. Once installed, OMP discovers the skill through its normal project-level `.agent/.agents` Skills provider.
+
+List what Bifrost currently publishes:
+
+```bash
+pifrost repo skills list
+```
+
+Install one skill into the current repository:
+
+```bash
+pifrost repo skills add release-notes
+```
+
+Refresh one or all configured skills to the versions Bifrost is currently serving:
+
+```bash
+pifrost repo skills sync release-notes
+pifrost repo skills sync
+```
+
+Remove a Pifrost-managed copy:
+
+```bash
+pifrost repo skills remove release-notes
+```
+
+Pifrost stores the selected **skill name** as the portable identity, with the observed Bifrost id/version recorded as provenance. Every installed directory contains a separate `.pifrost-bifrost-skill.json` ownership marker. Updates are staged and swapped atomically; removal refuses to delete a directory that does not carry a valid Pifrost marker.
+
+Before installation Pifrost checks common OMP project/user skill locations, OMP Skillshare manifests, and skills shipped by installed OMP npm/link plugins for an existing skill with the same name. A collision fails closed instead of silently overriding or shadowing the authored or packaged skill.
+
+Bifrost's `allowed_tools` field is deliberately not bridged in this release. OMP 18.3 loads arbitrary skill frontmatter but does not enforce Bifrost's per-skill tool allow-list as an execution policy. A Bifrost skill with non-empty `allowed_tools` is therefore marked **incompatible** and installation is refused rather than weakening its policy.
+
+Attached Bifrost skill files are fetched through Bifrost's released generic serving endpoint. Paths are revalidated locally; absolute paths, traversal components and malformed relative paths are rejected before anything is written.
+
+Skills remain independent from MCP governance: adding a skill never grants an MCP client, Virtual MCP, tool, provider key, route or model. `pifrost repo status` and `pifrost doctor` show the Bifrost source, installed/upstream versions, missing/collision state, upstream id and compatibility result.
 
 ---
 

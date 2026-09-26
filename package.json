@@ -37,6 +37,7 @@
     "bifrost-usage.ts",
     "pricing-normalize.ts",
     "pricing-time.ts",
+    "skills-bridge.mjs",
     "cli.mjs",
     "cli-entry.mjs",
     "cli-lib.mjs",
@@ -57,7 +58,7 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-cli.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs",
+    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-cli.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "cli": "node cli-entry.mjs"
   },

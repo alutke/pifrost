@@ -66,6 +66,41 @@ const SOURCES = [
     required: ["Session affinity", "x-bf-session-id", "x-bf-session-affinity", "BifrostContextKeySessionID"],
   },
   {
+    name: "Bifrost 2.2.3 Skills CRUD contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/transports/bifrost-http/handlers/skills.go`,
+    required: [
+      'r.GET("/api/skills"',
+      'r.GET("/api/skills/{id}"',
+      '"skill_md_body"',
+      '"files,omitempty"',
+      '"allowed_tools,omitempty"',
+    ],
+  },
+  {
+    name: "Bifrost 2.2.3 Skills wire contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/framework/configstore/tables/skills.go`,
+    required: [
+      "type TableSkill struct",
+      'json:"id"',
+      'json:"name"',
+      'json:"latest_version"',
+      'json:"files,omitempty"',
+      'json:"file_count"',
+      'json:"allowed_tools,omitempty"',
+    ],
+  },
+  {
+    name: "Bifrost 2.2.3 Skills serving contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/transports/bifrost-http/handlers/skills_serving.go`,
+    required: [
+      'r.GET("/api/skills/serve/{skill-name}/download.zip"',
+      'r.GET("/api/skills/serve/{skill-name}/files/{filepath:*}"',
+      "func composeSkillMD",
+      "genericFileDownload",
+      'path.Join(skill.Name, "SKILL.md")',
+    ],
+  },
+  {
     name: "Bifrost 2.2.3 time-of-day pricing data contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/framework/modelcatalog/datasheet/types.go`,
     required: [

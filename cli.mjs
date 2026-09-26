@@ -7,6 +7,17 @@ import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
 
 import {
+  bifrostSkillCompatibility,
+  fetchBifrostSkillBundle,
+  installBifrostSkillBundle,
+  listBifrostSkills,
+  normalizeConfiguredBifrostSkills,
+  removeManagedBifrostSkill,
+  repoBifrostSkillStatus,
+  resolveBifrostSkillNames,
+} from "./skills-bridge.mjs";
+
+import {
   VERSION,
   PifrostHttpError,
   aliasManifestPath,
@@ -84,6 +95,10 @@ Usage:
   pifrost repo vmcp list
   pifrost repo vmcp add <name>
   pifrost repo vmcp remove <name>
+  pifrost repo skills list
+  pifrost repo skills add <name>
+  pifrost repo skills remove <name>
+  pifrost repo skills sync [name]
   pifrost repo reset
   pifrost secret repo-mcp --id <repo-id>
   pifrost doctor
@@ -826,6 +841,13 @@ async function commandRepoStatus() {
     `Direct MCP grants: ${(repoState.config?.mcpClients ?? []).map((client) => `${client.name}[${client.tools.join(",")}]`).join(", ") || "none"}`,
   );
   console.log(`Virtual MCPs:     ${(repoState.config?.virtualMcps ?? []).join(", ") || "none"}`);
+  const configuredSkills = configuredSkillRows(repoState);
+  const skillStatus = repoBifrostSkillStatus(repoState.repo.root, configuredSkills);
+  console.log(`Bifrost Skills:   ${configuredSkills.map((item) => item.name).join(", ") || "none"}`);
+  for (const skill of skillStatus) {
+    const version = skill.installedVersion ?? skill.version ?? "unknown";
+    console.log(`  ${skill.name}@${version}: ${skill.state} source=Bifrost -> .agents/skills`);
+  }
 
   const managementAuth = managementAuthFromState(state);
   if (runtime.url && managementAuth && repoState.config?.virtualKeyId) {
@@ -852,6 +874,130 @@ async function commandRepoStatus() {
     } catch (error) {
       console.log(`Effective MCP policy: unavailable (${formatError(error)})`);
     }
+  }
+
+  if (runtime.url && managementAuth && configuredSkills.length) {
+    try {
+      const availableSkills = await listBifrostSkills(runtime.url, managementAuth);
+      const liveByName = new Map(availableSkills.map((item) => [item.name.toLowerCase(), item]));
+      console.log("Bifrost Skill provenance:");
+      for (const localSkill of skillStatus) {
+        const live = liveByName.get(localSkill.name.toLowerCase());
+        if (!live) {
+          console.log(`  ${localSkill.name}: unavailable upstream installed=${localSkill.installedVersion ?? "missing"}`);
+          continue;
+        }
+        const compatibility = bifrostSkillCompatibility(live.raw);
+        const update = localSkill.installedVersion && localSkill.installedVersion !== live.version ? ` update-available=${live.version}` : "";
+        const incompatible = compatibility.compatible ? "" : ` incompatible=${compatibility.reason}`;
+        console.log(`  ${live.name}: upstream=${live.version} installed=${localSkill.installedVersion ?? "missing"} id=${live.id}${update}${incompatible}`);
+      }
+    } catch (error) {
+      console.log(`Bifrost Skill provenance: unavailable (${formatError(error)})`);
+    }
+  }
+}
+
+function configuredSkillRows(current) {
+  return normalizeConfiguredBifrostSkills(current.config?.bifrostSkills);
+}
+
+function upsertConfiguredSkill(state, repoId, skill) {
+  const current = normalizeConfiguredBifrostSkills(state.config.repos?.[repoId]?.bifrostSkills);
+  const next = current.filter((item) => item.name.toLowerCase() !== skill.name.toLowerCase());
+  next.push({ name: skill.name, version: skill.version, id: skill.id });
+  next.sort((a, b) => a.name.localeCompare(b.name));
+  updateRepoState(state, repoId, { bifrostSkills: next });
+}
+
+async function installRepoBifrostSkill(state, current, summary) {
+  const runtime = requireRuntime(state);
+  const managementAuth = managementAuthFromState(state);
+  if (!managementAuth) throw new Error("Bifrost management authentication is missing; run `pifrost global setup`");
+  const bundle = await fetchBifrostSkillBundle(runtime.url, managementAuth, summary);
+  const installed = installBifrostSkillBundle(current.repo.root, bundle);
+  upsertConfiguredSkill(state, current.repo.id, bundle.skill);
+  return { bundle, installed };
+}
+
+async function commandRepoSkillsList() {
+  const state = loadState();
+  const { url, managementKey } = requireManagement(state);
+  const current = currentRepoState(state);
+  const available = await listBifrostSkills(url, managementKey);
+  const configured = new Map(configuredSkillRows(current).map((item) => [item.name.toLowerCase(), item]));
+  const local = new Map(
+    repoBifrostSkillStatus(current.repo.root, [...configured.values()])
+      .map((item) => [item.name.toLowerCase(), item]),
+  );
+  printHeader(`Bifrost Skills (${available.length})`);
+  for (const skill of available.sort((a, b) => a.name.localeCompare(b.name))) {
+    const selected = configured.get(skill.name.toLowerCase());
+    const status = local.get(skill.name.toLowerCase());
+    const compatibility = bifrostSkillCompatibility(skill.raw);
+    const flags = [
+      selected ? "selected" : undefined,
+      status?.state,
+      status?.installedVersion && status.installedVersion !== skill.version
+        ? `update=${status.installedVersion}->${skill.version}`
+        : undefined,
+      compatibility.compatible ? undefined : `incompatible=${compatibility.reason}`,
+    ].filter(Boolean);
+    console.log(`${skill.name}  version=${skill.version}  files=${skill.fileCount}${flags.length ? `  ${flags.join("  ")}` : ""}`);
+    if (skill.description) console.log(`  ${skill.description}`);
+  }
+  if (!available.length) console.log("No Bifrost skills are currently published.");
+}
+
+async function commandRepoSkillsAdd(name) {
+  if (!name) throw new Error("Usage: pifrost repo skills add <name>");
+  const state = loadState();
+  const { url, managementKey } = requireManagement(state);
+  const current = currentRepoState(state);
+  const [summary] = resolveBifrostSkillNames(await listBifrostSkills(url, managementKey), [name]);
+  const compatibility = bifrostSkillCompatibility(summary.raw);
+  if (!compatibility.compatible) {
+    throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
+  }
+  const { bundle, installed } = await installRepoBifrostSkill(state, current, summary);
+  console.log(`Installed Bifrost skill ${bundle.skill.name}@${bundle.skill.version}`);
+  console.log(`OMP project skill: ${installed.path}`);
+}
+
+async function commandRepoSkillsRemove(name) {
+  if (!name) throw new Error("Usage: pifrost repo skills remove <name>");
+  const state = loadState();
+  const current = currentRepoState(state);
+  const configured = configuredSkillRows(current);
+  const found = configured.find((item) => item.name.toLowerCase() === name.toLowerCase());
+  if (!found) throw new Error(`Bifrost skill is not configured for this repo: ${name}`);
+  const removed = removeManagedBifrostSkill(current.repo.root, found.name);
+  const next = configured.filter((item) => item.name.toLowerCase() !== found.name.toLowerCase());
+  updateRepoState(state, current.repo.id, { bifrostSkills: next });
+  console.log(`Removed Bifrost skill ${found.name}${removed.alreadyMissing ? " (managed directory was already missing)" : ""}.`);
+}
+
+async function commandRepoSkillsSync(name) {
+  const state = loadState();
+  const { url, managementKey } = requireManagement(state);
+  const current = currentRepoState(state);
+  const configured = configuredSkillRows(current);
+  const wanted = name
+    ? configured.filter((item) => item.name.toLowerCase() === name.toLowerCase())
+    : configured;
+  if (!wanted.length) {
+    throw new Error(name
+      ? `Bifrost skill is not configured for this repo: ${name}`
+      : "No Bifrost skills are configured for this repo; use `pifrost repo skills add <name>`");
+  }
+  const available = await listBifrostSkills(url, managementKey);
+  for (const summary of resolveBifrostSkillNames(available, wanted.map((item) => item.name))) {
+    const compatibility = bifrostSkillCompatibility(summary.raw);
+    if (!compatibility.compatible) {
+      throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
+    }
+    const { bundle, installed } = await installRepoBifrostSkill(state, current, summary);
+    console.log(`Synced ${bundle.skill.name}@${bundle.skill.version} -> ${installed.path}`);
   }
 }
 
@@ -1011,6 +1157,7 @@ async function commandRepoRotateKey() {
 async function commandRepoReset() {
   const state = loadState();
   const current = currentRepoState(state);
+  for (const skill of configuredSkillRows(current)) removeManagedBifrostSkill(current.repo.root, skill.name);
   const path = join(current.repo.root, ".omp/mcp.json");
   if (existsSync(path)) {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
@@ -1088,6 +1235,10 @@ async function main() {
   if (one === "repo" && two === "vmcp" && three === "list") return commandRepoVirtualMcpList();
   if (one === "repo" && two === "vmcp" && three === "add") return commandRepoVirtualMcpAdd(four);
   if (one === "repo" && two === "vmcp" && three === "remove") return commandRepoVirtualMcpRemove(four);
+  if (one === "repo" && two === "skills" && three === "list") return commandRepoSkillsList();
+  if (one === "repo" && two === "skills" && three === "add") return commandRepoSkillsAdd(four);
+  if (one === "repo" && two === "skills" && three === "remove") return commandRepoSkillsRemove(four);
+  if (one === "repo" && two === "skills" && three === "sync") return commandRepoSkillsSync(four);
   if (one === "secret" && two === "repo-mcp") return commandSecretRepoMcp(flags);
   if (one === "doctor") return commandDoctor();
 
