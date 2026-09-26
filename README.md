@@ -230,7 +230,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.5.0
+0.6.0
 ```
 
 Bun can also install the package globally:
@@ -258,6 +258,20 @@ pifrost routes sync
 pifrost doctor
 ```
 
+### Upgrading from 0.5.x to 0.6.0
+
+0.6.0 is a performance, robustness and architecture release. It does **not** change the Pifrost configuration schema, Bifrost routing ownership, repository MCP grants or alias semantics.
+
+- Existing `~/.config/pifrost/` config/secrets and repository associations remain compatible.
+- Run the normal upgrade sequence, then `pifrost doctor`. No manual route or MCP migration is required.
+- Model-reference and exact-route-member lookup are more efficient but preserve the existing conservative ambiguity rules.
+- `pifrost doctor` now shares one concurrent read-only Bifrost snapshot across global/compatibility/repository diagnostics, reducing repeated management/inference calls.
+- Generic JSON HTTP responses are bounded; abnormally large control-plane responses now fail explicitly rather than consuming unbounded memory.
+- Bifrost Skill attachments stream directly into a confined staging tree. Existing Pifrost-owned installed Skills remain compatible and are refreshed normally with `pifrost repo skills sync`.
+- Skill installation/removal now refuses symlinked managed paths. Replace any intentionally symlinked `.agents`/Skill directory with a real repository directory before syncing.
+- Local config/secret writes use exclusive atomic temporary files and fsync-before-rename.
+- Agent attribution remains process-local observability only, but its aggregate identity cardinality is now bounded.
+
 ### Upgrading from 0.4.x to 0.5.0
 
 0.5.0 keeps the existing Pifrost config/secrets format compatible, but raises the tested OMP boundary and adds several opt-in surfaces.
@@ -271,7 +285,7 @@ pifrost doctor
 - `pifrost global configure-omp` remains the bootstrap/recovery path. Interactive OMP configuration changes now use OMP's approval-aware `cfg://` path.
 - Finish with `pifrost doctor` and review any `UNAVAILABLE`, `INACCESSIBLE` or `DRIFT` compatibility entries before relying on the corresponding feature.
 
-### Read-only live 0.5 smoke check
+### Read-only live 0.6 smoke check
 
 For a configured Bifrost 2.2.3+ instance, the release includes an explicit read-only smoke test. It does not create/update routing rules, Virtual Keys, MCP assignments, Skills or other Bifrost configuration.
 
@@ -1339,6 +1353,8 @@ npm test
 node scripts/validate-public-datasheets.mjs
 npx tsx scripts/validate-current-routing.ts
 ```
+
+The control plane is intentionally split by responsibility: `routing-core.ts` owns pure routing semantics, `http-client.mjs` owns bounded/cancellable HTTP transport, and `doctor-probes.mjs` owns the concurrent read-only diagnostic snapshot. The larger CLI modules orchestrate those domain services rather than reimplementing them.
 
 CI validates:
 

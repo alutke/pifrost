@@ -2,6 +2,24 @@
 
 ## Unreleased
 
+## 0.6.0 — 2026-09-26
+
+- Reworked model-reference selection into a single-pass best-match resolver, removing whole-candidate sorting and quadratic tie comparison while preserving Pifrost's existing vendor/family ambiguity safety.
+- Indexed exact live-model lookups during dynamic-route catalog construction instead of repeatedly scanning the physical model inventory for each route member.
+- Parallelized independent OMP `cfg://` profile reads while preserving sequential approval semantics for writes.
+- Bounded process-level agent-attribution cardinality; excess unique agent identities now collapse into a bounded `<other>` aggregate instead of growing process-lifetime memory without limit.
+- Added stored-config diagnostics that preserve fail-closed OMP startup behavior while making malformed local JSON visible to `/pifrost doctor` and terminal diagnostics.
+- Extracted a bounded HTTP client with response-size ceilings, `AbortSignal.timeout()/AbortSignal.any()` cancellation, caller-abort distinction, and consistent HTTP error handling.
+- Hardened atomic config/secret writes with UUID temporary names, exclusive/no-follow creation, fsync-before-rename and cleanup on failure.
+- Consolidated Bifrost target/fallback/pin/alias/feature parsing into one typed `routing-core.ts`, eliminating duplicated routing semantics between route discovery and the CLI.
+- Refactored terminal diagnostics around one concurrent read-only Bifrost snapshot so global status, compatibility checks and repo status can reuse version/inference/quota/routing/MCP/Skills probes instead of issuing duplicate network calls.
+- Extracted diagnostic probes and HTTP transport from the monolithic CLI control-plane module and moved routing domain semantics into TypeScript, reducing coupling while retaining compatibility exports.
+- Replaced long imperative CLI dispatch chains with declarative longest-match command registries in both the public entry point and delegated command layer.
+- Reworked Bifrost Skill attachment installation to stream files directly into the atomic staging tree instead of retaining the full bundle in memory. Per-file and aggregate size limits are enforced during streaming.
+- Hardened bridged Skill filesystem handling against symlinked `.agents`, `skills`, managed-target and marker paths, and switched staging/backup names to OS-generated/random identifiers.
+- Added regression coverage for bounded HTTP bodies, caller cancellation, single-snapshot diagnostics, typed routing-core semantics, streamed Skill installation, symlink refusal, config corruption visibility, bounded agent aggregates and linear resolver behavior.
+- The 0.6.0 changes are control-plane/runtime hardening only: Bifrost remains authoritative for routing, provider selection, credentials, fallback execution and governance; no client-side price/provider router was introduced.
+
 ## 0.5.0 — 2026-09-26
 
 - Raised the OhMyPi compatibility baseline from 18.1.10 to **18.3.2** across runtime dependencies, development tooling, the package contract canary, CI plugin-loader validation, and documented requirements.

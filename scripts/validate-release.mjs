@@ -29,6 +29,9 @@ for (const path of [
   "agent-attribution.ts",
   "omp-cfg.ts",
   "pricing-time.ts",
+  "routing-core.ts",
+  "http-client.mjs",
+  "doctor-probes.mjs",
   "skills-bridge.mjs",
   "README.md",
   "CHANGELOG.md",
@@ -54,7 +57,7 @@ const packed = spawnSync("npm", ["pack", "--dry-run", "--json"], {
 if (packed.status !== 0) fail(`npm pack --dry-run failed: ${packed.stderr || packed.stdout}`);
 const payload = JSON.parse(packed.stdout);
 const files = new Set(payload?.[0]?.files?.map((entry) => entry.path) ?? []);
-for (const path of ["package.json", "native.ts", "skills-bridge.mjs", "pricing-time.ts", "README.md", "CHANGELOG.md", "scripts/smoke-live.mjs", "scripts/validate-release.mjs"]) {
+for (const path of ["package.json", "native.ts", "routing-core.ts", "http-client.mjs", "doctor-probes.mjs", "skills-bridge.mjs", "pricing-time.ts", "README.md", "CHANGELOG.md", "scripts/smoke-live.mjs", "scripts/validate-release.mjs"]) {
   if (!files.has(path)) fail(`release tarball is missing ${path}`);
 }
 if (payload?.[0]?.version !== pkg.version) {
