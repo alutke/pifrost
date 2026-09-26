@@ -27,8 +27,8 @@ import {
   saveState,
 } from "../cli-lib.mjs";
 
-test("CLI help exposes the 0.5 repo Skills/reset surface without stale route commands", () => {
-  const cli = resolve(import.meta.dirname, "../cli-entry.mjs");
+test("canonical CLI help exposes the full repo Skills/reset surface", () => {
+  const cli = resolve(import.meta.dirname, "../cli.mjs");
   const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /pifrost repo skills sync \[name\]/u);
