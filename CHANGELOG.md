@@ -33,6 +33,11 @@
 - `/pifrost doctor` now shows the current agent lineage plus process-local per-agent/per-route request counts. Requests that arrive before `session_start` are backfilled once the agent identity is known.
 - Active agent-session bindings are capped and released on `session_shutdown`; aggregate counters are memory-only and live only for the OMP process lifetime. Concurrent subagent isolation and shutdown cleanup have regression coverage.
 - CI now pins the released OMP 18.3.2 `ExtensionAgentIdentity` / `ctx.agent` contract.
+- Added display-only Bifrost time-of-day pricing awareness. Pricing normalization now preserves `off_peak_cost_multiplier` and `peak_hours`, while route diagnostics retain each reachable member's peak token rates and pricing source.
+- `/pifrost doctor` evaluates the current peak/off-peak band at render time per route member, including IANA timezone conversion, half-open windows, midnight wrapping and Bifrost-compatible fail-closed handling for malformed schedules.
+- Pifrost deliberately leaves OMP model costs at peak/base rates and never reorders routes or selects providers from price; Bifrost remains the billing and routing authority. Catalogue pricing is identified separately from any Bifrost-scoped custom override not exposed by the public datasheet.
+- Catalog cache schema bumped to v5 so old diagnostics without time-of-day pricing metadata are refreshed after upgrade.
+- CI now pins Bifrost 2.2.3's `off_peak_cost_multiplier`, `peak_hours`, request-start-time billing and window-evaluation contracts.
 
 ## 0.4.0
 

@@ -363,3 +363,44 @@ test("LongCat free override does not leak to OpenRouter or arbitrary free varian
 	assert.equal(rich.models.length, 0);
 	assert.equal(rich.diagnostics[0]?.status, "missing-pricing");
 });
+
+
+test("rich route diagnostics retain Bifrost time-of-day pricing without changing OMP peak rates", () => {
+	const pricingAliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-price": ["deepseek/deepseek-v4-flash"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("deepseek/deepseek-v4-flash")],
+		pricingAliases,
+		{
+			pricing: {
+				"deepseek/deepseek-v4-flash": {
+					provider: "deepseek",
+					mode: "chat",
+					context_length: 1_000_000,
+					max_output_tokens: 128_000,
+					input_cost_per_token: 0.00000044,
+					output_cost_per_token: 0.00000132,
+					cache_read_input_token_cost: 0.000000014,
+					off_peak_cost_multiplier: 0.5,
+					peak_hours: {
+						timezone: "UTC",
+						windows: [{ days: [1, 2, 3, 4, 5], start: "01:00", end: "04:00" }],
+					},
+				},
+			},
+			parameters: {},
+		},
+		[],
+	);
+	assert.equal(rich.models[0]?.cost.input, 0.44);
+	assert.equal(rich.models[0]?.cost.output, 1.32);
+	assert.equal(rich.diagnostics[0]?.pricing?.offPeakCostMultiplier, 0.5);
+	assert.equal(rich.diagnostics[0]?.pricing?.peakHours?.timezone, "UTC");
+	assert.equal(rich.diagnostics[0]?.pricing?.peakCost.input, 0.44);
+
+	const catalog = buildPifrostCatalog(rich.models, pricingAliases, rich.diagnostics);
+	assert.equal(catalog.models[0]?.cost.input, 0.44);
+	assert.equal(catalog.diagnostics[0]?.members?.[0]?.pricing?.pricingKey, "deepseek/deepseek-v4-flash");
+});

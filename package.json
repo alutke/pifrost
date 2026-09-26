@@ -36,6 +36,7 @@
     "agent-attribution.ts",
     "bifrost-usage.ts",
     "pricing-normalize.ts",
+    "pricing-time.ts",
     "cli.mjs",
     "cli-entry.mjs",
     "cli-lib.mjs",

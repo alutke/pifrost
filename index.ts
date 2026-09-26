@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { resolve } from "node:path";
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
+import { formatRoutePricing, type RoutePricingDiagnostic } from "./pricing-time.ts";
 
 import {
 	resolveModelReference,
@@ -135,6 +136,7 @@ export interface RouteMemberCapabilityDiagnostic {
 	status: string;
 	reason?: string;
 	sources?: CapabilityProvenance;
+	pricing?: RoutePricingDiagnostic;
 }
 
 export interface AliasMemberDiagnostic {
@@ -144,6 +146,7 @@ export interface AliasMemberDiagnostic {
 	status: "resolved" | "unresolved";
 	reason?: string;
 	sources?: CapabilityProvenance;
+	pricing?: RoutePricingDiagnostic;
 }
 
 export interface AliasDiagnostic {
@@ -556,6 +559,7 @@ export function synthesizeAlias(
 			status: model ? "resolved" : "unresolved",
 			reason: model ? rich?.reason : rich?.reason ?? ambiguous ?? "no safe live/capability match",
 			sources: model?.capabilitySources ?? rich?.sources,
+			pricing: rich?.pricing,
 		};
 	});
 
@@ -731,7 +735,7 @@ function formatSources(sources: CapabilityProvenance | undefined): string {
 		.join(",") || "unknown";
 }
 
-export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], aliasPath?: string): string {
+export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], aliasPath?: string, at = new Date()): string {
 	const lines = [`Pifrost doctor${aliasPath ? ` — ${aliasPath}` : ""}`];
 	if (!diagnostics.length) return `${lines[0]}\nNo aliases configured; physical Bifrost models are exposed directly.`;
 	for (const item of diagnostics) {
@@ -748,6 +752,7 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 			const resolution = member.resolution ? ` resolution=${member.resolution}` : "";
 			const reason = member.reason ? ` reason=${member.reason}` : "";
 			lines.push(`  ${member.status} ${member.reference}${target}${resolution} sources=${formatSources(member.sources)}${reason}`);
+			if (member.pricing) lines.push(`    ${formatRoutePricing(member.pricing, at)}`);
 		}
 		if (item.unresolved.length && !(item.members?.length)) lines.push(`  unresolved: ${item.unresolved.join(" | ")}`);
 	}

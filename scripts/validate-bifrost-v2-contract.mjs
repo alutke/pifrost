@@ -66,6 +66,30 @@ const SOURCES = [
     required: ["Session affinity", "x-bf-session-id", "x-bf-session-affinity", "BifrostContextKeySessionID"],
   },
   {
+    name: "Bifrost 2.2.3 time-of-day pricing data contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/framework/modelcatalog/datasheet/types.go`,
+    required: [
+      "OffPeakCostMultiplier",
+      "off_peak_cost_multiplier",
+      "PeakHours",
+      "peak_hours",
+      "BilledAt",
+      "request's START time",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.3 time-of-day pricing evaluator contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/framework/modelcatalog/datasheet/cost.go`,
+    required: [
+      "func isWithinPeakWindows",
+      "func offPeakMultiplier",
+      "prevWeekday",
+      "end <= start",
+      "minutes >= start && minutes < end",
+      "m > 0 && m <= 1",
+    ],
+  },
+  {
     name: "Bifrost 2.2.3 quota SourceRef contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/framework/configstore/tables/modelconfig.go`,
     required: ["type SourceRef struct", "source_type", "source_id", "source_name"],

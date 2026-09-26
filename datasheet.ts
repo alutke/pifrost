@@ -1,4 +1,5 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
+import type { PeakHoursSchedule, RoutePricingDiagnostic } from "./pricing-time.ts";
 
 import {
 	findCatalogCapabilityFallback,
@@ -58,6 +59,8 @@ export interface PricingDatasheetEntry {
 	output_cost_per_token?: number;
 	cache_creation_input_token_cost?: number;
 	cache_read_input_token_cost?: number;
+	off_peak_cost_multiplier?: number;
+	peak_hours?: PeakHoursSchedule;
 	/** Internal provenance added by pricing-normalize.ts; never sent upstream. */
 	_pifrost_sources?: DatasheetCapabilitySources;
 }
@@ -329,6 +332,30 @@ function sheetSource(
 	return match.value._pifrost_sources?.[key] ?? match.source;
 }
 
+function routePricingDiagnostic(
+	pricing: MatchedEntry<PricingDatasheetEntry> | undefined,
+	cost: { input: number; output: number; cacheRead: number; cacheWrite: number },
+): RoutePricingDiagnostic {
+	const hasDatasheetRate = [
+		pricing?.value.input_cost_per_token,
+		pricing?.value.output_cost_per_token,
+		pricing?.value.cache_read_input_token_cost,
+		pricing?.value.cache_creation_input_token_cost,
+	].some((value) => typeof value === "number" && Number.isFinite(value));
+	const source: RoutePricingDiagnostic["source"] = hasDatasheetRate
+		? (pricing?.source ?? "bifrost-datasheet")
+		: "live";
+	return {
+		...(pricing?.key ? { pricingKey: pricing.key } : {}),
+		source,
+		peakCost: { ...cost },
+		...(typeof pricing?.value.off_peak_cost_multiplier === "number"
+			? { offPeakCostMultiplier: pricing.value.off_peak_cost_multiplier }
+			: {}),
+		...(pricing?.value.peak_hours ? { peakHours: pricing.value.peak_hours } : {}),
+	};
+}
+
 function selectNumber(
 	liveValue: number,
 	liveSource: CapabilitySource | undefined,
@@ -557,6 +584,12 @@ export function buildRichRouteCatalog(
 		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? liveModel.cost.output ?? vendor?.cost.output ?? catalog?.cost.output ?? 0;
 		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? liveModel.cost.cacheRead ?? vendor?.cost.cacheRead ?? catalog?.cost.cacheRead ?? inputCost;
 		const cacheWrite = perMillion(pricing?.value.cache_creation_input_token_cost) ?? liveModel.cost.cacheWrite ?? vendor?.cost.cacheWrite ?? catalog?.cost.cacheWrite ?? inputCost;
+		const pricingDiagnostic = routePricingDiagnostic(pricing, {
+			input: inputCost,
+			output: outputCost,
+			cacheRead,
+			cacheWrite,
+		});
 		const sources: CapabilityProvenance = {
 			contextWindow: context.source,
 			maxTokens: output.source,
@@ -612,6 +645,7 @@ export function buildRichRouteCatalog(
 			fallbackMatches: unique([...(vendor?.matched ?? []), ...(catalog?.matched ?? [])]),
 			status: usesCatalogFallback ? "fallback-catalog" : "ok",
 			sources,
+			pricing: pricingDiagnostic,
 		});
 	}
 

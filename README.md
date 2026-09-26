@@ -563,6 +563,33 @@ Bifrost persists session-aware routing/complexity decisions and provider/key aff
 
 ---
 
+## Time-of-day pricing diagnostics
+
+Pifrost preserves Bifrost's released time-of-day pricing fields from the pricing datasheet:
+
+```text
+off_peak_cost_multiplier
+peak_hours.timezone
+peak_hours.windows[].days/start/end
+```
+
+Base token rates remain the peak rates, exactly as Bifrost defines them. Pifrost evaluates the current band only for diagnostics; it does **not** rewrite route order, choose a cheaper provider, or change the price metadata OMP uses for the logical alias.
+
+`/pifrost doctor` shows pricing per reachable route member instead of inventing one effective price for a heterogeneous `omp-*` alias:
+
+```text
+resolved deepseek/deepseek-v4-flash -> deepseek/deepseek-v4-flash
+  pricing band=off-peak source=bifrost-datasheet:deepseek/deepseek-v4-flash multiplier=0.5x
+  schedule=Mon-Fri 01:00-04:00; Mon-Fri 06:00-10:00 UTC
+  peak(input/output)=$0.44/$1.32 per 1M current(input/output)=$0.22/$0.66 per 1M
+```
+
+The evaluator mirrors Bifrost's semantics: Go weekday numbering (Sunday=0), IANA timezones, half-open `[start,end)` windows, midnight wrapping, `24:00` as an end-of-day marker, and fail-closed peak pricing for malformed schedules. The displayed band is evaluated when the doctor report is rendered, so a cached catalog does not freeze an old peak/off-peak state.
+
+The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate; Pifrost does not claim an override-aware effective bill unless Bifrost exposes that provenance on the diagnostic surface.
+
+---
+
 ## Model metadata and startup cache
 
 The non-secret last-known-good catalog is stored at:

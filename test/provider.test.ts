@@ -219,6 +219,38 @@ test("doctor report highlights unresolved chain members", () => {
 	assert.match(report, /missing/);
 });
 
+test("doctor report shows current per-member pricing band without aggregating route price", () => {
+	const result = synthesizeAlias(
+		"omp-price",
+		["deepseek/deepseek-v4-flash"],
+		[model("deepseek/deepseek-v4-flash")],
+		[{
+			reference: "deepseek/deepseek-v4-flash",
+			liveModelId: "deepseek/deepseek-v4-flash",
+			status: "ok",
+			pricing: {
+				pricingKey: "deepseek/deepseek-v4-flash",
+				source: "bifrost-datasheet",
+				peakCost: { input: 0.44, output: 1.32, cacheRead: 0.014, cacheWrite: 0.44 },
+				offPeakCostMultiplier: 0.5,
+				peakHours: {
+					timezone: "UTC",
+					windows: [{ days: [1, 2, 3, 4, 5], start: "01:00", end: "04:00" }],
+				},
+			},
+		}],
+	);
+	const report = formatDoctorReport(
+		[result.diagnostic],
+		undefined,
+		new Date("2026-08-17T05:00:00Z"),
+	);
+	assert.match(report, /pricing band=off-peak/);
+	assert.match(report, /source=bifrost-datasheet:deepseek\/deepseek-v4-flash/);
+	assert.match(report, /multiplier=0.5x/);
+	assert.match(report, /current\(input\/output\)=\$0.2200\/\$0.6600 per 1M/);
+});
+
 test("native OMP provider uses the Pifrost transport and separate x-bf-vk governance", async () => {
 	let capturedHeaders: Headers | undefined;
 	const fakeFetch: typeof fetch = async (_input, init) => {
