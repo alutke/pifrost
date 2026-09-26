@@ -6,6 +6,8 @@ import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
 
+import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
+
 import {
   bifrostSkillCompatibility,
   fetchBifrostSkillBundle,
@@ -99,7 +101,7 @@ Usage:
   pifrost repo skills add <name>
   pifrost repo skills remove <name>
   pifrost repo skills sync [name]
-  pifrost repo reset
+  pifrost repo reset [--delete-remote] [--recover-by-name] [--yes]
   pifrost secret repo-mcp --id <repo-id>
   pifrost doctor
   pifrost --version
@@ -121,6 +123,11 @@ Repo init options:
   --tools <*|tool1,tool2>         Tool allow-list for selected direct MCP clients
   --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
   --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
+
+Repo reset options:
+  --delete-remote                 Delete the repo Bifrost Virtual Key before local cleanup
+  --recover-by-name               With --delete-remote, recover only the exact canonical VK name
+  --yes                           Skip the destructive DELETE confirmation
 
 Environment overrides:
   BIFROST_URL
@@ -1154,11 +1161,61 @@ async function commandRepoRotateKey() {
   console.log(`Rotated MCP Virtual Key for ${current.repo.name}; local secret store updated.`);
 }
 
-async function commandRepoReset() {
+async function commandRepoReset(flags = {}) {
   const state = loadState();
-  const current = currentRepoState(state);
-  for (const skill of configuredSkillRows(current)) removeManagedBifrostSkill(current.repo.root, skill.name);
-  const path = join(current.repo.root, ".omp/mcp.json");
+  const repo = repoIdentity();
+  const repoConfig = state.config.repos?.[repo.id];
+  const deleteRemote = flags["delete-remote"] === true;
+  const recoverByName = flags["recover-by-name"] === true;
+  const yes = flags.yes === true;
+
+  if (recoverByName && !deleteRemote) {
+    throw new Error("--recover-by-name is valid only with --delete-remote");
+  }
+
+  if (deleteRemote) {
+    const runtime = runtimeConfigFromState(state);
+    const managementAuth = managementAuthFromState(state);
+    if (!runtime.url) throw new Error("Bifrost URL is missing; run `pifrost global setup`");
+    if (!managementAuth) {
+      throw new Error("Bifrost management authentication is missing; run `pifrost global setup`");
+    }
+    const result = await deleteRepoVirtualKeyForReset({
+      url: runtime.url,
+      managementAuth,
+      repo,
+      repoConfig,
+      recoverByName,
+      yes,
+      confirm: async ({ name, id }) => {
+        const rl = createInterface({ input, output });
+        try {
+          console.log(`Remote Bifrost Virtual Key: ${name} (${id})`);
+          const answer = await rl.question("Type DELETE to permanently remove this Virtual Key: ");
+          return answer.trim() === "DELETE";
+        } finally {
+          rl.close();
+        }
+      },
+    });
+    if (result.cancelled) {
+      console.log("Reset cancelled; local Pifrost state was not changed.");
+      return;
+    }
+    console.log(
+      result.alreadyMissing
+        ? `Remote Bifrost Virtual Key ${result.name} is already absent.`
+        : `Deleted remote Bifrost Virtual Key ${result.name} (${result.id}).`,
+    );
+  } else if (!repoConfig) {
+    throw new Error("Current repo is not initialized; nothing to reset");
+  }
+
+  for (const skill of configuredSkillRows({ config: repoConfig })) {
+    removeManagedBifrostSkill(repo.root, skill.name);
+  }
+
+  const path = join(repo.root, ".omp/mcp.json");
   if (existsSync(path)) {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
     if (parsed?.mcpServers?.bifrost) {
@@ -1169,9 +1226,12 @@ async function commandRepoReset() {
       fs.writeFileSync(path, content, { mode: 0o600 });
     }
   }
-  removeRepoState(state, current.repo.id);
-  console.log(`Removed local Pifrost repo configuration for ${current.repo.name}.`);
-  console.log("The Bifrost Virtual Key itself was left intact; delete it in Bifrost or re-run repo init to reuse it.");
+
+  removeRepoState(state, repo.id);
+  console.log(`Removed local Pifrost repo configuration for ${repo.name}.`);
+  if (!deleteRemote) {
+    console.log("The Bifrost Virtual Key itself was left intact; re-run repo init to reuse it or delete it explicitly.");
+  }
 }
 
 async function commandSecretRepoMcp(flags) {
@@ -1227,7 +1287,7 @@ async function main() {
   if (one === "repo" && two === "init") return commandRepoInit(flags);
   if (one === "repo" && two === "status") return commandRepoStatus();
   if (one === "repo" && two === "rotate-key") return commandRepoRotateKey();
-  if (one === "repo" && two === "reset") return commandRepoReset();
+  if (one === "repo" && two === "reset") return commandRepoReset(flags);
   if (one === "repo" && two === "mcp" && three === "list") return commandRepoMcpList();
   if (one === "repo" && two === "mcp" && three === "add") return commandRepoMcpAdd(four, flags);
   if (one === "repo" && two === "mcp" && three === "remove") return commandRepoMcpRemove(four);

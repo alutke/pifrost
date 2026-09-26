@@ -22,6 +22,9 @@ export interface PifrostStoredConfig {
 			virtualKeyId?: string;
 			virtualKeyName?: string;
 			mcpClients?: Array<{ name: string; tools: string[] }>;
+			virtualMcps?: string[];
+			mcpInstructions?: boolean;
+			bifrostSkills?: Array<{ name: string; version?: string; id?: string }>;
 		}
 	>;
 }

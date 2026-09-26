@@ -27,6 +27,15 @@ import {
   saveState,
 } from "../cli-lib.mjs";
 
+test("CLI help exposes the 0.5 repo Skills/reset surface without stale route commands", () => {
+  const cli = resolve(import.meta.dirname, "../cli-entry.mjs");
+  const result = spawnSync(process.execPath, [cli, "--help"], { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /pifrost repo skills sync \[name\]/u);
+  assert.match(result.stdout, /pifrost repo reset \[--delete-remote\] \[--recover-by-name\] \[--yes\]/u);
+  assert.doesNotMatch(result.stdout, /pifrost routes diagnose/u);
+});
+
 test("parses and compares upstream semantic versions conservatively", () => {
   assert.equal(parseSemver("OMP 18.3.2")?.version, "18.3.2");
   assert.equal(parseSemver("v2.2.3+build.7")?.version, "2.2.3");

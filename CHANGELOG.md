@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.5.0 — 2026-09-26
+
 - Raised the OhMyPi compatibility baseline from 18.1.10 to **18.3.2** across runtime dependencies, development tooling, the package contract canary, CI plugin-loader validation, and documented requirements.
 - Kept the OMP baseline upgrade behavior-neutral: no Bifrost routing, fallback, MCP, quota, or inference-header semantics changed as part of that dependency-only step.
 - Added request-scoped Bifrost session affinity: Pifrost now sends OMP's authoritative `sessionId` as `x-bf-session-id` on every inference request, enabling Bifrost 2.2.2+ provider/key affinity and session-aware routing without mutating shared provider headers.
@@ -45,6 +47,10 @@
 - `repo status` / `doctor` now expose installed Bifrost skill provenance and upstream-version drift, while repo reset removes only Pifrost-owned bridged skill directories.
 - CI now pins the released Bifrost 2.2.3 Skills CRUD/serving contracts and OMP 18.3.2 project Agent Skills discovery/identity contracts.
 - The upstream compatibility doctor now gates and live-probes Bifrost Skills at >=2.2.0, distinguishing missing credentials, unavailable old versions and Skills API contract drift before repo installation is attempted.
+- Release-hardening for 0.5.0 adds a read-only live Bifrost 2.2.3+ smoke script covering health/version, inference inventory, quota, routing, MCP clients, Virtual MCPs and Skills without calling mutation endpoints.
+- Added release-package validation that checks the package/CLI/changelog/README version contract and verifies the npm dry-run tarball contains the new 0.5 modules.
+- Reconciled the documented repo-reset surface with the CLI: `--delete-remote`, `--recover-by-name` and `--yes` now invoke the already-tested exact-name/confirmed remote-VK deletion helpers before local cleanup.
+- Refreshed migration, CLI, Skills, reset and release-version documentation for the 0.5.0 boundary.
 
 ## 0.4.0
 
