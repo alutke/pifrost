@@ -95,6 +95,15 @@ hash -r
 pifrost --version
 ~~~
 
+
+### Current release
+
+Expected for this release:
+
+```text
+0.6.1
+```
+
 Bun also works:
 
 ~~~bash
