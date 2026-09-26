@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Raised the OhMyPi compatibility baseline from 18.1.10 to **18.3.2** across runtime dependencies, development tooling, the package contract canary, CI plugin-loader validation, and documented requirements.
+- Kept this baseline upgrade behavior-neutral: no Bifrost routing, fallback, MCP, quota, or inference-header semantics change in this step.
+
 ## 0.4.0
 
 - Added request-time context-aware route compilation for simple Bifrost logical aliases. A 1M -> 256K -> 1M route can now advertise 1M to OMP while automatically excluding the 256K member only when the actual request no longer fits.

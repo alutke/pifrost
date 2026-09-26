@@ -120,7 +120,7 @@ Pifrost integrates the Bifrost features that affect the OMP boundary: Virtual-Ke
 
 Features that are transparent gateway responsibilities remain owned by Bifrost and require no duplicate Pifrost implementation: provider adapters, semantic caching, request/response logging, OpenTelemetry, cost accounting, guardrails, fallback execution, batch handling, storage backends, and Bifrost's own dashboard/configuration. Pifrost should observe those contracts where relevant, not become a second Bifrost.
 
-One Bifrost request control is deliberately **not projected onto heterogeneous `omp-*` aliases**: `service_tier`. OMP 18.1 stores service tiers by provider family and only resolves a wire tier when the selected model has a known family. A Pifrost logical alias can resolve inside Bifrost to OpenAI, Google, DeepSeek, Xiaomi, GLM, or another family after the request has already left OMP. Inventing one family for the alias would make OMP's `/fast` state and pricing semantics wrong for valid fallbacks. Pifrost therefore leaves service-tier selection to direct/homogeneous provider routes until OMP or Bifrost exposes a route-aware tier contract.
+One Bifrost request control is deliberately **not projected onto heterogeneous `omp-*` aliases**: `service_tier`. OMP 18.3 stores service tiers by provider family and only resolves a wire tier when the selected model has a known family. A Pifrost logical alias can resolve inside Bifrost to OpenAI, Google, DeepSeek, Xiaomi, GLM, or another family after the request has already left OMP. Inventing one family for the alias would make OMP's `/fast` state and pricing semantics wrong for valid fallbacks. Pifrost therefore leaves service-tier selection to direct/homogeneous provider routes until OMP or Bifrost exposes a route-aware tier contract.
 
 ---
 
@@ -192,7 +192,7 @@ thinking=high,max source=explicit
 ## Requirements
 
 - Node.js **22.19 or later**
-- OhMyPi **18.1.10 or later** in the 18.x line
+- OhMyPi **18.3.2 or later** in the 18.x line
 - Maxim Bifrost **2.0.0 or later** with OpenAI-compatible Chat Completions enabled
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
@@ -1061,7 +1061,7 @@ CI validates:
 - unit/CLI tests
 - public Bifrost datasheet coverage
 - current OMP routing envelopes
-- loading through the released OMP 18.1.10 CLI/plugin loader
+- loading through the released OMP 18.3.2 CLI/plugin loader
 - current Bifrost 2.0/current-2.x routing, governance and MCP contract canaries
 
 Management credentials and raw VK values must never be added to provider runtime configuration, model catalogs, route manifests, diagnostics, or committed test fixtures.
