@@ -186,11 +186,11 @@ export function redactSecret(value) {
   return "set";
 }
 
-export function runtimeConfigFromState(state) {
-  const url = nonEmpty(process.env.BIFROST_URL) ?? nonEmpty(state.config?.bifrost?.url);
-  const apiKey = nonEmpty(process.env.BIFROST_API_KEY) ?? nonEmpty(state.secrets?.inferenceApiKey);
+export function runtimeConfigFromState(state, env = process.env) {
+  const url = nonEmpty(env.BIFROST_URL) ?? nonEmpty(state.config?.bifrost?.url);
+  const apiKey = nonEmpty(env.BIFROST_API_KEY) ?? nonEmpty(state.secrets?.inferenceApiKey);
   const virtualKey =
-    nonEmpty(process.env.BIFROST_VIRTUAL_KEY) ?? nonEmpty(state.secrets?.inferenceVirtualKey);
+    nonEmpty(env.BIFROST_VIRTUAL_KEY) ?? nonEmpty(state.secrets?.inferenceVirtualKey);
   return { url: url ? normalizeBifrostUrl(url) : undefined, apiKey, virtualKey };
 }
 
