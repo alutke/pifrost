@@ -5,7 +5,10 @@ import test from "node:test";
 import {
   getBifrostHealth,
   getBifrostVersion,
+  attachVirtualMcpToVirtualKey,
+  detachVirtualMcpFromVirtualKey,
   getVirtualKeyQuota,
+  listVirtualMcps,
   testInference,
 } from "../cli-lib.mjs";
 
@@ -55,6 +58,57 @@ test("Bifrost 2.x control-plane probes and VK-only inference use canonical endpo
     assert.equal(modelRequest.virtualKey, "sk-bf-test");
     const quotaRequest = requests.find((entry) => entry.url === "/api/governance/virtual-keys/quota");
     assert.equal(quotaRequest.virtualKey, "sk-bf-test");
+  } finally {
+    server.close();
+  }
+});
+
+
+test("Bifrost Virtual MCP list and VK assignment helpers use the released management endpoints", async () => {
+  const requests = [];
+  const server = createServer((request, response) => {
+    requests.push({ method: request.method, url: request.url });
+    response.setHeader("content-type", "application/json");
+    if (request.method === "GET" && request.url?.startsWith("/api/mcp/virtual-mcps?")) {
+      response.end(JSON.stringify({
+        virtual_mcps: [{
+          id: 12,
+          name: "Development Tools",
+          endpoint_slug: "development-tools",
+          enabled: true,
+          tools: [{ mcp_client_id: "railway", tool_names: ["*"] }],
+          virtual_key_ids: ["vk-repo"],
+        }],
+        count: 1,
+        total_count: 1,
+        limit: 100,
+        offset: 0,
+      }));
+      return;
+    }
+    if (
+      (request.method === "POST" || request.method === "DELETE") &&
+      request.url === "/api/mcp/virtual-mcps/12/virtual-keys/vk-repo"
+    ) {
+      response.end(JSON.stringify({ success: true }));
+      return;
+    }
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: { message: "not found" } }));
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("server did not bind");
+  const url = `http://127.0.0.1:${address.port}/v1`;
+  const auth = { mode: "basic", username: "admin", password: "secret" };
+  try {
+    const virtualMcps = await listVirtualMcps(url, auth);
+    assert.equal(virtualMcps[0]?.name, "Development Tools");
+    assert.deepEqual(virtualMcps[0]?.virtualKeyIds, ["vk-repo"]);
+    await attachVirtualMcpToVirtualKey(url, auth, 12, "vk-repo");
+    await detachVirtualMcpFromVirtualKey(url, auth, 12, "vk-repo");
+    assert.ok(requests.some((item) => item.method === "POST" && item.url === "/api/mcp/virtual-mcps/12/virtual-keys/vk-repo"));
+    assert.ok(requests.some((item) => item.method === "DELETE" && item.url === "/api/mcp/virtual-mcps/12/virtual-keys/vk-repo"));
   } finally {
     server.close();
   }

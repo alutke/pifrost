@@ -10,9 +10,13 @@ import {
   bifrostManagementBase,
   buildRepoMcpConfig,
   deriveAliasesFromRules,
+  effectiveRepoMcpPolicy,
   diffAliases,
   loadState,
   normalizeBifrostUrl,
+  normalizeVirtualMcp,
+  resolveVirtualMcpNames,
+  virtualMcpsForVirtualKey,
   saveState,
 } from "../cli-lib.mjs";
 
@@ -190,4 +194,76 @@ test("route diff detects pin-only changes even when the model chain is unchanged
   assert.equal(diff[0].id, "omp-default");
   assert.equal(diff[0].localPins[0].keyId, "old-key");
   assert.equal(diff[0].remotePins[0].keyId, "new-key");
+});
+
+
+test("Virtual MCP normalization and name resolution are portable and case-insensitive", () => {
+  const vmcps = [
+    normalizeVirtualMcp({
+      id: 12,
+      name: "Development Tools",
+      endpoint_slug: "development-tools",
+      enabled: true,
+      tools: [{ mcp_client_id: "railway-id", tool_names: ["list", "logs"] }],
+      virtual_key_ids: ["vk-repo"],
+    }),
+    normalizeVirtualMcp({
+      id: 13,
+      name: "Infrastructure",
+      endpoint_slug: "infrastructure",
+      enabled: false,
+      tools: [{ mcp_client_id: "home-id", tool_names: ["*"] }],
+      virtual_key_ids: [],
+    }),
+  ];
+  assert.deepEqual(resolveVirtualMcpNames(vmcps, ["development tools"]).map((item) => item.id), [12]);
+  assert.deepEqual(virtualMcpsForVirtualKey(vmcps, "vk-repo").map((item) => item.name), ["Development Tools"]);
+  assert.throws(() => resolveVirtualMcpNames(vmcps, ["missing"]), /Unknown Bifrost Virtual MCP/);
+});
+
+test("effective repo MCP policy unions direct grants, Virtual MCPs and allowed-by-default clients", () => {
+  const clients = [
+    { id: "railway-id", name: "railway", allowOnAllVirtualKeys: false, disabled: false },
+    { id: "github-id", name: "github", allowOnAllVirtualKeys: true, disabled: false },
+    { id: "disabled-id", name: "disabled", allowOnAllVirtualKeys: true, disabled: true },
+  ];
+  const vk = {
+    id: "vk-repo",
+    mcp_configs: [{
+      mcp_client_id: "railway-id",
+      mcp_client: { client_id: "railway-id", name: "railway" },
+      tools_to_execute: ["list-projects"],
+    }],
+  };
+  const vmcps = [
+    normalizeVirtualMcp({
+      id: 12,
+      name: "Development Tools",
+      endpoint_slug: "development-tools",
+      enabled: true,
+      tools: [{ mcp_client_id: "railway-id", tool_names: ["get-logs"] }],
+      virtual_key_ids: ["vk-repo"],
+    }),
+    normalizeVirtualMcp({
+      id: 13,
+      name: "Disabled Bundle",
+      endpoint_slug: "disabled-bundle",
+      enabled: false,
+      tools: [{ mcp_client_id: "github-id", tool_names: ["issues"] }],
+      virtual_key_ids: ["vk-repo"],
+    }),
+  ];
+  const policy = effectiveRepoMcpPolicy(vk, vmcps, clients);
+  assert.deepEqual(policy.virtualMcps.map((item) => [item.name, item.enabled]), [
+    ["Development Tools", true],
+    ["Disabled Bundle", false],
+  ]);
+  assert.deepEqual(policy.effective, [
+    {
+      client: "railway",
+      tools: ["list-projects", "get-logs"],
+      sources: ["direct", "virtual:Development Tools"],
+    },
+    { client: "github", tools: ["*"], sources: ["default"] },
+  ]);
 });

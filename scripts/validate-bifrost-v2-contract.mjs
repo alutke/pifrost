@@ -1,4 +1,5 @@
 const BIFROST_2_0_0_COMMIT = "e4a30d6041c0446603aea615bc5da340dac001b1";
+const BIFROST_2_2_0_COMMIT = "fa3d4f2b97a25f5a0d5a233998777811b2bc05a8";
 const BIFROST_2_2_2_COMMIT = "9f0d71dba7274d8673de1e69529991035dae49e4";
 const BIFROST_2_2_3_COMMIT = "b840c82caed6919d84c21bd7be5bf7fa27a7ba17";
 
@@ -43,6 +44,21 @@ const SOURCES = [
     name: "Bifrost 2.0.0 reasoning contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/core/schemas/modelcapsreasoning.go`,
     required: ["ReasoningEffortNone", "\"none\"", "ReasoningEffortMinimal"],
+  },
+  {
+    name: "Bifrost 2.2.0 Virtual MCP API contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_0_COMMIT}/transports/bifrost-http/handlers/virtualmcp.go`,
+    required: [
+      "/api/mcp/virtual-mcps",
+      "/virtual-keys/{vkId}",
+      "virtual_key_ids",
+      "endpoint_slug",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.0 Virtual MCP wire contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_0_COMMIT}/ui/lib/types/virtualMcps.ts`,
+    required: ["VirtualMCP", "mcp_client_id", "tool_names", "virtual_key_ids"],
   },
   {
     name: "Bifrost 2.2.2 session-affinity contract",

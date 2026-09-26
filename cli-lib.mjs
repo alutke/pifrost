@@ -733,7 +733,12 @@ export function normalizeMcpClient(client) {
     name: nonEmpty(config?.name) ?? name,
     state: client?.state ?? client?.status ?? client?.connection_state,
     disabled: Boolean(config?.disabled ?? client?.disabled),
-    allowOnAllVirtualKeys: Boolean(config?.allow_on_all_virtual_keys ?? client?.allow_on_all_virtual_keys),
+    allowOnAllVirtualKeys: Boolean(
+      config?.allow_by_default ??
+      client?.allow_by_default ??
+      config?.allow_on_all_virtual_keys ??
+      client?.allow_on_all_virtual_keys
+    ),
     endpointSlug: nonEmpty(config?.endpoint_slug),
     connectionType: nonEmpty(config?.connection_type),
     authType: nonEmpty(config?.auth_type),
@@ -753,6 +758,98 @@ export async function listMcpClients(url, managementAuth) {
     ["clients", "mcp_clients", "items"],
   );
   return clients.map(normalizeMcpClient);
+}
+
+export function normalizeVirtualMcp(vmcp) {
+  const rawTools = Array.isArray(vmcp?.tools) ? vmcp.tools : [];
+  const rawVKs = Array.isArray(vmcp?.virtual_key_ids) ? vmcp.virtual_key_ids : [];
+  return {
+    id: Number(vmcp?.id),
+    name: nonEmpty(vmcp?.name) ?? String(vmcp?.id ?? ""),
+    endpointSlug: nonEmpty(vmcp?.endpoint_slug),
+    description: nonEmpty(vmcp?.description),
+    enabled: vmcp?.enabled !== false,
+    tools: rawTools
+      .map((spec) => {
+        const mcpClientId = nonEmpty(spec?.mcp_client_id) ?? nonEmpty(spec?.mcpClientId);
+        if (!mcpClientId) return undefined;
+        const toolNames = Array.isArray(spec?.tool_names)
+          ? spec.tool_names.map(String)
+          : Array.isArray(spec?.toolNames)
+            ? spec.toolNames.map(String)
+            : [];
+        return { mcpClientId, toolNames };
+      })
+      .filter(Boolean),
+    virtualKeyIds: rawVKs.map(String),
+    raw: vmcp,
+  };
+}
+
+export async function listVirtualMcps(url, managementAuth) {
+  const base = bifrostManagementBase(url);
+  const virtualMcps = await fetchAllPages(
+    `${base}/api/mcp/virtual-mcps`,
+    managementHeaders(managementAuth),
+    ["virtual_mcps", "items"],
+  );
+  return virtualMcps.map(normalizeVirtualMcp);
+}
+
+export function resolveVirtualMcpNames(virtualMcps, names) {
+  const lookup = new Map((virtualMcps ?? []).map((item) => [item.name.toLowerCase(), item]));
+  return unique((names ?? []).map((name) => {
+    const found = lookup.get(String(name).trim().toLowerCase());
+    if (!found) throw new Error(`Unknown Bifrost Virtual MCP: ${name}`);
+    return found;
+  }));
+}
+
+export function virtualMcpsForVirtualKey(virtualMcps, virtualKeyId) {
+  const id = nonEmpty(virtualKeyId);
+  if (!id) return [];
+  return (virtualMcps ?? []).filter((item) => item.virtualKeyIds?.includes(id));
+}
+
+export async function attachVirtualMcpToVirtualKey(url, managementAuth, virtualMcpId, virtualKeyId) {
+  const base = bifrostManagementBase(url);
+  return requestJson(
+    `${base}/api/mcp/virtual-mcps/${encodeURIComponent(String(virtualMcpId))}/virtual-keys/${encodeURIComponent(virtualKeyId)}`,
+    { method: "POST", headers: managementHeaders(managementAuth) },
+  );
+}
+
+export async function detachVirtualMcpFromVirtualKey(url, managementAuth, virtualMcpId, virtualKeyId) {
+  const base = bifrostManagementBase(url);
+  return requestJson(
+    `${base}/api/mcp/virtual-mcps/${encodeURIComponent(String(virtualMcpId))}/virtual-keys/${encodeURIComponent(virtualKeyId)}`,
+    { method: "DELETE", headers: managementHeaders(managementAuth) },
+  );
+}
+
+export async function syncVirtualMcpAssignments({
+  url,
+  managementAuth,
+  virtualKeyId,
+  desired,
+  available,
+}) {
+  const all = available ?? await listVirtualMcps(url, managementAuth);
+  const wanted = new Map((desired ?? []).map((item) => [Number(item.id), item]));
+  const current = virtualMcpsForVirtualKey(all, virtualKeyId);
+  const currentIds = new Set(current.map((item) => Number(item.id)));
+
+  for (const item of wanted.values()) {
+    if (!currentIds.has(Number(item.id))) {
+      await attachVirtualMcpToVirtualKey(url, managementAuth, item.id, virtualKeyId);
+    }
+  }
+  for (const item of current) {
+    if (!wanted.has(Number(item.id))) {
+      await detachVirtualMcpFromVirtualKey(url, managementAuth, item.id, virtualKeyId);
+    }
+  }
+  return [...wanted.values()];
 }
 
 export async function listVirtualKeys(url, managementAuth, search) {
@@ -810,11 +907,118 @@ export function virtualKeyMcpConfigs(vk) {
         nonEmpty(config?.mcp_client_name) ??
         nonEmpty(config?.mcp_client?.name) ??
         nonEmpty(config?.client_name);
-      if (!name) return undefined;
+      const rawId = config?.mcp_client?.client_id ?? config?.mcp_client_id ?? config?.mcp_client?.id;
+      const id = rawId === undefined || rawId === null ? undefined : nonEmpty(String(rawId));
+      if (!name && !id) return undefined;
       const tools = Array.isArray(config?.tools_to_execute) ? config.tools_to_execute.map(String) : [];
-      return { mcp_client_name: name, tools_to_execute: tools };
+      return {
+        ...(id ? { mcp_client_id: id } : {}),
+        ...(name ? { mcp_client_name: name } : {}),
+        tools_to_execute: tools,
+      };
     })
     .filter(Boolean);
+}
+
+function mergeToolGrant(entry, tools, source) {
+  entry.sources.add(source);
+  for (const tool of tools ?? []) {
+    if (tool === "*") {
+      entry.wildcard = true;
+      entry.tools.clear();
+      continue;
+    }
+    if (!entry.wildcard && nonEmpty(String(tool))) entry.tools.add(String(tool));
+  }
+}
+
+export function effectiveRepoMcpPolicy(vk, virtualMcps, clients) {
+  const direct = virtualKeyMcpConfigs(vk);
+  const attached = virtualMcpsForVirtualKey(virtualMcps, String(vk?.id ?? ""));
+  const clientsById = new Map();
+  const clientsByName = new Map();
+  for (const client of clients ?? []) {
+    const id = client?.id === undefined || client?.id === null ? undefined : nonEmpty(String(client.id));
+    const name = nonEmpty(client?.name);
+    if (id) clientsById.set(id.toLowerCase(), client);
+    if (name) clientsByName.set(name.toLowerCase(), client);
+  }
+
+  const grants = new Map();
+  const configured = new Set();
+  const resolveClient = (reference, nameHint) => {
+    const ref = nonEmpty(reference);
+    const hint = nonEmpty(nameHint);
+    return (
+      (ref ? clientsById.get(ref.toLowerCase()) : undefined) ??
+      (ref ? clientsByName.get(ref.toLowerCase()) : undefined) ??
+      (hint ? clientsByName.get(hint.toLowerCase()) : undefined)
+    );
+  };
+  const add = (reference, nameHint, tools, source) => {
+    const client = resolveClient(reference, nameHint);
+    const key = nonEmpty(client?.id === undefined ? undefined : String(client.id)) ?? nonEmpty(client?.name) ?? nonEmpty(reference) ?? nonEmpty(nameHint);
+    if (!key) return;
+    configured.add(key.toLowerCase());
+    let entry = grants.get(key.toLowerCase());
+    if (!entry) {
+      entry = {
+        key,
+        client,
+        name: nonEmpty(client?.name) ?? nonEmpty(nameHint) ?? key,
+        tools: new Set(),
+        wildcard: false,
+        sources: new Set(),
+      };
+      grants.set(key.toLowerCase(), entry);
+    }
+    mergeToolGrant(entry, tools, source);
+  };
+
+  for (const config of direct) {
+    add(config.mcp_client_id, config.mcp_client_name, config.tools_to_execute, "direct");
+  }
+  for (const vmcp of attached) {
+    if (!vmcp.enabled) continue;
+    for (const spec of vmcp.tools) {
+      add(spec.mcpClientId, undefined, spec.toolNames, `virtual:${vmcp.name}`);
+    }
+  }
+
+  for (const client of clients ?? []) {
+    if (!client?.allowOnAllVirtualKeys || client?.disabled) continue;
+    const key = nonEmpty(client?.id === undefined ? undefined : String(client.id)) ?? nonEmpty(client?.name);
+    if (!key || configured.has(key.toLowerCase())) continue;
+    add(key, client.name, ["*"], "default");
+  }
+
+  const effective = [];
+  const unresolved = [];
+  for (const entry of grants.values()) {
+    const tools = entry.wildcard ? ["*"] : [...entry.tools];
+    if (!entry.client) {
+      unresolved.push({ client: entry.name, tools, sources: [...entry.sources], reason: "MCP client is not configured" });
+      continue;
+    }
+    if (entry.client.disabled) {
+      unresolved.push({ client: entry.name, tools, sources: [...entry.sources], reason: "MCP client is disabled" });
+      continue;
+    }
+    if (!tools.length) continue;
+    effective.push({ client: entry.name, tools, sources: [...entry.sources] });
+  }
+
+  return {
+    direct,
+    virtualMcps: attached.map((item) => ({
+      id: item.id,
+      name: item.name,
+      endpointSlug: item.endpointSlug,
+      enabled: item.enabled,
+    })),
+    effective,
+    unresolved,
+  };
 }
 
 function usableVirtualKeyValue(value) {
@@ -839,14 +1043,17 @@ export async function upsertRepoVirtualKey({
 
   if (local?.virtualKeyId) {
     try {
-      vk = await updateVirtualKey(url, managementKey, local.virtualKeyId, {
+      const request = {
         name: local.virtualKeyName ?? keyName,
-        mcp_configs: clients.map((client) => ({
+        is_active: true,
+      };
+      if (Array.isArray(clients)) {
+        request.mcp_configs = clients.map((client) => ({
           mcp_client_name: client.name,
           tools_to_execute: client.tools,
-        })),
-        is_active: true,
-      });
+        }));
+      }
+      vk = await updateVirtualKey(url, managementKey, local.virtualKeyId, request);
     } catch (error) {
       if (!(error instanceof PifrostHttpError) || error.status !== 404) throw error;
     }
@@ -856,14 +1063,17 @@ export async function upsertRepoVirtualKey({
     const matches = await listVirtualKeys(url, managementKey, keyName);
     const existing = matches.find((candidate) => candidate?.name === keyName);
     if (existing?.id) {
-      vk = await updateVirtualKey(url, managementKey, existing.id, {
+      const request = {
         name: keyName,
-        mcp_configs: clients.map((client) => ({
+        is_active: true,
+      };
+      if (Array.isArray(clients)) {
+        request.mcp_configs = clients.map((client) => ({
           mcp_client_name: client.name,
           tools_to_execute: client.tools,
-        })),
-        is_active: true,
-      });
+        }));
+      }
+      vk = await updateVirtualKey(url, managementKey, existing.id, request);
       if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
     } else {
       created = true;
@@ -874,7 +1084,7 @@ export async function upsertRepoVirtualKey({
         // key exists only to authenticate the MCP gateway.
         allow_all_providers: false,
         provider_configs: [],
-        mcp_configs: clients.map((client) => ({
+        mcp_configs: (clients ?? []).map((client) => ({
           mcp_client_name: client.name,
           tools_to_execute: client.tools,
         })),
@@ -887,12 +1097,22 @@ export async function upsertRepoVirtualKey({
 
   // Persist the association before dealing with a missing raw value so an explicit
   // `repo rotate-key` can recover safely. Never rotate an existing key implicitly.
+  const liveMcpConfigs = virtualKeyMcpConfigs(vk);
+  const normalizedClients = Array.isArray(clients)
+    ? clients
+    : liveMcpConfigs.length
+      ? liveMcpConfigs.map((item) => ({
+          name: item.mcp_client_name ?? item.mcp_client_id,
+          tools: item.tools_to_execute,
+        }))
+      : (local?.mcpClients ?? []);
   state.config.repos[repo.id] = {
     name: repo.name,
     identity: repo.identity,
     virtualKeyId: vk.id,
     virtualKeyName: vk.name ?? keyName,
-    mcpClients: clients,
+    mcpClients: normalizedClients,
+    ...(Array.isArray(local?.virtualMcps) ? { virtualMcps: local.virtualMcps } : {}),
   };
 
   let keyValue = usableVirtualKeyValue(vk?.value) ?? localSecret;

@@ -98,7 +98,8 @@ Pifrost local secret store
  ▼
 Bifrost /mcp
  │
- └─ only MCP clients/tools allowed on that repo VK
+ ├─ direct MCP client/tool grants on the repo VK
+ └─ named Virtual MCP bundles attached to the repo VK
 ```
 
 The intended identity separation is:
@@ -551,7 +552,7 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ## Repository-specific MCP
 
-Each repository gets its own Bifrost MCP Virtual Key and only the MCP clients/tools explicitly assigned to that key.
+Each repository gets its own Bifrost MCP Virtual Key. Access can come from direct MCP client/tool grants, named Bifrost Virtual MCP bundles, or both. Pifrost stores Virtual MCP **names** in local state for portability and resolves those names to Bifrost's numeric Virtual MCP IDs only when it attaches/detaches the repo VK.
 
 ### List available Bifrost MCP clients
 
@@ -590,17 +591,31 @@ Pifrost:
 
 ### Non-interactive initialization
 
-One client with all its exposed tools:
+One direct client with all its exposed tools:
 
 ```bash
 pifrost repo init --clients railway --tools '*'
 ```
 
-Multiple clients:
+Multiple direct clients:
 
 ```bash
 pifrost repo init --clients n8n,railway --tools '*'
 ```
+
+Virtual MCP bundles can be assigned without duplicating their underlying client/tool lists:
+
+```bash
+pifrost repo init --virtual-mcps 'Development Tools,Infrastructure'
+```
+
+Direct grants and Virtual MCPs can be combined:
+
+```bash
+pifrost repo init --clients railway --tools get-logs --virtual-mcps 'Development Tools'
+```
+
+When `--virtual-mcps` is supplied without `--clients`, an existing repo's direct MCP grants are preserved. On a new repo this creates an MCP-only VK with no direct client grants. Supplying `--virtual-mcps=` explicitly removes all direct Virtual MCP attachments while leaving direct MCP grants unchanged.
 
 ### Generated repo config
 
@@ -637,8 +652,14 @@ Virtual Key id:   <uuid>
 Virtual Key name: omp-<repo>-mcp
 Repo secret:      set
 MCP initialize:   HTTP 200 OK
-MCP clients:      railway[*]
+Direct MCP grants: railway[*]
+Virtual MCPs:     Development Tools
+Live Virtual MCPs: Development Tools
+Effective MCP tools:
+  railway[*] via direct+virtual:Development Tools
 ```
+
+The effective-policy view mirrors Bifrost's union semantics: direct grants and enabled Virtual MCP grants are unioned per client, `*` wins, and an explicitly configured client prevents an `allow_by_default` client policy from reopening tools. Disabled Virtual MCPs and disabled/unresolvable clients are reported but do not appear as effective tools.
 
 ### Add a client
 
@@ -657,6 +678,23 @@ pifrost repo mcp add railway --tools list-projects,list-services,get-logs
 ```bash
 pifrost repo mcp remove railway
 ```
+
+### Manage Virtual MCP bundles
+
+List Virtual MCPs and see which are attached to the current repo VK:
+
+```bash
+pifrost repo vmcp list
+```
+
+Attach or detach a named bundle:
+
+```bash
+pifrost repo vmcp add 'Development Tools'
+pifrost repo vmcp remove 'Development Tools'
+```
+
+The repo continues to connect to Bifrost's plain `/mcp` endpoint. That endpoint exposes the whole-key union of direct grants plus all attached Virtual MCP bundles; Pifrost does not need to create a separate OMP MCP server entry per bundle.
 
 ### Rotate the repo VK
 
@@ -830,6 +868,9 @@ with mode `0600` and creates the configuration directory privately.
 | `pifrost repo mcp list` | List Bifrost MCP clients/tools |
 | `pifrost repo mcp add <client>` | Add an MCP client/tool allow-list to the repo VK |
 | `pifrost repo mcp remove <client>` | Remove an MCP client from the repo VK |
+| `pifrost repo vmcp list` | List Bifrost Virtual MCP bundles and current-repo assignment |
+| `pifrost repo vmcp add <name>` | Attach a named Virtual MCP bundle to the repo VK |
+| `pifrost repo vmcp remove <name>` | Detach a named Virtual MCP bundle from the repo VK |
 | `pifrost repo rotate-key` | Explicitly rotate the repo MCP VK |
 | `pifrost repo reset` | Remove local repo integration only |
 | `pifrost repo reset --delete-remote` | Delete the stored remote repo VK, then local integration |

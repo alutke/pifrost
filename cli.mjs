@@ -10,12 +10,15 @@ import {
   VERSION,
   PifrostHttpError,
   aliasManifestPath,
+  attachVirtualMcpToVirtualKey,
   buildRepoMcpConfig,
   commandExists,
   configureOmp,
   currentRepoState,
   deriveAliasesFromRules,
+  detachVirtualMcpFromVirtualKey,
   diffAliases,
+  effectiveRepoMcpPolicy,
   getRepoRoot,
   getRoutingRules,
   getBifrostVersion,
@@ -26,6 +29,7 @@ import {
   getVirtualKey,
   installOmpPlugin,
   listMcpClients,
+  listVirtualMcps,
   loadAliasManifest,
   loadState,
   managementAuthFromState,
@@ -34,6 +38,7 @@ import {
   removeRepoState,
   repoIdentity,
   requestJson,
+  resolveVirtualMcpNames,
   rotateVirtualKey,
   routingFeatureSummary,
   runCommand,
@@ -41,11 +46,13 @@ import {
   saveState,
   testInference,
   testManagement,
+  syncVirtualMcpAssignments,
   testMcp,
   updateRepoState,
   updateVirtualKey,
   upsertRepoVirtualKey,
   virtualKeyMcpConfigs,
+  virtualMcpsForVirtualKey,
   writeAliasManifest,
   writeRepoMcpConfig,
 } from "./cli-lib.mjs";
@@ -62,12 +69,15 @@ Usage:
   pifrost routes sync [--no-refresh]
   pifrost models refresh [--force]
   pifrost models doctor
-  pifrost repo init [--clients a,b] [--tools '*']
+  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B']
   pifrost repo status
   pifrost repo rotate-key
   pifrost repo mcp list
   pifrost repo mcp add <client> [--tools '*|tool1,tool2']
   pifrost repo mcp remove <client>
+  pifrost repo vmcp list
+  pifrost repo vmcp add <name>
+  pifrost repo vmcp remove <name>
   pifrost repo reset
   pifrost secret repo-mcp --id <repo-id>
   pifrost doctor
@@ -653,24 +663,53 @@ async function commandRepoInit(flags) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const repo = repoIdentity();
+  const clientFlagPresent = Object.prototype.hasOwnProperty.call(flags, "clients");
+  const virtualMcpFlagPresent = Object.prototype.hasOwnProperty.call(flags, "virtual-mcps");
   const available = await listMcpClients(url, managementKey);
   const names = splitCsv(flagString(flags, "clients"));
   const commonTools = splitCsv(flagString(flags, "tools"));
-  const clients = names.length
+  const clients = clientFlagPresent
     ? resolveNamedClients(available, names, commonTools)
-    : await chooseClientsInteractively(available);
+    : virtualMcpFlagPresent
+      ? undefined
+      : await chooseClientsInteractively(available);
+
+  let availableVirtualMcps = [];
+  let desiredVirtualMcps;
+  if (virtualMcpFlagPresent) {
+    availableVirtualMcps = await listVirtualMcps(url, managementKey);
+    desiredVirtualMcps = resolveVirtualMcpNames(
+      availableVirtualMcps,
+      splitCsv(flagString(flags, "virtual-mcps")),
+    );
+  }
+
   const vk = await upsertRepoVirtualKey({ state, repo, clients, url, managementKey });
+  if (virtualMcpFlagPresent) {
+    await syncVirtualMcpAssignments({
+      url,
+      managementAuth: managementKey,
+      virtualKeyId: vk.id,
+      desired: desiredVirtualMcps,
+      available: availableVirtualMcps,
+    });
+    updateRepoState(state, repo.id, { virtualMcps: desiredVirtualMcps.map((item) => item.name) });
+  }
+
   const file = writeRepoMcpConfig(repo.root, url, repo.id);
   const refreshed = loadState();
   const secret = refreshed.secrets.repos?.[repo.id]?.mcpVirtualKey;
   if (!secret) throw new Error("Repo MCP Virtual Key was not persisted");
   const test = await testMcp(url, secret);
+  const configuredClients = refreshed.config.repos?.[repo.id]?.mcpClients ?? [];
+  const configuredVirtualMcps = refreshed.config.repos?.[repo.id]?.virtualMcps ?? [];
 
   printHeader(`Repo configured: ${repo.name}`);
   console.log(`Repo id:          ${repo.id}`);
   console.log(`Virtual Key:      ${vk.name ?? refreshed.config.repos?.[repo.id]?.virtualKeyName}`);
   console.log(`Virtual Key id:   ${vk.id}`);
-  console.log(`MCP clients:      ${clients.map((client) => `${client.name}[${client.tools.join(",")}]`).join(", ")}`);
+  console.log(`MCP clients:      ${configuredClients.map((client) => `${client.name}[${client.tools.join(",")}]`).join(", ") || "none"}`);
+  console.log(`Virtual MCPs:     ${configuredVirtualMcps.join(", ") || "none"}`);
   console.log(`OMP MCP config:   ${file.path}`);
   console.log(`MCP initialize:   HTTP ${test.status}${test.ok ? " OK" : " FAIL"}`);
   if (!test.ok) {
@@ -699,8 +738,36 @@ async function commandRepoStatus() {
     }
   }
   console.log(
-    `MCP clients:      ${(repoState.config?.mcpClients ?? []).map((client) => `${client.name}[${client.tools.join(",")}]`).join(", ") || "none"}`,
+    `Direct MCP grants: ${(repoState.config?.mcpClients ?? []).map((client) => `${client.name}[${client.tools.join(",")}]`).join(", ") || "none"}`,
   );
+  console.log(`Virtual MCPs:     ${(repoState.config?.virtualMcps ?? []).join(", ") || "none"}`);
+
+  const managementAuth = managementAuthFromState(state);
+  if (runtime.url && managementAuth && repoState.config?.virtualKeyId) {
+    try {
+      const [vk, virtualMcps, clients] = await Promise.all([
+        getVirtualKey(runtime.url, managementAuth, repoState.config.virtualKeyId),
+        listVirtualMcps(runtime.url, managementAuth),
+        listMcpClients(runtime.url, managementAuth),
+      ]);
+      const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
+      const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
+      console.log(`Live Virtual MCPs:${liveVirtual.length ? ` ${liveVirtual.join(", ")}` : " none"}`);
+      if (policy.effective.length) {
+        console.log("Effective MCP tools:");
+        for (const grant of policy.effective) {
+          console.log(`  ${grant.client}[${grant.tools.join(",")}] via ${grant.sources.join("+")}`);
+        }
+      } else {
+        console.log("Effective MCP tools: none");
+      }
+      for (const item of policy.unresolved) {
+        console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
+      }
+    } catch (error) {
+      console.log(`Effective MCP policy: unavailable (${formatError(error)})`);
+    }
+  }
 }
 
 async function commandRepoMcpList() {
@@ -729,6 +796,57 @@ async function requireRepoVirtualKey(state) {
   if (!current.config?.virtualKeyId) throw new Error("Current repo is not initialized; run `pifrost repo init`");
   const vk = await getVirtualKey(url, managementKey, current.config.virtualKeyId);
   return { url, managementKey, current, vk };
+}
+
+async function commandRepoVirtualMcpList() {
+  const state = loadState();
+  const { url, managementKey } = requireManagement(state);
+  const current = currentRepoState(state);
+  const virtualMcps = await listVirtualMcps(url, managementKey);
+  const assigned = new Set(
+    current.config?.virtualKeyId
+      ? virtualMcpsForVirtualKey(virtualMcps, current.config.virtualKeyId).map((item) => Number(item.id))
+      : [],
+  );
+  printHeader(`Bifrost Virtual MCPs (${virtualMcps.length})`);
+  for (const item of virtualMcps.sort((a, b) => a.name.localeCompare(b.name))) {
+    const flags = [
+      assigned.has(Number(item.id)) ? "assigned" : undefined,
+      item.enabled ? undefined : "disabled",
+      item.endpointSlug ? `/mcp/${item.endpointSlug}` : undefined,
+    ].filter(Boolean);
+    const toolCount = item.tools.reduce((sum, spec) => sum + (spec.toolNames.includes("*") ? 1 : spec.toolNames.length), 0);
+    console.log(`${item.name}  tools=${toolCount}${flags.length ? `  ${flags.join(" ")}` : ""}`);
+  }
+}
+
+async function commandRepoVirtualMcpAdd(name) {
+  if (!name) throw new Error("Usage: pifrost repo vmcp add <name>");
+  const state = loadState();
+  const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  const available = await listVirtualMcps(url, managementKey);
+  const [found] = resolveVirtualMcpNames(available, [name]);
+  await attachVirtualMcpToVirtualKey(url, managementKey, found.id, vk.id);
+  const liveNames = [...new Set([
+    ...virtualMcpsForVirtualKey(available, vk.id).map((item) => item.name),
+    found.name,
+  ])];
+  updateRepoState(state, current.repo.id, { virtualMcps: liveNames });
+  console.log(`Added Virtual MCP ${found.name} to ${current.config.virtualKeyName}`);
+}
+
+async function commandRepoVirtualMcpRemove(name) {
+  if (!name) throw new Error("Usage: pifrost repo vmcp remove <name>");
+  const state = loadState();
+  const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  const available = await listVirtualMcps(url, managementKey);
+  const [found] = resolveVirtualMcpNames(available, [name]);
+  await detachVirtualMcpFromVirtualKey(url, managementKey, found.id, vk.id);
+  const liveNames = virtualMcpsForVirtualKey(available, vk.id)
+    .filter((item) => Number(item.id) !== Number(found.id))
+    .map((item) => item.name);
+  updateRepoState(state, current.repo.id, { virtualMcps: liveNames });
+  console.log(`Removed Virtual MCP ${found.name} from ${current.config.virtualKeyName}`);
 }
 
 async function commandRepoMcpAdd(clientName, flags) {
@@ -850,6 +968,9 @@ async function main() {
   if (one === "repo" && two === "mcp" && three === "list") return commandRepoMcpList();
   if (one === "repo" && two === "mcp" && three === "add") return commandRepoMcpAdd(four, flags);
   if (one === "repo" && two === "mcp" && three === "remove") return commandRepoMcpRemove(four);
+  if (one === "repo" && two === "vmcp" && three === "list") return commandRepoVirtualMcpList();
+  if (one === "repo" && two === "vmcp" && three === "add") return commandRepoVirtualMcpAdd(four);
+  if (one === "repo" && two === "vmcp" && three === "remove") return commandRepoVirtualMcpRemove(four);
   if (one === "secret" && two === "repo-mcp") return commandSecretRepoMcp(flags);
   if (one === "doctor") return commandDoctor();
 

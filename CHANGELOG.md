@@ -11,6 +11,10 @@
 - Added Bifrost 2.2.3 pinned-fallback compatibility: object-form fallbacks now participate in alias capability envelopes instead of being silently omitted, with `key_id` / `provider_key_name` provenance retained in the alias manifest and diagnostics.
 - Pinned primary targets or fallbacks are explicitly excluded from Pifrost's local context-aware route compilation, so provider-key pins remain Bifrost-owned and cannot be lost by flattening the route to plain string fallbacks.
 - Route listing/status/diff now surface pinned-routing state, including pin-only changes, and CI pins the released Bifrost 2.2.3 fallback wire/config contracts.
+- Added named Bifrost Virtual MCP support for repository governance. Repo state stores portable Virtual MCP names, resolves them to Bifrost IDs only for the supported attach/detach API, and keeps direct `mcp_configs` as an independent optional grant surface.
+- Added `pifrost repo vmcp list/add/remove` plus `repo init --virtual-mcps`; existing direct MCP grants are preserved when only Virtual MCP assignments are changed.
+- Added live effective MCP-policy diagnostics that union direct grants, enabled Virtual MCP tool specs and `allow_by_default` clients using Bifrost's wildcard/configured-client semantics, while flagging disabled or unresolved clients.
+- Added released Bifrost 2.2.0 Virtual MCP API/wire contract canaries and HTTP helper regression coverage.
 
 ## 0.4.0
 
