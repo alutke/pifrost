@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.6.1 — 2026-09-26
+
+- Reworked the repository README around the human onboarding and operating journey, with a clear install → `pifrost init` → `pifrost doctor` happy path.
+- Moved deep architecture, compatibility, routing, model-metadata and MCP implementation detail into `docs/REFERENCE.md` while retaining links from the main README.
+- Added the technical reference to the release package so README links remain useful in packaged installations.
+- Added CI-gated GitHub release automation: a new version on `main` is tagged and released only after the main CI workflow succeeds.
+
 ## 0.6.0 — 2026-09-26
 
 - Reworked model-reference selection into a single-pass best-match resolver, removing whole-candidate sorting and quadratic tie comparison while preserving Pifrost's existing vendor/family ambiguity safety.
