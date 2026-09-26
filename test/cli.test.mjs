@@ -9,6 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import {
   bifrostManagementBase,
   buildRepoMcpConfig,
+  compareSemver,
   deriveAliasesFromRules,
   effectiveRepoMcpPolicy,
   diffAliases,
@@ -17,11 +18,32 @@ import {
   normalizeVirtualMcp,
   quotaGovernanceSources,
   formatQuotaGovernanceSource,
+  ompCompatibilityMatrix,
+  parseSemver,
+  versionAtLeast,
   repoMcpInstructions,
   resolveVirtualMcpNames,
   virtualMcpsForVirtualKey,
   saveState,
 } from "../cli-lib.mjs";
+
+test("parses and compares upstream semantic versions conservatively", () => {
+  assert.equal(parseSemver("OMP 18.3.2")?.version, "18.3.2");
+  assert.equal(parseSemver("v2.2.3+build.7")?.version, "2.2.3");
+  assert.equal(parseSemver("not-a-version"), undefined);
+  assert.equal(compareSemver("18.3.2", "18.3.1"), 1);
+  assert.equal(compareSemver("2.2.3", "2.2.3"), 0);
+  assert.equal(versionAtLeast("2.2.2", "2.2.3"), false);
+});
+
+test("OMP compatibility matrix gates the Pifrost baseline and 18.3 feature contracts", () => {
+  const current = ompCompatibilityMatrix("18.3.2");
+  assert.ok(current.every((item) => item.status === "supported"));
+  const old = ompCompatibilityMatrix("18.3.0");
+  assert.equal(old.find((item) => item.id === "omp-baseline")?.status, "unavailable");
+  assert.equal(old.find((item) => item.id === "omp-mcp-instructions")?.status, "unavailable");
+  assert.equal(old.find((item) => item.id === "omp-cfg-protocol")?.status, "unavailable");
+});
 
 test("normalizes inference and management Bifrost URLs", () => {
   assert.equal(normalizeBifrostUrl("http://192.168.1.221:8180"), "http://192.168.1.221:8180/v1");

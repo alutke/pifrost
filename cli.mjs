@@ -11,6 +11,7 @@ import {
   PifrostHttpError,
   aliasManifestPath,
   attachVirtualMcpToVirtualKey,
+  buildCompatibilityMatrix,
   buildRepoMcpConfig,
   commandExists,
   configureOmp,
@@ -23,6 +24,7 @@ import {
   getRoutingRules,
   getBifrostVersion,
   getBifrostHealth,
+  getOmpVersion,
   getBifrostConfig,
   getVirtualKeyQuota,
   getComplexityAnalyzerConfig,
@@ -162,6 +164,53 @@ function splitCsv(value) {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean);
+}
+
+
+function compatibilityMark(status) {
+  if (status === "supported") return "OK";
+  if (status === "unavailable") return "UNAVAILABLE";
+  if (status === "inaccessible") return "INACCESSIBLE";
+  if (status === "drifted") return "DRIFT";
+  return String(status ?? "UNKNOWN").toUpperCase();
+}
+
+function compatibilityNeedsAttention(item) {
+  return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
+}
+
+async function commandCompatibilityDoctor() {
+  const state = loadState();
+  const runtime = runtimeConfigFromState(state);
+  const managementAuth = managementAuthFromState(state);
+  const matrix = await buildCompatibilityMatrix({
+    url: runtime.url,
+    managementAuth,
+    virtualKey: runtime.virtualKey,
+    apiKey: runtime.apiKey,
+    ompVersion: getOmpVersion(),
+  });
+
+  printHeader("Upstream compatibility");
+  console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (Pifrost minimum 18.3.2)`);
+  for (const item of matrix.omp) {
+    console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
+    if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
+  }
+  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (Pifrost baseline 2.0.0)`);
+  for (const item of matrix.bifrost) {
+    console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
+    if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
+  }
+
+  const issues = [...matrix.omp, ...matrix.bifrost].filter((item) => item.status !== "supported");
+  const drift = issues.filter((item) => item.status === "drifted").length;
+  const inaccessible = issues.filter((item) => item.status === "inaccessible").length;
+  const unavailable = issues.filter((item) => item.status === "unavailable").length;
+  console.log(
+    `Compatibility summary:  ${issues.length ? `degraded (unavailable=${unavailable}, inaccessible=${inaccessible}, drift=${drift})` : "OK"}`,
+  );
+  if ([...matrix.omp, ...matrix.bifrost].some(compatibilityNeedsAttention)) process.exitCode = 2;
 }
 
 function formatError(error) {
@@ -409,6 +458,7 @@ async function commandGlobalStatus() {
     console.log(`Management API key:     ${managementAuth.apiKey ? "set" : "missing"}`);
   }
   console.log(`OMP installed:          ${boolMark(commandExists("omp"))}`);
+  console.log(`OMP version:            ${getOmpVersion() ?? "unavailable"}`);
 
   if (runtime.url) {
     try {
@@ -988,6 +1038,8 @@ async function commandSecretRepoMcp(flags) {
 
 async function commandDoctor() {
   await commandGlobalStatus();
+  console.log("");
+  await commandCompatibilityDoctor();
   console.log("");
   await commandModelsDoctor();
   try {

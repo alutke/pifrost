@@ -21,6 +21,9 @@
 - Added Bifrost 2.2.3 structured quota provenance. Pifrost now preserves quota `SourceRef` fields (`source_type`, `source_id`, `source_name`) in OMP report metadata and per-limit notes while explicitly distinguishing direct VK/provider/model governance from externally inherited governance.
 - External budgets/rate limits that reuse the same Bifrost row ID are source-qualified in their OMP limit IDs so they are not collapsed during deduplication; legacy pre-`SourceRef` `source` labels remain supported.
 - `global status` and `doctor` now surface observed governance origins, and CI pins the released Bifrost 2.2.3 `SourceRef` and sourced-quota contracts.
+- Added an upstream compatibility matrix to `pifrost doctor`, including installed OMP/Bifrost version detection, minimum-version gates, and non-mutating live probes for Virtual MCPs, the inference/session path, routing/pinned fallbacks, and quota SourceRef responses.
+- Compatibility results distinguish `supported`, `unavailable`, `inaccessible`, and `drifted`; each degraded capability explains the affected Pifrost behavior instead of reducing all failures to a generic connectivity error.
+- OMP doctor coverage now reports the tested 18.3.2 baseline plus 18.3.1+ MCP `instructions:false` and `cfg://` capability gates, while Bifrost feature gates document 2.2.0 Virtual MCPs, 2.2.2 session affinity, and 2.2.3 pinned fallbacks/quota SourceRef.
 
 ## 0.4.0
 

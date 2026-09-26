@@ -561,6 +561,30 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ---
 
+## Upstream compatibility doctor
+
+`pifrost doctor` includes a live upstream feature matrix. Version checks establish the minimum contract; non-mutating API probes then verify the live path where Bifrost exposes a discoverable endpoint.
+
+```text
+Upstream compatibility
+OMP version:             18.3.2 (Pifrost minimum 18.3.2)
+  [OK] Pifrost OMP baseline >=18.3.2 — available in OMP 18.3.2
+  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.3.2
+  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.3.2
+Bifrost version:         2.2.3 (Pifrost baseline 2.0.0)
+  [OK] Virtual MCPs >=2.2.0 — live API contract verified
+  [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable
+  [OK] Pinned routing fallbacks >=2.2.3 — version contract satisfied; routing API verified
+  [OK] Quota SourceRef provenance >=2.2.3 — live quota contract verified
+Compatibility summary:  OK
+```
+
+The four states are **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible).
+
+Session affinity has no read-only discovery endpoint, so its check combines the Bifrost >=2.2.2 contract with a live inference-path probe. Pinned fallbacks similarly combine the >=2.2.3 contract with the routing API and validate object fallback shape when such fallbacks are present. The doctor never creates, edits or deletes Bifrost configuration.
+
+---
+
 ## Repository-specific MCP
 
 Each repository gets its own Bifrost MCP Virtual Key. Access can come from direct MCP client/tool grants, named Bifrost Virtual MCP bundles, or both. Pifrost stores Virtual MCP **names** in local state for portability and resolves those names to Bifrost's numeric Virtual MCP IDs only when it attaches/detaches the repo VK.

@@ -18,6 +18,8 @@ export const MCP_SCHEMA_URL =
   "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json";
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
+export const PIFROST_OMP_MIN_VERSION = "18.3.2";
+export const PIFROST_BIFROST_MIN_VERSION = "2.0.0";
 
 export const ROLE_MAP = Object.freeze({
   default: "bifrost/omp-default",
@@ -656,6 +658,45 @@ export function diffAliases(localManifest, remoteManifest) {
   });
 }
 
+export function parseSemver(value) {
+  const input = nonEmpty(value);
+  if (!input) return undefined;
+  const match = input.match(/(?:^|[^0-9])v?(\d+)\.(\d+)\.(\d+)(?:[-+][0-9A-Za-z.-]+)?(?:$|[^0-9])/u);
+  if (!match) return undefined;
+  return {
+    major: Number(match[1]),
+    minor: Number(match[2]),
+    patch: Number(match[3]),
+    version: `${Number(match[1])}.${Number(match[2])}.${Number(match[3])}`,
+  };
+}
+
+export function compareSemver(left, right) {
+  const a = typeof left === "string" ? parseSemver(left) : left;
+  const b = typeof right === "string" ? parseSemver(right) : right;
+  if (!a || !b) return undefined;
+  for (const key of ["major", "minor", "patch"]) {
+    if (a[key] < b[key]) return -1;
+    if (a[key] > b[key]) return 1;
+  }
+  return 0;
+}
+
+export function versionAtLeast(version, minimum) {
+  const comparison = compareSemver(version, minimum);
+  return comparison === undefined ? undefined : comparison >= 0;
+}
+
+export function commandVersion(command) {
+  const result = spawnSync(command, ["--version"], { encoding: "utf8", stdio: "pipe" });
+  if (result.error || result.status !== 0) return undefined;
+  return parseSemver([result.stdout, result.stderr].filter(Boolean).join("\n"))?.version;
+}
+
+export function getOmpVersion() {
+  return commandVersion("omp");
+}
+
 export function commandExists(command) {
   const result = spawnSync(command, ["--version"], { encoding: "utf8", stdio: "pipe" });
   return !result.error && result.status === 0;
@@ -674,6 +715,389 @@ export function runCommand(command, args, options = {}) {
     throw new Error(`${command} ${args.join(" ")} failed${detail ? `: ${detail}` : ""}`);
   }
   return { stdout: result.stdout?.trim() ?? "", stderr: result.stderr?.trim() ?? "" };
+}
+
+
+export function ompCompatibilityMatrix(version) {
+  const parsed = parseSemver(version);
+  const feature = (id, label, minimum, impact) => {
+    if (!parsed) {
+      return { id, label, minimum, status: "drifted", detail: "OMP is installed but its version could not be parsed", impact };
+    }
+    const supported = versionAtLeast(parsed, minimum);
+    return supported
+      ? { id, label, minimum, status: "supported", detail: `available in OMP ${parsed.version}`, impact }
+      : { id, label, minimum, status: "unavailable", detail: `requires OMP >= ${minimum}; installed ${parsed.version}`, impact };
+  };
+  return [
+    feature("omp-baseline", "Pifrost OMP baseline", PIFROST_OMP_MIN_VERSION, "Pifrost's tested OMP contract is not guaranteed"),
+    feature("omp-mcp-instructions", "MCP instructions:false", "18.3.1", "Repo MCP instruction suppression is unavailable"),
+    feature("omp-cfg-protocol", "cfg:// protocol", "18.3.1", "Future cfg:// integration is unavailable"),
+  ];
+}
+
+function compatibilityHttpFailure(error, minimum, installedVersion, endpoint) {
+  if (error instanceof PifrostHttpError) {
+    if ([401, 403].includes(error.status)) {
+      return { status: "inaccessible", detail: `${endpoint} rejected the configured credentials (HTTP ${error.status})` };
+    }
+    if ([404, 405].includes(error.status)) {
+      return {
+        status: versionAtLeast(installedVersion, minimum) === true ? "drifted" : "unavailable",
+        detail: `${endpoint} is not exposed (HTTP ${error.status})`,
+      };
+    }
+    return { status: "inaccessible", detail: `${endpoint} failed with HTTP ${error.status}` };
+  }
+  return { status: "inaccessible", detail: `${endpoint} could not be reached: ${error instanceof Error ? error.message : String(error)}` };
+}
+
+function featureUnavailable(id, label, minimum, version, impact) {
+  if (!version) {
+    return { id, label, minimum, status: "inaccessible", detail: "Bifrost version is unavailable", impact };
+  }
+  if (versionAtLeast(version, minimum) === false) {
+    return { id, label, minimum, status: "unavailable", detail: `requires Bifrost >= ${minimum}; installed ${version}`, impact };
+  }
+  return undefined;
+}
+
+function validateSourceRefShape(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return true;
+  for (const key of ["source_type", "source_id", "source_name"]) {
+    if (value[key] !== undefined && typeof value[key] !== "string") return false;
+  }
+  return true;
+}
+
+export async function bifrostCompatibilityMatrix({
+  url,
+  version,
+  managementAuth,
+  virtualKey,
+  apiKey,
+}) {
+  const installedVersion = parseSemver(version)?.version;
+  const results = [];
+
+  const virtualMcpBase = featureUnavailable(
+    "bifrost-virtual-mcp",
+    "Virtual MCPs",
+    "2.2.0",
+    installedVersion,
+    "Named repository Virtual MCP assignment is unavailable",
+  );
+  if (virtualMcpBase) {
+    results.push(virtualMcpBase);
+  } else if (!managementAuth) {
+    results.push({
+      id: "bifrost-virtual-mcp",
+      label: "Virtual MCPs",
+      minimum: "2.2.0",
+      status: "inaccessible",
+      detail: "management authentication is not configured",
+      impact: "Named repository Virtual MCP assignment cannot be verified",
+    });
+  } else {
+    const endpoint = "/api/mcp/virtual-mcps";
+    try {
+      const body = await requestJson(
+        `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0`,
+        { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
+      );
+      if (!Array.isArray(body?.virtual_mcps)) {
+        results.push({
+          id: "bifrost-virtual-mcp",
+          label: "Virtual MCPs",
+          minimum: "2.2.0",
+          status: "drifted",
+          detail: `${endpoint} responded but no virtual_mcps array was present`,
+          impact: "Virtual MCP discovery/assignment may be incompatible",
+        });
+      } else {
+        results.push({
+          id: "bifrost-virtual-mcp",
+          label: "Virtual MCPs",
+          minimum: "2.2.0",
+          status: "supported",
+          detail: `live API contract verified (${body.virtual_mcps.length} row(s) returned)`,
+          impact: undefined,
+        });
+      }
+    } catch (error) {
+      results.push({
+        id: "bifrost-virtual-mcp",
+        label: "Virtual MCPs",
+        minimum: "2.2.0",
+        ...compatibilityHttpFailure(error, "2.2.0", installedVersion, endpoint),
+        impact: "Named repository Virtual MCP assignment cannot be verified",
+      });
+    }
+  }
+
+  const sessionBase = featureUnavailable(
+    "bifrost-session-affinity",
+    "Session affinity",
+    "2.2.2",
+    installedVersion,
+    "Request-scoped provider/key stickiness is unavailable",
+  );
+  if (sessionBase) {
+    results.push(sessionBase);
+  } else if (!virtualKey) {
+    results.push({
+      id: "bifrost-session-affinity",
+      label: "Session affinity",
+      minimum: "2.2.2",
+      status: "inaccessible",
+      detail: "version gate passed, but no inference Virtual Key is configured for a live inference-path probe",
+      impact: "x-bf-session-id support cannot be live-verified",
+    });
+  } else {
+    try {
+      const inference = await testInference({ url, virtualKey, apiKey });
+      results.push({
+        id: "bifrost-session-affinity",
+        label: "Session affinity",
+        minimum: "2.2.2",
+        status: "supported",
+        detail: `version contract satisfied; inference path reachable (${inference.models} model(s))`,
+        impact: undefined,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-session-affinity",
+        label: "Session affinity",
+        minimum: "2.2.2",
+        status: "inaccessible",
+        detail: `version contract satisfied but inference path could not be verified: ${error instanceof Error ? error.message : String(error)}`,
+        impact: "x-bf-session-id behavior cannot be live-verified",
+      });
+    }
+  }
+
+  const pinnedBase = featureUnavailable(
+    "bifrost-pinned-fallbacks",
+    "Pinned routing fallbacks",
+    "2.2.3",
+    installedVersion,
+    "Provider-key pins on routing fallbacks are unavailable",
+  );
+  if (pinnedBase) {
+    results.push(pinnedBase);
+  } else if (!managementAuth) {
+    results.push({
+      id: "bifrost-pinned-fallbacks",
+      label: "Pinned routing fallbacks",
+      minimum: "2.2.3",
+      status: "inaccessible",
+      detail: "version gate passed, but management authentication is not configured for the routing API probe",
+      impact: "Pinned fallback contract cannot be live-verified",
+    });
+  } else {
+    try {
+      const rules = await getRoutingRules(url, managementAuth);
+      let objectFallbacks = 0;
+      let malformed = 0;
+      for (const rule of rules) {
+        const fallbacks = Array.isArray(rule?.fallbacks)
+          ? rule.fallbacks
+          : Array.isArray(rule?.fallback_models)
+            ? rule.fallback_models
+            : [];
+        for (const fallback of fallbacks) {
+          if (!fallback || typeof fallback !== "object" || Array.isArray(fallback)) continue;
+          objectFallbacks += 1;
+          if (!targetReference(fallback)) malformed += 1;
+        }
+      }
+      if (malformed > 0) {
+        results.push({
+          id: "bifrost-pinned-fallbacks",
+          label: "Pinned routing fallbacks",
+          minimum: "2.2.3",
+          status: "drifted",
+          detail: `routing API returned ${malformed} object fallback(s) without a model reference`,
+          impact: "Pifrost cannot safely preserve pinned fallback semantics",
+        });
+      } else {
+        results.push({
+          id: "bifrost-pinned-fallbacks",
+          label: "Pinned routing fallbacks",
+          minimum: "2.2.3",
+          status: "supported",
+          detail: `version contract satisfied; routing API verified (object fallbacks observed=${objectFallbacks})`,
+          impact: undefined,
+        });
+      }
+    } catch (error) {
+      results.push({
+        id: "bifrost-pinned-fallbacks",
+        label: "Pinned routing fallbacks",
+        minimum: "2.2.3",
+        ...compatibilityHttpFailure(error, "2.2.3", installedVersion, "/api/routing/rules"),
+        impact: "Pinned fallback contract cannot be live-verified",
+      });
+    }
+  }
+
+  const quotaBase = featureUnavailable(
+    "bifrost-quota-sourceref",
+    "Quota SourceRef provenance",
+    "2.2.3",
+    installedVersion,
+    "Structured governance provenance is unavailable",
+  );
+  if (quotaBase) {
+    results.push(quotaBase);
+  } else if (!virtualKey) {
+    results.push({
+      id: "bifrost-quota-sourceref",
+      label: "Quota SourceRef provenance",
+      minimum: "2.2.3",
+      status: "inaccessible",
+      detail: "version gate passed, but no inference Virtual Key is configured for the quota API probe",
+      impact: "Structured quota provenance cannot be live-verified",
+    });
+  } else {
+    const endpoint = "/api/governance/virtual-keys/quota";
+    try {
+      const quota = await getVirtualKeyQuota(url, virtualKey);
+      const arraysOk = ["budgets", "rate_limits", "provider_configs", "model_configs"]
+        .every((key) => Array.isArray(quota?.[key]));
+      const rows = [
+        ...(Array.isArray(quota?.budgets) ? quota.budgets : []),
+        ...(Array.isArray(quota?.rate_limits) ? quota.rate_limits : []),
+      ];
+      const sourceShapeOk = rows.every(validateSourceRefShape);
+      if (!arraysOk || !sourceShapeOk) {
+        results.push({
+          id: "bifrost-quota-sourceref",
+          label: "Quota SourceRef provenance",
+          minimum: "2.2.3",
+          status: "drifted",
+          detail: !arraysOk
+            ? "quota response is missing one or more expected arrays (budgets/rate_limits/provider_configs/model_configs)"
+            : "quota response contains a non-string SourceRef field",
+          impact: "Quota/provenance reporting may be incomplete or unsafe",
+        });
+      } else {
+        const sourced = rows.filter((row) => row?.source_type || row?.source_id || row?.source_name).length;
+        results.push({
+          id: "bifrost-quota-sourceref",
+          label: "Quota SourceRef provenance",
+          minimum: "2.2.3",
+          status: "supported",
+          detail: `live quota contract verified (sourced rows observed=${sourced})`,
+          impact: undefined,
+        });
+      }
+    } catch (error) {
+      results.push({
+        id: "bifrost-quota-sourceref",
+        label: "Quota SourceRef provenance",
+        minimum: "2.2.3",
+        ...compatibilityHttpFailure(error, "2.2.3", installedVersion, endpoint),
+        impact: "Structured quota provenance cannot be live-verified",
+      });
+    }
+  }
+
+  return results;
+}
+
+export async function buildCompatibilityMatrix({
+  url,
+  managementAuth,
+  virtualKey,
+  apiKey,
+  ompVersion = getOmpVersion(),
+  bifrostVersion,
+}) {
+  let resolvedBifrostVersion = parseSemver(bifrostVersion)?.version;
+  let bifrostVersionError;
+  if (url && !resolvedBifrostVersion) {
+    try {
+      resolvedBifrostVersion = parseSemver(await getBifrostVersion(url))?.version;
+      if (!resolvedBifrostVersion) bifrostVersionError = "Bifrost returned an unparseable version";
+    } catch (error) {
+      bifrostVersionError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const ompInstalled = commandExists("omp");
+  const ompFeatures = ompInstalled
+    ? ompCompatibilityMatrix(ompVersion)
+    : [
+        {
+          id: "omp-baseline",
+          label: "Pifrost OMP baseline",
+          minimum: PIFROST_OMP_MIN_VERSION,
+          status: "unavailable",
+          detail: "OMP is not installed or not on PATH",
+          impact: "Pifrost cannot operate as an OMP provider",
+        },
+        {
+          id: "omp-mcp-instructions",
+          label: "MCP instructions:false",
+          minimum: "18.3.1",
+          status: "unavailable",
+          detail: "OMP is not installed or not on PATH",
+          impact: "Repo MCP instruction suppression is unavailable",
+        },
+        {
+          id: "omp-cfg-protocol",
+          label: "cfg:// protocol",
+          minimum: "18.3.1",
+          status: "unavailable",
+          detail: "OMP is not installed or not on PATH",
+          impact: "Future cfg:// integration is unavailable",
+        },
+      ];
+
+  let bifrostFeatures = [];
+  if (!url) {
+    bifrostFeatures = [{
+      id: "bifrost-connectivity",
+      label: "Bifrost compatibility",
+      minimum: PIFROST_BIFROST_MIN_VERSION,
+      status: "inaccessible",
+      detail: "Bifrost URL is not configured",
+      impact: "Bifrost feature contracts cannot be verified",
+    }];
+  } else if (!resolvedBifrostVersion) {
+    bifrostFeatures = [{
+      id: "bifrost-version",
+      label: "Bifrost compatibility",
+      minimum: PIFROST_BIFROST_MIN_VERSION,
+      status: "inaccessible",
+      detail: bifrostVersionError ?? "Bifrost version is unavailable",
+      impact: "Bifrost feature contracts cannot be version-gated",
+    }];
+  } else if (versionAtLeast(resolvedBifrostVersion, PIFROST_BIFROST_MIN_VERSION) === false) {
+    bifrostFeatures = [{
+      id: "bifrost-baseline",
+      label: "Pifrost Bifrost baseline",
+      minimum: PIFROST_BIFROST_MIN_VERSION,
+      status: "unavailable",
+      detail: `requires Bifrost >= ${PIFROST_BIFROST_MIN_VERSION}; installed ${resolvedBifrostVersion}`,
+      impact: "Pifrost Bifrost integration is outside the supported baseline",
+    }];
+  } else {
+    bifrostFeatures = await bifrostCompatibilityMatrix({
+      url,
+      version: resolvedBifrostVersion,
+      managementAuth,
+      virtualKey,
+      apiKey,
+    });
+  }
+
+  return {
+    ompVersion: ompVersion ?? undefined,
+    bifrostVersion: resolvedBifrostVersion,
+    omp: ompFeatures,
+    bifrost: bifrostFeatures,
+  };
 }
 
 export function installOmpPlugin() {
