@@ -226,7 +226,7 @@ export function formatAgentAttributionReport(currentSessionId?: string): string 
 				continue;
 			}
 			for (const route of agent.routes) {
-				lines.push(`    ${agent.name} [${agent.kind}] -> ${route}: ${route.requests} request(s)`);
+				lines.push(`    ${agent.name} [${agent.kind}] -> ${route.route}: ${route.requests} request(s)`);
 			}
 		}
 	}
