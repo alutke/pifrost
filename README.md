@@ -546,6 +546,17 @@ The request is authenticated with the configured global Virtual Key; admin crede
 - provider-scoped budget/rate limits; and
 - model-scoped budget/rate limits.
 
+Bifrost 2.2.3+ also returns structured governance provenance for externally managed quota rows. Pifrost preserves the returned `source_type`, `source_id` and `source_name` in the OMP usage report's `metadata.governanceSources` map and adds a human-readable per-limit note. Direct Virtual Key, provider-config and model-config limits are tagged separately rather than being presented as inherited governance. External limits with the same budget/rate-limit ID remain distinct by source instead of being accidentally deduplicated.
+
+`pifrost global status` / `pifrost doctor` now list the observed governance sources, for example:
+
+```text
+Governance sources:
+  Access Profile "Engineering" [ap-eng]
+  Direct provider config: deepseek
+  Direct model config: deepseek/deepseek-v4-pro
+```
+
 This is read-only. Pifrost does not change Bifrost budgets, access profiles, provider/model allow-lists or rate limits.
 
 ---

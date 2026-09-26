@@ -15,6 +15,8 @@ import {
   loadState,
   normalizeBifrostUrl,
   normalizeVirtualMcp,
+  quotaGovernanceSources,
+  formatQuotaGovernanceSource,
   repoMcpInstructions,
   resolveVirtualMcpNames,
   virtualMcpsForVirtualKey,
@@ -312,4 +314,49 @@ test("effective repo MCP policy unions direct grants, Virtual MCPs and allowed-b
     },
     { client: "github", tools: ["*"], sources: ["default"] },
   ]);
+});
+
+
+test("quota governance diagnostics distinguish direct and external SourceRef origins", () => {
+  const sources = quotaGovernanceSources({
+    virtual_key_name: "omp-global",
+    budgets: [
+      { id: "direct", max_limit: 10 },
+      {
+        id: "profile",
+        max_limit: 20,
+        source_type: "access_profile",
+        source_id: "ap-eng",
+        source_name: "Engineering",
+      },
+    ],
+    rate_limits: [{
+      id: "project-rate",
+      source_type: "project",
+      source_id: "project-ai",
+      source_name: "AI Platform",
+    }],
+    provider_configs: [{ provider: "deepseek", budgets: [{ id: "provider" }] }],
+    model_configs: [{ provider: "deepseek", model_name: "deepseek-v4-pro", rate_limit: { id: "model" } }],
+  });
+
+  assert.deepEqual(sources, [
+    { kind: "virtual_key", name: "omp-global" },
+    {
+      kind: "external",
+      sourceType: "access_profile",
+      sourceId: "ap-eng",
+      sourceName: "Engineering",
+    },
+    {
+      kind: "external",
+      sourceType: "project",
+      sourceId: "project-ai",
+      sourceName: "AI Platform",
+    },
+    { kind: "provider_config", provider: "deepseek" },
+    { kind: "model_config", provider: "deepseek", modelId: "deepseek-v4-pro" },
+  ]);
+  assert.equal(formatQuotaGovernanceSource(sources[1]), 'Access Profile "Engineering" [ap-eng]');
+  assert.equal(formatQuotaGovernanceSource(sources[3]), "Direct provider config: deepseek");
 });

@@ -292,6 +292,86 @@ export async function getVirtualKeyQuota(url, virtualKey) {
   });
 }
 
+function quotaSourceRef(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const sourceType = nonEmpty(value.source_type);
+  const sourceId = nonEmpty(value.source_id);
+  const sourceName = nonEmpty(value.source_name) ?? nonEmpty(value.source);
+  if (!sourceType && !sourceId && !sourceName) return undefined;
+  return { sourceType, sourceId, sourceName };
+}
+
+export function quotaGovernanceSources(quota) {
+  if (!quota || typeof quota !== "object" || Array.isArray(quota)) return [];
+  const result = [];
+  const seen = new Set();
+  const add = (entry) => {
+    const key = JSON.stringify(entry);
+    if (seen.has(key)) return;
+    seen.add(key);
+    result.push(entry);
+  };
+
+  const rateSources = (Array.isArray(quota.rate_limits) ? quota.rate_limits : [])
+    .map(quotaSourceRef)
+    .filter(Boolean);
+  const rootRows = [
+    ...(Array.isArray(quota.budgets) ? quota.budgets : []),
+    ...(!rateSources.length && quota.rate_limit ? [quota.rate_limit] : []),
+  ];
+  let hasDirectVirtualKey = false;
+  const externalSources = [];
+  for (const row of rootRows) {
+    const source = quotaSourceRef(row);
+    if (source) externalSources.push(source);
+    else hasDirectVirtualKey = true;
+  }
+  externalSources.push(...rateSources);
+  if (hasDirectVirtualKey) {
+    add({ kind: "virtual_key", name: nonEmpty(quota.virtual_key_name) });
+  }
+  for (const source of externalSources) add({ kind: "external", ...source });
+
+  for (const config of Array.isArray(quota.provider_configs) ? quota.provider_configs : []) {
+    const provider = nonEmpty(config?.provider);
+    const hasGovernance =
+      (Array.isArray(config?.budgets) && config.budgets.length > 0) ||
+      Boolean(config?.rate_limit) ||
+      (Array.isArray(config?.rate_limits) && config.rate_limits.length > 0);
+    if (hasGovernance) add({ kind: "provider_config", provider });
+  }
+
+  for (const config of Array.isArray(quota.model_configs) ? quota.model_configs : []) {
+    const modelId = nonEmpty(config?.model_name) ?? nonEmpty(config?.model);
+    const provider = nonEmpty(config?.provider);
+    const hasGovernance =
+      (Array.isArray(config?.budgets) && config.budgets.length > 0) ||
+      Boolean(config?.rate_limit) ||
+      (Array.isArray(config?.rate_limits) && config.rate_limits.length > 0);
+    if (hasGovernance && modelId && modelId !== "*") add({ kind: "model_config", provider, modelId });
+  }
+
+  return result;
+}
+
+export function formatQuotaGovernanceSource(source) {
+  if (source?.kind === "external") {
+    const type = nonEmpty(source.sourceType)
+      ?.split(/[_-]+/u)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(" ") ?? "External";
+    const name = nonEmpty(source.sourceName);
+    const id = nonEmpty(source.sourceId);
+    return `${type}${name ? ` "${name}"` : ""}${id ? ` [${id}]` : ""}`;
+  }
+  if (source?.kind === "provider_config") return `Direct provider config: ${source.provider ?? "unknown"}`;
+  if (source?.kind === "model_config") {
+    return `Direct model config: ${source.provider ? `${source.provider}/` : ""}${source.modelId ?? "unknown"}`;
+  }
+  return `Direct Virtual Key${source?.name ? ` "${source.name}"` : ""}`;
+}
+
 export async function getComplexityAnalyzerConfig(url, auth) {
   const base = bifrostManagementBase(url);
   try {

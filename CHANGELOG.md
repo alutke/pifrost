@@ -18,6 +18,9 @@
 - Added repo-scoped OMP 18.3 MCP instruction control. `repo init --no-mcp-instructions` and `repo mcp instructions on|off|default` can suppress Bifrost's server-provided instructions without disabling its tools.
 - Pifrost preserves the existing Bifrost instruction policy across repo-config regeneration, modifies only its generated `mcpServers.bifrost` entry, and leaves unrelated MCP servers untouched.
 - `repo status` now reports the effective instruction policy, and CI pins the released OMP 18.3.2 schema/runtime contract for `instructions: false`.
+- Added Bifrost 2.2.3 structured quota provenance. Pifrost now preserves quota `SourceRef` fields (`source_type`, `source_id`, `source_name`) in OMP report metadata and per-limit notes while explicitly distinguishing direct VK/provider/model governance from externally inherited governance.
+- External budgets/rate limits that reuse the same Bifrost row ID are source-qualified in their OMP limit IDs so they are not collapsed during deduplication; legacy pre-`SourceRef` `source` labels remain supported.
+- `global status` and `doctor` now surface observed governance origins, and CI pins the released Bifrost 2.2.3 `SourceRef` and sourced-quota contracts.
 
 ## 0.4.0
 

@@ -26,6 +26,7 @@ import {
   getBifrostConfig,
   getVirtualKeyQuota,
   getComplexityAnalyzerConfig,
+  formatQuotaGovernanceSource,
   getVirtualKey,
   installOmpPlugin,
   listMcpClients,
@@ -35,6 +36,7 @@ import {
   managementAuthFromState,
   managementAuthLabel,
   normalizeBifrostUrl,
+  quotaGovernanceSources,
   removeRepoState,
   repoIdentity,
   repoMcpInstructions,
@@ -436,6 +438,11 @@ async function commandGlobalStatus() {
       const providerConfigs = Array.isArray(quota?.provider_configs) ? quota.provider_configs.length : 0;
       const rateLimits = (quota?.rate_limit ? 1 : 0) + (Array.isArray(quota?.rate_limits) ? quota.rate_limits.length : 0);
       console.log(`VK governance/quota:    OK (budgets=${budgets}, rate-limits=${rateLimits}, providers=${providerConfigs}, models=${modelConfigs})`);
+      const sources = quotaGovernanceSources(quota);
+      if (sources.length) {
+        console.log("Governance sources:");
+        for (const source of sources) console.log(`  ${formatQuotaGovernanceSource(source)}`);
+      }
     } catch (error) {
       console.log(`VK governance/quota:    unavailable (${formatError(error)})`);
     }

@@ -66,6 +66,16 @@ const SOURCES = [
     required: ["Session affinity", "x-bf-session-id", "x-bf-session-affinity", "BifrostContextKeySessionID"],
   },
   {
+    name: "Bifrost 2.2.3 quota SourceRef contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/framework/configstore/tables/modelconfig.go`,
+    required: ["type SourceRef struct", "source_type", "source_id", "source_name"],
+  },
+  {
+    name: "Bifrost 2.2.3 sourced quota contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/transports/bifrost-http/handlers/governance.go`,
+    required: ["SourcedBudget", "SourcedRateLimit", "rate_limits", "getVirtualKeyQuota"],
+  },
+  {
     name: "Bifrost 2.2.3 pinned-fallback API contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/ui/lib/types/routingRules.ts`,
     required: ["RoutingFallbackObject", "RoutingFallbackWire", "key_id", "fallbacks"],

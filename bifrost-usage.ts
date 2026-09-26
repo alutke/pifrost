@@ -9,6 +9,18 @@ import type { BifrostConfig } from "./index.ts";
 
 type JsonRecord = Record<string, unknown>;
 
+export interface BifrostQuotaProvenance {
+	kind: "virtual_key" | "virtual_key_effective" | "provider_config" | "model_config" | "external";
+	direct: boolean;
+	virtualKeyName?: string;
+	provider?: string;
+	modelId?: string;
+	sourceType?: string;
+	sourceId?: string;
+	sourceName?: string;
+	legacySource?: string;
+}
+
 function record(value: unknown): JsonRecord | undefined {
 	return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : undefined;
 }
@@ -29,6 +41,72 @@ function positive(value: unknown): number | undefined {
 
 function asArray(value: unknown): unknown[] {
 	return Array.isArray(value) ? value : [];
+}
+
+function sourceRef(value: JsonRecord | undefined): Pick<BifrostQuotaProvenance, "sourceType" | "sourceId" | "sourceName" | "legacySource"> {
+	if (!value) return {};
+	return {
+		...(text(value.source_type) ? { sourceType: text(value.source_type) } : {}),
+		...(text(value.source_id) ? { sourceId: text(value.source_id) } : {}),
+		...(text(value.source_name) ? { sourceName: text(value.source_name) } : {}),
+		...(text(value.source) ? { legacySource: text(value.source) } : {}),
+	};
+}
+
+function hasSourceRef(value: JsonRecord | undefined): boolean {
+	const source = sourceRef(value);
+	return Boolean(source.sourceType || source.sourceId || source.sourceName || source.legacySource);
+}
+
+function withRowSource(base: BifrostQuotaProvenance, value: JsonRecord | undefined): BifrostQuotaProvenance {
+	const source = sourceRef(value);
+	if (!(source.sourceType || source.sourceId || source.sourceName || source.legacySource)) return base;
+	return {
+		...base,
+		kind: "external",
+		direct: false,
+		...source,
+	};
+}
+
+function humanSourceType(value: string | undefined): string | undefined {
+	if (!value) return undefined;
+	return value
+		.split(/[_-]+/u)
+		.filter(Boolean)
+		.map(part => part.charAt(0).toUpperCase() + part.slice(1))
+		.join(" ");
+}
+
+function provenanceNote(source: BifrostQuotaProvenance): string {
+	if (source.kind === "external") {
+		const type = humanSourceType(source.sourceType) ?? "External governance";
+		const name = source.sourceName ?? source.legacySource;
+		const id = source.sourceId;
+		return `Governance source: ${type}${name ? ` "${name}"` : ""}${id ? ` (id ${id})` : ""}.`;
+	}
+	if (source.kind === "provider_config") {
+		return `Governance source: direct Virtual Key provider config${source.provider ? ` "${source.provider}"` : ""}.`;
+	}
+	if (source.kind === "model_config") {
+		return `Governance source: direct Virtual Key model config${source.modelId ? ` "${source.modelId}"` : ""}${source.provider ? ` via ${source.provider}` : ""}.`;
+	}
+	if (source.kind === "virtual_key_effective") {
+		return "Governance source: effective Virtual Key rate limit merged from externally governed sources.";
+	}
+	return `Governance source: direct Virtual Key${source.virtualKeyName ? ` "${source.virtualKeyName}"` : ""}.`;
+}
+
+function sourceIdentity(source: BifrostQuotaProvenance): string | undefined {
+	if (source.kind !== "external") return undefined;
+	const type = source.sourceType ?? "external";
+	const identity = source.sourceId ?? source.sourceName ?? source.legacySource;
+	return identity ? `${type}:${identity}` : type;
+}
+
+function provenanceLimitId(baseId: string, source: BifrostQuotaProvenance): string {
+	const identity = sourceIdentity(source);
+	return identity ? `${baseId}:source:${encodeURIComponent(identity)}` : baseId;
 }
 
 function managementBase(url: string): string {
@@ -105,6 +183,7 @@ function budgetLimit(
 	budget: JsonRecord,
 	scope: { provider?: string; modelId?: string; tier?: string; shared?: boolean },
 	prefix: string,
+	provenance: BifrostQuotaProvenance,
 ): UsageLimit | undefined {
 	const max = positive(budget.max_limit);
 	if (!max) return undefined;
@@ -113,8 +192,13 @@ function budgetLimit(
 	const used = finite(budget.current_usage) ?? 0;
 	const resetDuration = text(budget.reset_duration);
 	const id = text(budget.id) ?? `${prefix}:budget:${resetDuration ?? "unknown"}`;
+	const limitId = provenanceLimitId(`${prefix}:budget:${id}`, provenance);
+	const notes = [
+		...(override > 0 ? [`Includes active Bifrost budget override of ${override.toFixed(2)}.`] : []),
+		provenanceNote(provenance),
+	];
 	return {
-		id: `${prefix}:budget:${id}`,
+		id: limitId,
 		label: `Bifrost budget${scope.modelId ? ` · ${scope.modelId}` : scope.provider ? ` · ${scope.provider}` : ""}`,
 		scope: {
 			provider: "bifrost" as Provider,
@@ -131,7 +215,7 @@ function budgetLimit(
 		} : undefined,
 		amount: amount(used, limit, "usd"),
 		status: statusFor(used, limit),
-		notes: override > 0 ? [`Includes active Bifrost budget override of $${override.toFixed(2)}.`] : undefined,
+		notes,
 	};
 }
 
@@ -139,6 +223,7 @@ function rateLimits(
 	rate: JsonRecord | undefined,
 	scope: { provider?: string; modelId?: string; shared?: boolean },
 	prefix: string,
+	provenance: BifrostQuotaProvenance,
 ): UsageLimit[] {
 	if (!rate) return [];
 	const result: UsageLimit[] = [];
@@ -152,7 +237,7 @@ function rateLimits(
 		const lastReset = rate[`${kind}_last_reset`];
 		const unit = kind === "token" ? "tokens" : "requests";
 		result.push({
-			id: `${prefix}:${kind}:${baseId}`,
+			id: provenanceLimitId(`${prefix}:${kind}:${baseId}`, provenance),
 			label: `Bifrost ${kind} rate limit${scope.modelId ? ` · ${scope.modelId}` : scope.provider ? ` · ${scope.provider}` : ""}`,
 			scope: {
 				provider: "bifrost" as Provider,
@@ -169,6 +254,7 @@ function rateLimits(
 			} : undefined,
 			amount: amount(used, max, unit),
 			status: statusFor(used, max),
+			notes: [provenanceNote(provenance)],
 		});
 	}
 	return result;
@@ -176,19 +262,39 @@ function rateLimits(
 
 function pushGovernance(
 	limits: UsageLimit[],
+	provenanceByLimit: Record<string, BifrostQuotaProvenance>,
 	value: JsonRecord,
 	scope: { provider?: string; modelId?: string; shared?: boolean },
 	prefix: string,
+	baseProvenance: BifrostQuotaProvenance,
+	rateProvenance: BifrostQuotaProvenance = baseProvenance,
 ): void {
 	for (const raw of asArray(value.budgets)) {
 		const budget = record(raw);
 		if (!budget) continue;
-		const limit = budgetLimit(budget, scope, prefix);
-		if (limit) limits.push(limit);
+		const provenance = withRowSource(baseProvenance, budget);
+		const limit = budgetLimit(budget, scope, prefix, provenance);
+		if (limit) {
+			limits.push(limit);
+			provenanceByLimit[limit.id] = provenance;
+		}
 	}
-	limits.push(...rateLimits(record(value.rate_limit), scope, prefix));
+	for (const limit of rateLimits(
+		record(value.rate_limit),
+		scope,
+		prefix,
+		withRowSource(rateProvenance, record(value.rate_limit)),
+	)) {
+		limits.push(limit);
+		provenanceByLimit[limit.id] = withRowSource(rateProvenance, record(value.rate_limit));
+	}
 	for (const raw of asArray(value.rate_limits)) {
-		limits.push(...rateLimits(record(raw), scope, prefix));
+		const rate = record(raw);
+		const provenance = withRowSource(baseProvenance, rate);
+		for (const limit of rateLimits(rate, scope, prefix, provenance)) {
+			limits.push(limit);
+			provenanceByLimit[limit.id] = provenance;
+		}
 	}
 }
 
@@ -196,14 +302,51 @@ export function parseBifrostQuota(payload: unknown, fetchedAt = Date.now()): Usa
 	const root = record(payload);
 	if (!root) return null;
 	const limits: UsageLimit[] = [];
+	const provenanceByLimit: Record<string, BifrostQuotaProvenance> = {};
+	const virtualKeyName = text(root.virtual_key_name);
+	const directVirtualKey: BifrostQuotaProvenance = {
+		kind: "virtual_key",
+		direct: true,
+		...(virtualKeyName ? { virtualKeyName } : {}),
+	};
+	const hasExternalRateSources = asArray(root.rate_limits)
+		.map(record)
+		.some(hasSourceRef);
+	const effectiveRateSource: BifrostQuotaProvenance = hasExternalRateSources
+		? {
+			kind: "virtual_key_effective",
+			direct: false,
+			...(virtualKeyName ? { virtualKeyName } : {}),
+		}
+		: directVirtualKey;
 
-	pushGovernance(limits, root, { shared: true }, "vk");
+	pushGovernance(
+		limits,
+		provenanceByLimit,
+		root,
+		{ shared: true },
+		"vk",
+		directVirtualKey,
+		effectiveRateSource,
+	);
 
 	for (const raw of asArray(root.provider_configs)) {
 		const cfg = record(raw);
 		if (!cfg) continue;
 		const provider = text(cfg.provider);
-		pushGovernance(limits, cfg, { provider, shared: true }, `provider:${provider ?? "unknown"}`);
+		pushGovernance(
+			limits,
+			provenanceByLimit,
+			cfg,
+			{ provider, shared: true },
+			`provider:${provider ?? "unknown"}`,
+			{
+				kind: "provider_config",
+				direct: true,
+				...(virtualKeyName ? { virtualKeyName } : {}),
+				...(provider ? { provider } : {}),
+			},
+		);
 	}
 
 	for (const raw of asArray(root.model_configs)) {
@@ -212,7 +355,20 @@ export function parseBifrostQuota(payload: unknown, fetchedAt = Date.now()): Usa
 		const modelId = text(cfg.model_name) ?? text(cfg.model);
 		if (!modelId || modelId === "*") continue;
 		const provider = text(cfg.provider);
-		pushGovernance(limits, cfg, { provider, modelId, shared: false }, `model:${provider ?? "any"}:${modelId}`);
+		pushGovernance(
+			limits,
+			provenanceByLimit,
+			cfg,
+			{ provider, modelId, shared: false },
+			`model:${provider ?? "any"}:${modelId}`,
+			{
+				kind: "model_config",
+				direct: true,
+				...(virtualKeyName ? { virtualKeyName } : {}),
+				...(provider ? { provider } : {}),
+				modelId,
+			},
+		);
 	}
 
 	const deduped = [...new Map(limits.map((limit) => [limit.id, limit])).values()];
@@ -225,8 +381,9 @@ export function parseBifrostQuota(payload: unknown, fetchedAt = Date.now()): Usa
 			...(root.is_active === false ? ["This Bifrost Virtual Key is inactive."] : []),
 		],
 		metadata: {
-			virtualKeyName: text(root.virtual_key_name),
+			virtualKeyName,
 			isActive: root.is_active !== false,
+			governanceSources: provenanceByLimit,
 		},
 	};
 }
