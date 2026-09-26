@@ -56,6 +56,10 @@ export function nonEmpty(value) {
   return trimmed || undefined;
 }
 
+function unique(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
 function nonEmptySecret(value) {
   if (typeof value !== "string" || value.length === 0) return undefined;
   return value;
@@ -592,7 +596,12 @@ export function ompCompatibilityMatrix(version) {
   ];
 }
 
+class CompatibilityContractError extends Error {}
+
 function compatibilityHttpFailure(error, minimum, installedVersion, endpoint) {
+  if (error instanceof CompatibilityContractError) {
+    return { status: "drifted", detail: error.message };
+  }
   if (error instanceof PifrostHttpError) {
     if ([401, 403].includes(error.status)) {
       return { status: "inaccessible", detail: `${endpoint} rejected the configured credentials (HTTP ${error.status})` };
@@ -676,12 +685,12 @@ export async function bifrostCompatibilityMatrix({
             { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
           );
           if (!Array.isArray(body?.virtual_mcps)) {
-            throw new Error(`${endpoint} responded but no virtual_mcps array was present`);
+            throw new CompatibilityContractError(`${endpoint} responded but no virtual_mcps array was present`);
           }
           return body.virtual_mcps;
         },
       );
-      if (!Array.isArray(virtualMcps)) throw new Error(`${endpoint} returned an invalid Virtual MCP collection`);
+      if (!Array.isArray(virtualMcps)) throw new CompatibilityContractError(`${endpoint} returned an invalid Virtual MCP collection`);
       results.push({
         id: "bifrost-virtual-mcp",
         label: "Virtual MCPs",
@@ -730,11 +739,11 @@ export async function bifrostCompatibilityMatrix({
             `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0&sort_by=name&order=asc`,
             { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
           );
-          if (!Array.isArray(body?.skills)) throw new Error(`${endpoint} responded but no skills array was present`);
+          if (!Array.isArray(body?.skills)) throw new CompatibilityContractError(`${endpoint} responded but no skills array was present`);
           return body.skills;
         },
       );
-      if (!Array.isArray(skills)) throw new Error(`${endpoint} returned an invalid Skills collection`);
+      if (!Array.isArray(skills)) throw new CompatibilityContractError(`${endpoint} returned an invalid Skills collection`);
       results.push({
         id: "bifrost-skills",
         label: "Bifrost Skills",
