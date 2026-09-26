@@ -24,6 +24,11 @@
 - Added an upstream compatibility matrix to `pifrost doctor`, including installed OMP/Bifrost version detection, minimum-version gates, and non-mutating live probes for Virtual MCPs, the inference/session path, routing/pinned fallbacks, and quota SourceRef responses.
 - Compatibility results distinguish `supported`, `unavailable`, `inaccessible`, and `drifted`; each degraded capability explains the affected Pifrost behavior instead of reducing all failures to a generic connectivity error.
 - OMP doctor coverage now reports the tested 18.3.2 baseline plus 18.3.1+ MCP `instructions:false` and `cfg://` capability gates, while Bifrost feature gates document 2.2.0 Virtual MCPs, 2.2.2 session affinity, and 2.2.3 pinned fallbacks/quota SourceRef.
+- Added native OMP `cfg://` integration for the Pifrost-owned setting set (`modelProviderOrder`, `enabledModels`, `retry.modelFallback`, task effort/LSP, and `modelRoles`). Reads use OMP's active `Settings` instance and report effective values plus provenance.
+- Added `/pifrost config status|apply|set|save`. All mutations run through OMP's exported `CfgProtocolHandler`, preserving its user-approval host, session-only vs `/save` semantics, validation, environment/project shadowing behavior, and persistence path.
+- The cfg bridge is restricted to the interactive top-level OMP session and verifies cwd scope before reading or writing, preventing a rebound subagent or headless session from mutating the wrong settings instance.
+- `/pifrost doctor` now includes Pifrost-relevant OMP setting provenance, while the standalone `pifrost global configure-omp` command remains the bootstrap/recovery path.
+- CI now pins the released OMP 18.3.2 `CfgProtocolHandler` approval/session/persistence contract in addition to the MCP contract.
 
 ## 0.4.0
 

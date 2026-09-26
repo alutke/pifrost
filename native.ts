@@ -42,6 +42,15 @@ import {
 	type DynamicRouteProfile,
 } from "./dynamic-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
+import {
+	activePifrostCfgSession,
+	applyPifrostOmpProfile,
+	formatPifrostOmpProfile,
+	formatPifrostOmpWrites,
+	normalizePifrostOmpSetting,
+	readPifrostOmpProfile,
+	writePifrostOmpSetting,
+} from "./omp-cfg.ts";
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 
@@ -350,11 +359,93 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	});
 
 	pi.registerCommand("pifrost", {
-		description: "Pifrost diagnostics; use /pifrost doctor or /pifrost refresh",
+		description: "Pifrost diagnostics, refresh and approval-aware OMP cfg:// integration",
 		handler: async (args, ctx) => {
-			const command = args.trim().toLowerCase() || "doctor";
+			const raw = args.trim();
+			const command = raw.split(/\s+/u, 1)[0]?.toLowerCase() || "doctor";
+			const cfgSession = async () => {
+				if (ctx.agent.kind !== "main" || ctx.mode !== "tui" || !ctx.hasUI) {
+					throw new Error("Pifrost cfg:// integration is available only in the interactive top-level OMP session");
+				}
+				return await activePifrostCfgSession({
+					cwd: ctx.cwd,
+					sessionId: ctx.sessionManager.getSessionId(),
+					hasUI: ctx.hasUI,
+					settingsApproval: true,
+					taskDepth: ctx.agent.depth,
+					agentKind: ctx.agent.kind,
+				});
+			};
+
+			if (command === "config") {
+				try {
+					const session = await cfgSession();
+					const rest = raw.slice("config".length).trim();
+					if (!rest || rest.toLowerCase() === "status") {
+						ctx.ui.notify(formatPifrostOmpProfile(await readPifrostOmpProfile(session)), "info");
+						return;
+					}
+
+					const apply = rest.match(/^apply(?:\s+(save))?$/iu);
+					if (apply) {
+						const save = Boolean(apply[1]);
+						const writes = await applyPifrostOmpProfile(session, save);
+						ctx.ui.notify(formatPifrostOmpWrites(writes), writes.some((item) => item.outcome === "declined") ? "warning" : "info");
+						if (!save && writes.some((item) => item.outcome === "applied")) {
+							const persist = await ctx.ui.confirm(
+								"Persist Pifrost OMP profile?",
+								"Session settings were applied through cfg://. Save the same values to global config.yml? OMP will still request approval for the persistent write.",
+							);
+							if (persist) {
+								const saved = await applyPifrostOmpProfile(session, true);
+								ctx.ui.notify(formatPifrostOmpWrites(saved), saved.some((item) => item.outcome === "declined") ? "warning" : "info");
+							}
+						}
+						return;
+					}
+
+					const mutation = rest.match(/^(set|save)\s+(\S+)\s+([\s\S]+)$/iu);
+					if (!mutation) {
+						ctx.ui.notify(
+							"Usage: /pifrost config [status] | apply [save] | set <setting> <json> | save <setting> <json>",
+							"warning",
+						);
+						return;
+					}
+					const [, action, key, value] = mutation;
+					const setting = normalizePifrostOmpSetting(key);
+					if (!setting) {
+						ctx.ui.notify(
+							`Pifrost does not own OMP setting "${key}". Use cfg:// directly for non-Pifrost settings.`,
+							"warning",
+						);
+						return;
+					}
+					const save = action.toLowerCase() === "save";
+					const result = await writePifrostOmpSetting(session, setting, value, save);
+					ctx.ui.notify(formatPifrostOmpWrites([result]), result.outcome === "declined" ? "warning" : "info");
+					if (!save && result.outcome === "applied") {
+						const persist = await ctx.ui.confirm(
+							`Persist ${setting.id}?`,
+							"Save this approved session change to global config.yml? OMP will request approval for the persistent write.",
+						);
+						if (persist) {
+							const saved = await writePifrostOmpSetting(session, setting, value, true);
+							ctx.ui.notify(formatPifrostOmpWrites([saved]), saved.outcome === "declined" ? "warning" : "info");
+						}
+					}
+					return;
+				} catch (error) {
+					ctx.ui.notify(`Pifrost config failed: ${error instanceof Error ? error.message : String(error)}`, "error");
+					return;
+				}
+			}
+
 			if (command !== "doctor" && command !== "refresh") {
-				ctx.ui.notify("Usage: /pifrost doctor | /pifrost refresh", "warning");
+				ctx.ui.notify(
+					"Usage: /pifrost doctor | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"warning",
+				);
 				return;
 			}
 			if (!config?.virtualKey) {
@@ -382,8 +473,16 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 					const catalog = await fetchFreshCatalog(config, aliasSource);
 					diagnostics = catalog.diagnostics;
 				}
+				let report = formatDoctorReport(diagnostics, aliasSource.path);
+				if (ctx.agent.kind === "main" && ctx.mode === "tui" && ctx.hasUI) {
+					try {
+						report += `\n\n${formatPifrostOmpProfile(await readPifrostOmpProfile(await cfgSession()))}`;
+					} catch (error) {
+						report += `\n\nOMP Pifrost configuration: unavailable (${error instanceof Error ? error.message : String(error)})`;
+					}
+				}
 				ctx.ui.notify(
-					formatDoctorReport(diagnostics, aliasSource.path),
+					report,
 					diagnostics.some((item) => item.unresolved.length) ? "warning" : "info",
 				);
 			} catch (error) {

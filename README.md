@@ -380,7 +380,9 @@ Apply the recommended OMP settings with:
 pifrost global configure-omp
 ```
 
-Pifrost uses OMP's schema-aware CLI and backs up the previous global config. The effective settings are equivalent to:
+Pifrost uses OMP's schema-aware CLI and backs up the previous global config. This remains the bootstrap/recovery path. Inside an interactive OMP session, Pifrost now uses OMP's native `cfg://` protocol so reads show the **effective value and provenance** and writes retain OMP's normal approval flow.
+
+The effective settings are equivalent to:
 
 ```yaml
 modelProviderOrder:
@@ -410,6 +412,43 @@ task:
 ```
 
 `retry.modelFallback` should remain `false` when Bifrost owns provider/model fallback.
+
+### Interactive `cfg://` integration
+
+Within the top-level OMP TUI:
+
+```text
+/pifrost config
+/pifrost config status
+```
+
+shows the Pifrost-owned settings with their current OMP provenance, such as `global config`, `project config`, `environment variable`, or `session override`.
+
+Apply the recommended Pifrost profile as **session-only overrides**:
+
+```text
+/pifrost config apply
+```
+
+OMP's own `cfg://` approval host authorizes each change. After an approved session change, Pifrost offers to persist the same profile; persistent writes still go through a second OMP approval step.
+
+Apply directly to the global OMP config (still approval-gated by OMP):
+
+```text
+/pifrost config apply save
+```
+
+Individual Pifrost-owned settings can be changed with JSON values:
+
+```text
+/pifrost config set retry.modelFallback false
+/pifrost config set modelRoles {"advisor":"bifrost/omp-advisor"}
+/pifrost config save task.enableLsp true
+```
+
+The bridge is intentionally limited to Pifrost-owned settings. For other OMP settings, use the canonical `cfg://` surface directly. Pifrost refuses cfg writes from subagents and headless/RPC sessions, and refuses to operate if the active OMP settings cwd does not match the command session.
+
+`/pifrost doctor` also includes this effective-value/provenance view when run from the interactive top-level OMP session.
 
 ---
 

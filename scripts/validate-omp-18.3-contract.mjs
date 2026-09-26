@@ -18,6 +18,18 @@ const SOURCES = [
       "connection.config.instructions !== false",
     ],
   },
+  {
+    name: "OMP 18.3.2 cfg:// approval and persistence contract",
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_3_2_COMMIT}/packages/coding-agent/src/internal-urls/cfg-protocol.ts`,
+    required: [
+      "export class CfgProtocolHandler",
+      "setCfgApprovalHost",
+      "session.settingsApproval !== true",
+      "Changing settings requires user approval",
+      "leaf.override(settings, value)",
+      "await persistent.flush()",
+    ],
+  },
 ];
 
 for (const source of SOURCES) {
