@@ -37,6 +37,9 @@
     "bifrost-usage.ts",
     "pricing-normalize.ts",
     "pricing-time.ts",
+    "routing-core.ts",
+    "http-client.mjs",
+    "doctor-probes.mjs",
     "skills-bridge.mjs",
     "cli.mjs",
     "cli-entry.mjs",
@@ -60,7 +63,7 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-cli.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
+    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-entry.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check doctor-probes.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-cli.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",

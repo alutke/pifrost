@@ -93,6 +93,12 @@ export function loadStoredSecrets(env: NodeJS.ProcessEnv = process.env): Pifrost
  * This is intentionally inference-only. Neither OSS admin credentials nor an
  * Enterprise management API key are exposed to the OMP extension runtime.
  */
+export function storedRuntimeConfigDiagnostics(env: NodeJS.ProcessEnv = process.env): string[] {
+	const config = loadStoredConfigResult(env);
+	const secrets = loadStoredSecretsResult(env);
+	return [config.error, secrets.error].filter((value): value is string => Boolean(value));
+}
+
 export function loadStoredRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Partial<BifrostConfig> {
 	const config = loadStoredConfig(env);
 	const secrets = loadStoredSecrets(env);

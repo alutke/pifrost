@@ -1,14 +1,21 @@
 import {
+  createWriteStream,
   existsSync,
+  lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
+import { Readable, Transform } from "node:stream";
+import { pipeline } from "node:stream/promises";
 
 import {
   bifrostManagementBase,
@@ -177,25 +184,47 @@ export function safeSkillFilePath(value) {
   return parts.join("/");
 }
 
-async function requestBytes(url, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
-  try {
-    const response = await fetch(url, { headers: { Accept: "*/*" }, signal: controller.signal });
-    if (!response.ok) {
-      const detail = (await response.text().catch(() => "")).slice(0, 500);
-      throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
-    }
-    const buffer = Buffer.from(await response.arrayBuffer());
-    const maxBytes = options.maxBytes ?? 50 * 1024 * 1024;
-    if (buffer.length > maxBytes) throw new Error(`Downloaded skill file exceeds ${maxBytes} bytes`);
-    return buffer;
-  } catch (error) {
-    if (error?.name === "AbortError") throw new Error(`Request timed out: ${url}`);
-    throw error;
-  } finally {
-    clearTimeout(timeout);
+async function downloadSkillFile(url, destination, budget, options = {}) {
+  const maxFileBytes = options.maxFileBytes ?? 50 * 1024 * 1024;
+  const response = await fetch(url, {
+    headers: { Accept: "*/*" },
+    signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
+  });
+  if (!response.ok || !response.body) {
+    const detail = (await response.text().catch(() => "")).slice(0, 500);
+    throw new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
   }
+
+  const declared = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declared) && declared > maxFileBytes) {
+    throw new Error(`Downloaded skill file exceeds ${maxFileBytes} bytes`);
+  }
+  if (Number.isFinite(declared) && budget.total + declared > budget.max) {
+    throw new Error(`Bifrost skill exceeds the ${Math.floor(budget.max / (1024 * 1024))} MB bridge safety limit`);
+  }
+
+  let fileBytes = 0;
+  const limiter = new Transform({
+    transform(chunk, _encoding, callback) {
+      fileBytes += chunk.length;
+      budget.total += chunk.length;
+      if (fileBytes > maxFileBytes) {
+        callback(new Error(`Downloaded skill file exceeds ${maxFileBytes} bytes`));
+        return;
+      }
+      if (budget.total > budget.max) {
+        callback(new Error(`Bifrost skill exceeds the ${Math.floor(budget.max / (1024 * 1024))} MB bridge safety limit`));
+        return;
+      }
+      callback(null, chunk);
+    },
+  });
+
+  await pipeline(
+    Readable.fromWeb(response.body),
+    limiter,
+    createWriteStream(destination, { flags: "wx", mode: 0o644 }),
+  );
 }
 
 export async function fetchBifrostSkillBundle(url, managementAuth, summary) {
@@ -205,22 +234,15 @@ export async function fetchBifrostSkillBundle(url, managementAuth, summary) {
     throw new Error(`Bifrost skill ${skill.name} is not safely representable in OMP: ${compatibility.reason}`);
   }
   const base = bifrostManagementBase(url);
-  const files = [];
-  let totalBytes = Buffer.byteLength(composeBifrostSkillMarkdown(skill), "utf8");
-  const maxBundleBytes = 500 * 1024 * 1024;
-  for (const file of Array.isArray(skill.raw?.files) ? skill.raw.files : []) {
+  const files = (Array.isArray(skill.raw?.files) ? skill.raw.files : []).map((file) => {
     const path = safeSkillFilePath(file?.path);
     const encoded = path.split("/").map((part) => encodeURIComponent(part)).join("/");
-    const data = await requestBytes(
-      `${base}/api/skills/serve/${encodeURIComponent(skill.name)}/files/${encoded}`,
-      { timeoutMs: 30_000 },
-    );
-    totalBytes += data.length;
-    if (totalBytes > maxBundleBytes) {
-      throw new Error(`Bifrost skill ${skill.name} exceeds the 500 MB bridge safety limit`);
-    }
-    files.push({ path, data });
-  }
+    return {
+      path,
+      url: `${base}/api/skills/serve/${encodeURIComponent(skill.name)}/files/${encoded}`,
+      declaredBytes: Number.isFinite(Number(file?.file_size_bytes)) ? Number(file.file_size_bytes) : undefined,
+    };
+  });
   return {
     skill,
     markdown: composeBifrostSkillMarkdown(skill),
@@ -239,9 +261,11 @@ function markerPath(repoRoot, name) {
   return join(bifrostSkillInstallPath(repoRoot, name), BIFROST_SKILL_MARKER);
 }
 export function readBifrostSkillMarker(repoRoot, name) {
+  const target = bifrostSkillInstallPath(repoRoot, name);
   const path = markerPath(repoRoot, name);
-  if (!existsSync(path)) return undefined;
+  if (!existsSync(target) || !existsSync(path)) return undefined;
   try {
+    if (lstatSync(target).isSymbolicLink() || lstatSync(path).isSymbolicLink()) return undefined;
     const marker = JSON.parse(readFileSync(path, "utf8"));
     if (marker?.provider !== "bifrost" || marker?.name !== name) return undefined;
     return marker;
@@ -333,7 +357,33 @@ export function findOmpSkillCollisions(repoRoot, name, options = {}) {
   return [...new Set(collisions)];
 }
 
-export function installBifrostSkillBundle(repoRoot, bundle, options = {}) {
+function secureSkillParent(repoRoot, create) {
+  const root = realpathSync(repoRoot);
+  let current = root;
+  for (const component of [".agents", "skills"]) {
+    const next = join(current, component);
+    if (existsSync(next)) {
+      const stat = lstatSync(next);
+      if (stat.isSymbolicLink()) throw new Error(`Refusing symlinked Skill path: ${next}`);
+      if (!stat.isDirectory()) throw new Error(`Expected Skill directory: ${next}`);
+    } else if (create) {
+      mkdirSync(next, { mode: 0o700 });
+    } else {
+      return undefined;
+    }
+    current = next;
+  }
+  return current;
+}
+
+function assertSafeManagedTarget(target) {
+  if (!existsSync(target)) return;
+  const stat = lstatSync(target);
+  if (stat.isSymbolicLink()) throw new Error(`Refusing symlinked Skill target: ${target}`);
+  if (!stat.isDirectory()) throw new Error(`Expected Skill directory: ${target}`);
+}
+
+export async function installBifrostSkillBundle(repoRoot, bundle, options = {}) {
   const name = bundle?.skill?.name;
   const version = bundle?.skill?.version;
   const skillId = bundle?.skill?.id;
@@ -341,28 +391,41 @@ export function installBifrostSkillBundle(repoRoot, bundle, options = {}) {
   const compatibility = bifrostSkillCompatibility(bundle.skill.raw ?? bundle.skill);
   if (!compatibility.compatible) throw new Error(`Bifrost skill ${name} is not safely representable in OMP: ${compatibility.reason}`);
 
-  const target = bifrostSkillInstallPath(repoRoot, name);
+  const parent = secureSkillParent(repoRoot, true);
+  const target = join(parent, name);
+  assertSafeManagedTarget(target);
   const existingMarker = readBifrostSkillMarker(repoRoot, name);
   if (existsSync(target) && !existingMarker) throw new Error(`OMP skill collision: ${target} exists but is not owned by Pifrost`);
   const collisions = findOmpSkillCollisions(repoRoot, name, options).filter((path) => resolve(path) !== resolve(target));
   if (collisions.length) throw new Error(`OMP skill collision for "${name}": ${collisions.join(", ")}`);
 
-  const parent = dirname(target);
-  mkdirSync(parent, { recursive: true });
-  const nonce = `${process.pid}-${Date.now()}`;
-  const staging = join(parent, `.${name}.pifrost-tmp-${nonce}`);
-  const backup = join(parent, `.${name}.pifrost-backup-${nonce}`);
-  rmSync(staging, { recursive: true, force: true });
-  mkdirSync(staging, { recursive: true });
+  const staging = mkdtempSync(join(parent, `.${name}.pifrost-tmp-`));
+  const backup = join(parent, `.${name}.pifrost-backup-${randomUUID()}`);
   try {
     writeFileSync(join(staging, "SKILL.md"), bundle.markdown, { mode: 0o644 });
+    const budget = {
+      total: Buffer.byteLength(bundle.markdown, "utf8"),
+      max: options.maxBundleBytes ?? 500 * 1024 * 1024,
+    };
     for (const file of bundle.files ?? []) {
       const path = safeSkillFilePath(file.path);
       const destination = resolve(staging, ...path.split("/"));
       if (!destination.startsWith(resolve(staging) + sep)) throw new Error(`Unsafe Bifrost skill file path: ${path}`);
       mkdirSync(dirname(destination), { recursive: true });
-      writeFileSync(destination, file.data, { mode: 0o644, flag: "wx" });
+      if (Buffer.isBuffer(file.data)) {
+        budget.total += file.data.length;
+        if (budget.total > budget.max) throw new Error("Bifrost skill exceeds the bridge safety limit");
+        writeFileSync(destination, file.data, { mode: 0o644, flag: "wx" });
+      } else if (file.url) {
+        await downloadSkillFile(file.url, destination, budget, {
+          timeoutMs: options.timeoutMs,
+          maxFileBytes: options.maxFileBytes,
+        });
+      } else {
+        throw new Error(`Bifrost skill file ${path} has no downloadable source`);
+      }
     }
+
     const marker = {
       schemaVersion: 1,
       provider: "bifrost",
@@ -373,6 +436,7 @@ export function installBifrostSkillBundle(repoRoot, bundle, options = {}) {
       installedAt: new Date().toISOString(),
     };
     writeFileSync(join(staging, BIFROST_SKILL_MARKER), `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o644 });
+
     if (existsSync(target)) renameSync(target, backup);
     try {
       renameSync(staging, target);
@@ -390,8 +454,10 @@ export function installBifrostSkillBundle(repoRoot, bundle, options = {}) {
 }
 
 export function removeManagedBifrostSkill(repoRoot, name) {
-  const target = bifrostSkillInstallPath(repoRoot, name);
-  if (!existsSync(target)) return { removed: false, alreadyMissing: true, path: target };
+  const parent = secureSkillParent(repoRoot, false);
+  const target = parent ? join(parent, name) : bifrostSkillInstallPath(repoRoot, name);
+  if (!parent || !existsSync(target)) return { removed: false, alreadyMissing: true, path: target };
+  assertSafeManagedTarget(target);
   if (!readBifrostSkillMarker(repoRoot, name)) throw new Error(`Refusing to remove ${target}: directory is not owned by Pifrost`);
   rmSync(target, { recursive: true, force: true });
   return { removed: true, alreadyMissing: false, path: target };

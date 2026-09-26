@@ -28,7 +28,7 @@ import {
 	loadCatalogCache,
 	writeCatalogCache,
 } from "./cache.ts";
-import { loadStoredRuntimeConfig } from "./config-store.ts";
+import { loadStoredRuntimeConfig, storedRuntimeConfigDiagnostics } from "./config-store.ts";
 import {
 	normalizeModelParametersDatasheet,
 	normalizePricingDatasheet,
@@ -494,6 +494,10 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 				}
 				bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
 				let report = `${formatDoctorReport(diagnostics, aliasSource.path)}\n\n${formatAgentAttributionReport(ctx.sessionManager.getSessionId())}`;
+				const storedWarnings = storedRuntimeConfigDiagnostics();
+				if (storedWarnings.length) {
+					report += `\n\nStored configuration warnings:\n${storedWarnings.map((warning) => `  WARN ${warning}`).join("\n")}`;
+				}
 				if (ctx.agent.kind === "main" && ctx.mode === "tui" && ctx.hasUI) {
 					try {
 						report += `\n\n${formatPifrostOmpProfile(await readPifrostOmpProfile(await cfgSession()))}`;

@@ -1,9 +1,13 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import {
   fetchBifrostSkillBundle,
+  installBifrostSkillBundle,
   listBifrostSkills,
 } from "../skills-bridge.mjs";
 
@@ -93,13 +97,24 @@ test("Bifrost Skills bridge follows released management and public serving contr
     assert.equal(bundle.skill.version, "1.2.3");
     assert.match(bundle.markdown, /^---\nname: "release-notes"/);
     assert.match(bundle.markdown, /# Workflow\nGenerate release notes\.$/);
-    assert.deepEqual(bundle.files.map((file) => [file.path, file.data.toString("utf8")]), [
-      ["templates/note.md", "template"],
-    ]);
+    assert.deepEqual(bundle.files.map((file) => [file.path, file.url]), [[
+      "templates/note.md",
+      `http://127.0.0.1:${address.port}/api/skills/serve/release-notes/files/templates/note.md`,
+    ]]);
     assert.equal(
       bundle.sourceUrl,
       `http://127.0.0.1:${address.port}/api/skills/serve/release-notes/download.zip`,
     );
+
+    const root = mkdtempSync(join(tmpdir(), "pifrost-skill-http-"));
+    const repo = join(root, "repo");
+    mkdirSync(repo, { recursive: true });
+    try {
+      const installed = await installBifrostSkillBundle(repo, bundle, { home: join(root, "home") });
+      assert.equal(readFileSync(join(installed.path, "templates/note.md"), "utf8"), "template");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
     assert.equal(requests.every((entry) => entry.method === "GET"), true);
   } finally {
     server.close();

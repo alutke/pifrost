@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -18,13 +18,13 @@ import {
   safeSkillFilePath,
 } from "../skills-bridge.mjs";
 
-function withTemp(run) {
+async function withTemp(run) {
   const root = mkdtempSync(join(tmpdir(), "pifrost-skill-test-"));
   const home = join(root, "home");
   const repo = join(root, "repo");
   mkdirSync(home, { recursive: true });
   mkdirSync(repo, { recursive: true });
-  try { run({ root, home, repo }); } finally { rmSync(root, { recursive: true, force: true }); }
+  try { return await run({ root, home, repo }); } finally { rmSync(root, { recursive: true, force: true }); }
 }
 function bundle(version = "1.2.3") {
   const raw = {
@@ -74,14 +74,14 @@ test("rejects path traversal and absolute skill files", () => {
   }
 });
 
-test("installs atomically into .agents/skills and only removes Pifrost-owned skills", () => {
-  withTemp(({ repo, home }) => {
-    const installed = installBifrostSkillBundle(repo, bundle("1.2.3"), { home });
+test("installs atomically into .agents/skills and only removes Pifrost-owned skills", async () => {
+  await withTemp(async ({ repo, home }) => {
+    const installed = await installBifrostSkillBundle(repo, bundle("1.2.3"), { home });
     assert.match(installed.path, /\.agents[/\\]skills[/\\]release-notes$/);
     assert.equal(readBifrostSkillMarker(repo, "release-notes")?.version, "1.2.3");
     assert.equal(readFileSync(join(installed.path, "templates/note.md"), "utf8"), "template");
 
-    installBifrostSkillBundle(repo, bundle("1.2.4"), { home });
+    await installBifrostSkillBundle(repo, bundle("1.2.4"), { home });
     assert.equal(readBifrostSkillMarker(repo, "release-notes")?.version, "1.2.4");
     assert.equal(repoBifrostSkillStatus(repo, [{ name: "release-notes", version: "1.2.4" }])[0]?.state, "installed");
 
@@ -95,18 +95,18 @@ test("installs atomically into .agents/skills and only removes Pifrost-owned ski
   });
 });
 
-test("detects authored OMP skill collisions outside Pifrost managed directory", () => {
-  withTemp(({ repo, home }) => {
+test("detects authored OMP skill collisions outside Pifrost managed directory", async () => {
+  await withTemp(async ({ repo, home }) => {
     const foreign = join(repo, ".agent/skills/other-directory");
     mkdirSync(foreign, { recursive: true });
     writeFileSync(join(foreign, "SKILL.md"), "---\nname: \"release-notes\"\ndescription: foreign\n---\n");
     assert.deepEqual(findOmpSkillCollisions(repo, "release-notes", { home }), [foreign]);
-    assert.throws(() => installBifrostSkillBundle(repo, bundle(), { home }), /OMP skill collision/);
+    await assert.rejects(() => installBifrostSkillBundle(repo, bundle(), { home }), /OMP skill collision/);
   });
 });
 
-test("detects skills shipped by installed OMP npm/link plugins", () => {
-  withTemp(({ repo, home }) => {
+test("detects skills shipped by installed OMP npm/link plugins", async () => {
+  await withTemp(async ({ repo, home }) => {
     const pluginSkill = join(home, ".omp/plugins/node_modules/example-plugin/skills/release-notes");
     mkdirSync(pluginSkill, { recursive: true });
     writeFileSync(join(pluginSkill, "SKILL.md"), "---\nname: release-notes\ndescription: plugin\n---\n");
@@ -114,10 +114,24 @@ test("detects skills shipped by installed OMP npm/link plugins", () => {
   });
 });
 
-test("ownership marker stays separate from SKILL.md", () => {
-  withTemp(({ repo, home }) => {
-    const installed = installBifrostSkillBundle(repo, bundle(), { home });
+test("ownership marker stays separate from SKILL.md", async () => {
+  await withTemp(async ({ repo, home }) => {
+    const installed = await installBifrostSkillBundle(repo, bundle(), { home });
     assert.match(readFileSync(join(installed.path, BIFROST_SKILL_MARKER), "utf8"), /"provider": "bifrost"/);
     assert.doesNotMatch(readFileSync(join(installed.path, "SKILL.md"), "utf8"), /pifrost-bifrost-skill/);
+  });
+});
+
+
+test("refuses symlinked project Skill roots before writing", async () => {
+  await withTemp(async ({ root, repo, home }) => {
+    const outside = join(root, "outside");
+    mkdirSync(outside, { recursive: true });
+    symlinkSync(outside, join(repo, ".agents"), "dir");
+    await assert.rejects(
+      () => installBifrostSkillBundle(repo, bundle(), { home }),
+      /Refusing symlinked Skill path/,
+    );
+    assert.equal(existsSync(join(outside, "skills")), false);
   });
 });

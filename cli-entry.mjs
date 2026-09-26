@@ -166,36 +166,24 @@ function modelDoctor() {
   if (!result.ok) process.exitCode = 2;
 }
 
-function insideGitRepo() {
-  const result = spawnSync("git", ["rev-parse", "--show-toplevel"], {
-    stdio: "ignore",
-    env: process.env,
-  });
-  return result.status === 0;
-}
+const COMMANDS = new Map([
+  ["init", (args) => init(args)],
+  ["doctor", () => delegate(["doctor"])],
+  ["repo", (args) => delegateRepo(args)],
+  ["routes list", () => routesList()],
+  ["routes diff", () => routesDiff()],
+  ["routes sync", (args) => routesSync(args)],
+  ["routes diagnose", () => routesDiagnose()],
+  ["models doctor", () => modelDoctor()],
+]);
 
-async function doctor() {
-  let failed = false;
-
-  if (delegate(["global", "status"], { allowFailure: true }) !== 0) failed = true;
-
-  const modelResult = printModelDoctor();
-  if (!modelResult.ok) failed = true;
-
-  if (insideGitRepo()) {
-    console.log("");
-    if (delegateRepo(["status"], { allowFailure: true }) !== 0) failed = true;
+function resolveCommand(args) {
+  for (let length = args.length; length > 0; length -= 1) {
+    const key = args.slice(0, length).join(" ");
+    const handler = COMMANDS.get(key);
+    if (handler) return { handler, rest: args.slice(length) };
   }
-
-  console.log("");
-  try {
-    await routesDiagnose();
-  } catch (error) {
-    console.error(`Routing discovery: FAIL (${error instanceof Error ? error.message : String(error)})`);
-    failed = true;
-  }
-
-  if (failed) process.exitCode = 2;
+  return undefined;
 }
 
 async function main() {
@@ -205,19 +193,9 @@ async function main() {
     console.log(VERSION);
     return;
   }
-  if (args[0] === "init") return init(args.slice(1));
-  if (args[0] === "doctor") return doctor();
-  if (args[0] === "repo") return delegateRepo(args.slice(1));
 
-  if (args[0] === "routes") {
-    if (args[1] === "list") return routesList();
-    if (args[1] === "diff") return routesDiff();
-    if (args[1] === "sync") return routesSync(args.slice(2));
-    if (args[1] === "diagnose") return routesDiagnose();
-  }
-
-  if (args[0] === "models" && args[1] === "doctor") return modelDoctor();
-
+  const resolved = resolveCommand(args);
+  if (resolved) return resolved.handler(resolved.rest);
   return delegate(args);
 }
 

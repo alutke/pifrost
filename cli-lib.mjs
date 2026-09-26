@@ -1,17 +1,33 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   chmodSync,
+  closeSync,
+  constants,
   copyFileSync,
   existsSync,
+  fsyncSync,
   mkdirSync,
+  openSync,
   readFileSync,
   realpathSync,
   renameSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import {
+  aliasIdFromRule,
+  deriveAliasesFromRules,
+  routingFeatureSummary,
+  routingRulePins,
+  targetReference,
+} from "./routing-core.ts";
+import { PifrostHttpError, requestJson } from "./http-client.mjs";
+
+export { PifrostHttpError, requestJson };
+export { aliasIdFromRule, deriveAliasesFromRules, routingFeatureSummary, targetReference };
 
 export const VERSION = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
 export const MCP_SCHEMA_URL =
@@ -33,15 +49,6 @@ export const ROLE_MAP = Object.freeze({
   commit: "bifrost/omp-commit",
   tiny: "bifrost/omp-tiny",
 });
-
-export class PifrostHttpError extends Error {
-  constructor(status, message, body) {
-    super(message);
-    this.name = "PifrostHttpError";
-    this.status = status;
-    this.body = body;
-  }
-}
 
 export function nonEmpty(value) {
   if (typeof value !== "string") return undefined;
@@ -118,12 +125,30 @@ function readJson(path, fallback) {
 }
 
 function writeJsonAtomic(path, value, mode = 0o600) {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
-  const temp = `${path}.tmp-${process.pid}-${Date.now()}`;
-  writeFileSync(temp, `${JSON.stringify(value, null, 2)}\n`, { mode });
-  chmodSync(temp, mode);
-  renameSync(temp, path);
-  chmodSync(path, mode);
+  const directory = dirname(path);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  const temp = join(directory, `.${basename(path)}.${randomUUID()}.tmp`);
+  const fd = openSync(
+    temp,
+    constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | (constants.O_NOFOLLOW ?? 0),
+    mode,
+  );
+  try {
+    writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`);
+    fsyncSync(fd);
+  } catch (error) {
+    try { unlinkSync(temp); } catch {}
+    throw error;
+  } finally {
+    closeSync(fd);
+  }
+  try {
+    renameSync(temp, path);
+    chmodSync(path, mode);
+  } catch (error) {
+    try { unlinkSync(temp); } catch {}
+    throw error;
+  }
 }
 
 export function loadState(env = process.env) {
@@ -220,74 +245,6 @@ export function managementAuthLabel(auth) {
   if (auth?.mode === "bearer") return "bearer (Enterprise scoped API key)";
   if (typeof auth === "string" && nonEmpty(auth)) return "bearer (legacy API key)";
   return "missing";
-}
-
-function requestSignal(externalSignal, timeoutMs) {
-  const timeout = AbortSignal.timeout(timeoutMs);
-  return externalSignal ? AbortSignal.any([externalSignal, timeout]) : timeout;
-}
-
-async function readTextLimited(response, maxBytes = 8 * 1024 * 1024) {
-  const declared = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declared) && declared > maxBytes) {
-    throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
-  }
-  if (!response.body) return "";
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let total = 0;
-  let text = "";
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.byteLength;
-    if (total > maxBytes) {
-      await reader.cancel();
-      throw new Error(`HTTP response exceeds ${maxBytes} bytes`);
-    }
-    text += decoder.decode(value, { stream: true });
-  }
-  return text + decoder.decode();
-}
-
-export async function requestJson(url, options = {}) {
-  try {
-    const headers = { Accept: "application/json", ...(options.headers ?? {}) };
-    let body;
-    if (options.body !== undefined) {
-      headers["Content-Type"] ??= "application/json";
-      body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
-    }
-    const response = await fetch(url, {
-      method: options.method ?? (body ? "POST" : "GET"),
-      headers,
-      body,
-      signal: requestSignal(options.signal, options.timeoutMs ?? 20_000),
-    });
-    const text = await readTextLimited(response, options.maxResponseBytes ?? 8 * 1024 * 1024);
-    let parsed;
-    try {
-      parsed = text ? JSON.parse(text) : undefined;
-    } catch {
-      parsed = text;
-    }
-    if (!response.ok) {
-      const detail =
-        parsed?.error?.message ?? parsed?.message ?? (typeof parsed === "string" ? parsed.slice(0, 500) : "");
-      throw new PifrostHttpError(
-        response.status,
-        `HTTP ${response.status}${detail ? `: ${detail}` : ""}`,
-        parsed,
-      );
-    }
-    return parsed;
-  } catch (error) {
-    if (error?.name === "TimeoutError" || error?.name === "AbortError") {
-      throw new Error(`Request timed out: ${url}`);
-    }
-    throw error;
-  }
 }
 
 export async function testInference({ url, apiKey, virtualKey }) {
@@ -513,134 +470,6 @@ export async function getRoutingRules(url, auth) {
   throw lastError ?? new Error("Unable to read Bifrost routing rules");
 }
 
-export function aliasIdFromRule(rule) {
-  const name = nonEmpty(rule?.name);
-  if (name && /^omp-[A-Za-z0-9._-]+$/u.test(name)) return name;
-  const expression = nonEmpty(rule?.cel_expression) ?? "";
-  const match = expression.match(/["'](omp-[A-Za-z0-9._-]+)["']/u);
-  return match?.[1];
-}
-
-export function targetReference(target) {
-  const model = nonEmpty(target?.model) ?? nonEmpty(target?.model_id) ?? nonEmpty(target?.modelId);
-  if (!model) return undefined;
-  const provider = nonEmpty(target?.provider) ?? nonEmpty(target?.provider_name) ?? nonEmpty(target?.providerName);
-  if (!provider) return model;
-  if (model.toLowerCase().startsWith(`${provider.toLowerCase()}/`)) return model;
-  return `${provider}/${model}`;
-}
-
-function fallbackReference(fallback) {
-  if (typeof fallback === "string") return nonEmpty(fallback);
-  return targetReference(fallback);
-}
-
-function routingPin(entry, source) {
-  if (!entry || typeof entry !== "object") return undefined;
-  const keyId = nonEmpty(entry.key_id) ?? nonEmpty(entry.keyId);
-  const providerKeyName = nonEmpty(entry.provider_key_name) ?? nonEmpty(entry.providerKeyName);
-  if (!keyId && !providerKeyName) return undefined;
-  const reference = targetReference(entry);
-  return {
-    source,
-    ...(reference ? { reference } : {}),
-    ...(keyId ? { keyId } : {}),
-    ...(providerKeyName ? { providerKeyName } : {}),
-  };
-}
-
-function routingRulePins(rule) {
-  const targets = Array.isArray(rule?.targets) ? rule.targets : [];
-  const fallbacks = Array.isArray(rule?.fallbacks)
-    ? rule.fallbacks
-    : Array.isArray(rule?.fallback_models)
-      ? rule.fallback_models
-      : [];
-  const pins = [
-    ...targets.map((entry) => routingPin(entry, "target")),
-    ...fallbacks.map((entry) => routingPin(entry, "fallback")),
-  ].filter(Boolean);
-  return [...new Map(pins.map((pin) => [JSON.stringify(pin), pin])).values()];
-}
-
-function unique(values) {
-  return [...new Set(values.filter(Boolean))];
-}
-
-function routingRuleMembers(rule) {
-  const targets = Array.isArray(rule?.targets)
-    ? [...rule.targets]
-    : Array.isArray(rule?.routing_targets)
-      ? [...rule.routing_targets]
-      : [];
-  targets.sort((a, b) => Number(b?.weight ?? 0) - Number(a?.weight ?? 0));
-  const fallbacks = Array.isArray(rule?.fallbacks)
-    ? rule.fallbacks
-    : Array.isArray(rule?.fallback_models)
-      ? rule.fallback_models
-      : [];
-  return unique([
-    ...targets.map(targetReference),
-    ...fallbacks.map(fallbackReference),
-  ]);
-}
-
-export function deriveAliasesFromRules(rules) {
-  const enabled = (rules ?? []).filter((rule) => rule?.enabled !== false);
-  const aliases = {};
-  const aliasRules = new Map();
-  for (const rule of enabled) {
-    const id = aliasIdFromRule(rule);
-    if (!id) continue;
-    const members = routingRuleMembers(rule);
-    if (!members.length) continue;
-    const existing = aliases[id]?.chain ?? [];
-    const routingPins = [...(aliases[id]?.routingPins ?? []), ...routingRulePins(rule)];
-    aliases[id] = {
-      name: id,
-      chain: unique([...existing, ...members]),
-      ...(routingPins.length ? { routingPins: [...new Map(routingPins.map((pin) => [JSON.stringify(pin), pin])).values()] } : {}),
-    };
-    const bucket = aliasRules.get(id) ?? [];
-    bucket.push(rule);
-    aliasRules.set(id, bucket);
-  }
-
-  const allReachable = unique(enabled.flatMap(routingRuleMembers));
-  const allReachablePins = [...new Map(
-    enabled.flatMap(routingRulePins).map((pin) => [JSON.stringify(pin), pin]),
-  ).values()];
-  for (const [id, related] of aliasRules) {
-    if (related.some((rule) => rule?.chain_rule === true || rule?.chainRule === true)) {
-      const routingPins = [...(aliases[id]?.routingPins ?? []), ...allReachablePins];
-      aliases[id] = {
-        name: id,
-        chain: unique([...(aliases[id]?.chain ?? []), ...allReachable]),
-        ...(routingPins.length ? { routingPins: [...new Map(routingPins.map((pin) => [JSON.stringify(pin), pin])).values()] } : {}),
-      };
-    }
-  }
-  return { includePhysicalModels: false, aliases };
-}
-
-export function routingFeatureSummary(rules) {
-  const enabled = (rules ?? []).filter((rule) => rule?.enabled !== false);
-  const scopes = unique(enabled.map((rule) => nonEmpty(rule?.scope) ?? "global")).sort();
-  return {
-    enabledRules: enabled.length,
-    scopes,
-    chainRules: enabled.filter((rule) => rule?.chain_rule === true || rule?.chainRule === true).length,
-    weightedRules: enabled.filter((rule) => {
-      const targets = Array.isArray(rule?.targets) ? rule.targets : [];
-      return targets.length > 1 || targets.some((target) => Number(target?.weight ?? 1) !== 1);
-    }).length,
-    complexityRules: enabled.filter((rule) =>
-      /complexity_tier/iu.test(String(rule?.cel_expression ?? rule?.celExpression ?? JSON.stringify(rule?.query ?? ""))),
-    ).length,
-    pinnedRules: enabled.filter((rule) => routingRulePins(rule).length > 0).length,
-  };
-}
-
 export function loadAliasManifest(path = aliasManifestPath()) {
   if (!existsSync(path)) return { includePhysicalModels: false, aliases: {} };
   return readJson(path, { includePhysicalModels: false, aliases: {} });
@@ -789,6 +618,15 @@ function featureUnavailable(id, label, minimum, version, impact) {
   return undefined;
 }
 
+async function compatibilityProbeValue(probes, key, fallback) {
+  const cached = probes?.[key];
+  if (cached) {
+    if (cached.ok) return cached.value;
+    throw cached.error;
+  }
+  return fallback();
+}
+
 function validateSourceRefShape(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return true;
   for (const key of ["source_type", "source_id", "source_name"]) {
@@ -803,6 +641,7 @@ export async function bifrostCompatibilityMatrix({
   managementAuth,
   virtualKey,
   apiKey,
+  probes,
 }) {
   const installedVersion = parseSemver(version)?.version;
   const results = [];
@@ -828,29 +667,29 @@ export async function bifrostCompatibilityMatrix({
   } else {
     const endpoint = "/api/mcp/virtual-mcps";
     try {
-      const body = await requestJson(
-        `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0`,
-        { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
+      const virtualMcps = await compatibilityProbeValue(
+        probes,
+        "virtualMcps",
+        async () => {
+          const body = await requestJson(
+            `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0`,
+            { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
+          );
+          if (!Array.isArray(body?.virtual_mcps)) {
+            throw new Error(`${endpoint} responded but no virtual_mcps array was present`);
+          }
+          return body.virtual_mcps;
+        },
       );
-      if (!Array.isArray(body?.virtual_mcps)) {
-        results.push({
-          id: "bifrost-virtual-mcp",
-          label: "Virtual MCPs",
-          minimum: "2.2.0",
-          status: "drifted",
-          detail: `${endpoint} responded but no virtual_mcps array was present`,
-          impact: "Virtual MCP discovery/assignment may be incompatible",
-        });
-      } else {
-        results.push({
-          id: "bifrost-virtual-mcp",
-          label: "Virtual MCPs",
-          minimum: "2.2.0",
-          status: "supported",
-          detail: `live API contract verified (${body.virtual_mcps.length} row(s) returned)`,
-          impact: undefined,
-        });
-      }
+      if (!Array.isArray(virtualMcps)) throw new Error(`${endpoint} returned an invalid Virtual MCP collection`);
+      results.push({
+        id: "bifrost-virtual-mcp",
+        label: "Virtual MCPs",
+        minimum: "2.2.0",
+        status: "supported",
+        detail: `live API contract verified (${virtualMcps.length} row(s) returned)`,
+        impact: undefined,
+      });
     } catch (error) {
       results.push({
         id: "bifrost-virtual-mcp",
@@ -883,29 +722,27 @@ export async function bifrostCompatibilityMatrix({
   } else {
     const endpoint = "/api/skills";
     try {
-      const body = await requestJson(
-        `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0&sort_by=name&order=asc`,
-        { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
+      const skills = await compatibilityProbeValue(
+        probes,
+        "skills",
+        async () => {
+          const body = await requestJson(
+            `${bifrostManagementBase(url)}${endpoint}?limit=1&offset=0&sort_by=name&order=asc`,
+            { headers: managementHeaders(managementAuth), timeoutMs: 8_000 },
+          );
+          if (!Array.isArray(body?.skills)) throw new Error(`${endpoint} responded but no skills array was present`);
+          return body.skills;
+        },
       );
-      if (!Array.isArray(body?.skills)) {
-        results.push({
-          id: "bifrost-skills",
-          label: "Bifrost Skills",
-          minimum: "2.2.0",
-          status: "drifted",
-          detail: `${endpoint} responded but no skills array was present`,
-          impact: "Repository Bifrost Skill discovery/install may be incompatible",
-        });
-      } else {
-        results.push({
-          id: "bifrost-skills",
-          label: "Bifrost Skills",
-          minimum: "2.2.0",
-          status: "supported",
-          detail: `live Skills API contract verified (${body.skills.length} row(s) returned)`,
-          impact: undefined,
-        });
-      }
+      if (!Array.isArray(skills)) throw new Error(`${endpoint} returned an invalid Skills collection`);
+      results.push({
+        id: "bifrost-skills",
+        label: "Bifrost Skills",
+        minimum: "2.2.0",
+        status: "supported",
+        detail: `live Skills API contract verified (${skills.length} row(s) returned)`,
+        impact: undefined,
+      });
     } catch (error) {
       results.push({
         id: "bifrost-skills",
@@ -937,7 +774,11 @@ export async function bifrostCompatibilityMatrix({
     });
   } else {
     try {
-      const inference = await testInference({ url, virtualKey, apiKey });
+      const inference = await compatibilityProbeValue(
+        probes,
+        "inference",
+        () => testInference({ url, virtualKey, apiKey }),
+      );
       results.push({
         id: "bifrost-session-affinity",
         label: "Session affinity",
@@ -978,7 +819,11 @@ export async function bifrostCompatibilityMatrix({
     });
   } else {
     try {
-      const rules = await getRoutingRules(url, managementAuth);
+      const rules = await compatibilityProbeValue(
+        probes,
+        "routing",
+        () => getRoutingRules(url, managementAuth),
+      );
       let objectFallbacks = 0;
       let malformed = 0;
       for (const rule of rules) {
@@ -1044,7 +889,11 @@ export async function bifrostCompatibilityMatrix({
   } else {
     const endpoint = "/api/governance/virtual-keys/quota";
     try {
-      const quota = await getVirtualKeyQuota(url, virtualKey);
+      const quota = await compatibilityProbeValue(
+        probes,
+        "quota",
+        () => getVirtualKeyQuota(url, virtualKey),
+      );
       const arraysOk = ["budgets", "rate_limits", "provider_configs", "model_configs"]
         .every((key) => Array.isArray(quota?.[key]));
       const rows = [
@@ -1095,12 +944,14 @@ export async function buildCompatibilityMatrix({
   apiKey,
   ompVersion = getOmpVersion(),
   bifrostVersion,
+  probes,
 }) {
   let resolvedBifrostVersion = parseSemver(bifrostVersion)?.version;
   let bifrostVersionError;
   if (url && !resolvedBifrostVersion) {
     try {
-      resolvedBifrostVersion = parseSemver(await getBifrostVersion(url))?.version;
+      const versionValue = await compatibilityProbeValue(probes, "version", () => getBifrostVersion(url));
+      resolvedBifrostVersion = parseSemver(versionValue)?.version;
       if (!resolvedBifrostVersion) bifrostVersionError = "Bifrost returned an unparseable version";
     } catch (error) {
       bifrostVersionError = error instanceof Error ? error.message : String(error);
@@ -1171,6 +1022,7 @@ export async function buildCompatibilityMatrix({
       managementAuth,
       virtualKey,
       apiKey,
+      probes,
     });
   }
 

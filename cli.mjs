@@ -7,6 +7,8 @@ import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
+import { collectDoctorSnapshot } from "./doctor-probes.mjs";
+import { storedRuntimeConfigDiagnostics } from "./config-store.ts";
 
 import {
   bifrostSkillCompatibility,
@@ -201,7 +203,7 @@ function compatibilityNeedsAttention(item) {
   return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
 }
 
-async function commandCompatibilityDoctor() {
+async function commandCompatibilityDoctor(snapshot) {
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
   const managementAuth = managementAuthFromState(state);
@@ -211,6 +213,8 @@ async function commandCompatibilityDoctor() {
     virtualKey: runtime.virtualKey,
     apiKey: runtime.apiKey,
     ompVersion: getOmpVersion(),
+    bifrostVersion: snapshot?.version?.ok ? snapshot.version.value : undefined,
+    probes: snapshot,
   });
 
   printHeader("Upstream compatibility");
@@ -462,10 +466,15 @@ async function commandGlobalSetup(flags) {
   }
 }
 
-async function commandGlobalStatus() {
+async function commandGlobalStatus(snapshot) {
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
   const managementAuth = managementAuthFromState(state);
+  const probes = snapshot ?? await collectDoctorSnapshot({ runtime, managementAuth });
+
+  const value = (key) => probes?.[key]?.ok ? probes[key].value : undefined;
+  const errorText = (key) => probes?.[key]?.error ? formatError(probes[key].error) : "not probed";
+
   printHeader("Global Pifrost status");
   console.log(`Config directory:       ${state.paths.root}`);
   console.log(`Bifrost URL:            ${runtime.url ?? "missing"}`);
@@ -483,28 +492,28 @@ async function commandGlobalStatus() {
   console.log(`OMP version:            ${getOmpVersion() ?? "unavailable"}`);
 
   if (runtime.url) {
-    try {
-      console.log(`Bifrost version:        ${await getBifrostVersion(runtime.url) ?? "unknown"}`);
-    } catch (error) {
-      console.log(`Bifrost version:        unavailable (${formatError(error)})`);
-    }
-    try {
-      await getBifrostHealth(runtime.url);
-      console.log("Bifrost health:         OK");
-    } catch (error) {
-      console.log(`Bifrost health:         FAIL (${formatError(error)})`);
-    }
+    console.log(
+      probes.version.ok
+        ? `Bifrost version:        ${value("version") ?? "unknown"}`
+        : `Bifrost version:        unavailable (${errorText("version")})`,
+    );
+    console.log(
+      probes.health.ok
+        ? "Bifrost health:         OK"
+        : `Bifrost health:         FAIL (${errorText("health")})`,
+    );
   }
 
   if (runtime.url && runtime.virtualKey) {
-    try {
-      const result = await testInference(runtime);
-      console.log(`Inference connection:   OK (${result.models} models)`);
-    } catch (error) {
-      console.log(`Inference connection:   FAIL (${formatError(error)})`);
-    }
-    try {
-      const quota = await getVirtualKeyQuota(runtime.url, runtime.virtualKey);
+    const inference = value("inference");
+    console.log(
+      probes.inference.ok
+        ? `Inference connection:   OK (${inference.models} models)`
+        : `Inference connection:   FAIL (${errorText("inference")})`,
+    );
+
+    if (probes.quota.ok) {
+      const quota = value("quota");
       const budgets = Array.isArray(quota?.budgets) ? quota.budgets.length : 0;
       const modelConfigs = Array.isArray(quota?.model_configs) ? quota.model_configs.length : 0;
       const providerConfigs = Array.isArray(quota?.provider_configs) ? quota.provider_configs.length : 0;
@@ -515,29 +524,27 @@ async function commandGlobalStatus() {
         console.log("Governance sources:");
         for (const source of sources) console.log(`  ${formatQuotaGovernanceSource(source)}`);
       }
-    } catch (error) {
-      console.log(`VK governance/quota:    unavailable (${formatError(error)})`);
+    } else {
+      console.log(`VK governance/quota:    unavailable (${errorText("quota")})`);
     }
   }
 
   if (runtime.url && managementAuth) {
-    try {
-      await testManagement(runtime.url, managementAuth);
-      console.log("Management connection:  OK");
-    } catch (error) {
-      console.log(`Management connection:  FAIL (${formatError(error)})`);
-    }
+    console.log(
+      probes.management.ok
+        ? "Management connection:  OK"
+        : `Management connection:  FAIL (${errorText("management")})`,
+    );
 
-    try {
-      const rules = await getRoutingRules(runtime.url, managementAuth);
-      const features = routingFeatureSummary(rules);
+    if (probes.routing.ok) {
+      const features = routingFeatureSummary(value("routing"));
       console.log(`Bifrost routing 2.x:    OK (rules=${features.enabledRules}, scopes=${features.scopes.join(",") || "global"}, chained=${features.chainRules}, weighted=${features.weightedRules}, complexity-rules=${features.complexityRules}, pinned=${features.pinnedRules ?? 0})`);
-    } catch (error) {
-      console.log(`Bifrost routing 2.x:    FAIL (${formatError(error)})`);
+    } else {
+      console.log(`Bifrost routing 2.x:    FAIL (${errorText("routing")})`);
     }
 
-    try {
-      const gateway = await getBifrostConfig(runtime.url, managementAuth);
+    if (probes.gateway.ok) {
+      const gateway = value("gateway");
       const client = gateway?.client_config ?? gateway?.clientConfig ?? gateway?.data?.client_config ?? {};
       const mcpAuthMode = client?.mcp_server_auth_mode ?? "headers";
       const chainDepth = client?.routing_chain_max_depth ?? "default";
@@ -549,12 +556,12 @@ async function commandGlobalStatus() {
       if (requiredHeaders.length) {
         console.log(`  WARN Bifrost requires request headers not managed by Pifrost: ${requiredHeaders.join(", ")}`);
       }
-    } catch (error) {
-      console.log(`Gateway config 2.x:     unavailable (${formatError(error)})`);
+    } else {
+      console.log(`Gateway config 2.x:     unavailable (${errorText("gateway")})`);
     }
 
-    try {
-      const complexity = await getComplexityAnalyzerConfig(runtime.url, managementAuth);
+    if (probes.complexity.ok) {
+      const complexity = value("complexity");
       if (!complexity) {
         console.log("Complexity analyzer:    not exposed by this Bifrost version");
       } else {
@@ -568,21 +575,21 @@ async function commandGlobalStatus() {
           console.log("  OK Pifrost sends OMP's per-request sessionId as x-bf-session-id, enabling Bifrost session-persistent complexity routing and provider/key affinity without mutating shared provider headers.");
         }
       }
-    } catch (error) {
-      console.log(`Complexity analyzer:    unavailable (${formatError(error)})`);
+    } else {
+      console.log(`Complexity analyzer:    unavailable (${errorText("complexity")})`);
     }
 
-    try {
-      const clients = await listMcpClients(runtime.url, managementAuth);
+    if (probes.mcpClients.ok) {
+      const clients = value("mcpClients");
       const codeMode = clients.filter((client) => client.isCodeModeClient).length;
       const agentMode = clients.filter((client) => client.toolsToAutoExecute?.length).length;
       const perUser = clients.filter((client) => ["per_user_oauth", "per_user_headers", "token_exchange"].includes(client.authType)).length;
       console.log(`MCP gateway 2.x:        OK (clients=${clients.length}, code-mode=${codeMode}, agent-mode=${agentMode}, per-user-auth=${perUser})`);
-    } catch (error) {
-      console.log(`MCP gateway 2.x:        unavailable (${formatError(error)})`);
+    } else {
+      console.log(`MCP gateway 2.x:        unavailable (${errorText("mcpClients")})`);
     }
   }
-  console.log("Service-tier aliases:   delegated (OMP 18.1 family tiers cannot be mapped safely onto heterogeneous Bifrost logical routes)");
+  console.log("Service-tier aliases:   delegated (OMP family tiers cannot be mapped safely onto heterogeneous Bifrost logical routes)");
   console.log(`Alias manifest:         ${aliasManifestPath()}${existsSync(aliasManifestPath()) ? "" : " (missing)"}`);
 }
 
@@ -816,7 +823,7 @@ async function commandRepoInit(flags) {
   }
 }
 
-async function commandRepoStatus() {
+async function commandRepoStatus(snapshot) {
   const state = loadState();
   const runtime = requireRuntime(state);
   const repoState = currentRepoState(state);
@@ -861,8 +868,12 @@ async function commandRepoStatus() {
     try {
       const [vk, virtualMcps, clients] = await Promise.all([
         getVirtualKey(runtime.url, managementAuth, repoState.config.virtualKeyId),
-        listVirtualMcps(runtime.url, managementAuth),
-        listMcpClients(runtime.url, managementAuth),
+        snapshot?.virtualMcps?.ok
+          ? Promise.resolve(snapshot.virtualMcps.value)
+          : listVirtualMcps(runtime.url, managementAuth),
+        snapshot?.mcpClients?.ok
+          ? Promise.resolve(snapshot.mcpClients.value)
+          : listMcpClients(runtime.url, managementAuth),
       ]);
       const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
       const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
@@ -885,7 +896,9 @@ async function commandRepoStatus() {
 
   if (runtime.url && managementAuth && configuredSkills.length) {
     try {
-      const availableSkills = await listBifrostSkills(runtime.url, managementAuth);
+      const availableSkills = snapshot?.skills?.ok
+        ? snapshot.skills.value
+        : await listBifrostSkills(runtime.url, managementAuth);
       const liveByName = new Map(availableSkills.map((item) => [item.name.toLowerCase(), item]));
       console.log("Bifrost Skill provenance:");
       for (const localSkill of skillStatus) {
@@ -922,7 +935,7 @@ async function installRepoBifrostSkill(state, current, summary) {
   const managementAuth = managementAuthFromState(state);
   if (!managementAuth) throw new Error("Bifrost management authentication is missing; run `pifrost global setup`");
   const bundle = await fetchBifrostSkillBundle(runtime.url, managementAuth, summary);
-  const installed = installBifrostSkillBundle(current.repo.root, bundle);
+  const installed = await installBifrostSkillBundle(current.repo.root, bundle);
   upsertConfiguredSkill(state, current.repo.id, bundle.skill);
   return { bundle, installed };
 }
@@ -1244,23 +1257,79 @@ async function commandSecretRepoMcp(flags) {
 }
 
 async function commandDoctor() {
-  await commandGlobalStatus();
+  const storedWarnings = storedRuntimeConfigDiagnostics();
+  if (storedWarnings.length) {
+    printHeader("Stored Pifrost configuration");
+    for (const warning of storedWarnings) console.log(`WARN ${warning}`);
+    console.log("Repair or rerun `pifrost global setup` before live diagnostics.");
+    process.exitCode = 2;
+    return;
+  }
+
+  const state = loadState();
+  const runtime = runtimeConfigFromState(state);
+  const managementAuth = managementAuthFromState(state);
+  const snapshot = await collectDoctorSnapshot({ runtime, managementAuth });
+
+  await commandGlobalStatus(snapshot);
   console.log("");
-  await commandCompatibilityDoctor();
+  await commandCompatibilityDoctor(snapshot);
   console.log("");
   await commandModelsDoctor();
   try {
     getRepoRoot();
     console.log("");
-    await commandRepoStatus();
+    await commandRepoStatus(snapshot);
   } catch (error) {
     if (!String(formatError(error)).includes("not inside a Git repository")) throw error;
   }
 }
 
+const COMMANDS = new Map([
+  ["init", (_args, flags) => commandInit(flags)],
+  ["global setup", (_args, flags) => commandGlobalSetup(flags)],
+  ["global status", () => commandGlobalStatus()],
+  ["global configure-omp", () => {
+    const result = configureOmp();
+    console.log(`Configured ${result.settings} OMP settings.`);
+    if (result.backup) console.log(`Backup: ${result.backup}`);
+  }],
+  ["routes list", () => commandRoutesList()],
+  ["routes diff", () => commandRoutesDiff()],
+  ["routes sync", (_args, flags) => commandRoutesSync(flags)],
+  ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
+  ["models doctor", () => commandModelsDoctor()],
+  ["repo init", (_args, flags) => commandRepoInit(flags)],
+  ["repo status", () => commandRepoStatus()],
+  ["repo rotate-key", () => commandRepoRotateKey()],
+  ["repo reset", (_args, flags) => commandRepoReset(flags)],
+  ["repo mcp list", () => commandRepoMcpList()],
+  ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
+  ["repo mcp remove", (args) => commandRepoMcpRemove(args[0])],
+  ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
+  ["repo vmcp list", () => commandRepoVirtualMcpList()],
+  ["repo vmcp add", (args) => commandRepoVirtualMcpAdd(args[0])],
+  ["repo vmcp remove", (args) => commandRepoVirtualMcpRemove(args[0])],
+  ["repo skills list", () => commandRepoSkillsList()],
+  ["repo skills add", (args) => commandRepoSkillsAdd(args[0])],
+  ["repo skills remove", (args) => commandRepoSkillsRemove(args[0])],
+  ["repo skills sync", (args) => commandRepoSkillsSync(args[0])],
+  ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
+  ["doctor", () => commandDoctor()],
+]);
+
+function resolveCommand(positional) {
+  for (let length = positional.length; length > 0; length -= 1) {
+    const key = positional.slice(0, length).join(" ");
+    const handler = COMMANDS.get(key);
+    if (handler) return { handler, args: positional.slice(length) };
+  }
+  return undefined;
+}
+
 async function main() {
   const { positional, flags } = parseArgs(process.argv.slice(2));
-  const [one, two, three, four] = positional;
+  const [one] = positional;
   if (flags.version || one === "--version" || one === "version") {
     console.log(VERSION);
     return;
@@ -1270,38 +1339,8 @@ async function main() {
     return;
   }
 
-  if (one === "init") return commandInit(flags);
-  if (one === "global" && two === "setup") return commandGlobalSetup(flags);
-  if (one === "global" && two === "status") return commandGlobalStatus();
-  if (one === "global" && two === "configure-omp") {
-    const result = configureOmp();
-    console.log(`Configured ${result.settings} OMP settings.`);
-    if (result.backup) console.log(`Backup: ${result.backup}`);
-    return;
-  }
-  if (one === "routes" && two === "list") return commandRoutesList();
-  if (one === "routes" && two === "diff") return commandRoutesDiff();
-  if (one === "routes" && two === "sync") return commandRoutesSync(flags);
-  if (one === "models" && two === "refresh") return commandModelsRefresh(flags);
-  if (one === "models" && two === "doctor") return commandModelsDoctor();
-  if (one === "repo" && two === "init") return commandRepoInit(flags);
-  if (one === "repo" && two === "status") return commandRepoStatus();
-  if (one === "repo" && two === "rotate-key") return commandRepoRotateKey();
-  if (one === "repo" && two === "reset") return commandRepoReset(flags);
-  if (one === "repo" && two === "mcp" && three === "list") return commandRepoMcpList();
-  if (one === "repo" && two === "mcp" && three === "add") return commandRepoMcpAdd(four, flags);
-  if (one === "repo" && two === "mcp" && three === "remove") return commandRepoMcpRemove(four);
-  if (one === "repo" && two === "mcp" && three === "instructions") return commandRepoMcpInstructions(four);
-  if (one === "repo" && two === "vmcp" && three === "list") return commandRepoVirtualMcpList();
-  if (one === "repo" && two === "vmcp" && three === "add") return commandRepoVirtualMcpAdd(four);
-  if (one === "repo" && two === "vmcp" && three === "remove") return commandRepoVirtualMcpRemove(four);
-  if (one === "repo" && two === "skills" && three === "list") return commandRepoSkillsList();
-  if (one === "repo" && two === "skills" && three === "add") return commandRepoSkillsAdd(four);
-  if (one === "repo" && two === "skills" && three === "remove") return commandRepoSkillsRemove(four);
-  if (one === "repo" && two === "skills" && three === "sync") return commandRepoSkillsSync(four);
-  if (one === "secret" && two === "repo-mcp") return commandSecretRepoMcp(flags);
-  if (one === "doctor") return commandDoctor();
-
+  const resolved = resolveCommand(positional);
+  if (resolved) return resolved.handler(resolved.args, flags);
   throw new Error(`Unknown command: ${positional.join(" ")}\n\n${HELP}`);
 }
 
