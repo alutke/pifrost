@@ -1356,7 +1356,7 @@ node scripts/validate-public-datasheets.mjs
 npx tsx scripts/validate-current-routing.ts
 ```
 
-The control plane is intentionally split by responsibility: `routing-core.ts` owns pure routing semantics, `http-client.mjs` owns bounded/cancellable HTTP transport, and `doctor-probes.mjs` owns the concurrent read-only diagnostic snapshot. The larger CLI modules orchestrate those domain services rather than reimplementing them.
+The control plane is intentionally split by responsibility: `routing-core.ts` owns pure routing semantics, `http-client.mjs` owns bounded/cancellable HTTP transport, and `doctor-probes.mjs` owns the concurrent read-only diagnostic snapshot. The single `cli.mjs` command registry orchestrates those domain services rather than maintaining parallel dispatch or repository implementations.
 
 CI validates:
 
