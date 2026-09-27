@@ -56,6 +56,7 @@ import {
 import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
+	pifrostAttemptMaxTokens,
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
@@ -207,7 +208,7 @@ function streamDynamicPifrostRoute(
 	void runPifrostProtocolPlan(model, plan, outer, (attempt, attemptIndex) => {
 		const transportModel = buildModel(createPifrostAttemptModelSpec(model, attempt));
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
-		const maxTokens = options?.maxTokens ?? attempt.members[0]?.maxTokens ?? model.maxTokens ?? undefined;
+		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
 		if (attempt.protocol === "openai-responses") {
 			const responseOptions: OpenAIResponsesOptions = {
 				...options,
