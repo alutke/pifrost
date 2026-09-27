@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.12 — 2026-09-27
+
+- Fixed protocol enrichment for gateway-only models that are absent from OMP's bundled static model snapshot. Pifrost now reads OMP's compiled provider `api-routes` policy via `apiRouteFor(provider, modelId)`, the same authoritative rules used by OMP provider managers at runtime.
+- The current `opencode-go/muse-spark-1.3-contributor` route now resolves as `openai-responses` even though that SKU is not present in `getBundledModels("opencode-go")`. Command Code's current DeepSeek route resolves independently as `openai-completions`.
+- Route enrichment applies provider `api-routes` before static bundled-model protocol metadata, while retaining live Bifrost `supported_methods` and datasheet `supported_endpoints` at higher precedence.
+- Replaced the synthetic 0.6.11 Muse regression with a test against OMP's real compiled `apiRouteFor()` policy, so gateway-first transport rules cannot silently disappear from Pifrost again.
+- Advanced the model-catalog cache schema to v8, forcing installations to discard protocol-incomplete 0.6.11 route profiles.
+- Expanded `pifrost models doctor` to display per-member protocol values/provenance and to clarify that displayed context bands are capacity-only; runtime prewalk additionally filters protocol and other request capabilities.
+
 ## 0.6.11 — 2026-09-27
 
 - Added provider-qualified wire-protocol capability tracking for physical route members. Pifrost now normalizes OpenAI Chat Completions, OpenAI Responses and Anthropic Messages metadata instead of assuming that every model visible through Bifrost can service Pifrost's Chat-Completions transport.
