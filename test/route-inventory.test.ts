@@ -273,8 +273,8 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 	const commandCode = rich.models.find((model) => model.id === "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
 	assert.deepEqual(muse?.protocols, ["openai-responses"]);
 	assert.deepEqual(commandCode?.protocols, ["openai-completions"]);
-	assert.equal(muse?.capabilitySources?.protocol, "fallback");
-	assert.equal(commandCode?.capabilitySources?.protocol, "fallback");
+	assert.equal(muse?.capabilitySources?.protocol, "canonical-family");
+	assert.equal(commandCode?.capabilitySources?.protocol, "canonical-family");
 
 	let catalog = buildPifrostCatalog(rich.models, aliases, rich.diagnostics);
 	const byId = new Map(rich.models.map((model) => [model.id.toLowerCase(), model]));
