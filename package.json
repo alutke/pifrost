@@ -32,6 +32,7 @@
     "protocol-capability.ts",
     "route-inventory.ts",
     "dynamic-routing.ts",
+    "multi-protocol-routing.ts",
     "compact-before-skip.ts",
     "omp-cfg.ts",
     "agent-attribution.ts",
