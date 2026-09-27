@@ -17,12 +17,9 @@ import type {
 	PifrostAliasConfig,
 	PifrostCatalog,
 } from "./index.ts";
+import { CATALOG_CACHE_SCHEMA_VERSION } from "./cache-schema.ts";
 
-/**
- * Increment whenever cached model/diagnostic semantics change in a way that can
- * make an older catalog unsafe or hide newly-supported routes after an upgrade.
- */
-export const CATALOG_CACHE_SCHEMA_VERSION = 5;
+export { CATALOG_CACHE_SCHEMA_VERSION };
 export const DEFAULT_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
 export const DEFAULT_REFRESH_INTERVAL_MS = 6 * 60 * 60_000;
 
