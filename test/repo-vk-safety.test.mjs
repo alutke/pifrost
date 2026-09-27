@@ -24,6 +24,10 @@ test("repo init associates but does not rotate an existing masked Virtual Key im
     }
 
     if (request.method === "PUT" && url.pathname === "/api/governance/virtual-keys/vk-existing") {
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      const parsed = JSON.parse(body);
+      assert.equal(Object.prototype.hasOwnProperty.call(parsed, "name"), false);
       response.end(JSON.stringify({
         virtual_key: {
           id: "vk-existing",
@@ -168,6 +172,99 @@ test("repo init recovers from a create-name race by re-reading the exact canonic
     const saved = loadState();
     assert.equal(saved.config.repos[repo.id].virtualKeyName, "omp-demo-race-mcp");
     assert.equal(saved.secrets.repos[repo.id].mcpVirtualKey, "sk-bf-raced");
+  } finally {
+    server.close();
+    if (oldConfigDir === undefined) delete process.env.PIFROST_CONFIG_DIR;
+    else process.env.PIFROST_CONFIG_DIR = oldConfigDir;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test("repo init updates a stored legacy key without resending its unique name", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pifrost-vk-legacy-update-"));
+  const oldConfigDir = process.env.PIFROST_CONFIG_DIR;
+  let putCalls = 0;
+  let getCalls = 0;
+
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    response.setHeader("content-type", "application/json");
+
+    if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys") {
+      getCalls += 1;
+      response.end(JSON.stringify({ virtual_keys: [] }));
+      return;
+    }
+
+    if (request.method === "PUT" && url.pathname === "/api/governance/virtual-keys/vk-legacy") {
+      putCalls += 1;
+      let body = "";
+      for await (const chunk of request) body += chunk;
+      const parsed = JSON.parse(body);
+      if (Object.prototype.hasOwnProperty.call(parsed, "name")) {
+        response.statusCode = 409;
+        response.end(JSON.stringify({ error: { message: "A virtual key with this name already exists" } }));
+        return;
+      }
+      assert.equal(parsed.is_active, true);
+      assert.deepEqual(parsed.mcp_configs, [
+        { mcp_client_name: "n8n", tools_to_execute: ["*"] },
+        { mcp_client_name: "railway", tools_to_execute: ["*"] },
+      ]);
+      response.end(JSON.stringify({
+        virtual_key: {
+          id: "vk-legacy",
+          name: "omp-homelab-mcp",
+          value: "********",
+          mcp_configs: parsed.mcp_configs,
+        },
+      }));
+      return;
+    }
+
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: { message: "not found" } }));
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("test server did not bind an address");
+
+  try {
+    process.env.PIFROST_CONFIG_DIR = root;
+    const state = loadState();
+    const repo = { root, name: "homelab", identity: "example/homelab", id: "homelab-59894f4310" };
+    state.config.repos[repo.id] = {
+      name: repo.name,
+      identity: repo.identity,
+      virtualKeyId: "vk-legacy",
+      virtualKeyName: "omp-homelab-mcp",
+      mcpClients: [{ name: "n8n", tools: ["*"] }],
+    };
+    state.secrets.repos[repo.id] = { mcpVirtualKey: "sk-bf-existing" };
+
+    const vk = await upsertRepoVirtualKey({
+      state,
+      repo,
+      clients: [
+        { name: "n8n", tools: ["*"] },
+        { name: "railway", tools: ["*"] },
+      ],
+      url: `http://127.0.0.1:${address.port}/v1`,
+      managementKey: "management-key",
+    });
+
+    assert.equal(vk.id, "vk-legacy");
+    assert.equal(putCalls, 1);
+    assert.equal(getCalls, 0);
+    const saved = loadState();
+    assert.equal(saved.config.repos[repo.id].virtualKeyName, "omp-homelab-mcp");
+    assert.deepEqual(saved.config.repos[repo.id].mcpClients, [
+      { name: "n8n", tools: ["*"] },
+      { name: "railway", tools: ["*"] },
+    ]);
+    assert.equal(saved.secrets.repos[repo.id].mcpVirtualKey, "sk-bf-existing");
   } finally {
     server.close();
     if (oldConfigDir === undefined) delete process.env.PIFROST_CONFIG_DIR;
