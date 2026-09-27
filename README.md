@@ -101,7 +101,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.10
+0.6.11
 ```
 
 Bun also works:
@@ -181,9 +181,11 @@ pifrost doctor
 
 ### How capability safety works
 
-A logical route can contain models with different context windows, output limits, image support, reasoning support and tool support. Pifrost derives a safe OMP-facing capability envelope from the route instead of blindly advertising the primary model's capabilities.
+A logical route can contain models with different context windows, output limits, image support, reasoning/tool support and **wire protocols**. Pifrost derives a safe OMP-facing capability envelope from the route instead of blindly advertising the primary model's capabilities.
 
-For straightforward global fallback routes, Pifrost can also use **context-aware routing**. It advertises the largest safe context available in the route and, at request time, removes route members that cannot fit that specific request before handing the eligible chain back to Bifrost.
+For straightforward global fallback routes, Pifrost also uses **context-aware prewalk**. Before each request reaches Bifrost it removes members that are known to be incompatible with the final request: context/output limits, image/tool/reasoning constraints and the active Pifrost wire protocol are all considered. Pifrost's inference transport is OpenAI Chat Completions, so a provider-qualified member known to be Responses-only is skipped while a Chat-compatible sibling/provider may remain eligible.
+
+Protocol metadata is resolved conservatively from live Bifrost methods/endpoints and provider-qualified OMP catalog metadata. Unknown protocol metadata is not guessed or rejected merely for being incomplete; only an authoritative mismatch is excluded. The same prewalk runs for eligible simple routes even when every member has the same context window.
 
 Complex, weighted, scoped, pinned or policy-dependent routes remain Bifrost-owned and use the conservative static envelope.
 
