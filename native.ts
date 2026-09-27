@@ -8,6 +8,7 @@ import {
 	type OpenAIResponsesOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-responses";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
+import { Tokenizer } from "@oh-my-pi/pi-agent-core/tokenizer";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
@@ -40,6 +41,7 @@ import {
 } from "./pricing-normalize.ts";
 import { augmentLiveInventoryForRoutes } from "./route-inventory.ts";
 import { createBifrostUsageProvider } from "./bifrost-usage.ts";
+import { estimateOmpContextInputTokens } from "./context-estimator.ts";
 import {
 	applyDynamicRouteProfiles,
 	createDynamicRoutingFetch,
@@ -188,7 +190,10 @@ function streamDynamicPifrostRoute(
 	profile: DynamicRouteProfile,
 ) {
 	const planningBody = dynamicRoutePlanningBody(model, context, options);
+	const tokenizer = new Tokenizer(model);
+	const estimatedInputTokens = estimateOmpContextInputTokens(context, tokenizer);
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
+		estimatedInputTokens,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
 	const baseFetch = options?.fetch ?? globalThis.fetch;
