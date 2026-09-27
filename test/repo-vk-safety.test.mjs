@@ -181,7 +181,7 @@ test("repo init recovers from a create-name race by re-reading the exact canonic
 });
 
 
-test("repo init updates a stored legacy key without resending its unique name", async () => {
+test("repo init migrates a stored legacy key to the repo-scoped canonical name", async () => {
   const root = mkdtempSync(join(tmpdir(), "pifrost-vk-legacy-update-"));
   const oldConfigDir = process.env.PIFROST_CONFIG_DIR;
   let putCalls = 0;
@@ -193,6 +193,7 @@ test("repo init updates a stored legacy key without resending its unique name", 
 
     if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys") {
       getCalls += 1;
+      // No other key owns the repo-scoped canonical name.
       response.end(JSON.stringify({ virtual_keys: [] }));
       return;
     }
@@ -202,7 +203,9 @@ test("repo init updates a stored legacy key without resending its unique name", 
       let body = "";
       for await (const chunk of request) body += chunk;
       const parsed = JSON.parse(body);
-      if (Object.prototype.hasOwnProperty.call(parsed, "name")) {
+      // Reproduce the Bifrost 2.2.3 legacy-name failure: a policy-only update
+      // cannot disambiguate an old duplicate basename-only name.
+      if (parsed.name !== "omp-homelab-59894f4310-mcp") {
         response.statusCode = 409;
         response.end(JSON.stringify({ error: { message: "A virtual key with this name already exists" } }));
         return;
@@ -215,7 +218,7 @@ test("repo init updates a stored legacy key without resending its unique name", 
       response.end(JSON.stringify({
         virtual_key: {
           id: "vk-legacy",
-          name: "omp-homelab-mcp",
+          name: parsed.name,
           value: "********",
           mcp_configs: parsed.mcp_configs,
         },
@@ -256,15 +259,78 @@ test("repo init updates a stored legacy key without resending its unique name", 
     });
 
     assert.equal(vk.id, "vk-legacy");
+    assert.equal(vk.name, "omp-homelab-59894f4310-mcp");
     assert.equal(putCalls, 1);
-    assert.equal(getCalls, 0);
+    assert.equal(getCalls, 1);
     const saved = loadState();
-    assert.equal(saved.config.repos[repo.id].virtualKeyName, "omp-homelab-mcp");
+    assert.equal(saved.config.repos[repo.id].virtualKeyName, "omp-homelab-59894f4310-mcp");
     assert.deepEqual(saved.config.repos[repo.id].mcpClients, [
       { name: "n8n", tools: ["*"] },
       { name: "railway", tools: ["*"] },
     ]);
     assert.equal(saved.secrets.repos[repo.id].mcpVirtualKey, "sk-bf-existing");
+  } finally {
+    server.close();
+    if (oldConfigDir === undefined) delete process.env.PIFROST_CONFIG_DIR;
+    else process.env.PIFROST_CONFIG_DIR = oldConfigDir;
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+
+test("repo init refuses legacy-key migration when the canonical name belongs to another key", async () => {
+  const root = mkdtempSync(join(tmpdir(), "pifrost-vk-legacy-conflict-"));
+  const oldConfigDir = process.env.PIFROST_CONFIG_DIR;
+  let putCalls = 0;
+
+  const server = createServer(async (request, response) => {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    response.setHeader("content-type", "application/json");
+
+    if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys") {
+      response.end(JSON.stringify({
+        virtual_keys: [{
+          id: "vk-other",
+          name: "omp-homelab-59894f4310-mcp",
+          value: "********",
+        }],
+      }));
+      return;
+    }
+
+    if (request.method === "PUT") putCalls += 1;
+    response.statusCode = 404;
+    response.end(JSON.stringify({ error: { message: "not found" } }));
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("test server did not bind an address");
+
+  try {
+    process.env.PIFROST_CONFIG_DIR = root;
+    const state = loadState();
+    const repo = { root, name: "homelab", identity: "example/homelab", id: "homelab-59894f4310" };
+    state.config.repos[repo.id] = {
+      name: repo.name,
+      identity: repo.identity,
+      virtualKeyId: "vk-legacy",
+      virtualKeyName: "omp-homelab-mcp",
+      mcpClients: [{ name: "n8n", tools: ["*"] }],
+    };
+    state.secrets.repos[repo.id] = { mcpVirtualKey: "sk-bf-existing" };
+
+    await assert.rejects(
+      upsertRepoVirtualKey({
+        state,
+        repo,
+        clients: [{ name: "n8n", tools: ["*"] }],
+        url: `http://127.0.0.1:${address.port}/v1`,
+        managementKey: "management-key",
+      }),
+      /canonical name .* already belongs to vk-other/u,
+    );
+    assert.equal(putCalls, 0);
   } finally {
     server.close();
     if (oldConfigDir === undefined) delete process.env.PIFROST_CONFIG_DIR;
