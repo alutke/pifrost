@@ -18,7 +18,7 @@ test("repo init associates but does not rotate an existing masked Virtual Key im
 
     if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys") {
       response.end(JSON.stringify({
-        virtual_keys: [{ id: "vk-existing", name: "omp-demo-mcp", value: "********" }],
+        virtual_keys: [{ id: "vk-existing", name: "omp-demo-abc-mcp", value: "********" }],
       }));
       return;
     }
@@ -27,7 +27,7 @@ test("repo init associates but does not rotate an existing masked Virtual Key im
       response.end(JSON.stringify({
         virtual_key: {
           id: "vk-existing",
-          name: "omp-demo-mcp",
+          name: "omp-demo-abc-mcp",
           value: "********",
           mcp_configs: [{ mcp_client_name: "home-assistant", tools_to_execute: ["*"] }],
         },
@@ -75,4 +75,11 @@ test("repo init associates but does not rotate an existing masked Virtual Key im
     else process.env.PIFROST_CONFIG_DIR = oldConfigDir;
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test("repo-scoped Virtual Key names distinguish repositories with the same basename", async () => {
+  const { repoVirtualKeyName } = await import("../cli-lib.mjs");
+  assert.equal(repoVirtualKeyName({ name: "homelab", id: "homelab-aaaaaaaaaa" }), "omp-homelab-aaaaaaaaaa-mcp");
+  assert.equal(repoVirtualKeyName({ name: "homelab", id: "homelab-bbbbbbbbbb" }), "omp-homelab-bbbbbbbbbb-mcp");
 });
