@@ -43,7 +43,6 @@ import { createBifrostUsageProvider } from "./bifrost-usage.ts";
 import {
 	createApproximateContextTokenizer,
 	estimateOmpContextInputTokens,
-	type PifrostContextTokenizer,
 } from "./context-estimator.ts";
 import {
 	applyDynamicRouteProfiles,
@@ -77,7 +76,6 @@ import {
 } from "./agent-attribution.ts";
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
-const runtimeSessionTokenizers = new Map<string, PifrostContextTokenizer>();
 
 function installDynamicRouteProfiles(models: readonly import("./index.ts").BifrostProviderModel[]): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
@@ -90,22 +88,6 @@ const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
-}
-
-function bindRuntimeSessionTokenizer(sessionId: string, tokenizer: PifrostContextTokenizer): void {
-	const normalized = nonEmpty(sessionId);
-	if (!normalized) return;
-	runtimeSessionTokenizers.set(normalized, tokenizer);
-}
-
-function releaseRuntimeSessionTokenizer(sessionId: string): void {
-	const normalized = nonEmpty(sessionId);
-	if (!normalized) return;
-	runtimeSessionTokenizers.delete(normalized);
-}
-
-function contextTokenizerForSession(sessionId: string): PifrostContextTokenizer {
-	return runtimeSessionTokenizers.get(sessionId) ?? createApproximateContextTokenizer();
 }
 
 function normalizePifrostReasoningOptions(
@@ -212,7 +194,7 @@ function streamDynamicPifrostRoute(
 	const planningBody = dynamicRoutePlanningBody(model, context, options);
 	const estimatedInputTokens = estimateOmpContextInputTokens(
 		context,
-		contextTokenizerForSession(sessionId),
+		createApproximateContextTokenizer(),
 	);
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
 		estimatedInputTokens,
@@ -517,21 +499,15 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	// exceed OMP's generic 30-second handler budget. The coordinator only runs
 	// while the session is idle and fails open to the final-wire skip guard.
 	pi.on("agent_end", (_event, ctx) => {
-		const sessionId = ctx.sessionManager.getSessionId();
-		bindAgentSession(sessionId, ctx.agent);
-		bindRuntimeSessionTokenizer(sessionId, ctx.agent.tokenizer);
+		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_start", (_event, ctx) => {
-		const sessionId = ctx.sessionManager.getSessionId();
-		bindAgentSession(sessionId, ctx.agent);
-		bindRuntimeSessionTokenizer(sessionId, ctx.agent.tokenizer);
+		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
-		const sessionId = ctx.sessionManager.getSessionId();
-		releaseRuntimeSessionTokenizer(sessionId);
-		releaseAgentSession(sessionId);
+		releaseAgentSession(ctx.sessionManager.getSessionId());
 	});
 
 	pi.registerCommand("pifrost", {
