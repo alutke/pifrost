@@ -8,8 +8,11 @@ import {
 	formatDoctorReport,
 	normalizeBifrostUrl,
 	PIFROST_API,
+	PIFROST_APP_REFERER,
+	PIFROST_APP_TITLE,
 	PIFROST_VERSION,
 	pifrostOpenCodeSessionHeaders,
+	pifrostProviderHeaders,
 	pifrostSessionHeaders,
 	resolveAliasReference,
 	synthesizeAlias,
@@ -134,6 +137,18 @@ test("maps Bifrost supported methods to physical wire protocols", () => {
 test("provider user agent follows package release version", () => {
 	const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
 	assert.equal(PIFROST_VERSION, pkg.version);
+});
+
+test("provider forwards real OMP/pi attribution through Bifrost for agentic OpenRouter endpoints", () => {
+	assert.equal(PIFROST_APP_REFERER, "https://pi.dev/");
+	assert.equal(PIFROST_APP_TITLE, "pi");
+	assert.deepEqual(pifrostProviderHeaders("vk"), {
+		"x-bf-vk": "vk",
+		"User-Agent": `pifrost/${PIFROST_VERSION} OMP`,
+		"x-bf-eh-user-agent": `pifrost/${PIFROST_VERSION} OMP`,
+		"x-bf-eh-http-referer": "https://pi.dev/",
+		"x-bf-eh-x-title": "pi",
+	});
 });
 
 test("native provider accepts Bifrost 2.x Virtual-Key-only inference auth", async () => {
@@ -335,6 +350,8 @@ test("native OMP provider uses the Pifrost transport and separate x-bf-vk govern
 		"x-bf-vk": "vk",
 		"User-Agent": `pifrost/${PIFROST_VERSION} OMP`,
 		"x-bf-eh-user-agent": `pifrost/${PIFROST_VERSION} OMP`,
+		"x-bf-eh-http-referer": PIFROST_APP_REFERER,
+		"x-bf-eh-x-title": PIFROST_APP_TITLE,
 	});
 	const models = await provider.fetchDynamicModels("resolved-api");
 	assert.deepEqual(models.map((entry) => entry.id), ["omp-task"]);
