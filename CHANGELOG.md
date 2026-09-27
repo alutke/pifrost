@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.14 — 2026-09-27
+
+- Fixed the remaining `omp-default` prewalk failure after 0.6.13 protocol filtering. Pifrost had conflated OMP's `disableReasoningOnToolChoice` wire-policy flag with Bifrost's broader `supports_reasoning_with_tool_calls` capability, so DeepSeek Chat members could be rejected merely because a reasoning request offered tools.
+- Reasoning/tool compatibility is now represented as two independent route capabilities: `supportsReasoningWithTools` controls whether reasoning may coexist with an offered tool set, while `disableReasoningOnToolChoice` applies only when the final wire request actually contains `tool_choice`.
+- Added an exact regression for the live 0.6.13 route: Responses-only OpenCode Go Muse is excluded, while Command Code DeepSeek and direct DeepSeek remain eligible for a reasoning request with tools and no `tool_choice`.
+- Preserved OMP's `maxTokensExplicit` intent across Pifrost's custom transport. Runtime diagnostics now label the serialized output reserve as caller-requested or an implicit OMP/model ceiling instead of implying every model-default cap was explicitly requested.
+- Expanded no-eligible-route errors to report the concrete exclusion reasons for every physical member.
+- Advanced the model-catalog cache schema to v10 so route profiles generated with the old reasoning/tool semantics are discarded after upgrade.
+
 ## 0.6.13 — 2026-09-27
 
 - Fixed a wire-protocol precedence bug exposed by the current OpenCode Go Muse route. Pifrost previously allowed generic/cross-provider Bifrost datasheet `supported_endpoints` metadata to override OMP's provider-specific `apiRouteFor()` policy.
