@@ -4,6 +4,7 @@ import test from "node:test";
 import { buildRichRouteCatalog, type BifrostDatasheets } from "../datasheet.ts";
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
 import { augmentLiveInventoryForRoutes } from "../route-inventory.ts";
+import { findCatalogProtocolCapability } from "../catalog-fallback.ts";
 import { applyDynamicRouteProfiles, extractDynamicRouteProfiles, rewriteDynamicOpenAIRequest } from "../dynamic-routing.ts";
 
 function sparseLive(id: string): BifrostProviderModel {
@@ -232,12 +233,13 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 			},
 		},
 	};
+	assert.deepEqual(findCatalogProtocolCapability("opencode-go/muse-spark-1.3-contributor"), ["openai-responses"]);
+	assert.deepEqual(findCatalogProtocolCapability("CommandCode GOAT/deepseek/deepseek-v4.1-flash"), ["openai-completions"]);
 	const augmented = augmentLiveInventoryForRoutes([], aliases);
 	const catalogOverride = [
 		{
 			id: "muse-spark-1.3-contributor",
 			provider: "opencode-go",
-			api: "openai-responses",
 			contextWindow: 1_000_000,
 			maxTokens: 131_072,
 			reasoning: true,
@@ -248,7 +250,6 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 		{
 			id: "deepseek/deepseek-v4.1-flash",
 			provider: "commandcode",
-			api: "openai-completions",
 			contextWindow: 1_000_000,
 			maxTokens: 131_072,
 			reasoning: true,
@@ -259,7 +260,6 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 		{
 			id: "deepseek-flash",
 			provider: "deepseek",
-			api: "openai-completions",
 			contextWindow: 1_048_576,
 			maxTokens: 131_072,
 			reasoning: true,
