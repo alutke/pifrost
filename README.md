@@ -101,7 +101,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.15
+0.6.16
 ```
 
 Bun also works:
@@ -184,6 +184,8 @@ pifrost doctor
 A logical route can contain models with different context windows, output limits, image support, reasoning/tool support and **wire protocols**. Pifrost derives a safe OMP-facing capability envelope from the route instead of blindly advertising the primary model's capabilities.
 
 For straightforward global fallback routes, Pifrost also uses **context-aware prewalk**. Before each request reaches Bifrost it removes members that are known to be incompatible with the final request: context/output limits, image/tool/reasoning constraints and supported wire protocols are all considered.
+
+On the native OMP path, context sizing uses OMP's model-aware token semantics rather than serializing its internal Context objects. Pifrost reuses trustworthy provider usage as a prefix anchor, counts only the unreported tail locally, and otherwise counts the system prompt, tool schemas and semantic message content. Internal metadata such as tool-result `details`, timestamps and usage records is not treated as model prompt content.
 
 Pifrost natively executes both **OpenAI Responses** and **OpenAI Chat Completions** route members. Eligible members stay in their original route order and are grouped only when adjacent members use the same protocol. Each protocol group is dispatched through OMP's native transport for that wire API; same-protocol fallbacks remain inside Bifrost's native `fallbacks` chain. If a protocol group fails before producing model output, Pifrost advances to the next group. Once any real output has been emitted, Pifrost never replays that turn on another model or protocol.
 
