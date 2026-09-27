@@ -609,14 +609,18 @@ export function buildRichRouteCatalog(
 			catalogCapabilitySource,
 		);
 		const reasoningWithTools = selectBooleanCapability(
-			liveModel.compat.disableReasoningOnToolChoice === undefined ? undefined : !liveModel.compat.disableReasoningOnToolChoice,
+			liveModel.compat.supportsReasoningWithTools,
 			liveModel.capabilitySources?.reasoningWithTools,
 			reasoningWithToolsFromParameters(parameters?.value),
 			sheetSource(parameters, "reasoningWithTools"),
-			vendor?.disableReasoningOnToolChoice === undefined ? undefined : !vendor.disableReasoningOnToolChoice,
-			catalog?.disableReasoningOnToolChoice === undefined ? undefined : !catalog.disableReasoningOnToolChoice,
-			catalogCapabilitySource,
+			undefined,
+			undefined,
+			undefined,
 		);
+		const disableReasoningOnToolChoice =
+			vendor?.disableReasoningOnToolChoice ??
+			catalog?.disableReasoningOnToolChoice ??
+			liveModel.compat.disableReasoningOnToolChoice;
 		const inputCost = perMillion(pricing?.value.input_cost_per_token) ?? liveModel.cost.input ?? vendor?.cost.input ?? catalog?.cost.input ?? 0;
 		const outputCost = perMillion(pricing?.value.output_cost_per_token) ?? liveModel.cost.output ?? vendor?.cost.output ?? catalog?.cost.output ?? 0;
 		const cacheRead = perMillion(pricing?.value.cache_read_input_token_cost) ?? liveModel.cost.cacheRead ?? vendor?.cost.cacheRead ?? catalog?.cost.cacheRead ?? inputCost;
@@ -669,8 +673,8 @@ export function buildRichRouteCatalog(
 				supportsToolChoice: toolChoice.value ?? liveModel.compat.supportsToolChoice ?? true,
 				supportsForcedToolChoice: forcedToolChoice.value ?? liveModel.compat.supportsForcedToolChoice ?? true,
 				supportsNamedToolChoice: namedToolChoice.value ?? liveModel.compat.supportsNamedToolChoice ?? true,
-				disableReasoningOnToolChoice:
-					reasoning.value ? !(reasoningWithTools.value ?? !liveModel.compat.disableReasoningOnToolChoice) : false,
+				supportsReasoningWithTools: reasoning.value ? reasoningWithTools.value : true,
+				disableReasoningOnToolChoice: reasoning.value ? disableReasoningOnToolChoice : false,
 			},
 		});
 
