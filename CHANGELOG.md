@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.8 — 2026-09-27
+
+- Fixed `pifrost repo init` returning HTTP 409 when updating an already-associated legacy repo Virtual Key such as `omp-homelab-mcp` on Bifrost 2.2.3.
+- Repo Virtual Key policy updates no longer resend the unique `name` field. They update only mutable fields such as `is_active` and `mcp_configs`, avoiding Bifrost's uniqueness conflict on PUT.
+- Existing stored Virtual Key ids, names and raw secrets are preserved; this fix does not recreate or rotate working repo keys.
+- Preserved the 0.6.7 repo-scoped naming and 409 create-race recovery for newly initialized repositories.
+- Added an exact regression for the live homelab shape: an existing `omp-homelab-mcp` key with n8n is updated to n8n + Railway while the mock Bifrost rejects any PUT that contains `name`.
+
 ## 0.6.7 — 2026-09-27
 
 - Fixed `pifrost repo init` failing with HTTP 409 when a Bifrost Virtual Key already used the basename-only canonical name.
