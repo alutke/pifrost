@@ -86,12 +86,18 @@ test("provider usage anchor owns the established prefix and only the tail is loc
 	assert.ok(estimate < 12_500, `anchor should prevent recounting established framing: ${estimate}`);
 });
 
-test("history rewrite invalidates an older provider usage anchor", () => {
+test("history rewrite marker rejects a predated retained-tail usage anchor", () => {
 	const context = {
 		messages: [
 			{
+				role: "user",
+				content: "compacted replacement",
+				historyRewriteAt: 2,
+				timestamp: 2,
+			},
+			{
 				role: "assistant",
-				content: [{ type: "text", text: "old answer" }],
+				content: [{ type: "text", text: "retained tail answer" }],
 				api: "openai-completions",
 				provider: "test",
 				model: "test",
@@ -104,17 +110,12 @@ test("history rewrite invalidates an older provider usage anchor", () => {
 					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 				},
 				stopReason: "stop",
+				// OMP can retain a tail whose timestamp predates the rewrite commit.
 				timestamp: 1,
-			},
-			{
-				role: "user",
-				content: "compacted replacement",
-				historyRewriteAt: 2,
-				timestamp: 2,
 			},
 		],
 	} as unknown as Context;
 
 	const estimate = estimateOmpContextInputTokens(context, createApproximateContextTokenizer());
-	assert.ok(estimate < 100, `stale anchor survived rewrite: ${estimate}`);
+	assert.ok(estimate < 100, `predated retained-tail anchor survived rewrite: ${estimate}`);
 });
