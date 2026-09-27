@@ -37,6 +37,7 @@ function metadataOnlyRouteMember(reference: string): BifrostProviderModel {
 			reasoning: "fallback",
 			reasoningEfforts: "fallback",
 			tools: "fallback",
+			protocol: "fallback",
 		},
 		compat: {
 			supportsDeveloperRole: false,
