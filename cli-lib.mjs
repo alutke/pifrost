@@ -1532,10 +1532,11 @@ export async function upsertRepoVirtualKey({
   let created = false;
   let associatedName;
 
-  const updateRequest = () => {
+  const updateRequest = (name) => {
     const request = {
       is_active: true,
     };
+    if (name) request.name = name;
     if (Array.isArray(clients)) {
       request.mcp_configs = clients.map((client) => ({
         mcp_client_name: client.name,
@@ -1547,13 +1548,29 @@ export async function upsertRepoVirtualKey({
 
   if (local?.virtualKeyId) {
     try {
+      const localName = local.virtualKeyName ?? keyName;
+      let requestedName;
+      if (localName !== keyName) {
+        // Bifrost 2.2.3's UpdateVirtualKey store resolves by "id OR name".
+        // A legacy duplicate basename-only name can therefore make even a
+        // policy-only PUT fail with ErrAlreadyExists. Migrate only a key that
+        // is already associated locally, preserving its ID/value while moving
+        // it onto the repo-scoped canonical name.
+        const canonical = await findVirtualKeyByExactName(url, managementKey, keyName);
+        if (canonical?.id && canonical.id !== local.virtualKeyId) {
+          throw new Error(
+            `Cannot migrate legacy repo Virtual Key ${localName}: canonical name ${keyName} already belongs to ${canonical.id}. Resolve that conflict in Bifrost before retrying.`,
+          );
+        }
+        requestedName = keyName;
+      }
       vk = await updateVirtualKey(
         url,
         managementKey,
         local.virtualKeyId,
-        updateRequest(),
+        updateRequest(requestedName),
       );
-      associatedName = local.virtualKeyName ?? vk?.name ?? keyName;
+      associatedName = requestedName ?? local.virtualKeyName ?? vk?.name ?? keyName;
     } catch (error) {
       if (!(error instanceof PifrostHttpError) || error.status !== 404) throw error;
     }
