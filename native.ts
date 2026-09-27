@@ -7,6 +7,7 @@ import {
 	streamOpenAIResponses,
 	type OpenAIResponsesOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-responses";
+import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
@@ -50,7 +51,8 @@ import {
 } from "./dynamic-routing.ts";
 import {
 	bifrostAttemptExtraBody,
-	streamPifrostProtocolPlan,
+	createPifrostAttemptModelSpec,
+	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import {
@@ -191,8 +193,10 @@ function streamDynamicPifrostRoute(
 	});
 	const baseFetch = options?.fetch ?? globalThis.fetch;
 	const reasoning = resolvePifrostReasoningEffort(model, options);
+	const outer = new AssistantMessageEventStream();
 
-	return streamPifrostProtocolPlan(model, plan, (attempt, transportModel, attemptIndex) => {
+	void runPifrostProtocolPlan(model, plan, outer, (attempt, attemptIndex) => {
+		const transportModel = buildModel(createPifrostAttemptModelSpec(model, attempt));
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
 		const maxTokens = options?.maxTokens ?? attempt.members[0]?.maxTokens ?? model.maxTokens ?? undefined;
 		if (attempt.protocol === "openai-responses") {
@@ -238,7 +242,9 @@ function streamDynamicPifrostRoute(
 			context,
 			chatOptions,
 		);
-	});
+	}).catch((error) => outer.fail(error));
+
+	return outer;
 }
 
 /**
