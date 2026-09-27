@@ -56,7 +56,10 @@
     "scripts/validate-release.mjs",
     "NOTICE.md",
     "LICENSE",
-    "pifrost.aliases.example.json"
+    "pifrost.aliases.example.json",
+    "cache-schema.ts",
+    "dist",
+    "tsconfig.runtime.json"
   ],
   "omp": {
     "extensions": [
@@ -64,11 +67,13 @@
     ]
   },
   "scripts": {
-    "check": "tsc --noEmit && node --check cli.mjs && node --check cli-preconditions.mjs && node --check diagnostic-result.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check doctor-probes.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
+    "check": "npm run build:runtime && tsc --noEmit && node --check cli.mjs && node --check cli-preconditions.mjs && node --check diagnostic-result.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check doctor-probes.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-normalization.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check dist/config-store.js && node --check dist/routing-core.js && node --check dist/cache-schema.js && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
-    "cli": "node cli.mjs"
+    "cli": "node cli.mjs",
+    "build:runtime": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.runtime.json",
+    "prepare": "npm run build:runtime"
   },
   "dependencies": {
     "@oh-my-pi/pi-ai": "18.3.2",
