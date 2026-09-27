@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.6.11 — 2026-09-27
+
+- Added provider-qualified wire-protocol capability tracking for physical route members. Pifrost now normalizes OpenAI Chat Completions, OpenAI Responses and Anthropic Messages metadata instead of assuming that every model visible through Bifrost can service Pifrost's Chat-Completions transport.
+- Extended the simple-route prewalk to reject members with an authoritative protocol mismatch before the request reaches Bifrost. The current `opencode-go/muse-spark-1.3-contributor` route is therefore skipped for Pifrost Chat requests while Chat-compatible Command Code/DeepSeek fallbacks remain eligible.
+- Protocol provenance is resolved conservatively from live Bifrost `supported_methods`, Bifrost `supported_endpoints`, provider-qualified OMP catalog metadata, then narrowly scoped verified hints. Unknown protocol metadata remains eligible; Pifrost does not invent a transport contract.
+- Made capability prewalk run for every eligible `context-aware` simple route even when all members expose the same context window, so protocol, image, tool and reasoning constraints cannot be bypassed by equal context sizes.
+- Added regressions reproducing the observed `ModelProtocolUnsupported` failure on the current `omp-default` route and verifying that provider-qualified protocol differences are preserved.
+- Advanced the model-catalog cache schema to v7 so protocol-blind cached route profiles are rejected after upgrade.
+- Removed the stale hard-coded `pifrost/0.4.1 OMP` provider identity. Pifrost now derives the forwarded User-Agent version from the installed package version.
+- Retained the existing OMP 18.3.2 compatibility floor; the required OpenCode Go protocol pins are present in the released 18.3.2 catalog and the full released-loader contract remains CI-gated.
+
 ## 0.6.10 — 2026-09-27
 
 - Fixed the actual cause of repeated HTTP 409 failures when `pifrost repo init` adds or changes MCP grants on an existing Bifrost 2.2.3 Virtual Key.
