@@ -2,10 +2,19 @@
 
 ## Unreleased
 
+## 0.6.17 — 2026-09-27
+
+- Fixed the 0.6.16 OMP plugin-install regression where extension validation failed because the new context estimator imported `@oh-my-pi/pi-agent-core/tokenizer`, whose native `@oh-my-pi/pi-natives` dependency is not available in OMP's clean GitHub plugin sandbox.
+- Removed the agent-core/native runtime dependency entirely. Dynamic-route prewalk now applies the same semantic provider-context accounting with a dependency-free local tokenizer: trustworthy provider usage anchors the established prefix, while only model-visible system/tool/message content is estimated locally.
+- Preserved the 0.6.16 false-overflow fix: large internal tool-result `details`, usage records, timestamps and routing metadata are still excluded from prompt sizing, so the observed ~1.49M-token false estimate cannot recur through the old `JSON.stringify(Context)` path.
+- Kept 0.6.15 mixed-protocol execution unchanged: Muse remains the first `omp-default` attempt through Bifrost `/v1/responses`, with the Chat-compatible DeepSeek group used only after a pre-output failure.
+- Added a CI release gate that installs the exact GitHub commit into a fresh OMP plugin home via `omp install github:<repo>#<sha> --force` and validates the installed plugin. This reproduces the user installation path that 0.6.16 failed and prevents development-checkout dependency leakage from masking future packaging regressions.
+- Cache schema remains v11 because route-profile metadata is unchanged.
+
 ## 0.6.16 — 2026-09-27
 
 - Fixed dynamic-route context prewalk falsely rejecting small OMP turns as larger than the model window. The native route path had been estimating `JSON.stringify()` of OMP's internal Context objects, which can include large non-wire metadata such as tool-result `details`, provider usage records, timestamps and routing state.
-- Native OMP routing now uses OMP's model-aware `Tokenizer` semantics: trustworthy provider usage anchors account for the established prefix, only the unreported message tail is counted locally, and fresh contexts count system prompt, active/inactive tool schemas and semantic message content with OMP's local-tokenizer safety margin.
+- Native OMP routing introduced semantic provider-context sizing with trustworthy provider-usage anchors and model-visible content counting; its initial implementation instantiated OMP's model-aware `Tokenizer`, which was later replaced in 0.6.17 because that native dependency is not deployable in OMP's clean plugin sandbox.
 - Provider usage anchors now mirror OMP's trust and rewrite rules, including rejection of aborted/error turns, pure-output usage, predated retained tails after history rewrites and stale usage across pruned tool results.
 - The legacy serialized-body estimator remains available only as a fallback for non-native/final-wire callers; a native semantic estimate explicitly outranks it in route planning.
 - Added regressions proving that multi-megabyte tool-result metadata that is not model prompt content cannot inflate a small turn into a false >1M-token overflow, and that the semantic estimate wins over the raw request-object size.
