@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.4 — 2026-09-27
+
+- Fixed Git/GitHub npm installs failing during `prepare` with `tsc: not found` on global installs where development dependencies are unavailable.
+- Replaced the consumer-side TypeScript compiler dependency with a zero-dependency Node.js runtime builder using Node 22's built-in type stripping; Pifrost's supported Node baseline already provides this capability.
+- Kept the generated standalone CLI runtime isolated in `dist/`, while the native OMP extension continues to use its TypeScript sources.
+- Added release validation that deletes `dist/`, rebuilds it using only the Node executable, verifies all runtime artifacts are recreated, then packs, installs and executes the resulting package from `node_modules`.
+- Kept `npm pack --json` machine-readable by making the preparation build silent, preventing lifecycle output from corrupting release metadata parsing.
+
 ## 0.6.3 — 2026-09-27
 
 - Fixed global/standalone CLI installs so Node.js never executes Pifrost TypeScript from inside `node_modules`; CLI-facing TypeScript is compiled to JavaScript in `dist/` during package preparation while the native OMP extension remains TypeScript.
