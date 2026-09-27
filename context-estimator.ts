@@ -45,7 +45,7 @@ function countFraming(
 ): number {
 	if (!items?.length) return 0;
 	return kind === "system"
-		? tokenizer.countTokens(items as readonly string[] as string[])
+		? tokenizer.countTokens([...(items as readonly string[])])
 		: tokenizer.countTokens(toolFragments(items as readonly Tool[]));
 }
 
@@ -54,10 +54,18 @@ interface UsageAnchor {
 	tokens: number;
 }
 
+function hasContextTokenUsage(usage: Usage): boolean {
+	return (
+		(usage.contextTokens ?? 0) > 0 ||
+		usage.input + usage.cacheRead + usage.cacheWrite > 0 ||
+		calculateContextTokens(usage) > usage.output
+	);
+}
+
 function validUsageAnchor(message: Message): message is Extract<Message, { role: "assistant" }> {
 	if (message.role !== "assistant") return false;
 	if (message.stopReason === "aborted" || message.stopReason === "error") return false;
-	return calculateContextTokens(message.usage) > 0;
+	return hasContextTokenUsage(message.usage);
 }
 
 /**
