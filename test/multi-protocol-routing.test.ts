@@ -160,7 +160,10 @@ test("attempt specs use native protocol endpoints and preserve same-protocol Bif
 	const chat = createPifrostAttemptModelSpec(logical, route.attempts[1]!);
 
 	assert.equal(responses.api, "openai-responses");
-	assert.equal(responses.id, "opencode-go/muse-spark-1.3-contributor");
+	assert.equal(responses.provider, "opencode-go");
+	assert.equal(responses.id, "muse-spark-1.3-contributor");
+	assert.equal(responses.requestModelId, "opencode-go/muse-spark-1.3-contributor");
+	assert.equal(responses.baseUrl, "http://bifrost/v1");
 	assert.equal(chat.api, "openai-completions");
 	assert.equal(chat.id, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
 	assert.deepEqual(
