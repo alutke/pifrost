@@ -201,7 +201,7 @@ thinking=high,max source=explicit
 
 - Node.js **22.19 or later**
 - OhMyPi **18.3.2 or later** in the 18.x line
-- Maxim Bifrost **2.0.0 or later** with OpenAI-compatible Chat Completions enabled
+- Maxim Bifrost **2.0.0 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
 - outbound HTTPS access to `getbifrost.ai` when refreshing public capability metadata
@@ -232,7 +232,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.14
+0.6.15
 ```
 
 Bun can also install the package globally:
@@ -1230,11 +1230,15 @@ Bifrost remains responsible for provider credentials, provider selection/fallbac
 
 Pifrost removes the weakest-context-member ceiling for simple Bifrost logical routes. After `pifrost routes sync`, aliases backed by one global, terminal, unweighted routing rule are marked `context-aware`. Pifrost advertises the largest context window available anywhere in that route while keeping the route-wide safe minimum output ceiling.
 
-At request time Pifrost intercepts OMP's final OpenAI Chat Completions payload, estimates serialized prompt demand with a conservative safety allowance, reserves the requested output budget, and prewalks the synced physical route chain. Eligibility covers context/output capacity, image input, tools/tool-choice, reasoning-with-tools and **wire protocol compatibility**. The first eligible member becomes the physical Bifrost request model and the remaining eligible members are supplied through Bifrost's native top-level `fallbacks` array, so Bifrost still executes provider credentials, retries, governance and failover. The original logical role is retained in `x-pifrost-logical-model` for observability.
+At request time Pifrost estimates prompt demand with a conservative safety allowance, reserves the requested output budget, and prewalks the synced physical route chain. Eligibility covers context/output capacity, image input, tools/tool-choice, reasoning-with-tools and **wire protocol support**. Pifrost then partitions the eligible route into contiguous protocol groups without changing route order.
 
-Protocol is provider-qualified. Pifrost can therefore treat `opencode-go/muse-spark-1.3-contributor` as OpenAI Responses-only while independently treating a similarly named model on another provider according to that provider's transport contract. Protocol provenance is resolved in this order: authoritative live Bifrost `supported_methods`; OMP's compiled provider `api-routes` policy (`apiRouteFor`), which is provider-qualified and covers gateway-only ids absent from the static bundle; Bifrost model-parameter `supported_endpoints`; provider-qualified bundled catalog metadata; then narrowly scoped verified hints. Provider-specific route policy intentionally outranks generic family datasheet matches so a Chat-capable sibling provider cannot make a Responses-only OpenCode Go route appear Chat-compatible. Unknown protocol metadata remains eligible rather than being guessed; only an established mismatch with Pifrost's `openai-completions` transport is excluded.
+Pifrost natively executes two OpenAI-family wire transports: `openai-responses` and `openai-completions`. Each group is dispatched through OMP's own native transport for that protocol. Adjacent members that share a protocol stay together and are supplied to Bifrost using its native top-level `fallbacks` array, so Bifrost remains responsible for credentials, governance, accounting, provider retries and same-protocol failover. If an entire group fails before producing model output, Pifrost advances to the next protocol group. The initial stream-start envelope is buffered during this decision. Once any real text, thinking or tool output is emitted, cross-protocol replay is forbidden to avoid duplicate or contradictory assistant output.
 
-For example, a route `Responses-only 1M -> Chat 256K -> Chat 1M` keeps the Responses-only member out of every Pifrost Chat request. For a small request the two Chat members remain eligible; once the calculated input-plus-output requirement exceeds 256K, the middle member is also removed. Pifrost fails closed if no member can satisfy the request's established capability requirements. Prewalk remains active for eligible `context-aware` routes even when all members have equal context windows, because protocol/tool/image compatibility can still differ.
+The original logical role remains the OMP-facing model identity. Pifrost records the selected physical member as the upstream model and sends route diagnostics such as `x-pifrost-logical-model`, `x-pifrost-route-protocol`, `x-pifrost-route-attempt` and `x-pifrost-route-primary` to Bifrost.
+
+Protocol is provider-qualified. Pifrost can therefore treat `opencode-go/muse-spark-1.3-contributor` as OpenAI Responses-only while independently treating a similarly named model on another provider according to that provider's transport contract. Protocol provenance is resolved in this order: authoritative live Bifrost `supported_methods`; OMP's compiled provider `api-routes` policy (`apiRouteFor`), which is provider-qualified and covers gateway-only ids absent from the static bundle; Bifrost model-parameter `supported_endpoints`; provider-qualified bundled catalog metadata; then narrowly scoped verified hints. Provider-specific route policy intentionally outranks generic family datasheet matches so a Chat-capable sibling provider cannot make a Responses-only OpenCode Go route appear Chat-compatible. Unknown protocol metadata retains the historical Chat-compatible default unless another established capability excludes it.
+
+For example, `Responses Muse 1M -> Chat CommandCode 1M -> Chat DeepSeek 1.048M` becomes two attempts: Muse first through Bifrost `/v1/responses`, followed only on a pre-output failure by one Chat attempt whose Bifrost fallback chain is CommandCode then DeepSeek. For OpenCode Go, Pifrost presents the bare upstream model identity to OMP's provider-policy resolver while retaining the full `opencode-go/...` reference as `requestModelId` for Bifrost. This preserves OMP's OpenCode-specific Responses replay/tool/reasoning semantics without bypassing Bifrost. Prewalk remains active for eligible `context-aware` routes even when all members have equal context windows, because protocol/tool/image compatibility can still differ.
 
 Reasoning-with-tools and reasoning-with-`tool_choice` are distinct compatibility dimensions. Bifrost's `supports_reasoning_with_tool_calls` controls whether reasoning can coexist with an offered tool set. OMP's `disableReasoningOnToolChoice` controls a narrower wire-policy case: reasoning must be suppressed when a `tool_choice` selector is actually serialized. Tool definitions alone do not trigger that selector rule. Pifrost carries both properties independently through enrichment, alias synthesis and runtime prewalk.
 
@@ -1248,7 +1252,7 @@ Run `pifrost doctor` after syncing to inspect route-member protocol provenance t
 
 ### OpenCode Go returns `MissingSessionID`
 
-Pifrost forwards OMP's per-conversation session id to Bifrost as `x-bf-session-id` for Bifrost session affinity and separately as `x-bf-eh-x-opencode-session` for OpenCode Go. It also forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. The custom transport rebuilds the logical Pifrost model as a resolved OpenAI Chat Completions model before dispatch, so OMP's complete compatibility policy is present during forced-tool and reasoning handling. If Bifrost has a non-empty client header allowlist, it must permit the dynamic extra-header names; otherwise Bifrost will drop the OpenCode forwarding header before provider dispatch and OpenCode Go will reject the request.
+Pifrost forwards OMP's per-conversation session id to Bifrost as `x-bf-session-id` for Bifrost session affinity and separately as `x-bf-eh-x-opencode-session` for OpenCode Go. It also forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. Dynamic OpenCode Go attempts use OMP's native OpenCode provider policy and the correct Chat or Responses transport while retaining Bifrost as the HTTP/authentication hop. If Bifrost has a non-empty client header allowlist, it must permit the dynamic extra-header names; otherwise Bifrost will drop the OpenCode forwarding header before provider dispatch and OpenCode Go will reject the request.
 
 The two session headers deliberately have different consumers: `x-bf-session-id` is consumed by Bifrost itself for routing/provider-key affinity, while the escaped OpenCode header is forwarded to the selected OpenCode Go upstream.
 
