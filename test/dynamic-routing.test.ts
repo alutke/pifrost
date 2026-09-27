@@ -102,6 +102,51 @@ test("small requests retain every route member", () => {
 	assert.deepEqual(result.body.fallbacks, ["provider/small", "provider/large-two"]);
 });
 
+test("protocol prewalk removes responses-only members from Pifrost chat requests", () => {
+	const route = profile();
+	route.members[0] = { ...route.members[0]!, protocols: ["openai-responses"] };
+	route.members[1] = { ...route.members[1]!, protocols: ["openai-completions"] };
+	route.members[2] = { ...route.members[2]!, protocols: ["openai-completions"] };
+	const body = { model: "omp-default", messages: [{ role: "user", content: "hello" }], max_tokens: 32_000 };
+	const result = rewriteDynamicOpenAIRequest(route, body, { bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 });
+	assert.equal(result.body.model, "provider/small");
+	assert.deepEqual(result.body.fallbacks, ["provider/large-two"]);
+	assert.deepEqual(result.decision.excluded[0], {
+		reference: "provider/large",
+		reasons: ["protocol openai-responses incompatible with openai-completions"],
+	});
+});
+
+test("context-aware routes still install prewalk when all context windows are equal", () => {
+	const equalPhysical = [
+		member("provider/large", 1_000_000, { protocols: ["openai-responses"] }),
+		member("provider/small", 1_000_000, { protocols: ["openai-completions"] }),
+		member("provider/large-two", 1_000_000, { protocols: ["openai-completions"] }),
+	];
+	const catalog = applyDynamicRouteProfiles(
+		{
+			models: [{ ...member("omp-default", 1_000_000), maxTokens: 32_000 }],
+			diagnostics: [{
+				id: "omp-default", name: "omp-default", chain: ["provider/large", "provider/small", "provider/large-two"],
+				resolved: [], unresolved: [], contextWindow: 1_000_000, maxTokens: 32_000, image: false, reasoning: true, reasoningEfforts: ["high"], tools: true,
+			}],
+		},
+		equalPhysical,
+		aliases,
+		(reference, models) => models.find((model) => model.id === reference),
+	);
+	const route = extractDynamicRouteProfiles(catalog.models).get("omp-default");
+	assert.ok(route);
+	assert.equal(route.staticContextWindow, 1_000_000);
+	assert.equal(route.advertisedContextWindow, 1_000_000);
+	const result = rewriteDynamicOpenAIRequest(
+		route,
+		{ model: "omp-default", messages: [{ role: "user", content: "hello" }], max_tokens: 32_000 },
+		{ bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 },
+	);
+	assert.equal(result.body.model, "provider/small");
+});
+
 test("final-wire fetch rewrites logical aliases and adds routing diagnostics headers", async () => {
 	const route = profile();
 	let capturedBody: Record<string, unknown> | undefined;
