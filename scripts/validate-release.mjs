@@ -33,6 +33,7 @@ if (expectedRelease !== pkg.version) {
 for (const path of [
   "native.ts",
   "multi-protocol-routing.ts",
+  "context-estimator.ts",
   "agent-attribution.ts",
   "omp-cfg.ts",
   "pricing-time.ts",
@@ -121,6 +122,7 @@ try {
   for (const path of [
     "package.json",
     "native.ts",
+    "context-estimator.ts",
     "routing-core.ts",
     "protocol-capability.ts",
     "cache-schema.ts",
