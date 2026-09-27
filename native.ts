@@ -170,7 +170,9 @@ function streamPifrostOpenAI(
 		// The fetch wrapper sees OMP's final serialized OpenAI payload. It can
 		// therefore enforce the exact member envelope before Bifrost executes the
 		// caller-supplied physical fallback chain. Non-dynamic aliases are untouched.
-		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes),
+		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes, {
+			outputCapExplicit: rawOptions?.maxTokens !== undefined,
+		}),
 	};
 	return streamOpenAICompletions(transportModel, context, streamOptions);
 }
