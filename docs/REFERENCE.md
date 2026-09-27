@@ -232,7 +232,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.2
+0.6.14
 ```
 
 Bun can also install the package globally:
@@ -1235,6 +1235,10 @@ At request time Pifrost intercepts OMP's final OpenAI Chat Completions payload, 
 Protocol is provider-qualified. Pifrost can therefore treat `opencode-go/muse-spark-1.3-contributor` as OpenAI Responses-only while independently treating a similarly named model on another provider according to that provider's transport contract. Protocol provenance is resolved in this order: authoritative live Bifrost `supported_methods`; OMP's compiled provider `api-routes` policy (`apiRouteFor`), which is provider-qualified and covers gateway-only ids absent from the static bundle; Bifrost model-parameter `supported_endpoints`; provider-qualified bundled catalog metadata; then narrowly scoped verified hints. Provider-specific route policy intentionally outranks generic family datasheet matches so a Chat-capable sibling provider cannot make a Responses-only OpenCode Go route appear Chat-compatible. Unknown protocol metadata remains eligible rather than being guessed; only an established mismatch with Pifrost's `openai-completions` transport is excluded.
 
 For example, a route `Responses-only 1M -> Chat 256K -> Chat 1M` keeps the Responses-only member out of every Pifrost Chat request. For a small request the two Chat members remain eligible; once the calculated input-plus-output requirement exceeds 256K, the middle member is also removed. Pifrost fails closed if no member can satisfy the request's established capability requirements. Prewalk remains active for eligible `context-aware` routes even when all members have equal context windows, because protocol/tool/image compatibility can still differ.
+
+Reasoning-with-tools and reasoning-with-`tool_choice` are distinct compatibility dimensions. Bifrost's `supports_reasoning_with_tool_calls` controls whether reasoning can coexist with an offered tool set. OMP's `disableReasoningOnToolChoice` controls a narrower wire-policy case: reasoning must be suppressed when a `tool_choice` selector is actually serialized. Tool definitions alone do not trigger that selector rule. Pifrost carries both properties independently through enrichment, alias synthesis and runtime prewalk.
+
+OMP normally serializes the model's output ceiling even when the caller did not explicitly request that many tokens. Pifrost preserves OMP's `maxTokensExplicit` intent across its custom transport so diagnostics can distinguish an explicit output request from the implicit model-default ceiling. The serialized ceiling still participates in context safety because it remains the provider-visible maximum for that turn. If every member is excluded, the error includes each member and its concrete exclusion reasons rather than presenting a generic capacity-only message.
 
 Dynamic compilation is deliberately disabled for scope-specific, weighted, chained, complexity, budget, quota, header or parameter-dependent rules because bypassing those logical rules could change Bifrost semantics. It is also disabled whenever a Bifrost routing target or fallback pins a provider key: Pifrost records the pin for diagnostics but leaves execution of the pinned chain entirely to Bifrost rather than flattening it into a client-side string fallback list. Those aliases continue to use the static weakest-member envelope.
 
