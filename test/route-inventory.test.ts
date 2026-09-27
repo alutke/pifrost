@@ -4,6 +4,7 @@ import test from "node:test";
 import { buildRichRouteCatalog, type BifrostDatasheets } from "../datasheet.ts";
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
 import { augmentLiveInventoryForRoutes } from "../route-inventory.ts";
+import { applyDynamicRouteProfiles, extractDynamicRouteProfiles, rewriteDynamicOpenAIRequest } from "../dynamic-routing.ts";
 
 function sparseLive(id: string): BifrostProviderModel {
 	return {
@@ -22,6 +23,7 @@ function sparseLive(id: string): BifrostProviderModel {
 			reasoning: "fallback",
 			reasoningEfforts: "fallback",
 			tools: "fallback",
+			protocol: "fallback",
 		},
 		compat: {
 			supportsDeveloperRole: false,
@@ -212,4 +214,85 @@ test("MiMo V2.6 provider variants preserve vision capability without live metada
 	assert.deepEqual(catalog.models[0]?.input, ["text", "image"]);
 	assert.equal(catalog.diagnostics[0]?.image, true);
 	assert.equal(catalog.diagnostics[0]?.unresolved.length, 0);
+});
+
+
+test("current omp-default prewalk skips OpenCode Muse Responses transport and keeps Chat fallbacks", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: {
+			"omp-default": {
+				name: "omp-default",
+				chain: [
+					"opencode-go/muse-spark-1.3-contributor",
+					"CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+					"deepseek/deepseek-flash",
+				],
+				dynamicRouting: { mode: "context-aware", source: "bifrost-simple-rule" },
+			},
+		},
+	};
+	const augmented = augmentLiveInventoryForRoutes([], aliases);
+	const catalogOverride = [
+		{
+			id: "muse-spark-1.3-contributor",
+			provider: "opencode-go",
+			api: "openai-responses",
+			contextWindow: 1_000_000,
+			maxTokens: 131_072,
+			reasoning: true,
+			input: ["text", "image"],
+			supportsTools: true,
+			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+		},
+		{
+			id: "deepseek/deepseek-v4.1-flash",
+			provider: "commandcode",
+			api: "openai-completions",
+			contextWindow: 1_000_000,
+			maxTokens: 131_072,
+			reasoning: true,
+			input: ["text", "image"],
+			supportsTools: true,
+			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+		},
+		{
+			id: "deepseek-flash",
+			provider: "deepseek",
+			api: "openai-completions",
+			contextWindow: 1_048_576,
+			maxTokens: 131_072,
+			reasoning: true,
+			input: ["text"],
+			supportsTools: true,
+			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+		},
+	];
+	const rich = buildRichRouteCatalog(augmented, aliases, { pricing: {}, parameters: {} }, catalogOverride);
+	const muse = rich.models.find((model) => model.id === "opencode-go/muse-spark-1.3-contributor");
+	const commandCode = rich.models.find((model) => model.id === "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
+	assert.deepEqual(muse?.protocols, ["openai-responses"]);
+	assert.deepEqual(commandCode?.protocols, ["openai-completions"]);
+	assert.equal(muse?.capabilitySources?.protocol, "fallback");
+	assert.equal(commandCode?.capabilitySources?.protocol, "fallback");
+
+	let catalog = buildPifrostCatalog(rich.models, aliases, rich.diagnostics);
+	const byId = new Map(rich.models.map((model) => [model.id.toLowerCase(), model]));
+	catalog = applyDynamicRouteProfiles(catalog, rich.models, aliases, (reference) => byId.get(reference.toLowerCase()));
+	const route = extractDynamicRouteProfiles(catalog.models).get("omp-default");
+	assert.ok(route);
+	const rewritten = rewriteDynamicOpenAIRequest(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "examine previous railway errors" }],
+			tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
+			max_completion_tokens: 131_072,
+		},
+		{ bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 },
+	);
+	assert.equal(rewritten.body.model, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
+	assert.deepEqual(rewritten.body.fallbacks, ["deepseek/deepseek-flash"]);
+	assert.equal(rewritten.decision.excluded[0]?.reference, "opencode-go/muse-spark-1.3-contributor");
+	assert.match(rewritten.decision.excluded[0]?.reasons.join(" ") ?? "", /protocol openai-responses incompatible/u);
 });
