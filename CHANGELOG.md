@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 0.6.15 — 2026-09-27
+
+- Added native mixed-protocol execution for simple context-aware Bifrost routes. Pifrost can now keep Responses-only and Chat-Completions members in one logical OMP route instead of excluding the non-Chat members.
+- The current `omp-default` route now genuinely tries `opencode-go/muse-spark-1.3-contributor` first through Bifrost `/v1/responses`; if that attempt fails before producing model output, Pifrost advances to the Chat group headed by Command Code DeepSeek, with direct DeepSeek retained as Bifrost's same-protocol fallback.
+- Route order is preserved by grouping only contiguous members with the same wire protocol. Bifrost remains responsible for credentials, governance, accounting, provider retries and fallbacks within each protocol group; Pifrost owns only the boundary between protocol groups.
+- Cross-protocol fallback is replay-safe: Pifrost buffers the initial stream-start envelope and may advance only before real text, thinking or tool output is emitted. Once output is committed, the turn is never replayed on another model or protocol.
+- OpenCode Go Responses attempts now use OMP's native `opencode-go` provider policy while keeping Bifrost as the HTTP/authentication hop. The bare upstream model id is used for OMP policy resolution and the full `opencode-go/...` reference is retained as `requestModelId` for Bifrost.
+- Existing OMP session identity forwarding is preserved on every protocol attempt, including `x-bf-session-id` for Bifrost affinity and `x-bf-eh-x-opencode-session` for OpenCode Go.
+- Pifrost no longer depends on Bifrost's `convert_chat_to_responses` compatibility catalogue to make gateway-only Muse models usable; native protocol selection is based on Pifrost's provider-qualified route metadata.
+- Added exact current-route regressions for Muse-first planning, Responses-to-Chat pre-output fallback, same-protocol Bifrost fallbacks, logical-model identity preservation and the no-replay-after-output safety rule.
+- Advanced the model-catalog cache schema to v11 so pre-multi-protocol route profiles are rebuilt after upgrade.
+
 ## 0.6.14 — 2026-09-27
 
 - Fixed the remaining `omp-default` prewalk failure after 0.6.13 protocol filtering. Pifrost had conflated OMP's `disableReasoningOnToolChoice` wire-policy flag with Bifrost's broader `supports_reasoning_with_tool_calls` capability, so DeepSeek Chat members could be rejected merely because a reasoning request offered tools.
