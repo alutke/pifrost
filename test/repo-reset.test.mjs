@@ -25,7 +25,7 @@ const AUTH = { mode: "basic", username: "admin", password: "secret" };
 const REPO = { name: "DockedDeals", id: "dockeddeals-123", root: "/tmp/dockeddeals" };
 
 test("canonicalRepoVirtualKeyName matches Pifrost repo naming", () => {
-  assert.equal(canonicalRepoVirtualKeyName(REPO), "omp-dockeddeals-mcp");
+  assert.equal(canonicalRepoVirtualKeyName(REPO), "omp-dockeddeals-123-mcp");
   assert.equal(canonicalRepoVirtualKeyName({ name: "My Project!" }), "omp-my-project-mcp");
 });
 
@@ -67,10 +67,10 @@ test("reset helper requires confirmation and cancellation performs no DELETE", a
       url,
       managementAuth: AUTH,
       repo: REPO,
-      repoConfig: { virtualKeyId: "vk-1", virtualKeyName: "omp-dockeddeals-mcp" },
+      repoConfig: { virtualKeyId: "vk-1", virtualKeyName: "omp-dockeddeals-123-mcp" },
       confirm: async ({ name, id }) => {
         confirmations += 1;
-        assert.equal(name, "omp-dockeddeals-mcp");
+        assert.equal(name, "omp-dockeddeals-123-mcp");
         assert.equal(id, "vk-1");
         return false;
       },
@@ -92,7 +92,7 @@ test("reset helper --yes path skips confirmation and deletes stored id", async (
       url,
       managementAuth: AUTH,
       repo: REPO,
-      repoConfig: { virtualKeyId: "vk-1", virtualKeyName: "omp-dockeddeals-mcp" },
+      repoConfig: { virtualKeyId: "vk-1", virtualKeyName: "omp-dockeddeals-123-mcp" },
       yes: true,
       confirm: async () => {
         throw new Error("confirm should not be called with --yes");
@@ -129,8 +129,8 @@ test("recover-by-name only accepts the exact canonical key and deletes it", asyn
     if (request.method === "GET" && parsed.pathname === "/api/governance/virtual-keys") {
       response.end(JSON.stringify({
         virtual_keys: [
-          { id: "vk-exact", name: "omp-dockeddeals-mcp" },
-          { id: "vk-near", name: "omp-dockeddeals-mcp-old" },
+          { id: "vk-exact", name: "omp-dockeddeals-123-mcp" },
+          { id: "vk-near", name: "omp-dockeddeals-123-mcp-old" },
         ],
       }));
       return;
@@ -144,7 +144,7 @@ test("recover-by-name only accepts the exact canonical key and deletes it", asyn
   }, async (url) => {
     const recovered = await recoverRepoVirtualKeyByName(url, AUTH, REPO);
     assert.deepEqual(recovered, {
-      expectedName: "omp-dockeddeals-mcp",
+      expectedName: "omp-dockeddeals-123-mcp",
       id: "vk-exact",
       alreadyMissing: false,
     });
@@ -189,8 +189,8 @@ test("recover-by-name refuses ambiguous exact duplicates", async () => {
     response.setHeader("content-type", "application/json");
     response.end(JSON.stringify({
       virtual_keys: [
-        { id: "vk-1", name: "omp-dockeddeals-mcp" },
-        { id: "vk-2", name: "omp-dockeddeals-mcp" },
+        { id: "vk-1", name: "omp-dockeddeals-123-mcp" },
+        { id: "vk-2", name: "omp-dockeddeals-123-mcp" },
       ],
     }));
   }, async (url) => {
@@ -202,7 +202,7 @@ test("recover-by-name refuses ambiguous exact duplicates", async () => {
 });
 
 test("server failure propagates so callers can preserve local state", async () => {
-  const local = { virtualKeyId: "vk-1", virtualKeyName: "omp-dockeddeals-mcp", marker: "unchanged" };
+  const local = { virtualKeyId: "vk-1", virtualKeyName: "omp-dockeddeals-123-mcp", marker: "unchanged" };
   await withServer((_request, response) => {
     response.statusCode = 500;
     response.setHeader("content-type", "application/json");
