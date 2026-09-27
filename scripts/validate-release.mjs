@@ -46,10 +46,33 @@ for (const path of [
   "docs/REFERENCE.md",
   "CHANGELOG.md",
   "tsconfig.runtime.json",
+  "scripts/build-runtime.mjs",
   "scripts/smoke-live.mjs",
   "scripts/validate-release.mjs",
 ]) {
   if (!pkg.files?.includes(path)) fail(`package.json files is missing ${path}`);
+}
+
+if (pkg.scripts?.["build:runtime"] !== "node --no-warnings scripts/build-runtime.mjs") {
+  fail("build:runtime must use the Node-only runtime builder");
+}
+if (pkg.scripts?.prepare !== "npm run build:runtime") {
+  fail("prepare must delegate to build:runtime");
+}
+
+rmSync(new URL("dist/", root), { recursive: true, force: true });
+const cleanRuntimeBuild = spawnSync(process.execPath, ["--no-warnings", "scripts/build-runtime.mjs"], {
+  cwd: new URL(".", root),
+  encoding: "utf8",
+  env: {
+    ...process.env,
+    // The runtime build must not depend on node_modules/.bin tools such as tsc.
+    PATH: process.env.PATH,
+  },
+});
+if (cleanRuntimeBuild.status !== 0) fail(commandError("clean Node-only runtime build", cleanRuntimeBuild));
+for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/cache-schema.js"]) {
+  if (!existsSync(new URL(path, root))) fail(`clean runtime build did not create ${path}`);
 }
 
 const cliEntry = pkg.bin?.pifrost;
@@ -100,6 +123,7 @@ try {
     "README.md",
     "docs/REFERENCE.md",
     "CHANGELOG.md",
+    "scripts/build-runtime.mjs",
     "scripts/smoke-live.mjs",
     "scripts/validate-release.mjs",
   ]) {
