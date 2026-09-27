@@ -1,5 +1,6 @@
 import type { Model as OmpModel } from "@oh-my-pi/pi-ai";
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
+import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import {
 	wireProtocolsFrom,
 	type PifrostWireProtocol,
@@ -91,6 +92,43 @@ export function preferredCatalogProviders(reference: string): string[] {
 		case "commandcode": return ["commandcode"];
 		default: return [];
 	}
+}
+
+function routeModelId(reference: string): string {
+	const slash = reference.indexOf("/");
+	return slash >= 0 ? reference.slice(slash + 1) : reference;
+}
+
+/**
+ * Resolve provider-authored wire routing even when the model is gateway-only
+ * and therefore absent from OMP's bundled model snapshot. OMP's compiled
+ * api-routes table is the same authoritative surface its provider managers use
+ * for ids such as OpenCode Go Muse Spark.
+ */
+export function findCatalogProtocolCapability(
+	reference: string,
+	liveModelId?: string,
+): PifrostWireProtocol[] | undefined {
+	const providers = preferredCatalogProviders(reference);
+	if (!providers.length) return undefined;
+	const ids = [...new Set([
+		routeModelId(reference),
+		...(liveModelId ? [routeModelId(liveModelId)] : []),
+	].filter(Boolean))];
+
+	const resolved: PifrostWireProtocol[] = [];
+	for (const provider of providers) {
+		for (const id of ids) {
+			const route = apiRouteFor(provider, id);
+			const protocol = route ? wireProtocolsFrom([route.api])?.[0] : undefined;
+			if (protocol) resolved.push(protocol);
+		}
+	}
+	if (!resolved.length) return undefined;
+	const uniqueProtocols = [...new Set(resolved)];
+	// Alias/provider fallbacks must agree. Ambiguity is safer than inventing a
+	// transport contract for a provider family with divergent authored routes.
+	return uniqueProtocols.length === 1 ? uniqueProtocols : undefined;
 }
 
 function thinking(efforts: EffortName[], requiresEffort = false): Thinking {
