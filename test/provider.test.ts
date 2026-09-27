@@ -225,6 +225,30 @@ test("alias reasoning effort is the intersection of every fallback", () => {
 	assert.deepEqual(result.diagnostic.reasoningEfforts, ["high", "max"]);
 });
 
+
+test("alias keeps reasoning-with-tools separate from tool-choice reasoning suppression", () => {
+	const compat = {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		supportsReasoningWithTools: true,
+		disableReasoningOnToolChoice: true,
+	};
+	const result = synthesizeAlias(
+		"reasoning-tools",
+		["one", "two"],
+		[
+			model("one", { reasoning: true, thinking: effortThinking("high"), compat }),
+			model("two", { reasoning: true, thinking: effortThinking("high"), compat }),
+		],
+	);
+	assert.ok(result.model);
+	assert.equal(result.diagnostic.reasoningWithTools, true);
+	assert.equal(result.model.compat.supportsReasoningWithTools, true);
+	assert.equal(result.model.compat.disableReasoningOnToolChoice, true);
+});
+
 test("alias is withheld when any configured fallback cannot be resolved", () => {
 	const result = synthesizeAlias("broken", ["known", "missing"], [model("known")]);
 	assert.equal(result.model, undefined);
