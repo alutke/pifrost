@@ -23,10 +23,23 @@ function withBifrostFallbacks(
 	} as Model["compatConfig"];
 }
 
+function openCodePolicyIdentity(reference: string): { id: string; provider: "opencode-go"; requestModelId: string } | undefined {
+	const prefix = "opencode-go/";
+	if (!reference.toLowerCase().startsWith(prefix)) return undefined;
+	const id = reference.slice(prefix.length).trim();
+	return id ? { id, provider: "opencode-go", requestModelId: reference } : undefined;
+}
+
 /**
  * Build the sparse OMP model spec for one physical Bifrost attempt. Runtime
  * materialization deliberately stays in native.ts so this planning module has
  * no Bun-only OMP runtime imports and remains Node-testable.
+ *
+ * OpenCode Go is special here: OMP owns gateway-specific Responses replay,
+ * reasoning and tool-choice policy under the opencode-go provider identity.
+ * Keep Bifrost as the base URL/auth hop, but present the bare upstream id to
+ * OMP policy resolution and retain the full provider-qualified Bifrost id as
+ * requestModelId for the actual wire request.
  */
 export function createPifrostAttemptModelSpec(
 	logicalModel: Model,
@@ -34,10 +47,13 @@ export function createPifrostAttemptModelSpec(
 ): ModelSpec<"openai-completions" | "openai-responses"> {
 	const primary = attempt.members[0];
 	if (!primary) throw new Error(`Pifrost route attempt ${attempt.primary} has no member metadata`);
+	const policyIdentity = openCodePolicyIdentity(attempt.primary);
 	const base = {
 		...logicalModel,
-		id: attempt.primary,
+		id: policyIdentity?.id ?? attempt.primary,
 		name: attempt.primary,
+		provider: policyIdentity?.provider ?? logicalModel.provider,
+		...(policyIdentity ? { requestModelId: policyIdentity.requestModelId } : {}),
 		contextWindow: primary.contextWindow,
 		maxTokens: primary.maxTokens,
 		input: [...primary.input],
