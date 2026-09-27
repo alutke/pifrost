@@ -1530,10 +1530,10 @@ export async function upsertRepoVirtualKey({
   const localSecret = usableVirtualKeyValue(state.secrets.repos?.[repo.id]?.mcpVirtualKey);
   let vk;
   let created = false;
+  let associatedName;
 
-  const updateRequest = (name) => {
+  const updateRequest = () => {
     const request = {
-      name,
       is_active: true,
     };
     if (Array.isArray(clients)) {
@@ -1551,8 +1551,9 @@ export async function upsertRepoVirtualKey({
         url,
         managementKey,
         local.virtualKeyId,
-        updateRequest(local.virtualKeyName ?? keyName),
+        updateRequest(),
       );
+      associatedName = local.virtualKeyName ?? vk?.name ?? keyName;
     } catch (error) {
       if (!(error instanceof PifrostHttpError) || error.status !== 404) throw error;
     }
@@ -1561,7 +1562,8 @@ export async function upsertRepoVirtualKey({
   if (!vk) {
     let existing = await findVirtualKeyByExactName(url, managementKey, keyName);
     if (existing?.id) {
-      vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest(keyName));
+      vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest());
+      associatedName = existing.name ?? vk?.name ?? keyName;
       if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
     } else {
       try {
@@ -1579,6 +1581,7 @@ export async function upsertRepoVirtualKey({
           })),
           is_active: true,
         });
+        associatedName = vk?.name ?? keyName;
       } catch (error) {
         if (!(error instanceof PifrostHttpError) || error.status !== 409) throw error;
         // A concurrent init or eventually-consistent list can race the unique
@@ -1587,7 +1590,8 @@ export async function upsertRepoVirtualKey({
         created = false;
         existing = await findVirtualKeyByExactName(url, managementKey, keyName);
         if (!existing?.id) throw error;
-        vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest(keyName));
+        vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest());
+        associatedName = existing.name ?? vk?.name ?? keyName;
         if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
       }
     }
@@ -1610,7 +1614,7 @@ export async function upsertRepoVirtualKey({
     name: repo.name,
     identity: repo.identity,
     virtualKeyId: vk.id,
-    virtualKeyName: vk.name ?? keyName,
+    virtualKeyName: vk.name ?? associatedName ?? local?.virtualKeyName ?? keyName,
     mcpClients: normalizedClients,
     ...(Array.isArray(local?.virtualMcps) ? { virtualMcps: local.virtualMcps } : {}),
     ...(typeof local?.mcpInstructions === "boolean" ? { mcpInstructions: local.mcpInstructions } : {}),
