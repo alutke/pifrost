@@ -94,6 +94,19 @@ function thinking(efforts: EffortName[], requiresEffort = false): Thinking {
 	};
 }
 
+function mappedThinking(
+	effortMap: Partial<Record<EffortName, string>>,
+	requiresEffort = false,
+): Thinking {
+	const efforts = EFFORTS.filter((effort) => effortMap[effort] !== undefined);
+	return {
+		mode: "effort",
+		efforts: efforts as unknown as Thinking["efforts"],
+		effortMap: Object.fromEntries(efforts.map((effort) => [effort, effortMap[effort]!])) as Thinking["effortMap"],
+		...(requiresEffort ? { requiresEffort: true } : {}),
+	};
+}
+
 // Narrow vendor-backed capability records. These are intentionally separate
 // from the OMP bundled-catalog fallback so the resolver can honour the explicit
 // priority: live -> Bifrost -> canonical family -> vendor override -> fallback.
@@ -130,6 +143,83 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsToolChoice: true,
 		supportsForcedToolChoice: true,
 		supportsNamedToolChoice: true,
+		disableReasoningOnToolChoice: false,
+	},
+	"pixel-canary": {
+		source: "verified-model-hint",
+		matched: ["verified/stealth/pixel-canary"],
+		// Command Code publishes a 262K context; Vercel's model contract
+		// publishes a 131,072-token output ceiling and image input support.
+		contextWindow: 262_144,
+		maxTokens: 131_072,
+		input: ["text", "image"],
+		reasoning: true,
+		thinking: mappedThinking({
+			minimal: "minimal",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "xhigh",
+		}),
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		// The public contracts establish generic tool use but not every forced
+		// or named tool-choice form through each reseller surface.
+		supportsForcedToolChoice: false,
+		supportsNamedToolChoice: false,
+		// Keep reasoning+tools conservative until the reseller contract
+		// explicitly guarantees the combination.
+		disableReasoningOnToolChoice: true,
+	},
+	"mimo-v2.6-flash": {
+		source: "verified-model-hint",
+		matched: ["verified/xiaomi/mimo-v2.6-flash"],
+		contextWindow: 1_048_576,
+		maxTokens: 131_072,
+		input: ["text", "image"],
+		reasoning: true,
+		thinking: mappedThinking({
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "high",
+			max: "high",
+		}),
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		supportsForcedToolChoice: false,
+		supportsNamedToolChoice: false,
+		disableReasoningOnToolChoice: false,
+	},
+	"mimo-v2.6-pro": {
+		source: "verified-model-hint",
+		matched: ["verified/xiaomi/mimo-v2.6-pro"],
+		contextWindow: 1_048_576,
+		maxTokens: 131_072,
+		input: ["text", "image"],
+		reasoning: true,
+		thinking: mappedThinking({
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "high",
+			max: "high",
+		}),
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		supportsTools: true,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+		supportsToolChoice: true,
+		supportsForcedToolChoice: false,
+		supportsNamedToolChoice: false,
 		disableReasoningOnToolChoice: false,
 	},
 	"longcat-2.0-commandcode-free": {
@@ -193,6 +283,15 @@ export function findVendorCapabilityOverride(
 	}
 	if (values.some((value) => equivalentModelId(value, "deepseek/deepseek-v4-flash-vision-exp"))) {
 		return VERIFIED_MODEL_HINTS["deepseek-v4-flash-vision-exp"];
+	}
+	if (values.some((value) => equivalentModelId(value, "stealth/pixel-canary"))) {
+		return VERIFIED_MODEL_HINTS["pixel-canary"];
+	}
+	if (values.some((value) => equivalentModelId(value, "xiaomi/mimo-v2.6-flash"))) {
+		return VERIFIED_MODEL_HINTS["mimo-v2.6-flash"];
+	}
+	if (values.some((value) => equivalentModelId(value, "xiaomi/mimo-v2.6-pro"))) {
+		return VERIFIED_MODEL_HINTS["mimo-v2.6-pro"];
 	}
 	if (
 		routeProvider(reference) === "commandcode goat" &&
