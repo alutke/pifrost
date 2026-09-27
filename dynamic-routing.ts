@@ -23,6 +23,7 @@ export interface DynamicRouteMemberProfile {
 		supportsToolChoice?: boolean;
 		supportsForcedToolChoice?: boolean;
 		supportsNamedToolChoice?: boolean;
+		supportsReasoningWithTools?: boolean;
 		disableReasoningOnToolChoice?: boolean;
 	};
 }
@@ -47,6 +48,7 @@ export interface DynamicRouteDecision {
 	logicalModel: string;
 	estimatedInputTokens: number;
 	outputReserveTokens: number;
+	outputReserveExplicit: boolean;
 	requiredContextTokens: number;
 	primary: string;
 	fallbacks: string[];
@@ -58,6 +60,8 @@ export interface DynamicRouteEstimateOptions {
 	safetyMargin?: number;
 	fixedHeadroom?: number;
 	imageTokenReserve?: number;
+	/** True only when the caller explicitly requested the serialized max-token cap. */
+	outputCapExplicit?: boolean;
 }
 
 type DynamicAliasDefinition = {
@@ -162,6 +166,7 @@ export function applyDynamicRouteProfiles(
 					supportsToolChoice: member.compat.supportsToolChoice,
 					supportsForcedToolChoice: member.compat.supportsForcedToolChoice,
 					supportsNamedToolChoice: member.compat.supportsNamedToolChoice,
+					supportsReasoningWithTools: member.compat.supportsReasoningWithTools,
 					disableReasoningOnToolChoice: member.compat.disableReasoningOnToolChoice,
 				},
 			};
@@ -251,12 +256,21 @@ export function estimateOpenAIRequestInputTokens(
 	return Math.max(1, Math.ceil((bytes / bytesPerToken) * (1 + safetyMargin)) + fixedHeadroom + images * imageTokenReserve);
 }
 
-function requestedOutputTokens(body: Record<string, unknown>, profile: DynamicRouteProfile): number {
+function requestedOutputBudget(
+	body: Record<string, unknown>,
+	profile: DynamicRouteProfile,
+	options: DynamicRouteEstimateOptions,
+): { tokens: number; explicit: boolean } {
 	for (const key of ["max_completion_tokens", "max_tokens"]) {
 		const value = body[key];
-		if (typeof value === "number" && Number.isFinite(value) && value > 0) return Math.ceil(value);
+		if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+			return {
+				tokens: Math.ceil(value),
+				explicit: options.outputCapExplicit ?? true,
+			};
+		}
 	}
-	return profile.maxTokens;
+	return { tokens: profile.maxTokens, explicit: options.outputCapExplicit ?? false };
 }
 
 function requestHasImages(body: Record<string, unknown>): boolean {
@@ -295,8 +309,15 @@ function memberExclusionReasons(
 		reasons.push("no named tool_choice support");
 	}
 	if (requestUsesReasoning(body) && !member.reasoning) reasons.push("no reasoning support");
-	if (requestUsesReasoning(body) && usesTools && member.compat.disableReasoningOnToolChoice === true) {
+	if (requestUsesReasoning(body) && usesTools && member.compat.supportsReasoningWithTools === false) {
 		reasons.push("cannot combine reasoning with tools");
+	}
+	if (
+		requestUsesReasoning(body) &&
+		body.tool_choice !== undefined &&
+		member.compat.disableReasoningOnToolChoice === true
+	) {
+		reasons.push("reasoning incompatible with tool_choice");
 	}
 	return reasons;
 }
@@ -314,7 +335,8 @@ export function rewriteDynamicOpenAIRequest(
 	options: DynamicRouteEstimateOptions = {},
 ): { body: Record<string, unknown>; decision: DynamicRouteDecision } {
 	const estimatedInputTokens = estimateOpenAIRequestInputTokens(body, options);
-	const outputReserveTokens = requestedOutputTokens(body, profile);
+	const outputBudget = requestedOutputBudget(body, profile, options);
+	const outputReserveTokens = outputBudget.tokens;
 	const requiredContextTokens = estimatedInputTokens + outputReserveTokens;
 	const excluded: DynamicRouteDecision["excluded"] = [];
 	const eligible: DynamicRouteMemberProfile[] = [];
@@ -324,8 +346,14 @@ export function rewriteDynamicOpenAIRequest(
 		else eligible.push(member);
 	}
 	if (!eligible.length) {
+		const outputLabel = outputBudget.explicit ? "requested output reserve" : "implicit OMP/model output cap";
+		const details = excluded
+			.map((item) => item.reference + " [" + item.reasons.join("; ") + "]")
+			.join(" | ");
 		throw new DynamicRouteCapacityError(
-			"Pifrost dynamic route " + profile.id + " has no eligible member for estimated input " + estimatedInputTokens + " + output reserve " + outputReserveTokens + " = " + requiredContextTokens + " tokens; compact the session or lower the requested output ceiling",
+			"Pifrost dynamic route " + profile.id + " has no eligible member for estimated input " +
+			estimatedInputTokens + " + " + outputLabel + " " + outputReserveTokens + " = " +
+			requiredContextTokens + " tokens" + (details ? "; exclusions: " + details : ""),
 		);
 	}
 	const primary = eligible[0]!.reference;
@@ -340,6 +368,7 @@ export function rewriteDynamicOpenAIRequest(
 			logicalModel: profile.id,
 			estimatedInputTokens,
 			outputReserveTokens,
+			outputReserveExplicit: outputBudget.explicit,
 			requiredContextTokens,
 			primary,
 			fallbacks,
