@@ -101,7 +101,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.14
+0.6.15
 ```
 
 Bun also works:
@@ -183,11 +183,15 @@ pifrost doctor
 
 A logical route can contain models with different context windows, output limits, image support, reasoning/tool support and **wire protocols**. Pifrost derives a safe OMP-facing capability envelope from the route instead of blindly advertising the primary model's capabilities.
 
-For straightforward global fallback routes, Pifrost also uses **context-aware prewalk**. Before each request reaches Bifrost it removes members that are known to be incompatible with the final request: context/output limits, image/tool/reasoning constraints and the active Pifrost wire protocol are all considered. Pifrost's inference transport is OpenAI Chat Completions, so a provider-qualified member known to be Responses-only is skipped while a Chat-compatible sibling/provider may remain eligible.
+For straightforward global fallback routes, Pifrost also uses **context-aware prewalk**. Before each request reaches Bifrost it removes members that are known to be incompatible with the final request: context/output limits, image/tool/reasoning constraints and supported wire protocols are all considered.
 
-Reasoning/tool compatibility is evaluated on two separate axes. A model may support reasoning while tools are offered, yet still require reasoning to be suppressed when an explicit `tool_choice` selector is serialized; Pifrost no longer treats those as the same capability. OMP's model-default output ceiling is also distinguished from a caller-explicit cap in prewalk diagnostics, so failures report whether the reserve was requested or inherited.
+Pifrost natively executes both **OpenAI Responses** and **OpenAI Chat Completions** route members. Eligible members stay in their original route order and are grouped only when adjacent members use the same protocol. Each protocol group is dispatched through OMP's native transport for that wire API; same-protocol fallbacks remain inside Bifrost's native `fallbacks` chain. If a protocol group fails before producing model output, Pifrost advances to the next group. Once any real output has been emitted, Pifrost never replays that turn on another model or protocol.
 
-Protocol metadata is resolved conservatively with provider-specific transport policy ahead of generic family metadata: live Bifrost methods first, then OMP's provider-qualified compiled `api-routes`, then Bifrost datasheet endpoints and bundled catalog metadata. The compiled policy matters for gateway-only models that are intentionally absent from OMP's static snapshot and for models whose sibling providers expose a different wire API. Unknown protocol metadata is not guessed or rejected merely for being incomplete; only an authoritative mismatch is excluded. The same prewalk runs for eligible simple routes even when every member has the same context window.
+That means a mixed route such as `Muse Responses -> CommandCode Chat -> DeepSeek Chat` genuinely tries Muse first through Bifrost `/v1/responses`, then falls back to the Chat group only if Muse fails before output. OpenCode Go attempts retain OMP's native OpenCode provider policy while using the provider-qualified Bifrost model id on the wire, and Pifrost forwards the OMP session identity through `x-bf-eh-x-opencode-session`.
+
+Reasoning/tool compatibility is evaluated on two separate axes. A model may support reasoning while tools are offered, yet still require reasoning to be suppressed when an explicit `tool_choice` selector is serialized; Pifrost does not treat those as the same capability. OMP's model-default output ceiling is also distinguished from a caller-explicit cap in prewalk diagnostics, so failures report whether the reserve was requested or inherited.
+
+Protocol metadata is resolved conservatively with provider-specific transport policy ahead of generic family metadata: live Bifrost methods first, then OMP's provider-qualified compiled `api-routes`, then Bifrost datasheet endpoints and bundled catalog metadata. The compiled policy matters for gateway-only models that are intentionally absent from OMP's static snapshot and for models whose sibling providers expose a different wire API. Unknown protocol metadata is not guessed or rejected merely for being incomplete. The same prewalk runs for eligible simple routes even when every member has the same context window.
 
 Complex, weighted, scoped, pinned or policy-dependent routes remain Bifrost-owned and use the conservative static envelope.
 
