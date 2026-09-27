@@ -132,4 +132,4 @@ export {
   deriveAliasesFromRules as deriveAliasesRobust,
   isContextDynamicRuleSafe,
   routingFeatureSummary,
-} from "./routing-core.ts";
+} from "./dist/routing-core.js";
