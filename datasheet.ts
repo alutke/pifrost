@@ -7,6 +7,7 @@ import {
 
 import {
 	findCatalogCapabilityFallback,
+	findCatalogProtocolCapability,
 	findVendorCapabilityOverride,
 	modelIdentityCandidates,
 	equivalentModelId,
@@ -475,6 +476,7 @@ function selectTools(
 }
 
 function selectProtocols(
+	reference: string,
 	liveModel: BifrostProviderModel,
 	parameters: MatchedEntry<ModelParameterEntry> | undefined,
 	catalog: CatalogCapabilityFallback | undefined,
@@ -490,8 +492,12 @@ function selectProtocols(
 			source: sheetSource(parameters, "protocol") ?? "bifrost-datasheet",
 		};
 	}
-	// OMP's provider-qualified catalog is authoritative for provider transport
-	// routing (e.g. OpenCode Go Muse=Responses while Command Code variants use Chat).
+	// OMP's compiled provider api-routes rules cover gateway-only ids that are
+	// intentionally absent from the bundled static model snapshot.
+	const policyProtocols = findCatalogProtocolCapability(reference, liveModel.id);
+	if (policyProtocols?.length) return { value: policyProtocols, source: "canonical-family" };
+	// Bundled provider rows remain useful for providers whose transport is
+	// encoded directly on the model rather than in a separate api-routes rule.
 	if (catalog?.protocols?.length) return { value: [...catalog.protocols], source: fallbackSource(catalog) };
 	if (vendor?.protocols?.length) return { value: [...vendor.protocols], source: "vendor-override" };
 	return {};
@@ -572,7 +578,7 @@ export function buildRichRouteCatalog(
 		const reasoning = selectReasoning(liveModel, parameters, vendor, catalog);
 		const thinking = reasoning.value ? selectThinking(liveModel, parameters, vendor, catalog) : {};
 		const tools = selectTools(liveModel, parameters, vendor, catalog);
-		const protocols = selectProtocols(liveModel, parameters, catalog, vendor);
+		const protocols = selectProtocols(reference, liveModel, parameters, catalog, vendor);
 		const toolChoice = selectBooleanCapability(
 			liveModel.compat.supportsToolChoice,
 			liveModel.capabilitySources?.toolChoice,
