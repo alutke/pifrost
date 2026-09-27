@@ -120,7 +120,9 @@ export interface BifrostProviderModel {
 		supportsToolChoice?: boolean;
 		supportsForcedToolChoice?: boolean;
 		supportsNamedToolChoice?: boolean;
-		/** Disable per-turn reasoning when the routed model cannot combine reasoning with tool calls. */
+		/** Whether reasoning and an offered tool set can coexist on the same request. */
+		supportsReasoningWithTools?: boolean;
+		/** OMP wire-policy flag: suppress reasoning when a tool_choice field is actually sent. */
 		disableReasoningOnToolChoice?: boolean;
 	};
 }
@@ -457,7 +459,6 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			// Keep OMP's normal permissive default here; the richer Bifrost datasheet refines it below.
 			supportsForcedToolChoice: supportsToolChoice,
 			supportsNamedToolChoice: supportsToolChoice,
-			disableReasoningOnToolChoice: false,
 		},
 	};
 }
@@ -569,7 +570,12 @@ export function synthesizeAlias(
 	const toolChoice = members.length > 0 && members.every((model) => model.compat.supportsToolChoice !== false);
 	const forcedToolChoice = toolChoice && members.every((model) => model.compat.supportsForcedToolChoice !== false);
 	const namedToolChoice = toolChoice && members.every((model) => model.compat.supportsNamedToolChoice !== false);
-	const reasoningWithTools = members.length > 0 && members.every((model) => model.compat.disableReasoningOnToolChoice !== true);
+	const reasoningWithTools = members.some((model) => model.compat.supportsReasoningWithTools === false)
+		? false
+		: members.length > 0 && members.every((model) => model.compat.supportsReasoningWithTools === true)
+			? true
+			: undefined;
+	const disableReasoningOnToolChoice = members.some((model) => model.compat.disableReasoningOnToolChoice === true);
 	const memberDiagnostics: AliasMemberDiagnostic[] = resolutionEntries.map((entry) => {
 		const model = entry.resolution.model;
 		const rich = entry.rich;
@@ -633,7 +639,8 @@ export function synthesizeAlias(
 				supportsToolChoice: toolChoice,
 				supportsForcedToolChoice: forcedToolChoice,
 				supportsNamedToolChoice: namedToolChoice,
-				disableReasoningOnToolChoice: !reasoningWithTools,
+				supportsReasoningWithTools: reasoningWithTools,
+				disableReasoningOnToolChoice,
 			},
 		},
 		diagnostic,
