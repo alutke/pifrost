@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.9 — 2026-09-27
+
+- Fixed the remaining Bifrost 2.2.3 HTTP 409 on existing legacy repo Virtual Keys. Bifrost's update store resolves rows by `id OR name` and rewrites the full row, so a duplicated basename-only legacy name can make even a policy-only PUT fail.
+- When a repo already has a locally stored Virtual Key id/name from the pre-0.6.7 basename-only scheme, `repo init` now migrates that same key in place to the repo-scoped canonical name (for example `omp-homelab-59894f4310-mcp`) while applying the requested MCP grants.
+- The migration preserves the Virtual Key id and raw secret; it changes only the key name/policy and therefore does not require rotation or MCP credential replacement.
+- Before migration, Pifrost verifies that the canonical repo-scoped name is not owned by a different Virtual Key. A conflict fails closed with a specific diagnostic instead of adopting or overwriting another key.
+- Fresh/canonical keys retain the 0.6.7/0.6.8 idempotent create/update behaviour.
+- Added regression coverage reproducing Bifrost 2.2.3's legacy-name 409 and verifying in-place migration from n8n-only to n8n + Railway.
+
 ## 0.6.8 — 2026-09-27
 
 - Fixed `pifrost repo init` returning HTTP 409 when updating an already-associated legacy repo Virtual Key such as `omp-homelab-mcp` on Bifrost 2.2.3.
