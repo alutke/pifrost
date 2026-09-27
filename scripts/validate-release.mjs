@@ -1,4 +1,6 @@
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
 const root = new URL("../", import.meta.url);
@@ -8,6 +10,10 @@ const readme = readFileSync(new URL("README.md", root), "utf8");
 
 function fail(message) {
   throw new Error(message);
+}
+
+function commandError(label, result) {
+  return `${label} failed (status=${result.status ?? "unknown"}): ${result.stderr || result.stdout || "no output"}`;
 }
 
 if (!/^\d+\.\d+\.\d+$/u.test(pkg.version)) fail(`package.json version is not a release semver: ${pkg.version}`);
@@ -30,6 +36,7 @@ for (const path of [
   "omp-cfg.ts",
   "pricing-time.ts",
   "routing-core.ts",
+  "cache-schema.ts",
   "http-client.mjs",
   "doctor-probes.mjs",
   "diagnostic-result.mjs",
@@ -38,6 +45,7 @@ for (const path of [
   "README.md",
   "docs/REFERENCE.md",
   "CHANGELOG.md",
+  "tsconfig.runtime.json",
   "scripts/smoke-live.mjs",
   "scripts/validate-release.mjs",
 ]) {
@@ -50,23 +58,117 @@ const cli = spawnSync(process.execPath, [cliEntry, "--version"], {
   cwd: new URL(".", root),
   encoding: "utf8",
 });
-if (cli.status !== 0) fail(`pifrost --version failed: ${cli.stderr || cli.stdout}`);
+if (cli.status !== 0) fail(commandError("repository pifrost --version", cli));
 if (cli.stdout.trim() !== pkg.version) {
   fail(`CLI version ${cli.stdout.trim()} does not match package.json ${pkg.version}`);
 }
 
-const packed = spawnSync("npm", ["pack", "--dry-run", "--json"], {
-  cwd: new URL(".", root),
-  encoding: "utf8",
-});
-if (packed.status !== 0) fail(`npm pack --dry-run failed: ${packed.stderr || packed.stdout}`);
-const payload = JSON.parse(packed.stdout);
-const files = new Set(payload?.[0]?.files?.map((entry) => entry.path) ?? []);
-for (const path of ["package.json", "native.ts", "routing-core.ts", "http-client.mjs", "doctor-probes.mjs", "diagnostic-result.mjs", "cli-preconditions.mjs", "skills-bridge.mjs", "pricing-time.ts", "README.md", "docs/REFERENCE.md", "CHANGELOG.md", "scripts/smoke-live.mjs", "scripts/validate-release.mjs"]) {
-  if (!files.has(path)) fail(`release tarball is missing ${path}`);
-}
-if (payload?.[0]?.version !== pkg.version) {
-  fail(`release tarball version ${payload?.[0]?.version ?? "missing"} does not match ${pkg.version}`);
+const workspace = mkdtempSync(join(tmpdir(), "pifrost-release-"));
+let packedFileCount = 0;
+try {
+  const packed = spawnSync("npm", ["pack", "--json", "--pack-destination", workspace], {
+    cwd: new URL(".", root),
+    encoding: "utf8",
+  });
+  if (packed.status !== 0) fail(commandError("npm pack", packed));
+
+  let payload;
+  try {
+    payload = JSON.parse(packed.stdout);
+  } catch (error) {
+    fail(`npm pack returned invalid JSON: ${error instanceof Error ? error.message : String(error)}\n${packed.stdout}`);
+  }
+
+  const artifact = payload?.[0];
+  const files = new Set(artifact?.files?.map((entry) => entry.path) ?? []);
+  packedFileCount = files.size;
+
+  for (const path of [
+    "package.json",
+    "native.ts",
+    "routing-core.ts",
+    "cache-schema.ts",
+    "dist/config-store.js",
+    "dist/routing-core.js",
+    "dist/cache-schema.js",
+    "http-client.mjs",
+    "doctor-probes.mjs",
+    "diagnostic-result.mjs",
+    "cli-preconditions.mjs",
+    "skills-bridge.mjs",
+    "pricing-time.ts",
+    "README.md",
+    "docs/REFERENCE.md",
+    "CHANGELOG.md",
+    "scripts/smoke-live.mjs",
+    "scripts/validate-release.mjs",
+  ]) {
+    if (!files.has(path)) fail(`release tarball is missing ${path}`);
+  }
+
+  if (artifact?.version !== pkg.version) {
+    fail(`release tarball version ${artifact?.version ?? "missing"} does not match ${pkg.version}`);
+  }
+
+  const filename = artifact?.filename;
+  if (typeof filename !== "string" || !filename) fail("npm pack did not report a tarball filename");
+  const tarball = join(workspace, filename);
+  if (!existsSync(tarball)) fail(`npm pack tarball does not exist: ${tarball}`);
+
+  const installRoot = join(workspace, "installed");
+  const home = join(workspace, "home");
+  mkdirSync(installRoot, { recursive: true });
+  mkdirSync(home, { recursive: true });
+  writeFileSync(join(installRoot, "package.json"), '{\n  "private": true\n}\n', "utf8");
+
+  const installed = spawnSync(
+    "npm",
+    ["install", "--prefix", installRoot, "--ignore-scripts", "--no-audit", "--no-fund", tarball],
+    { cwd: new URL(".", root), encoding: "utf8" },
+  );
+  if (installed.status !== 0) fail(commandError("tarball npm install", installed));
+
+  const installedPackageRoot = join(installRoot, "node_modules", pkg.name);
+  const installedPackage = JSON.parse(readFileSync(join(installedPackageRoot, "package.json"), "utf8"));
+  if (installedPackage.version !== pkg.version) {
+    fail(`installed package version ${installedPackage.version ?? "missing"} does not match ${pkg.version}`);
+  }
+
+  const installedEntry = installedPackage.bin?.pifrost;
+  if (typeof installedEntry !== "string" || !installedEntry.trim()) {
+    fail("installed package bin.pifrost is missing");
+  }
+
+  const installedCli = join(installedPackageRoot, installedEntry.replace(/^\.\//u, ""));
+  const installedEnv = {
+    ...process.env,
+    HOME: home,
+    PIFROST_CONFIG_DIR: join(home, ".config", "pifrost"),
+  };
+
+  const installedVersion = spawnSync(process.execPath, [installedCli, "--version"], {
+    cwd: installRoot,
+    encoding: "utf8",
+    env: installedEnv,
+  });
+  if (installedVersion.status !== 0) fail(commandError("installed pifrost --version", installedVersion));
+  if (installedVersion.stdout.trim() !== pkg.version) {
+    fail(`installed CLI version ${installedVersion.stdout.trim()} does not match ${pkg.version}`);
+  }
+
+  const installedHelp = spawnSync(process.execPath, [installedCli, "--help"], {
+    cwd: installRoot,
+    encoding: "utf8",
+    env: installedEnv,
+  });
+  if (installedHelp.status !== 0) fail(commandError("installed pifrost --help", installedHelp));
+  if (!installedHelp.stdout.includes(`Pifrost ${pkg.version}`)) {
+    fail("installed pifrost --help did not render the expected versioned help banner");
+  }
+} finally {
+  rmSync(workspace, { recursive: true, force: true });
 }
 
-console.log(`Release package ${pkg.version}: OK (${files.size} files in npm dry-run tarball)`);
+console.log(
+  `Release package ${pkg.version}: OK (${packedFileCount} files; packed tarball installs and runs from node_modules)`,
+);
