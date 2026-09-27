@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.10 — 2026-09-27
+
+- Fixed the actual cause of repeated HTTP 409 failures when `pifrost repo init` adds or changes MCP grants on an existing Bifrost 2.2.3 Virtual Key.
+- Bifrost's Virtual Key update contract requires the numeric `id` of every existing `mcp_configs` row. Pifrost previously discarded those row ids and resent existing clients such as n8n as new rows, causing the unique `(virtual_key, mcp_client)` constraint to fail.
+- Bifrost 2.2.3 maps any `ErrAlreadyExists` from the whole Virtual Key transaction to the misleading message `A virtual key with this name already exists`, which obscured the MCP-config collision.
+- Pifrost now fetches the authoritative Virtual Key detail before every update, preserves each existing MCP-config row id, and sends the id back for retained grants while leaving genuinely new grants id-less.
+- Existing repo Virtual Key ids, secrets and policy remain intact. Legacy name migration from 0.6.9 is retained, but MCP grant reconciliation is now independently correct.
+- Added a regression reproducing the live homelab update: existing n8n row id is retained while Railway is added as a new grant.
+
 ## 0.6.9 — 2026-09-27
 
 - Fixed the remaining Bifrost 2.2.3 HTTP 409 on existing legacy repo Virtual Keys. Bifrost's update store resolves rows by `id OR name` and rewrites the full row, so a duplicated basename-only legacy name can make even a policy-only PUT fail.
