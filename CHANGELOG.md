@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.6 — 2026-09-27
+
+- Restored the complete 10-role model catalogue for the current routing set by adding a narrowly scoped verified capability record for `stealth/pixel-canary` (262,144 context, 131,072 output, image input, reasoning and tools). This prevents `omp-advisor` from being withheld when Command Code's live/catalog metadata has not caught up with the new stealth model.
+- Added verified MiMo V2.6 Flash and Pro capability records from Xiaomi's current model/API contracts, including 1,048,576 context, 131,072 output, multimodal image input, reasoning, tools and the documented reasoning-effort mappings.
+- Fixed the current `omp-vision` route so OpenCode Go, Command Code GOAT and Xiaomi MiMo variants of `mimo-v2.6-flash` retain image capability instead of collapsing the alias to text-only.
+- Kept provider/vendor matching narrow: the new hints do not leak to explicitly different vendors with the same model tail.
+- Added regression tests for the live `omp-advisor` Pixel Canary route and the three-provider `omp-vision` MiMo V2.6 route, including alias synthesis, capability provenance and multimodal output.
+- Advanced the catalogue cache schema to v6 so installations automatically reject pre-fix cached catalogues and rebuild the corrected model set.
+
 ## 0.6.5 — 2026-09-27
 
 - Changed Git/GitHub installation packaging to ship the standalone CLI runtime as committed `dist/` artifacts instead of building them on the consumer machine.
