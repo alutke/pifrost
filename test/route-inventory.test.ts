@@ -140,3 +140,76 @@ test("DeepSeek Vision Exp preserves image intersection when absent from /v1/mode
 	assert.equal(catalog.models[0]?.contextWindow, 1_000_000);
 	assert.equal(catalog.models[0]?.maxTokens, 131_072);
 });
+
+
+test("Pixel Canary metadata keeps the current advisor route synthesizable", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: {
+			"omp-advisor": [
+				"CommandCode GOAT/stealth/pixel-canary",
+				"openrouter/thinkingmachines/inkling:free",
+				"Xiaomi MIMO/mimo-v2.6-flash",
+			],
+		},
+	};
+	const augmented = augmentLiveInventoryForRoutes([], aliases);
+	const catalogOverride = [{
+		id: "thinkingmachines/inkling:free",
+		provider: "openrouter",
+		contextWindow: 1_048_576,
+		maxTokens: 131_072,
+		reasoning: true,
+		thinkingLevelMap: { minimal: "minimal", low: "low", medium: "medium", high: "high" },
+		input: ["text"],
+		supportsTools: true,
+		compat: {
+			supportsReasoningEffort: true,
+			supportsUsageInStreaming: true,
+			supportsToolChoice: true,
+			supportsForcedToolChoice: true,
+			supportsNamedToolChoice: true,
+			disableReasoningOnToolChoice: false,
+		},
+	}];
+	const rich = buildRichRouteCatalog(augmented, aliases, { pricing: {}, parameters: {} }, catalogOverride);
+	assert.equal(rich.models.length, 3);
+	assert.equal(rich.diagnostics.some((item) => item.status === "missing-pricing"), false);
+	const pixel = rich.models.find((model) => model.id === "CommandCode GOAT/stealth/pixel-canary");
+	assert.equal(pixel?.contextWindow, 262_144);
+	assert.equal(pixel?.maxTokens, 131_072);
+	assert.ok(pixel?.input.includes("image"));
+
+	const catalog = buildPifrostCatalog(rich.models, aliases, rich.diagnostics);
+	assert.equal(catalog.models.length, 1);
+	assert.equal(catalog.models[0]?.id, "omp-advisor");
+	assert.equal(catalog.models[0]?.contextWindow, 262_144);
+	assert.equal(catalog.diagnostics[0]?.unresolved.length, 0);
+});
+
+test("MiMo V2.6 provider variants preserve vision capability without live metadata", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: {
+			"omp-vision": [
+				"opencode-go/mimo-v2.6-flash",
+				"CommandCode GOAT/xiaomi/mimo-v2.6-flash",
+				"Xiaomi MIMO/mimo-v2.6-flash",
+			],
+		},
+	};
+	const augmented = augmentLiveInventoryForRoutes([], aliases);
+	const rich = buildRichRouteCatalog(augmented, aliases, { pricing: {}, parameters: {} }, []);
+	assert.equal(rich.models.length, 3);
+	assert.ok(rich.models.every((model) => model.input.includes("image")));
+	assert.ok(rich.models.every((model) => model.capabilitySources?.image === "vendor-override"));
+	assert.ok(rich.models.every((model) => model.contextWindow === 1_048_576));
+	assert.ok(rich.models.every((model) => model.maxTokens === 131_072));
+
+	const catalog = buildPifrostCatalog(rich.models, aliases, rich.diagnostics);
+	assert.equal(catalog.models.length, 1);
+	assert.equal(catalog.models[0]?.id, "omp-vision");
+	assert.deepEqual(catalog.models[0]?.input, ["text", "image"]);
+	assert.equal(catalog.diagnostics[0]?.image, true);
+	assert.equal(catalog.diagnostics[0]?.unresolved.length, 0);
+});
