@@ -17,6 +17,8 @@ import {
 
 export const PROVIDER_ID = "bifrost";
 export const PIFROST_API = "pifrost-openai-completions";
+export const PIFROST_APP_REFERER = "https://pi.dev/";
+export const PIFROST_APP_TITLE = "pi";
 
 function packageVersion(): string {
 	try {
@@ -297,13 +299,23 @@ export function pifrostUserAgent(): string {
 	return `pifrost/${PIFROST_VERSION} OMP`;
 }
 
-/** Static provider headers. The x-bf-eh header forwards Pifrost's UA to the routed provider. */
+/**
+ * Static provider headers for Bifrost inference.
+ *
+ * Pifrost runs inside OMP/pi, so the forwarded OpenRouter attribution reflects
+ * the actual originating agentic harness rather than fabricating a client
+ * identity. Bifrost strips x-bf-eh-* before forwarding these values upstream.
+ * This also satisfies OpenRouter free-model gates that require an attributed
+ * agentic harness (for example thinkingmachines/inkling:free).
+ */
 export function pifrostProviderHeaders(virtualKey: string): Record<string, string> {
 	const userAgent = pifrostUserAgent();
 	return {
 		"x-bf-vk": virtualKey,
 		"User-Agent": userAgent,
 		"x-bf-eh-user-agent": userAgent,
+		"x-bf-eh-http-referer": PIFROST_APP_REFERER,
+		"x-bf-eh-x-title": PIFROST_APP_TITLE,
 	};
 }
 

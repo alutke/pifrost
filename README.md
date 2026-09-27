@@ -58,6 +58,7 @@ That gives you five useful properties:
 - **Stable OMP roles.** OMP uses logical aliases while Bifrost owns the real model chain.
 - **Safer capabilities.** Pifrost advertises only capabilities it can establish safely for the route.
 - **Session-aware routing.** OMP conversation identity is forwarded to Bifrost for route/provider-key affinity and to OpenCode Go where required.
+- **Agentic OpenRouter attribution.** Pifrost forwards the real OMP/pi application identity through Bifrost so OpenRouter endpoints gated to recognised agentic harnesses (including free Inkling) can be used without bypassing Bifrost.
 - **Repository-scoped MCP.** Each repository can have its own Bifrost MCP Virtual Key without committing the raw secret.
 - **One diagnostic surface.** <code>pifrost doctor</code> checks the OMP, Bifrost, routing, model and current-repository integration together.
 
@@ -101,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.18
+0.6.19
 ```
 
 Bun also works:

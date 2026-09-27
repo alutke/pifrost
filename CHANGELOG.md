@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.19 — 2026-09-27
+
+- Fixed OpenRouter agentic-harness-gated free models through Bifrost. Direct testing confirmed `thinkingmachines/inkling:free` returns HTTP 403 without application attribution, succeeds with `HTTP-Referer: https://pi.dev/` plus `X-Title: pi`, fails through plain Bifrost, and succeeds when those headers are forwarded through Bifrost's `x-bf-eh-*` escape mechanism.
+- Pifrost now forwards its real originating OMP/pi application identity on every Bifrost inference request as `x-bf-eh-http-referer: https://pi.dev/` and `x-bf-eh-x-title: pi`. Bifrost strips the prefix before provider dispatch, allowing OpenRouter to recognise the request as coming from an agentic harness.
+- Kept Pifrost's existing versioned `pifrost/<version> OMP` User-Agent and upstream `x-bf-eh-user-agent`; the fix does not spoof a pi User-Agent because the observed OpenRouter gate was already satisfied by Referer + Title alone.
+- Applied the attribution at the native provider boundary rather than special-casing Inkling, so future OpenRouter route members with the same agentic-harness gate work automatically when used from OMP through Bifrost.
+- Added provider-contract regression coverage for the forwarded attribution headers and preserved existing session/OpenCode forwarding behavior.
+- Cache schema remains v11 because model and route capability metadata are unchanged.
+
+
 ## 0.6.18 — 2026-09-27
 
 - Fixed heterogeneous Bifrost route failures where OMP could request a larger completion ceiling than a physical fallback supports (for example `max_completion_tokens=262144` reaching a 131072-token OpenRouter/Xiaomi MiMo model and being rejected with HTTP 400).
