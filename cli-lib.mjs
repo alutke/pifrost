@@ -1123,6 +1123,14 @@ export function repoIdentity(cwd = process.cwd()) {
   return { root, name, identity, id };
 }
 
+export function repoVirtualKeyName(repo) {
+  const safe = String(repo?.id ?? repo?.name ?? "repo")
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/gu, "-")
+    .replace(/^-+|-+$/gu, "") || "repo";
+  return `omp-${safe}-mcp`;
+}
+
 export function mcpConfigPath(root) {
   return join(root, ".omp/mcp.json");
 }
@@ -1329,6 +1337,22 @@ export async function listVirtualKeys(url, managementAuth, search) {
   );
 }
 
+export async function findVirtualKeyByExactName(url, managementAuth, name) {
+  const expected = nonEmpty(name);
+  if (!expected) throw new Error("Bifrost Virtual Key name is required");
+  // Do not depend on Bifrost's optional search semantics for correctness.
+  // Fetch/paginate the inventory and compare the unique key name locally.
+  const matches = (await listVirtualKeys(url, managementAuth)).filter(
+    (candidate) => candidate?.name === expected,
+  );
+  if (matches.length > 1) {
+    throw new Error(
+      `Found ${matches.length} Bifrost Virtual Keys named ${expected}; refusing ambiguous repo association.`,
+    );
+  }
+  return matches[0];
+}
+
 export async function getVirtualKey(url, managementAuth, id) {
   const base = bifrostManagementBase(url);
   const body = await requestJson(`${base}/api/governance/virtual-keys/${encodeURIComponent(id)}`, {
@@ -1501,68 +1525,78 @@ export async function upsertRepoVirtualKey({
   managementKey,
   rotateExisting = false,
 }) {
-  const keyName = `omp-${repo.name.toLowerCase().replace(/[^a-z0-9._-]+/gu, "-")}-mcp`;
+  const keyName = repoVirtualKeyName(repo);
   const local = state.config.repos?.[repo.id];
   const localSecret = usableVirtualKeyValue(state.secrets.repos?.[repo.id]?.mcpVirtualKey);
   let vk;
   let created = false;
 
+  const updateRequest = (name) => {
+    const request = {
+      name,
+      is_active: true,
+    };
+    if (Array.isArray(clients)) {
+      request.mcp_configs = clients.map((client) => ({
+        mcp_client_name: client.name,
+        tools_to_execute: client.tools,
+      }));
+    }
+    return request;
+  };
+
   if (local?.virtualKeyId) {
     try {
-      const request = {
-        name: local.virtualKeyName ?? keyName,
-        is_active: true,
-      };
-      if (Array.isArray(clients)) {
-        request.mcp_configs = clients.map((client) => ({
-          mcp_client_name: client.name,
-          tools_to_execute: client.tools,
-        }));
-      }
-      vk = await updateVirtualKey(url, managementKey, local.virtualKeyId, request);
+      vk = await updateVirtualKey(
+        url,
+        managementKey,
+        local.virtualKeyId,
+        updateRequest(local.virtualKeyName ?? keyName),
+      );
     } catch (error) {
       if (!(error instanceof PifrostHttpError) || error.status !== 404) throw error;
     }
   }
 
   if (!vk) {
-    const matches = await listVirtualKeys(url, managementKey, keyName);
-    const existing = matches.find((candidate) => candidate?.name === keyName);
+    let existing = await findVirtualKeyByExactName(url, managementKey, keyName);
     if (existing?.id) {
-      const request = {
-        name: keyName,
-        is_active: true,
-      };
-      if (Array.isArray(clients)) {
-        request.mcp_configs = clients.map((client) => ({
-          mcp_client_name: client.name,
-          tools_to_execute: client.tools,
-        }));
-      }
-      vk = await updateVirtualKey(url, managementKey, existing.id, request);
+      vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest(keyName));
       if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
     } else {
-      created = true;
-      vk = await createVirtualKey(url, managementKey, {
-        name: keyName,
-        description: `Pifrost MCP-only key for ${repo.name}`,
-        // Explicit deny-by-default inference posture on Bifrost 2.x. The repo
-        // key exists only to authenticate the MCP gateway.
-        allow_all_providers: false,
-        provider_configs: [],
-        mcp_configs: (clients ?? []).map((client) => ({
-          mcp_client_name: client.name,
-          tools_to_execute: client.tools,
-        })),
-        is_active: true,
-      });
+      try {
+        created = true;
+        vk = await createVirtualKey(url, managementKey, {
+          name: keyName,
+          description: `Pifrost MCP-only key for ${repo.identity ?? repo.name} [${repo.id}]`,
+          // Explicit deny-by-default inference posture on Bifrost 2.x. The repo
+          // key exists only to authenticate the MCP gateway.
+          allow_all_providers: false,
+          provider_configs: [],
+          mcp_configs: (clients ?? []).map((client) => ({
+            mcp_client_name: client.name,
+            tools_to_execute: client.tools,
+          })),
+          is_active: true,
+        });
+      } catch (error) {
+        if (!(error instanceof PifrostHttpError) || error.status !== 409) throw error;
+        // A concurrent init or eventually-consistent list can race the unique
+        // name constraint. Re-read the complete inventory and adopt only the
+        // exact repo-scoped canonical name.
+        created = false;
+        existing = await findVirtualKeyByExactName(url, managementKey, keyName);
+        if (!existing?.id) throw error;
+        vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest(keyName));
+        if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
+      }
     }
   }
 
   if (!vk?.id) throw new Error("Bifrost did not return a Virtual Key id");
 
   // Persist the association before dealing with a missing raw value so an explicit
-  // `repo rotate-key` can recover safely. Never rotate an existing key implicitly.
+  // repo rotate-key can recover safely. Never rotate an existing key implicitly.
   const liveMcpConfigs = virtualKeyMcpConfigs(vk);
   const normalizedClients = Array.isArray(clients)
     ? clients
