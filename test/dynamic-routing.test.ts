@@ -6,6 +6,7 @@ import {
 	applyDynamicRouteProfiles,
 	createDynamicRoutingFetch,
 	extractDynamicRouteProfiles,
+	planDynamicRouteAttempts,
 	rewriteDynamicOpenAIRequest,
 	type DynamicRouteProfile,
 } from "../dynamic-routing.ts";
@@ -116,6 +117,56 @@ test("protocol prewalk removes responses-only members from Pifrost chat requests
 		reference: "provider/large",
 		reasons: ["protocol openai-responses incompatible with openai-completions"],
 	});
+});
+
+test("multi-protocol planner preserves Muse-first route order and groups Chat fallbacks", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		reference: "opencode-go/muse-spark-1.3-contributor",
+		resolvedModelId: "opencode-go/muse-spark-1.3-contributor",
+		protocols: ["openai-responses"],
+	};
+	route.members[1] = {
+		...route.members[1]!,
+		reference: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+		resolvedModelId: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+		protocols: ["openai-completions"],
+	};
+	route.members[2] = {
+		...route.members[2]!,
+		reference: "deepseek/deepseek-flash",
+		resolvedModelId: "deepseek/deepseek-flash",
+		protocols: ["openai-completions"],
+	};
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "hello" }],
+			tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
+			reasoning_effort: "high",
+			max_completion_tokens: 32_000,
+		},
+		{ bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 },
+	);
+	assert.deepEqual(plan.attempts.map((attempt) => ({
+		protocol: attempt.protocol,
+		primary: attempt.primary,
+		fallbacks: attempt.fallbacks,
+	})), [
+		{
+			protocol: "openai-responses",
+			primary: "opencode-go/muse-spark-1.3-contributor",
+			fallbacks: [],
+		},
+		{
+			protocol: "openai-completions",
+			primary: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+			fallbacks: ["deepseek/deepseek-flash"],
+		},
+	]);
+	assert.deepEqual(plan.excluded, []);
 });
 
 test("context-aware routes still install prewalk when all context windows are equal", () => {
