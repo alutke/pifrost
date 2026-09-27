@@ -101,7 +101,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.12
+0.6.13
 ```
 
 Bun also works:
@@ -185,7 +185,7 @@ A logical route can contain models with different context windows, output limits
 
 For straightforward global fallback routes, Pifrost also uses **context-aware prewalk**. Before each request reaches Bifrost it removes members that are known to be incompatible with the final request: context/output limits, image/tool/reasoning constraints and the active Pifrost wire protocol are all considered. Pifrost's inference transport is OpenAI Chat Completions, so a provider-qualified member known to be Responses-only is skipped while a Chat-compatible sibling/provider may remain eligible.
 
-Protocol metadata is resolved conservatively from live Bifrost methods/endpoints, OMP's provider-qualified compiled `api-routes` policy, and bundled catalog metadata. The compiled policy matters for gateway-only models that are intentionally absent from OMP's static snapshot. Unknown protocol metadata is not guessed or rejected merely for being incomplete; only an authoritative mismatch is excluded. The same prewalk runs for eligible simple routes even when every member has the same context window.
+Protocol metadata is resolved conservatively with provider-specific transport policy ahead of generic family metadata: live Bifrost methods first, then OMP's provider-qualified compiled `api-routes`, then Bifrost datasheet endpoints and bundled catalog metadata. The compiled policy matters for gateway-only models that are intentionally absent from OMP's static snapshot and for models whose sibling providers expose a different wire API. Unknown protocol metadata is not guessed or rejected merely for being incomplete; only an authoritative mismatch is excluded. The same prewalk runs for eligible simple routes even when every member has the same context window.
 
 Complex, weighted, scoped, pinned or policy-dependent routes remain Bifrost-owned and use the conservative static envelope.
 
