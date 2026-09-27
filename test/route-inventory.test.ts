@@ -255,7 +255,13 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 			reasoning: true,
 			input: ["text", "image"],
 			supportsTools: true,
-			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+			compat: {
+				supportsReasoningEffort: true,
+				supportsUsageInStreaming: true,
+				supportsToolChoice: true,
+				supportsReasoningWithTools: true,
+				disableReasoningOnToolChoice: true,
+			},
 		},
 		{
 			id: "deepseek-flash",
@@ -265,7 +271,13 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 			reasoning: true,
 			input: ["text"],
 			supportsTools: true,
-			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+			compat: {
+				supportsReasoningEffort: true,
+				supportsUsageInStreaming: true,
+				supportsToolChoice: true,
+				supportsReasoningWithTools: true,
+				disableReasoningOnToolChoice: true,
+			},
 		},
 	];
 	const rich = buildRichRouteCatalog(augmented, aliases, { pricing: {}, parameters: {} }, catalogOverride);
@@ -287,12 +299,20 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 			model: "omp-default",
 			messages: [{ role: "user", content: "examine previous railway errors" }],
 			tools: [{ type: "function", function: { name: "read", parameters: { type: "object" } } }],
+			reasoning_effort: "high",
 			max_completion_tokens: 131_072,
 		},
-		{ bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 },
+		{
+			bytesPerToken: 100,
+			safetyMargin: 0,
+			fixedHeadroom: 0,
+			imageTokenReserve: 0,
+			outputCapExplicit: false,
+		},
 	);
 	assert.equal(rewritten.body.model, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
 	assert.deepEqual(rewritten.body.fallbacks, ["deepseek/deepseek-flash"]);
+	assert.equal(rewritten.decision.outputReserveExplicit, false);
 	assert.equal(rewritten.decision.excluded[0]?.reference, "opencode-go/muse-spark-1.3-contributor");
 	assert.match(rewritten.decision.excluded[0]?.reasons.join(" ") ?? "", /protocol openai-responses incompatible/u);
 });
