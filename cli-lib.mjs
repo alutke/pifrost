@@ -23,7 +23,7 @@ import {
   routingFeatureSummary,
   routingRulePins,
   targetReference,
-} from "./routing-core.ts";
+} from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
 
 export { PifrostHttpError, requestJson };
