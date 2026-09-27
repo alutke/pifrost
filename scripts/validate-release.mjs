@@ -32,6 +32,7 @@ if (expectedRelease !== pkg.version) {
 
 for (const path of [
   "native.ts",
+  "multi-protocol-routing.ts",
   "agent-attribution.ts",
   "omp-cfg.ts",
   "pricing-time.ts",
