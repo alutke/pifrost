@@ -25,6 +25,7 @@ const CAPABILITY_KEYS = Object.freeze([
   "reasoning",
   "reasoningEfforts",
   "tools",
+  "protocol",
 ]);
 
 function cachePath(env = process.env) {
@@ -84,9 +85,12 @@ export function formatCapabilitySources(sources) {
 export function formatMemberDiagnostic(member) {
   const target = member?.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";
   const resolution = member?.resolution ? ` resolution=${member.resolution}` : "";
+  const protocols = Array.isArray(member?.protocols) && member.protocols.length
+    ? ` protocols=${member.protocols.join(",")}`
+    : " protocols=unknown";
   const sourceText = ` sources=${formatCapabilitySources(member?.sources)}`;
   const reason = member?.reason ? ` reason=${member.reason}` : "";
-  return `    ${member?.status ?? "unknown"} ${member?.reference ?? "<unknown>"}${target}${resolution}${sourceText}${reason}`;
+  return `    ${member?.status ?? "unknown"} ${member?.reference ?? "<unknown>"}${target}${resolution}${protocols}${sourceText}${reason}`;
 }
 
 export function printModelDoctor(env = process.env, out = console) {
@@ -124,11 +128,18 @@ export function printModelDoctor(env = process.env, out = console) {
   const dynamic = models.filter((model) => model?.pifrostDynamicRoute?.mode === "context-aware");
   if (dynamic.length) {
     out.log("\nDynamic context routing:");
+    out.log("  Context bands below are capacity-only; runtime prewalk also filters protocol and other capabilities.");
     for (const model of dynamic) {
       const route = model.pifrostDynamicRoute;
       out.log(`  ${model.id}: static=${route.staticContextWindow} advertised=${route.advertisedContextWindow}`);
+      for (const member of route.members ?? []) {
+        const protocols = Array.isArray(member?.protocols) && member.protocols.length
+          ? member.protocols.join(",")
+          : "unknown";
+        out.log(`    member ${member.reference}: protocols=${protocols}`);
+      }
       for (const band of route.bands ?? []) {
-        out.log(`    <=${band.maxRequiredTokens}: ${(band.members ?? []).join(" -> ")}`);
+        out.log(`    context<=${band.maxRequiredTokens}: ${(band.members ?? []).join(" -> ")}`);
       }
     }
   }
