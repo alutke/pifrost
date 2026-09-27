@@ -27,7 +27,7 @@ test("new repo MCP Virtual Keys are explicitly inference-denied on Bifrost 2.x",
       response.end(JSON.stringify({
         virtual_key: {
           id: "vk-new",
-          name: "omp-demo-mcp",
+          name: "omp-demo-secure-mcp",
           value: "sk-bf-new",
           ...createdBody,
         },
