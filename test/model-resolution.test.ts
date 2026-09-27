@@ -241,7 +241,8 @@ test("OpenRouter tool/reasoning compatibility is projected conservatively into a
 	assert.ok(model);
 	assert.equal(model.compat.supportsToolChoice, true);
 	assert.equal(model.compat.supportsForcedToolChoice, false);
-	assert.equal(model.compat.disableReasoningOnToolChoice, true);
+	assert.equal(model.compat.supportsReasoningWithTools, false);
+	assert.notEqual(model.compat.disableReasoningOnToolChoice, true);
 	assert.equal(catalog.diagnostics[0]?.forcedToolChoice, false);
 	assert.equal(catalog.diagnostics[0]?.reasoningWithTools, false);
 });
