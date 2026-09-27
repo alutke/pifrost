@@ -1,19 +1,19 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { AssistantMessage, AssistantMessageEvent, ModelSpec } from "@oh-my-pi/pi-ai";
-import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
-import { buildModel } from "@oh-my-pi/pi-catalog/build";
+import type { AssistantMessage, AssistantMessageEvent, Model } from "@oh-my-pi/pi-ai";
 
 import type { DynamicRoutePlan } from "../dynamic-routing.ts";
 import {
 	bifrostAttemptExtraBody,
-	buildPifrostAttemptModel,
-	streamPifrostProtocolPlan,
+	createPifrostAttemptModelSpec,
+	runPifrostProtocolPlan,
+	type PifrostAttemptStream,
+	type PifrostProtocolOutput,
 } from "../multi-protocol-routing.ts";
 
-function logicalModel() {
-	return buildModel({
+function logicalModel(): Model {
+	return {
 		id: "omp-default",
 		name: "omp-default",
 		provider: "bifrost",
@@ -24,12 +24,26 @@ function logicalModel() {
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: 1_048_576,
 		maxTokens: 131_072,
-		compat: {
+		compatConfig: {
 			supportsReasoningEffort: true,
 			supportsToolChoice: true,
 			supportsUsageInStreaming: true,
 		},
-	} as ModelSpec<"openai-completions">);
+		compat: {
+			supportsDeveloperRole: true,
+			supportsReasoningEffort: true,
+			supportsUsageInStreaming: true,
+			supportsToolChoice: true,
+			supportsForcedToolChoice: true,
+			supportsNamedToolChoice: true,
+			supportsReasoningWithTools: true,
+			disableReasoningOnToolChoice: false,
+		},
+		identity: {
+			provider: "bifrost",
+			model: "omp-default",
+		},
+	} as unknown as Model;
 }
 
 function member(reference: string, protocol: "openai-completions" | "openai-responses") {
@@ -94,36 +108,65 @@ function assistant(model: string, api: "openai-completions" | "openai-responses"
 	};
 }
 
-function failedAttempt(model: string, api: "openai-completions" | "openai-responses"): AssistantMessageEventStream {
-	const stream = new AssistantMessageEventStream();
+function eventStream(events: readonly AssistantMessageEvent[]): PifrostAttemptStream {
+	return {
+		async *[Symbol.asyncIterator]() {
+			for (const event of events) yield event;
+		},
+	};
+}
+
+function failedAttempt(model: string, api: "openai-completions" | "openai-responses"): PifrostAttemptStream {
 	const partial = assistant(model, api, "stop");
-	stream.push({ type: "start", partial });
 	const error = assistant(model, api, "error");
 	error.errorMessage = "synthetic pre-output failure";
-	stream.push({ type: "error", reason: "error", error });
-	return stream;
+	return eventStream([
+		{ type: "start", partial },
+		{ type: "error", reason: "error", error },
+	]);
 }
 
-function successfulAttempt(model: string, api: "openai-completions" | "openai-responses"): AssistantMessageEventStream {
-	const stream = new AssistantMessageEventStream();
+function successfulAttempt(model: string, api: "openai-completions" | "openai-responses"): PifrostAttemptStream {
 	const partial = assistant(model, api, "stop");
-	stream.push({ type: "start", partial });
-	stream.push({ type: "done", reason: "stop", message: partial });
-	return stream;
+	return eventStream([
+		{ type: "start", partial },
+		{ type: "done", reason: "stop", message: partial },
+	]);
 }
 
-test("attempt models use native protocol endpoints and preserve same-protocol Bifrost fallbacks", () => {
+function outputCollector() {
+	const events: AssistantMessageEvent[] = [];
+	let failure: unknown;
+	const output: PifrostProtocolOutput = {
+		push(event) {
+			events.push(event);
+		},
+		fail(error) {
+			failure = error;
+		},
+		forwardLocalWorkFrom() {},
+	};
+	return {
+		events,
+		output,
+		failure: () => failure,
+	};
+}
+
+test("attempt specs use native protocol endpoints and preserve same-protocol Bifrost fallbacks", () => {
 	const logical = logicalModel();
 	const route = plan();
-	const responses = buildPifrostAttemptModel(logical, route.attempts[0]!);
-	const chat = buildPifrostAttemptModel(logical, route.attempts[1]!);
+	const responses = createPifrostAttemptModelSpec(logical, route.attempts[0]!);
+	const chat = createPifrostAttemptModelSpec(logical, route.attempts[1]!);
 
 	assert.equal(responses.api, "openai-responses");
 	assert.equal(responses.id, "opencode-go/muse-spark-1.3-contributor");
 	assert.equal(chat.api, "openai-completions");
 	assert.equal(chat.id, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
-	const chatCompat = (chat as import("@oh-my-pi/pi-ai").Model<"openai-completions">).compat;
-	assert.deepEqual((chatCompat.extraBody as Record<string, unknown> | undefined)?.fallbacks, ["deepseek/deepseek-flash"]);
+	assert.deepEqual(
+		((chat.compat as Record<string, unknown> | undefined)?.extraBody as Record<string, unknown> | undefined)?.fallbacks,
+		["deepseek/deepseek-flash"],
+	);
 	assert.equal(bifrostAttemptExtraBody(route.attempts[0]!), undefined);
 });
 
@@ -131,22 +174,22 @@ test("pre-output Responses failure falls through to the Chat protocol group", as
 	const logical = logicalModel();
 	const route = plan();
 	const dispatched: Array<{ protocol: string; model: string }> = [];
-	const stream = streamPifrostProtocolPlan(logical, route, (attempt, transportModel) => {
-		dispatched.push({ protocol: attempt.protocol, model: transportModel.id });
+	const collected = outputCollector();
+
+	await runPifrostProtocolPlan(logical, route, collected.output, (attempt) => {
+		dispatched.push({ protocol: attempt.protocol, model: attempt.primary });
 		return attempt.protocol === "openai-responses"
-			? failedAttempt(transportModel.id, "openai-responses")
-			: successfulAttempt(transportModel.id, "openai-completions");
+			? failedAttempt(attempt.primary, "openai-responses")
+			: successfulAttempt(attempt.primary, "openai-completions");
 	});
 
-	const events: AssistantMessageEvent[] = [];
-	for await (const event of stream) events.push(event);
-
+	assert.equal(collected.failure(), undefined);
 	assert.deepEqual(dispatched, [
 		{ protocol: "openai-responses", model: "opencode-go/muse-spark-1.3-contributor" },
 		{ protocol: "openai-completions", model: "CommandCode GOAT/deepseek/deepseek-v4.1-flash" },
 	]);
-	assert.deepEqual(events.map((event) => event.type), ["start", "done"]);
-	const done = events.at(-1);
+	assert.deepEqual(collected.events.map((event) => event.type), ["start", "done"]);
+	const done = collected.events.at(-1);
 	assert.equal(done?.type, "done");
 	if (done?.type === "done") {
 		assert.equal(done.message.model, "omp-default");
@@ -159,28 +202,28 @@ test("once a Responses attempt emits model output Pifrost never replays on Chat"
 	const logical = logicalModel();
 	const route = plan();
 	const dispatched: string[] = [];
-	const stream = streamPifrostProtocolPlan(logical, route, (attempt, transportModel) => {
+	const collected = outputCollector();
+
+	await runPifrostProtocolPlan(logical, route, collected.output, (attempt) => {
 		dispatched.push(attempt.protocol);
 		if (attempt.protocol === "openai-completions") {
-			return successfulAttempt(transportModel.id, "openai-completions");
+			return successfulAttempt(attempt.primary, "openai-completions");
 		}
-		const inner = new AssistantMessageEventStream();
-		const partial = assistant(transportModel.id, "openai-responses", "stop");
+		const partial = assistant(attempt.primary, "openai-responses", "stop");
 		partial.content = [{ type: "thinking", thinking: "" }];
-		inner.push({ type: "start", partial });
-		inner.push({ type: "thinking_start", contentIndex: 0, partial });
-		const error = assistant(transportModel.id, "openai-responses", "error");
+		const error = assistant(attempt.primary, "openai-responses", "error");
 		error.errorMessage = "failed after output began";
-		inner.push({ type: "error", reason: "error", error });
-		return inner;
+		return eventStream([
+			{ type: "start", partial },
+			{ type: "thinking_start", contentIndex: 0, partial },
+			{ type: "error", reason: "error", error },
+		]);
 	});
 
-	const events: AssistantMessageEvent[] = [];
-	for await (const event of stream) events.push(event);
-
+	assert.equal(collected.failure(), undefined);
 	assert.deepEqual(dispatched, ["openai-responses"]);
-	assert.deepEqual(events.map((event) => event.type), ["start", "thinking_start", "error"]);
-	const error = events.at(-1);
+	assert.deepEqual(collected.events.map((event) => event.type), ["start", "thinking_start", "error"]);
+	const error = collected.events.at(-1);
 	assert.equal(error?.type, "error");
 	if (error?.type === "error") {
 		assert.equal(error.error.model, "omp-default");
