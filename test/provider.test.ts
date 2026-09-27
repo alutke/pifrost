@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
 	bifrostHeaders,
@@ -7,6 +8,7 @@ import {
 	formatDoctorReport,
 	normalizeBifrostUrl,
 	PIFROST_API,
+	PIFROST_VERSION,
 	pifrostOpenCodeSessionHeaders,
 	pifrostSessionHeaders,
 	resolveAliasReference,
@@ -106,6 +108,32 @@ test("does not conflate distinct none and minimal wire efforts", () => {
 	assert.ok(mapped);
 	assert.deepEqual(mapped.thinking?.efforts.map(String), ["minimal", "low"]);
 	assert.equal(mapped.thinking?.effortMap?.minimal, "minimal");
+});
+
+test("maps Bifrost supported methods to physical wire protocols", () => {
+	const responses = toProviderModel({
+		id: "opencode-go/muse-spark-1.3-contributor",
+		context_length: 1_000_000,
+		max_output_tokens: 128_000,
+		supported_methods: ["/v1/responses"],
+	});
+	assert.ok(responses);
+	assert.deepEqual(responses.protocols, ["openai-responses"]);
+	assert.equal(responses.capabilitySources?.protocol, "live");
+
+	const chat = toProviderModel({
+		id: "commandcode/deepseek-v4.1-flash",
+		context_length: 1_000_000,
+		max_output_tokens: 128_000,
+		supported_methods: ["/v1/chat/completions"],
+	});
+	assert.ok(chat);
+	assert.deepEqual(chat.protocols, ["openai-completions"]);
+});
+
+test("provider user agent follows package release version", () => {
+	const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string };
+	assert.equal(PIFROST_VERSION, pkg.version);
 });
 
 test("native provider accepts Bifrost 2.x Virtual-Key-only inference auth", async () => {
@@ -281,8 +309,8 @@ test("native OMP provider uses the Pifrost transport and separate x-bf-vk govern
 	assert.equal(provider.authHeader, true);
 	assert.deepEqual(provider.headers, {
 		"x-bf-vk": "vk",
-		"User-Agent": "pifrost/0.4.1 OMP",
-		"x-bf-eh-user-agent": "pifrost/0.4.1 OMP",
+		"User-Agent": `pifrost/${PIFROST_VERSION} OMP`,
+		"x-bf-eh-user-agent": `pifrost/${PIFROST_VERSION} OMP`,
 	});
 	const models = await provider.fetchDynamicModels("resolved-api");
 	assert.deepEqual(models.map((entry) => entry.id), ["omp-task"]);
