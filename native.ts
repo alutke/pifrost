@@ -3,6 +3,10 @@ import {
 	streamOpenAICompletions,
 	type OpenAICompletionsOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-completions";
+import {
+	streamOpenAIResponses,
+	type OpenAIResponsesOptions,
+} from "@oh-my-pi/pi-ai/providers/openai-responses";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
@@ -39,8 +43,15 @@ import {
 	applyDynamicRouteProfiles,
 	createDynamicRoutingFetch,
 	extractDynamicRouteProfiles,
+	planDynamicRouteAttempts,
+	type DynamicRouteAttempt,
+	type DynamicRoutePlan,
 	type DynamicRouteProfile,
 } from "./dynamic-routing.ts";
+import {
+	bifrostAttemptExtraBody,
+	streamPifrostProtocolPlan,
+} from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import {
 	activePifrostCfgSession,
@@ -126,6 +137,110 @@ function mapPifrostOpenAIToolChoice(
 	return undefined;
 }
 
+function dynamicRoutePlanningBody(
+	model: Model,
+	context: Context,
+	options: SimpleStreamOptions | undefined,
+): Record<string, unknown> {
+	const body: Record<string, unknown> = {
+		model: model.id,
+		messages: context.messages,
+		max_completion_tokens: options?.maxTokens ?? model.maxTokens,
+	};
+	if (context.tools?.length) body.tools = context.tools;
+	const toolChoice = mapPifrostOpenAIToolChoice(options?.toolChoice);
+	if (toolChoice !== undefined) body.tool_choice = toolChoice;
+	if (!options?.disableReasoning && !options?.forceReasoningOff) {
+		const reasoning = resolvePifrostReasoningEffort(model, options);
+		if (reasoning !== undefined) body.reasoning_effort = reasoning;
+	}
+	return body;
+}
+
+function pifrostAttemptHeaders(
+	headers: Record<string, string> | undefined,
+	sessionId: string,
+	plan: DynamicRoutePlan,
+	attempt: DynamicRouteAttempt,
+	attemptIndex: number,
+): Record<string, string> {
+	const result = pifrostSessionHeaders(headers, sessionId);
+	result["x-pifrost-logical-model"] = plan.logicalModel;
+	result["x-pifrost-route-protocol"] = attempt.protocol;
+	result["x-pifrost-route-attempt"] = String(attemptIndex + 1);
+	result["x-pifrost-route-primary"] = attempt.primary;
+	result["x-pifrost-estimated-input-tokens"] = String(plan.estimatedInputTokens);
+	result["x-pifrost-required-context-tokens"] = String(plan.requiredContextTokens);
+	result["x-pifrost-eligible-members"] = String(
+		plan.attempts.reduce((sum, item) => sum + item.members.length, 0),
+	);
+	return result;
+}
+
+function streamDynamicPifrostRoute(
+	model: Model,
+	context: Context,
+	options: SimpleStreamOptions | undefined,
+	rawOptions: SimpleStreamOptions | undefined,
+	sessionId: string,
+	profile: DynamicRouteProfile,
+) {
+	const planningBody = dynamicRoutePlanningBody(model, context, options);
+	const plan = planDynamicRouteAttempts(profile, planningBody, {
+		outputCapExplicit: rawOptions?.maxTokens !== undefined,
+	});
+	const baseFetch = options?.fetch ?? globalThis.fetch;
+	const reasoning = resolvePifrostReasoningEffort(model, options);
+
+	return streamPifrostProtocolPlan(model, plan, (attempt, transportModel, attemptIndex) => {
+		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
+		const maxTokens = options?.maxTokens ?? attempt.members[0]?.maxTokens ?? model.maxTokens ?? undefined;
+		if (attempt.protocol === "openai-responses") {
+			const responseOptions: OpenAIResponsesOptions = {
+				...options,
+				apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
+				maxTokens,
+				headers,
+				reasoning,
+				disableReasoning: options?.disableReasoning,
+				toolChoice: options?.toolChoice,
+				serviceTier: options?.serviceTier,
+				openrouterVariant: options?.openrouterVariant,
+				maxTokensExplicit: rawOptions?.maxTokens !== undefined,
+				promptCache: options?.promptCache,
+				statefulResponses: false,
+				extraBody: bifrostAttemptExtraBody(attempt),
+				fetch: baseFetch,
+			};
+			return streamOpenAIResponses(
+				transportModel as Model<"openai-responses">,
+				context,
+				responseOptions,
+			);
+		}
+
+		const chatOptions: OpenAICompletionsOptions = {
+			...options,
+			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
+			maxTokens,
+			headers,
+			reasoning,
+			disableReasoning: options?.disableReasoning,
+			toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),
+			serviceTier: options?.serviceTier,
+			openrouterVariant: options?.openrouterVariant,
+			maxTokensExplicit: rawOptions?.maxTokens !== undefined,
+			promptCache: options?.promptCache,
+			fetch: baseFetch,
+		};
+		return streamOpenAICompletions(
+			transportModel as Model<"openai-completions">,
+			context,
+			chatOptions,
+		);
+	});
+}
+
 /**
  * Custom transport used by Pifrost's logical Bifrost provider.
  *
@@ -145,10 +260,14 @@ function streamPifrostOpenAI(
 	}
 	recordAgentRequest(sessionId, model.id);
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
-	// The custom Pifrost API intentionally resolves no OMP compat record.
-	// Rebuild the logical route as a real OpenAI Chat Completions model before
-	// handing it to the built-in transport so OMP materializes the complete
-	// ResolvedOpenAICompat object (tool-choice/reasoning policy included).
+	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
+	if (profile) {
+		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
+	}
+
+	// Non-dynamic aliases and physical models retain the long-standing Chat
+	// transport. The fetch wrapper is kept as a no-op-compatible guard for
+	// callers that install a route profile between model selection and dispatch.
 	const transportModel = buildModel({
 		...model,
 		api: "openai-completions",
@@ -167,9 +286,6 @@ function streamPifrostOpenAI(
 		openrouterVariant: options?.openrouterVariant,
 		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 		promptCache: options?.promptCache,
-		// The fetch wrapper sees OMP's final serialized OpenAI payload. It can
-		// therefore enforce the exact member envelope before Bifrost executes the
-		// caller-supplied physical fallback chain. Non-dynamic aliases are untouched.
 		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes, {
 			outputCapExplicit: rawOptions?.maxTokens !== undefined,
 		}),
