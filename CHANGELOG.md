@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.7 — 2026-09-27
+
+- Fixed `pifrost repo init` failing with HTTP 409 when a Bifrost Virtual Key already used the basename-only canonical name.
+- Repo MCP Virtual Key names are now scoped to Pifrost's stable repository id (for example `omp-homelab-<identity-hash>-mcp`) rather than only the checkout basename, preventing collisions between unrelated repositories named `homelab`.
+- Existing repos with a stored Virtual Key id/name continue to use that association; fresh repos do not silently adopt an ambiguous legacy basename-only key.
+- Exact-name recovery now paginates the full Bifrost Virtual Key inventory and compares names locally instead of relying on optional server-side `search` semantics.
+- Added HTTP 409 race recovery: if another init creates the canonical key between lookup and create, Pifrost re-reads the exact repo-scoped name and safely adopts it.
+- Exposed the existing explicit `--rotate-existing` recovery option through `pifrost repo init`; existing keys with masked/unavailable raw values are never rotated implicitly.
+- Added regression coverage for same-basename repo isolation, search-independent lookup, 409 create races, explicit rotation recovery, and reset naming.
+
 ## 0.6.6 — 2026-09-27
 
 - Restored the complete 10-role model catalogue for the current routing set by adding a narrowly scoped verified capability record for `stealth/pixel-canary` (262,144 context, 131,072 output, image input, reasoning and tools). This prevents `omp-advisor` from being withheld when Command Code's live/catalog metadata has not caught up with the new stealth model.
