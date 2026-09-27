@@ -5,7 +5,7 @@
  * This tiny module is intentionally dependency-free so the standalone CLI can
  * compile and consume the same schema constant as the native OMP extension.
  */
-export const CATALOG_CACHE_SCHEMA_VERSION = 5;
+export const CATALOG_CACHE_SCHEMA_VERSION = 6;
 
 
 //# sourceURL=/home/runner/work/pifrost/pifrost/cache-schema.ts
