@@ -232,7 +232,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.18
+0.6.19
 ```
 
 Bun can also install the package globally:
@@ -1221,6 +1221,8 @@ BIFROST_MANAGEMENT_API_KEY
 ## OpenRouter through Bifrost
 
 Pifrost treats OpenRouter as a Bifrost-owned upstream, not as a second client-side transport. Route members such as `openrouter/vendor/model` therefore remain ordinary Bifrost targets while Pifrost advertises a conservative OMP capability envelope.
+
+Because Pifrost actually runs inside OMP/pi, it also forwards the originating harness attribution through Bifrost using `x-bf-eh-http-referer: https://pi.dev/` and `x-bf-eh-x-title: pi`. Bifrost strips the escape prefix and OpenRouter receives `HTTP-Referer` / `X-Title`. This is required by OpenRouter free endpoints that gate access to recognised agentic harnesses, such as `thinkingmachines/inkling:free`. Pifrost keeps its own versioned `User-Agent`; it does not spoof a pi user agent. If Bifrost is configured with a dynamic-header allowlist, both escaped attribution headers must be permitted.
 
 Pifrost adds provider-qualified OpenRouter catalog fallback, explicit handling for OpenRouter routing variants (`:nitro`, `:floor`, `:online`, `:exacto`, `:extended`), and tool/reasoning compatibility projection from Bifrost's model-parameters datasheet. Routing variants may inherit the base model's capability metadata; billing/entitlement variants such as `:free` deliberately may not. A free route must have its own live or datasheet limits so Pifrost never silently borrows a paid SKU's larger context/output envelope.
 
