@@ -104,6 +104,28 @@ test("small requests retain every route member", () => {
 	assert.deepEqual(result.body.fallbacks, ["provider/small", "provider/large-two"]);
 });
 
+
+test("native semantic estimate outranks an inflated serialized-body estimate", () => {
+	const route = profile();
+	const body = {
+		model: "omp-default",
+		messages: [{
+			role: "toolResult",
+			content: [{ type: "text", text: "small visible result" }],
+			details: { raw: "x".repeat(4_000_000) },
+		}],
+		max_tokens: 32_000,
+	};
+	const plan = planDynamicRouteAttempts(route, body, {
+		estimatedInputTokens: 12_000,
+		outputCapExplicit: false,
+	});
+	assert.equal(plan.estimatedInputTokens, 12_000);
+	assert.equal(plan.requiredContextTokens, 44_000);
+	assert.deepEqual(plan.excluded, []);
+	assert.equal(plan.attempts[0]?.primary, "provider/large");
+});
+
 test("protocol prewalk removes responses-only members from Pifrost chat requests", () => {
 	const route = profile();
 	route.members[0] = { ...route.members[0]!, protocols: ["openai-responses"] };
