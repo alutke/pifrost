@@ -29,6 +29,7 @@
     "datasheet.ts",
     "catalog-fallback.ts",
     "model-resolution.ts",
+    "protocol-capability.ts",
     "route-inventory.ts",
     "dynamic-routing.ts",
     "compact-before-skip.ts",
@@ -76,11 +77,11 @@
     "build:runtime": "node --no-warnings scripts/build-runtime.mjs"
   },
   "dependencies": {
-    "@oh-my-pi/pi-ai": "18.3.2",
-    "@oh-my-pi/pi-catalog": "18.3.2"
+    "@oh-my-pi/pi-ai": "18.3.5",
+    "@oh-my-pi/pi-catalog": "18.3.5"
   },
   "devDependencies": {
-    "@oh-my-pi/pi-coding-agent": "18.3.2",
+    "@oh-my-pi/pi-coding-agent": "18.3.5",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"
