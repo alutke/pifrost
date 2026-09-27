@@ -247,7 +247,7 @@ function imagePartCount(value: unknown, depth = 0): number {
 
 function estimatePayload(value: Record<string, unknown>): { json: string; images: number } {
 	const promptPayload = { ...value };
-	for (const key of ["model", "fallbacks", "stream", "stream_options", "max_tokens", "max_completion_tokens"]) {
+	for (const key of ["model", "fallbacks", "stream", "stream_options", "max_tokens", "max_completion_tokens", "max_output_tokens"]) {
 		delete promptPayload[key];
 	}
 	const images = imagePartCount(promptPayload);
@@ -284,7 +284,7 @@ function requestedOutputBudget(
 	profile: DynamicRouteProfile,
 	options: DynamicRouteEstimateOptions,
 ): { tokens: number; explicit: boolean } {
-	for (const key of ["max_completion_tokens", "max_tokens"]) {
+	for (const key of ["max_output_tokens", "max_completion_tokens", "max_tokens"]) {
 		const value = body[key];
 		if (typeof value === "number" && Number.isFinite(value) && value > 0) {
 			return {
@@ -326,7 +326,7 @@ export function resolveDynamicMemberProtocol(
 function memberExclusionReasons(
 	member: DynamicRouteMemberProfile,
 	body: Record<string, unknown>,
-	requiredContextTokens: number,
+	estimatedInputTokens: number,
 	outputReserveTokens: number,
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): string[] {
@@ -336,8 +336,15 @@ function memberExclusionReasons(
 		const advertised = member.protocols?.length ? member.protocols.join(",") : "unknown";
 		reasons.push(`protocol ${advertised} incompatible with ${supportedProtocols.join(",")}`);
 	}
-	if (member.contextWindow < requiredContextTokens) reasons.push("context " + member.contextWindow + " < required " + requiredContextTokens);
-	if (member.maxTokens < outputReserveTokens) reasons.push("max-output " + member.maxTokens + " < requested " + outputReserveTokens);
+	// The caller's output cap is a ceiling, not a capability requirement. A route
+	// member with a lower output ceiling remains usable as long as the request is
+	// clamped before dispatch. Context eligibility therefore reserves only the
+	// output tokens that this member can actually emit.
+	const effectiveOutputReserveTokens = Math.min(outputReserveTokens, member.maxTokens);
+	const memberRequiredContextTokens = estimatedInputTokens + effectiveOutputReserveTokens;
+	if (member.contextWindow < memberRequiredContextTokens) {
+		reasons.push("context " + member.contextWindow + " < required " + memberRequiredContextTokens);
+	}
 	if (requestHasImages(body) && !member.input.includes("image")) reasons.push("no image input");
 	const usesTools = requestUsesTools(body);
 	if (usesTools && !member.supportsTools) reasons.push("no tool support");
@@ -394,7 +401,7 @@ function evaluateDynamicRoute(
 		const reasons = memberExclusionReasons(
 			member,
 			body,
-			requiredContextTokens,
+			estimatedInputTokens,
 			outputReserveTokens,
 			supportedProtocols,
 		);
@@ -462,6 +469,20 @@ export function planDynamicRouteAttempts(
 	};
 }
 
+function clampOpenAIOutputTokenFields(
+	body: Record<string, unknown>,
+	maxTokens: number,
+): Record<string, unknown> {
+	const result = { ...body };
+	for (const key of ["max_output_tokens", "max_completion_tokens", "max_tokens"]) {
+		const value = result[key];
+		if (typeof value === "number" && Number.isFinite(value) && value > maxTokens) {
+			result[key] = maxTokens;
+		}
+	}
+	return result;
+}
+
 export function rewriteDynamicOpenAIRequest(
 	profile: DynamicRouteProfile,
 	body: Record<string, unknown>,
@@ -470,9 +491,13 @@ export function rewriteDynamicOpenAIRequest(
 	const evaluated = evaluateDynamicRoute(profile, body, options, [PIFROST_WIRE_PROTOCOL]);
 	const primary = evaluated.eligible[0]!.member.reference;
 	const fallbacks = evaluated.eligible.slice(1).map((item) => item.member.reference);
+	const safeOutputCeiling = Math.min(
+		evaluated.outputReserveTokens,
+		...evaluated.eligible.map((item) => item.member.maxTokens),
+	);
 	return {
 		body: {
-			...body,
+			...clampOpenAIOutputTokenFields(body, safeOutputCeiling),
 			model: primary,
 			...(fallbacks.length ? { fallbacks } : { fallbacks: [] }),
 		},
