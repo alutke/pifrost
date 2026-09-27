@@ -33,6 +33,7 @@ test("canonical CLI help exposes the full repo Skills/reset surface", () => {
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /pifrost repo skills sync \[name\]/u);
   assert.match(result.stdout, /pifrost repo reset \[--delete-remote\] \[--recover-by-name\] \[--yes\]/u);
+  assert.match(result.stdout, /--rotate-existing/u);
   assert.doesNotMatch(result.stdout, /pifrost routes diagnose/u);
 });
 
