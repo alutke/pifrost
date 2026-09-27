@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 0.6.18 — 2026-09-27
+
+- Fixed heterogeneous Bifrost route failures where OMP could request a larger completion ceiling than a physical fallback supports (for example `max_completion_tokens=262144` reaching a 131072-token OpenRouter/Xiaomi MiMo model and being rejected with HTTP 400).
+- Output-token limits are now treated correctly as ceilings rather than hard capability requirements. Lower-output route members remain eligible and Pifrost clamps each dispatched attempt to the safest ceiling supported by every same-protocol member delegated to Bifrost.
+- Native mixed-protocol execution now computes a per-attempt max-token ceiling before both OpenAI Responses and Chat Completions dispatch, preserving larger limits on capable attempts while protecting smaller fallbacks.
+- Final-wire dynamic Chat rewriting also clamps `max_completion_tokens`, `max_tokens`, and `max_output_tokens` when Bifrost receives an eligible heterogeneous fallback chain.
+- Context prewalk now reserves the output that each physical member can actually emit after clamping, avoiding false exclusion when an oversized caller ceiling can safely be reduced for that member. Protocol, image, tool, reasoning, and true context-window incompatibilities still fail closed.
+- Added regressions for the observed 262144→131072 failure, mixed fallback ceilings, Responses-style `max_output_tokens`, member-specific context eligibility, and preservation of larger ceilings for capable single-member attempts.
+- Cache schema remains v11 because route-profile metadata is unchanged.
+
+
 ## 0.6.17 — 2026-09-27
 
 - Fixed the 0.6.16 OMP plugin-install regression where extension validation failed because the new context estimator imported `@oh-my-pi/pi-agent-core/tokenizer`, whose native `@oh-my-pi/pi-natives` dependency is not available in OMP's clean GitHub plugin sandbox.
