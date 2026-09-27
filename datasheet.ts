@@ -613,9 +613,9 @@ export function buildRichRouteCatalog(
 			liveModel.capabilitySources?.reasoningWithTools,
 			reasoningWithToolsFromParameters(parameters?.value),
 			sheetSource(parameters, "reasoningWithTools"),
-			undefined,
-			undefined,
-			undefined,
+			vendor?.supportsReasoningWithTools,
+			catalog?.supportsReasoningWithTools,
+			catalogCapabilitySource,
 		);
 		const disableReasoningOnToolChoice =
 			vendor?.disableReasoningOnToolChoice ??
