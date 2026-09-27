@@ -5,7 +5,7 @@ import { buildRichRouteCatalog, type BifrostDatasheets } from "../datasheet.ts";
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
 import { augmentLiveInventoryForRoutes } from "../route-inventory.ts";
 import { findCatalogProtocolCapability } from "../catalog-fallback.ts";
-import { applyDynamicRouteProfiles, extractDynamicRouteProfiles, rewriteDynamicOpenAIRequest } from "../dynamic-routing.ts";
+import { applyDynamicRouteProfiles, extractDynamicRouteProfiles, planDynamicRouteAttempts } from "../dynamic-routing.ts";
 
 function sparseLive(id: string): BifrostProviderModel {
 	return {
@@ -218,7 +218,7 @@ test("MiMo V2.6 provider variants preserve vision capability without live metada
 });
 
 
-test("current omp-default prewalk skips OpenCode Muse Responses transport and keeps Chat fallbacks", () => {
+test("current omp-default keeps Muse primary via Responses then falls back to the Chat group", () => {
 	const aliases: PifrostAliasConfig = {
 		includePhysicalModels: false,
 		aliases: {
@@ -293,7 +293,7 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 	catalog = applyDynamicRouteProfiles(catalog, rich.models, aliases, (reference) => byId.get(reference.toLowerCase()));
 	const route = extractDynamicRouteProfiles(catalog.models).get("omp-default");
 	assert.ok(route);
-	const rewritten = rewriteDynamicOpenAIRequest(
+	const plan = planDynamicRouteAttempts(
 		route,
 		{
 			model: "omp-default",
@@ -310,11 +310,24 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 			outputCapExplicit: false,
 		},
 	);
-	assert.equal(rewritten.body.model, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
-	assert.deepEqual(rewritten.body.fallbacks, ["deepseek/deepseek-flash"]);
-	assert.equal(rewritten.decision.outputReserveExplicit, false);
-	assert.equal(rewritten.decision.excluded[0]?.reference, "opencode-go/muse-spark-1.3-contributor");
-	assert.match(rewritten.decision.excluded[0]?.reasons.join(" ") ?? "", /protocol openai-responses incompatible/u);
+	assert.equal(plan.outputReserveExplicit, false);
+	assert.deepEqual(plan.excluded, []);
+	assert.deepEqual(plan.attempts.map((attempt) => ({
+		protocol: attempt.protocol,
+		primary: attempt.primary,
+		fallbacks: attempt.fallbacks,
+	})), [
+		{
+			protocol: "openai-responses",
+			primary: "opencode-go/muse-spark-1.3-contributor",
+			fallbacks: [],
+		},
+		{
+			protocol: "openai-completions",
+			primary: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+			fallbacks: ["deepseek/deepseek-flash"],
+		},
+	]);
 });
 
 test("provider-specific OMP protocol policy outranks cross-provider family datasheet endpoints", () => {
@@ -375,7 +388,7 @@ test("provider-specific OMP protocol policy outranks cross-provider family datas
 	catalog = applyDynamicRouteProfiles(catalog, rich.models, aliases, (reference) => byId.get(reference.toLowerCase()));
 	const route = extractDynamicRouteProfiles(catalog.models).get("omp-default");
 	assert.ok(route);
-	const rewritten = rewriteDynamicOpenAIRequest(
+	const plan = planDynamicRouteAttempts(
 		route,
 		{
 			model: "omp-default",
@@ -384,8 +397,9 @@ test("provider-specific OMP protocol policy outranks cross-provider family datas
 		},
 		{ bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 },
 	);
-	assert.equal(rewritten.body.model, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
-	assert.equal(rewritten.decision.excluded[0]?.reference, "opencode-go/muse-spark-1.3-contributor");
-	assert.match(rewritten.decision.excluded[0]?.reasons.join(" ") ?? "", /protocol openai-responses incompatible/u);
+	assert.equal(plan.attempts[0]?.protocol, "openai-responses");
+	assert.equal(plan.attempts[0]?.primary, "opencode-go/muse-spark-1.3-contributor");
+	assert.equal(plan.attempts[1]?.protocol, "openai-completions");
+	assert.equal(plan.attempts[1]?.primary, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
 });
 
