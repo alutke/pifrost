@@ -82,6 +82,27 @@ export function bifrostAttemptExtraBody(attempt: DynamicRouteAttempt): Record<st
 		: undefined;
 }
 
+/**
+ * Return the output-token ceiling that is safe for every physical member in a
+ * Bifrost attempt. The caller's requested max is a ceiling rather than a
+ * requirement, so heterogeneous fallback groups are clamped to their weakest
+ * member instead of rejecting otherwise-capable models.
+ */
+export function pifrostAttemptMaxTokens(
+	attempt: DynamicRouteAttempt,
+	requestedMaxTokens?: number,
+): number | undefined {
+	const memberCeilings = attempt.members
+		.map((member) => member.maxTokens)
+		.filter((value) => Number.isFinite(value) && value > 0);
+	const routeCeiling = memberCeilings.length ? Math.min(...memberCeilings) : undefined;
+	const requested = typeof requestedMaxTokens === "number" && Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0
+		? Math.ceil(requestedMaxTokens)
+		: undefined;
+	if (requested !== undefined && routeCeiling !== undefined) return Math.min(requested, routeCeiling);
+	return requested ?? routeCeiling;
+}
+
 function logicalAssistantMessage(
 	message: AssistantMessage,
 	logicalModel: Model,
