@@ -31,8 +31,15 @@ jobs:
         run: node scripts/validate-omp-18.3-contract.mjs
       - name: Validate with released OMP 18.3.2 CLI/plugin loader
         run: |
-          export HOME="$RUNNER_TEMP/omp-home"
+          export HOME="$RUNNER_TEMP/omp-home-local"
           mkdir -p "$HOME"
           ./node_modules/.bin/omp --version
           ./node_modules/.bin/omp install . --force
+          ./node_modules/.bin/omp plugin list
+      - name: Validate clean GitHub plugin install
+        if: github.event_name == 'push'
+        run: |
+          export HOME="$RUNNER_TEMP/omp-home-github"
+          mkdir -p "$HOME"
+          ./node_modules/.bin/omp install "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" --force
           ./node_modules/.bin/omp plugin list
