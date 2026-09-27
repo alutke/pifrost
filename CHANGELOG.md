@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 0.6.3 — 2026-09-27
+
+- Fixed global/standalone CLI installs so Node.js never executes Pifrost TypeScript from inside `node_modules`; CLI-facing TypeScript is compiled to JavaScript in `dist/` during package preparation while the native OMP extension remains TypeScript.
+- Extracted the catalogue cache schema version into a dependency-free shared source module, preserving one authoritative schema constant across the OMP runtime and compiled terminal diagnostics.
+- Decoupled stored runtime configuration from extension-only TypeScript types so the terminal build stays minimal and does not pull the full OMP extension graph into the CLI runtime.
+- Added a dedicated runtime TypeScript build configuration and automatic `prepare` build for Git/GitHub npm installs.
+- Strengthened release validation to create a real tarball, install it into a temporary `node_modules` tree with lifecycle scripts disabled, and execute the installed `pifrost --version` and `pifrost --help`. This directly guards against the `ERR_UNSUPPORTED_NODE_MODULES_TYPE_STRIPPING` regression in 0.6.2.
+- Scanned and removed the remaining transitive `.mjs -> .ts` CLI edge in route discovery; the installed-package regression gate now passes alongside the complete unit and upstream compatibility suite.
+
 ## 0.6.2 — 2026-09-26
 
 - Consolidated the terminal control plane onto a single `cli.mjs` package entry point, command parser and command registry; removed the overlapping `cli-entry.mjs` and `repo-cli.mjs` implementations.
