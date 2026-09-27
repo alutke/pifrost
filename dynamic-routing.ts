@@ -78,6 +78,11 @@ export interface DynamicRouteEstimateOptions {
 	safetyMargin?: number;
 	fixedHeadroom?: number;
 	imageTokenReserve?: number;
+	/**
+	 * Semantic prompt-token estimate supplied by the native OMP provider path.
+	 * When present, this outranks the legacy serialized-body estimator.
+	 */
+	estimatedInputTokens?: number;
 	/** True only when the caller explicitly requested the serialized max-token cap. */
 	outputCapExplicit?: boolean;
 }
@@ -378,7 +383,8 @@ function evaluateDynamicRoute(
 	eligible: Array<{ member: DynamicRouteMemberProfile; protocol: PifrostWireProtocol }>;
 	excluded: Array<{ reference: string; reasons: string[] }>;
 } {
-	const estimatedInputTokens = estimateOpenAIRequestInputTokens(body, options);
+	const estimatedInputTokens =
+		finitePositive(options.estimatedInputTokens) ?? estimateOpenAIRequestInputTokens(body, options);
 	const outputBudget = requestedOutputBudget(body, profile, options);
 	const outputReserveTokens = outputBudget.tokens;
 	const requiredContextTokens = estimatedInputTokens + outputReserveTokens;
