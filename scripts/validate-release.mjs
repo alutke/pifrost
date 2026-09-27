@@ -56,8 +56,10 @@ for (const path of [
 if (pkg.scripts?.["build:runtime"] !== "node --no-warnings scripts/build-runtime.mjs") {
   fail("build:runtime must use the Node-only runtime builder");
 }
-if (pkg.scripts?.prepare !== "npm run build:runtime") {
-  fail("prepare must delegate to build:runtime");
+for (const lifecycle of ["prepare", "prepack", "preinstall", "install", "postinstall", "build"]) {
+  if (pkg.scripts?.[lifecycle]) {
+    fail(`Git-install package must not define consumer build lifecycle script: ${lifecycle}`);
+  }
 }
 
 rmSync(new URL("dist/", root), { recursive: true, force: true });
@@ -73,6 +75,14 @@ const cleanRuntimeBuild = spawnSync(process.execPath, ["--no-warnings", "scripts
 if (cleanRuntimeBuild.status !== 0) fail(commandError("clean Node-only runtime build", cleanRuntimeBuild));
 for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/cache-schema.js"]) {
   if (!existsSync(new URL(path, root))) fail(`clean runtime build did not create ${path}`);
+}
+
+const distDiff = spawnSync("git", ["diff", "--exit-code", "--", "dist/"], {
+  cwd: new URL(".", root),
+  encoding: "utf8",
+});
+if (distDiff.status !== 0) {
+  fail(`committed dist/ is stale relative to TypeScript sources:\n${distDiff.stdout || distDiff.stderr}`);
 }
 
 const cliEntry = pkg.bin?.pifrost;
@@ -189,10 +199,72 @@ try {
   if (!installedHelp.stdout.includes(`Pifrost ${pkg.version}`)) {
     fail("installed pifrost --help did not render the expected versioned help banner");
   }
+
+  const githubSha = process.env.GITHUB_SHA?.trim();
+  if (githubSha) {
+    const gitPrefix = join(workspace, "git-global");
+    const gitHome = join(workspace, "git-home");
+    mkdirSync(gitPrefix, { recursive: true });
+    mkdirSync(gitHome, { recursive: true });
+
+    const gitInstalled = spawnSync(
+      "npm",
+      [
+        "install",
+        "--global",
+        "--prefix",
+        gitPrefix,
+        "--no-audit",
+        "--no-fund",
+        `github:alutke/pifrost#${githubSha}`,
+      ],
+      {
+        cwd: installRoot,
+        encoding: "utf8",
+        env: {
+          ...process.env,
+          HOME: gitHome,
+          npm_config_cache: join(workspace, "npm-cache"),
+        },
+      },
+    );
+    if (gitInstalled.status !== 0) {
+      fail(commandError("GitHub global git-dependency install", gitInstalled));
+    }
+
+    const gitPackageRoot = join(gitPrefix, "lib", "node_modules", pkg.name);
+    if (!existsSync(join(gitPackageRoot, "package.json"))) {
+      fail(`GitHub global install reported success but did not leave ${gitPackageRoot}`);
+    }
+    const gitPackage = JSON.parse(readFileSync(join(gitPackageRoot, "package.json"), "utf8"));
+    if (gitPackage.version !== pkg.version) {
+      fail(`GitHub global install version ${gitPackage.version ?? "missing"} does not match ${pkg.version}`);
+    }
+
+    const gitBin = join(gitPrefix, "bin", "pifrost");
+    if (!existsSync(gitBin)) {
+      fail(`GitHub global install did not create executable link ${gitBin}`);
+    }
+    const gitVersion = spawnSync(gitBin, ["--version"], {
+      cwd: installRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        HOME: gitHome,
+        PATH: `${join(gitPrefix, "bin")}:${process.env.PATH ?? ""}`,
+      },
+    });
+    if (gitVersion.status !== 0) {
+      fail(commandError("GitHub-global pifrost --version", gitVersion));
+    }
+    if (gitVersion.stdout.trim() !== pkg.version) {
+      fail(`GitHub-global CLI version ${gitVersion.stdout.trim()} does not match ${pkg.version}`);
+    }
+  }
 } finally {
   rmSync(workspace, { recursive: true, force: true });
 }
 
 console.log(
-  `Release package ${pkg.version}: OK (${packedFileCount} files; packed tarball installs and runs from node_modules)`,
+  `Release package ${pkg.version}: OK (${packedFileCount} files; packed and GitHub-global install paths validated)`,
 );
