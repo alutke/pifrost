@@ -396,3 +396,62 @@ test("runtime compiler refuses dynamic routing when the alias carries Bifrost ke
 	assert.equal(catalog.models[0]?.contextWindow, 256_000);
 	assert.equal(extractDynamicRouteProfiles(catalog.models).size, 0);
 });
+
+test("heterogeneous fallback groups clamp oversized Chat output caps instead of excluding lower-ceiling models", () => {
+	const route = profile();
+	route.members[0] = { ...route.members[0]!, maxTokens: 384_000 };
+	route.members[1] = { ...route.members[1]!, maxTokens: 131_072 };
+	route.members[2] = { ...route.members[2]!, maxTokens: 65_536 };
+	const body = {
+		model: "omp-default",
+		messages: [{ role: "user", content: "hello" }],
+		max_completion_tokens: 262_144,
+	};
+	const result = rewriteDynamicOpenAIRequest(route, body, {
+		estimatedInputTokens: 10_000,
+		outputCapExplicit: true,
+	});
+	assert.equal(result.body.model, "provider/large");
+	assert.deepEqual(result.body.fallbacks, ["provider/small", "provider/large-two"]);
+	assert.equal(result.body.max_completion_tokens, 65_536);
+	assert.deepEqual(result.decision.excluded, []);
+});
+
+test("Responses max_output_tokens is recognized and clamped to the physical route ceiling", () => {
+	const route = profile();
+	for (let index = 0; index < route.members.length; index++) {
+		route.members[index] = { ...route.members[index]!, maxTokens: 131_072 };
+	}
+	const result = rewriteDynamicOpenAIRequest(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "hello" }],
+			max_output_tokens: 262_144,
+		},
+		{ estimatedInputTokens: 10_000, outputCapExplicit: true },
+	);
+	assert.equal(result.body.max_output_tokens, 131_072);
+	assert.equal(result.decision.outputReserveTokens, 262_144);
+});
+
+test("context eligibility reserves the clamped member output ceiling", () => {
+	const route = profile();
+	route.members = [{
+		...route.members[0]!,
+		contextWindow: 1_000_000,
+		maxTokens: 65_536,
+	}];
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "hello" }],
+			max_completion_tokens: 262_144,
+		},
+		{ estimatedInputTokens: 900_000, outputCapExplicit: true },
+	);
+	assert.equal(plan.attempts[0]?.primary, "provider/large");
+	assert.deepEqual(plan.excluded, []);
+	assert.equal(plan.requiredContextTokens, 1_162_144);
+});
