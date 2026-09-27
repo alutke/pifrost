@@ -7,6 +7,7 @@ import type { DynamicRoutePlan } from "../dynamic-routing.ts";
 import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
+	pifrostAttemptMaxTokens,
 	runPifrostProtocolPlan,
 	type PifrostAttemptStream,
 	type PifrostProtocolOutput,
@@ -232,4 +233,23 @@ test("once a Responses attempt emits model output Pifrost never replays on Chat"
 		assert.equal(error.error.model, "omp-default");
 		assert.equal(error.error.upstreamModel, "opencode-go/muse-spark-1.3-contributor");
 	}
+});
+
+test("attempt output cap is clamped to the weakest same-protocol Bifrost fallback", () => {
+	const route = plan();
+	const chat = route.attempts[1]!;
+	chat.members[0] = { ...chat.members[0]!, maxTokens: 384_000 };
+	chat.members[1] = { ...chat.members[1]!, maxTokens: 131_072 };
+
+	assert.equal(pifrostAttemptMaxTokens(chat, 262_144), 131_072);
+	assert.equal(pifrostAttemptMaxTokens(chat, 64_000), 64_000);
+	assert.equal(pifrostAttemptMaxTokens(chat), 131_072);
+});
+
+test("single-member Responses attempt preserves a supported larger requested ceiling", () => {
+	const route = plan();
+	const responses = route.attempts[0]!;
+	responses.members[0] = { ...responses.members[0]!, maxTokens: 384_000 };
+
+	assert.equal(pifrostAttemptMaxTokens(responses, 262_144), 262_144);
 });
