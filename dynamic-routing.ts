@@ -1,4 +1,8 @@
 import type { BifrostProviderModel, PifrostAliasConfig, PifrostCatalog } from "./index.ts";
+import {
+	PIFROST_WIRE_PROTOCOL,
+	type PifrostWireProtocol,
+} from "./protocol-capability.ts";
 
 export const DYNAMIC_ROUTE_MODE = "context-aware" as const;
 export const DEFAULT_CONTEXT_BYTES_PER_TOKEN = 2.5;
@@ -14,6 +18,7 @@ export interface DynamicRouteMemberProfile {
 	input: ("text" | "image")[];
 	reasoning: boolean;
 	supportsTools: boolean;
+	protocols?: PifrostWireProtocol[];
 	compat: {
 		supportsToolChoice?: boolean;
 		supportsForcedToolChoice?: boolean;
@@ -152,6 +157,7 @@ export function applyDynamicRouteProfiles(
 				input: [...member.input],
 				reasoning: member.reasoning,
 				supportsTools: member.supportsTools,
+				...(member.protocols?.length ? { protocols: [...member.protocols] } : {}),
 				compat: {
 					supportsToolChoice: member.compat.supportsToolChoice,
 					supportsForcedToolChoice: member.compat.supportsForcedToolChoice,
@@ -162,7 +168,6 @@ export function applyDynamicRouteProfiles(
 		});
 		const staticContextWindow = Math.min(...members.map((member) => member.contextWindow));
 		const advertisedContextWindow = Math.max(...members.map((member) => member.contextWindow));
-		if (advertisedContextWindow <= staticContextWindow) return model;
 
 		const profile: DynamicRouteProfile = {
 			id: model.id,
@@ -273,6 +278,9 @@ function memberExclusionReasons(
 	outputReserveTokens: number,
 ): string[] {
 	const reasons: string[] = [];
+	if (member.protocols?.length && !member.protocols.includes(PIFROST_WIRE_PROTOCOL)) {
+		reasons.push(`protocol ${member.protocols.join(",")} incompatible with ${PIFROST_WIRE_PROTOCOL}`);
+	}
 	if (member.contextWindow < requiredContextTokens) reasons.push("context " + member.contextWindow + " < required " + requiredContextTokens);
 	if (member.maxTokens < outputReserveTokens) reasons.push("max-output " + member.maxTokens + " < requested " + outputReserveTokens);
 	if (requestHasImages(body) && !member.input.includes("image")) reasons.push("no image input");
