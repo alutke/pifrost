@@ -27,6 +27,7 @@ function member(id: string, contextWindow: number, overrides: Partial<BifrostPro
 			supportsToolChoice: true,
 			supportsForcedToolChoice: true,
 			supportsNamedToolChoice: true,
+			supportsReasoningWithTools: true,
 			disableReasoningOnToolChoice: false,
 		},
 		...overrides,
@@ -181,6 +182,126 @@ test("capability guard excludes non-tool members when the actual wire request us
 	};
 	const result = rewriteDynamicOpenAIRequest(route, body, { bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 });
 	assert.equal(result.body.model, "provider/small");
+});
+
+
+test("tool-choice reasoning suppression does not reject ordinary reasoning requests that merely offer tools", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		compat: {
+			...route.members[0]!.compat,
+			supportsReasoningWithTools: true,
+			disableReasoningOnToolChoice: true,
+		},
+	};
+	const body = {
+		model: "omp-default",
+		messages: [{ role: "user", content: "hello" }],
+		tools: [{ type: "function", function: { name: "x", parameters: { type: "object" } } }],
+		reasoning_effort: "high",
+		max_completion_tokens: 32_000,
+	};
+	const result = rewriteDynamicOpenAIRequest(route, body, {
+		bytesPerToken: 100,
+		safetyMargin: 0,
+		fixedHeadroom: 0,
+		imageTokenReserve: 0,
+		outputCapExplicit: false,
+	});
+	assert.equal(result.body.model, "provider/large");
+	assert.equal(result.decision.outputReserveExplicit, false);
+});
+
+test("tool-choice reasoning suppression applies only when tool_choice is actually serialized", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		compat: {
+			...route.members[0]!.compat,
+			supportsReasoningWithTools: true,
+			disableReasoningOnToolChoice: true,
+		},
+	};
+	const body = {
+		model: "omp-default",
+		messages: [{ role: "user", content: "hello" }],
+		tools: [{ type: "function", function: { name: "x", parameters: { type: "object" } } }],
+		tool_choice: "auto",
+		reasoning_effort: "high",
+		max_tokens: 32_000,
+	};
+	const result = rewriteDynamicOpenAIRequest(route, body, {
+		bytesPerToken: 100,
+		safetyMargin: 0,
+		fixedHeadroom: 0,
+		imageTokenReserve: 0,
+	});
+	assert.equal(result.body.model, "provider/small");
+	assert.deepEqual(result.decision.excluded[0], {
+		reference: "provider/large",
+		reasons: ["reasoning incompatible with tool_choice"],
+	});
+});
+
+test("dedicated reasoning-with-tools capability can reject reasoning requests with offered tools", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		compat: { ...route.members[0]!.compat, supportsReasoningWithTools: false },
+	};
+	const body = {
+		model: "omp-default",
+		messages: [{ role: "user", content: "hello" }],
+		tools: [{ type: "function", function: { name: "x", parameters: { type: "object" } } }],
+		reasoning_effort: "high",
+		max_tokens: 32_000,
+	};
+	const result = rewriteDynamicOpenAIRequest(route, body, {
+		bytesPerToken: 100,
+		safetyMargin: 0,
+		fixedHeadroom: 0,
+		imageTokenReserve: 0,
+	});
+	assert.equal(result.body.model, "provider/small");
+	assert.deepEqual(result.decision.excluded[0], {
+		reference: "provider/large",
+		reasons: ["cannot combine reasoning with tools"],
+	});
+});
+
+test("capacity errors identify implicit output caps and report every member exclusion", () => {
+	const route = profile();
+	for (let index = 0; index < route.members.length; index++) {
+		route.members[index] = {
+			...route.members[index]!,
+			protocols: ["openai-responses"],
+		};
+	}
+	assert.throws(
+		() => rewriteDynamicOpenAIRequest(
+			route,
+			{
+				model: "omp-default",
+				messages: [{ role: "user", content: "hello" }],
+				max_completion_tokens: 32_000,
+			},
+			{
+				bytesPerToken: 100,
+				safetyMargin: 0,
+				fixedHeadroom: 0,
+				imageTokenReserve: 0,
+				outputCapExplicit: false,
+			},
+		),
+		(error: unknown) => {
+			assert.ok(error instanceof Error);
+			assert.match(error.message, /implicit OMP\/model output cap 32000/u);
+			assert.match(error.message, /provider\/large \[protocol openai-responses incompatible with openai-completions\]/u);
+			assert.match(error.message, /provider\/small \[protocol openai-responses incompatible with openai-completions\]/u);
+			return true;
+		},
+	);
 });
 
 
