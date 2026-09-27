@@ -46,6 +46,7 @@ export interface CatalogModelLike {
 		supportsToolChoice?: boolean;
 		supportsForcedToolChoice?: boolean;
 		supportsNamedToolChoice?: boolean;
+		supportsReasoningWithTools?: boolean;
 		disableReasoningOnToolChoice?: boolean;
 	};
 }
@@ -65,6 +66,7 @@ export interface CatalogCapabilityFallback {
 	supportsToolChoice: boolean;
 	supportsForcedToolChoice: boolean;
 	supportsNamedToolChoice: boolean;
+	supportsReasoningWithTools?: boolean;
 	disableReasoningOnToolChoice: boolean;
 	protocols?: PifrostWireProtocol[];
 }
@@ -218,8 +220,10 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		supportsForcedToolChoice: false,
 		supportsNamedToolChoice: false,
 		// Keep reasoning+tools conservative until the reseller contract
-		// explicitly guarantees the combination.
-		disableReasoningOnToolChoice: true,
+		// explicitly guarantees the combination. This is distinct from OMP's
+		// tool_choice-triggered reasoning suppression policy.
+		supportsReasoningWithTools: false,
+		disableReasoningOnToolChoice: false,
 	},
 	"mimo-v2.6-flash": {
 		source: "verified-model-hint",
@@ -428,6 +432,11 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		protocolKeys.every((value) => Boolean(value)) && new Set(protocolKeys).size === 1
 			? protocolRows[0]
 			: undefined;
+	const reasoningWithTools = complete.some((model) => model.compat?.supportsReasoningWithTools === false)
+		? false
+		: complete.every((model) => model.compat?.supportsReasoningWithTools === true)
+			? true
+			: undefined;
 	return {
 		source,
 		matched: complete.map((model) => `${model.provider ?? "unknown"}/${model.id}`),
@@ -448,6 +457,7 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		supportsToolChoice: complete.every((model) => model.compat?.supportsToolChoice !== false),
 		supportsForcedToolChoice: complete.every((model) => model.compat?.supportsForcedToolChoice !== false),
 		supportsNamedToolChoice: complete.every((model) => model.compat?.supportsNamedToolChoice !== false),
+		...(reasoningWithTools !== undefined ? { supportsReasoningWithTools: reasoningWithTools } : {}),
 		disableReasoningOnToolChoice: complete.some((model) => model.compat?.disableReasoningOnToolChoice === true),
 		...(protocols ? { protocols } : {}),
 	};
