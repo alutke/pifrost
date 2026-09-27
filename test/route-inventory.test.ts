@@ -296,3 +296,76 @@ test("current omp-default prewalk skips OpenCode Muse Responses transport and ke
 	assert.equal(rewritten.decision.excluded[0]?.reference, "opencode-go/muse-spark-1.3-contributor");
 	assert.match(rewritten.decision.excluded[0]?.reasons.join(" ") ?? "", /protocol openai-responses incompatible/u);
 });
+
+test("provider-specific OMP protocol policy outranks cross-provider family datasheet endpoints", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: {
+			"omp-default": {
+				name: "omp-default",
+				chain: [
+					"opencode-go/muse-spark-1.3-contributor",
+					"CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+				],
+				dynamicRouting: { mode: "context-aware", source: "bifrost-simple-rule" },
+			},
+		},
+	};
+	const augmented = augmentLiveInventoryForRoutes([], aliases);
+	const catalogOverride = [
+		{
+			id: "muse-spark-1.3-contributor",
+			provider: "opencode-go",
+			contextWindow: 1_000_000,
+			maxTokens: 131_072,
+			reasoning: true,
+			input: ["text", "image"],
+			supportsTools: true,
+			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+		},
+		{
+			id: "deepseek/deepseek-v4.1-flash",
+			provider: "commandcode",
+			contextWindow: 1_000_000,
+			maxTokens: 131_072,
+			reasoning: true,
+			input: ["text"],
+			supportsTools: true,
+			compat: { supportsReasoningEffort: true, supportsUsageInStreaming: true, supportsToolChoice: true },
+		},
+	];
+	const datasheets: BifrostDatasheets = {
+		pricing: {},
+		parameters: {
+			"openrouter/meta/muse-spark-1.3-contributor": {
+				provider: "openrouter",
+				mode: "chat",
+				base_model: "muse-spark-1.3-contributor",
+				supported_endpoints: ["/v1/chat/completions"],
+			},
+		},
+	};
+	const rich = buildRichRouteCatalog(augmented, aliases, datasheets, catalogOverride);
+	const muse = rich.models.find((model) => model.id === "opencode-go/muse-spark-1.3-contributor");
+	assert.deepEqual(muse?.protocols, ["openai-responses"]);
+	assert.equal(muse?.capabilitySources?.protocol, "canonical-family");
+
+	let catalog = buildPifrostCatalog(rich.models, aliases, rich.diagnostics);
+	const byId = new Map(rich.models.map((model) => [model.id.toLowerCase(), model]));
+	catalog = applyDynamicRouteProfiles(catalog, rich.models, aliases, (reference) => byId.get(reference.toLowerCase()));
+	const route = extractDynamicRouteProfiles(catalog.models).get("omp-default");
+	assert.ok(route);
+	const rewritten = rewriteDynamicOpenAIRequest(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "test" }],
+			max_completion_tokens: 32_000,
+		},
+		{ bytesPerToken: 100, safetyMargin: 0, fixedHeadroom: 0, imageTokenReserve: 0 },
+	);
+	assert.equal(rewritten.body.model, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
+	assert.equal(rewritten.decision.excluded[0]?.reference, "opencode-go/muse-spark-1.3-contributor");
+	assert.match(rewritten.decision.excluded[0]?.reasons.join(" ") ?? "", /protocol openai-responses incompatible/u);
+});
+
