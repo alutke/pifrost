@@ -23,11 +23,33 @@ test("repo init associates but does not rotate an existing masked Virtual Key im
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys/vk-existing") {
+      response.end(JSON.stringify({
+        virtual_key: {
+          id: "vk-existing",
+          name: "omp-demo-abc-mcp",
+          value: "********",
+          mcp_configs: [{
+            id: 11,
+            mcp_client_id: "client-ha",
+            mcp_client_name: "home-assistant",
+            tools_to_execute: ["*"],
+          }],
+        },
+      }));
+      return;
+    }
+
     if (request.method === "PUT" && url.pathname === "/api/governance/virtual-keys/vk-existing") {
       let body = "";
       for await (const chunk of request) body += chunk;
       const parsed = JSON.parse(body);
       assert.equal(Object.prototype.hasOwnProperty.call(parsed, "name"), false);
+      assert.deepEqual(parsed.mcp_configs, [{
+        id: 11,
+        mcp_client_name: "home-assistant",
+        tools_to_execute: ["*"],
+      }]);
       response.end(JSON.stringify({
         virtual_key: {
           id: "vk-existing",
@@ -119,6 +141,18 @@ test("repo init recovers from a create-name race by re-reading the exact canonic
       return;
     }
 
+    if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys/vk-raced") {
+      response.end(JSON.stringify({
+        virtual_key: {
+          id: "vk-raced",
+          name: "omp-demo-race-mcp",
+          value: "********",
+          mcp_configs: [],
+        },
+      }));
+      return;
+    }
+
     if (request.method === "PUT" && url.pathname === "/api/governance/virtual-keys/vk-raced") {
       response.end(JSON.stringify({
         virtual_key: {
@@ -185,16 +219,35 @@ test("repo init migrates a stored legacy key to the repo-scoped canonical name",
   const root = mkdtempSync(join(tmpdir(), "pifrost-vk-legacy-update-"));
   const oldConfigDir = process.env.PIFROST_CONFIG_DIR;
   let putCalls = 0;
-  let getCalls = 0;
+  let listCalls = 0;
+  let detailCalls = 0;
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     response.setHeader("content-type", "application/json");
 
     if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys") {
-      getCalls += 1;
+      listCalls += 1;
       // No other key owns the repo-scoped canonical name.
       response.end(JSON.stringify({ virtual_keys: [] }));
+      return;
+    }
+
+    if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys/vk-legacy") {
+      detailCalls += 1;
+      response.end(JSON.stringify({
+        virtual_key: {
+          id: "vk-legacy",
+          name: "omp-homelab-mcp",
+          value: "********",
+          mcp_configs: [{
+            id: 71,
+            mcp_client_id: "client-n8n",
+            mcp_client_name: "n8n",
+            tools_to_execute: ["*"],
+          }],
+        },
+      }));
       return;
     }
 
@@ -211,8 +264,11 @@ test("repo init migrates a stored legacy key to the repo-scoped canonical name",
         return;
       }
       assert.equal(parsed.is_active, true);
+      // Bifrost 2.2.3 requires the row id for existing MCP grants. Without
+      // id:71, it treats n8n as a new row and returns ErrAlreadyExists, which
+      // its handler misleadingly reports as a Virtual Key name conflict.
       assert.deepEqual(parsed.mcp_configs, [
-        { mcp_client_name: "n8n", tools_to_execute: ["*"] },
+        { id: 71, mcp_client_name: "n8n", tools_to_execute: ["*"] },
         { mcp_client_name: "railway", tools_to_execute: ["*"] },
       ]);
       response.end(JSON.stringify({
@@ -261,7 +317,8 @@ test("repo init migrates a stored legacy key to the repo-scoped canonical name",
     assert.equal(vk.id, "vk-legacy");
     assert.equal(vk.name, "omp-homelab-59894f4310-mcp");
     assert.equal(putCalls, 1);
-    assert.equal(getCalls, 1);
+    assert.equal(listCalls, 1);
+    assert.equal(detailCalls, 1);
     const saved = loadState();
     assert.equal(saved.config.repos[repo.id].virtualKeyName, "omp-homelab-59894f4310-mcp");
     assert.deepEqual(saved.config.repos[repo.id].mcpClients, [
@@ -286,6 +343,23 @@ test("repo init refuses legacy-key migration when the canonical name belongs to 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://127.0.0.1");
     response.setHeader("content-type", "application/json");
+
+    if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys/vk-legacy") {
+      response.end(JSON.stringify({
+        virtual_key: {
+          id: "vk-legacy",
+          name: "omp-homelab-mcp",
+          value: "********",
+          mcp_configs: [{
+            id: 71,
+            mcp_client_id: "client-n8n",
+            mcp_client_name: "n8n",
+            tools_to_execute: ["*"],
+          }],
+        },
+      }));
+      return;
+    }
 
     if (request.method === "GET" && url.pathname === "/api/governance/virtual-keys") {
       response.end(JSON.stringify({
