@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.6.16 — 2026-09-27
+
+- Fixed dynamic-route context prewalk falsely rejecting small OMP turns as larger than the model window. The native route path had been estimating `JSON.stringify()` of OMP's internal Context objects, which can include large non-wire metadata such as tool-result `details`, provider usage records, timestamps and routing state.
+- Native OMP routing now uses OMP's model-aware `Tokenizer` semantics: trustworthy provider usage anchors account for the established prefix, only the unreported message tail is counted locally, and fresh contexts count system prompt, active/inactive tool schemas and semantic message content with OMP's local-tokenizer safety margin.
+- Provider usage anchors now mirror OMP's trust and rewrite rules, including rejection of aborted/error turns, pure-output usage, predated retained tails after history rewrites and stale usage across pruned tool results.
+- The legacy serialized-body estimator remains available only as a fallback for non-native/final-wire callers; a native semantic estimate explicitly outranks it in route planning.
+- Added regressions proving that multi-megabyte tool-result metadata that is not model prompt content cannot inflate a small turn into a false >1M-token overflow, and that the semantic estimate wins over the raw request-object size.
+- The 0.6.15 mixed-protocol execution model is unchanged: Muse remains the first `omp-default` attempt through Bifrost `/v1/responses`, followed on a pre-output failure by the Chat-compatible DeepSeek group.
+- Cache schema remains v11 because route-profile metadata is unchanged; this release corrects request-time context sizing only.
+
 ## 0.6.15 — 2026-09-27
 
 - Added native mixed-protocol execution for simple context-aware Bifrost routes. Pifrost can now keep Responses-only and Chat-Completions members in one logical OMP route instead of excluding the non-Chat members.
