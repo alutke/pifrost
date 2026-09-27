@@ -1,5 +1,9 @@
 import type { Model as OmpModel } from "@oh-my-pi/pi-ai";
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
+import {
+	wireProtocolsFrom,
+	type PifrostWireProtocol,
+} from "./protocol-capability.ts";
 
 import {
 	canonicalModelFamily,
@@ -21,6 +25,7 @@ export interface CatalogModelLike {
 	id: string;
 	name?: string;
 	provider?: string;
+	api?: string;
 	contextWindow?: number | null;
 	maxTokens?: number | null;
 	reasoning?: boolean;
@@ -60,6 +65,7 @@ export interface CatalogCapabilityFallback {
 	supportsForcedToolChoice: boolean;
 	supportsNamedToolChoice: boolean;
 	disableReasoningOnToolChoice: boolean;
+	protocols?: PifrostWireProtocol[];
 }
 
 function normalized(value: string): string {
@@ -81,6 +87,8 @@ export function preferredCatalogProviders(reference: string): string[] {
 		case "xiaomi mimo":
 		case "xiaomi": return ["xiaomi"];
 		case "openai": return ["openai-codex", "openai"];
+		case "commandcode goat":
+		case "commandcode": return ["commandcode"];
 		default: return [];
 	}
 }
@@ -137,6 +145,7 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		reasoning: true,
 		thinking: thinking(["high", "xhigh"]),
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		protocols: ["openai-completions"],
 		supportsTools: true,
 		supportsReasoningEffort: true,
 		supportsUsageInStreaming: true,
@@ -190,6 +199,7 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 			max: "high",
 		}),
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		protocols: ["openai-completions"],
 		supportsTools: true,
 		supportsReasoningEffort: true,
 		supportsUsageInStreaming: true,
@@ -214,6 +224,7 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 			max: "high",
 		}),
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		protocols: ["openai-completions"],
 		supportsTools: true,
 		supportsReasoningEffort: true,
 		supportsUsageInStreaming: true,
@@ -236,6 +247,7 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		// LongCat exposes thinking as enabled/disabled, not a portable effort
 		// ladder. Do not invent low/medium/high reasoning-effort semantics.
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		protocols: ["openai-completions"],
 		supportsTools: true,
 		supportsReasoningEffort: false,
 		supportsUsageInStreaming: true,
@@ -258,6 +270,7 @@ const VERIFIED_MODEL_HINTS: Record<string, CatalogCapabilityFallback> = {
 		// portable effort contract for the subscription alias. Under-advertise it.
 		reasoning: false,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		protocols: ["openai-completions"],
 		supportsTools: true,
 		supportsReasoningEffort: false,
 		supportsUsageInStreaming: true,
@@ -371,6 +384,12 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		cacheRead: positive(model.cost?.cacheRead) || model.cost?.cacheRead === 0 ? model.cost.cacheRead : 0,
 		cacheWrite: positive(model.cost?.cacheWrite) || model.cost?.cacheWrite === 0 ? model.cost.cacheWrite : 0,
 	}));
+	const protocolRows = complete.map((model) => wireProtocolsFrom(model.api ? [model.api] : undefined));
+	const protocolKeys = protocolRows.map((protocols) => protocols?.join(","));
+	const protocols =
+		protocolKeys.every((value) => Boolean(value)) && new Set(protocolKeys).size === 1
+			? protocolRows[0]
+			: undefined;
 	return {
 		source,
 		matched: complete.map((model) => `${model.provider ?? "unknown"}/${model.id}`),
@@ -392,6 +411,7 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		supportsForcedToolChoice: complete.every((model) => model.compat?.supportsForcedToolChoice !== false),
 		supportsNamedToolChoice: complete.every((model) => model.compat?.supportsNamedToolChoice !== false),
 		disableReasoningOnToolChoice: complete.some((model) => model.compat?.disableReasoningOnToolChoice === true),
+		...(protocols ? { protocols } : {}),
 	};
 }
 
