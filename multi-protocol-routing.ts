@@ -4,8 +4,6 @@ import type {
 	Model,
 	ModelSpec,
 } from "@oh-my-pi/pi-ai";
-import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
-import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
 import type { DynamicRouteAttempt, DynamicRoutePlan } from "./dynamic-routing.ts";
 
@@ -26,14 +24,14 @@ function withBifrostFallbacks(
 }
 
 /**
- * Materialize one physical Bifrost attempt using OMP's native transport for
- * that member's actual wire protocol. The logical alias remains the caller
- * identity; the transport model carries the physical Bifrost model id.
+ * Build the sparse OMP model spec for one physical Bifrost attempt. Runtime
+ * materialization deliberately stays in native.ts so this planning module has
+ * no Bun-only OMP runtime imports and remains Node-testable.
  */
-export function buildPifrostAttemptModel(
+export function createPifrostAttemptModelSpec(
 	logicalModel: Model,
 	attempt: DynamicRouteAttempt,
-): Model<"openai-completions" | "openai-responses"> {
+): ModelSpec<"openai-completions" | "openai-responses"> {
 	const primary = attempt.members[0];
 	if (!primary) throw new Error(`Pifrost route attempt ${attempt.primary} has no member metadata`);
 	const base = {
@@ -46,18 +44,18 @@ export function buildPifrostAttemptModel(
 		reasoning: primary.reasoning,
 	};
 	if (attempt.protocol === "openai-responses") {
-		return buildModel({
+		return {
 			...base,
 			api: "openai-responses",
 			compat: logicalModel.compatConfig,
-		} as ModelSpec<"openai-responses">);
+		} as ModelSpec<"openai-responses">;
 	}
 	if (attempt.protocol === "openai-completions") {
-		return buildModel({
+		return {
 			...base,
 			api: "openai-completions",
 			compat: withBifrostFallbacks(logicalModel.compatConfig, attempt.fallbacks),
-		} as ModelSpec<"openai-completions">);
+		} as ModelSpec<"openai-completions">;
 	}
 	throw new Error(`Pifrost does not have a native transport for ${attempt.protocol}`);
 }
@@ -100,11 +98,20 @@ function logicalEvent(
 	}
 }
 
+export interface PifrostAttemptStream extends AsyncIterable<AssistantMessageEvent> {
+	readonly hasPendingLocalWork?: boolean;
+}
+
+export interface PifrostProtocolOutput {
+	push(event: AssistantMessageEvent): void;
+	fail(error: unknown): void;
+	forwardLocalWorkFrom(source: { readonly hasPendingLocalWork: boolean } | undefined): void;
+}
+
 export type PifrostAttemptDispatcher = (
 	attempt: DynamicRouteAttempt,
-	transportModel: Model<"openai-completions" | "openai-responses">,
 	attemptIndex: number,
-) => AssistantMessageEventStream;
+) => PifrostAttemptStream;
 
 /**
  * Execute protocol groups in route order. A failed group is retried only until
@@ -112,86 +119,84 @@ export type PifrostAttemptDispatcher = (
  * is committed, replaying the turn on another protocol would duplicate or
  * contradict already-visible output and is therefore forbidden.
  */
-export function streamPifrostProtocolPlan(
+export async function runPifrostProtocolPlan(
 	logicalModel: Model,
 	plan: DynamicRoutePlan,
+	outer: PifrostProtocolOutput,
 	dispatch: PifrostAttemptDispatcher,
-): AssistantMessageEventStream {
-	const outer = new AssistantMessageEventStream();
+): Promise<void> {
+	let lastErrorEvent: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
+	const thrown: unknown[] = [];
 
-	void (async () => {
-		let lastErrorEvent: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
-		const thrown: unknown[] = [];
+	for (let attemptIndex = 0; attemptIndex < plan.attempts.length; attemptIndex++) {
+		const attempt = plan.attempts[attemptIndex]!;
+		let inner: PifrostAttemptStream;
+		try {
+			inner = dispatch(attempt, attemptIndex);
+		} catch (error) {
+			thrown.push(error);
+			continue;
+		}
 
-		for (let attemptIndex = 0; attemptIndex < plan.attempts.length; attemptIndex++) {
-			const attempt = plan.attempts[attemptIndex]!;
-			const transportModel = buildPifrostAttemptModel(logicalModel, attempt);
-			let inner: AssistantMessageEventStream;
-			try {
-				inner = dispatch(attempt, transportModel, attemptIndex);
-			} catch (error) {
-				thrown.push(error);
-				continue;
-			}
-
-			outer.forwardLocalWorkFrom(inner);
-			let startEvent: AssistantMessageEvent | undefined;
-			let committed = false;
-			try {
-				for await (const rawEvent of inner) {
-					const event = logicalEvent(rawEvent, logicalModel, attempt.primary);
-					if (!committed && event.type === "start") {
-						startEvent = event;
-						continue;
-					}
-					if (!committed && event.type === "error") {
-						if (event.reason === "aborted") {
-							if (startEvent) outer.push(startEvent);
-							outer.push(event);
-							return;
-						}
-						lastErrorEvent = event;
-						break;
-					}
-					if (!committed && event.type === "done") {
+		outer.forwardLocalWorkFrom(
+			typeof inner.hasPendingLocalWork === "boolean"
+				? inner as { readonly hasPendingLocalWork: boolean }
+				: undefined,
+		);
+		let startEvent: AssistantMessageEvent | undefined;
+		let committed = false;
+		try {
+			for await (const rawEvent of inner) {
+				const event = logicalEvent(rawEvent, logicalModel, attempt.primary);
+				if (!committed && event.type === "start") {
+					startEvent = event;
+					continue;
+				}
+				if (!committed && event.type === "error") {
+					if (event.reason === "aborted") {
 						if (startEvent) outer.push(startEvent);
 						outer.push(event);
 						return;
 					}
-					if (!committed) {
-						committed = true;
-						if (startEvent) outer.push(startEvent);
-					}
-					outer.push(event);
-					if (event.type === "done" || event.type === "error") return;
+					lastErrorEvent = event;
+					break;
 				}
-			} catch (error) {
-				if (committed) {
-					outer.fail(error);
+				if (!committed && event.type === "done") {
+					if (startEvent) outer.push(startEvent);
+					outer.push(event);
 					return;
 				}
-				thrown.push(error);
-			} finally {
-				outer.forwardLocalWorkFrom(undefined);
+				if (!committed) {
+					committed = true;
+					if (startEvent) outer.push(startEvent);
+				}
+				outer.push(event);
+				if (event.type === "done" || event.type === "error") return;
 			}
-
+		} catch (error) {
 			if (committed) {
-				outer.fail(new Error(`Pifrost ${attempt.protocol} attempt ended after emitting output without a terminal event`));
+				outer.fail(error);
 				return;
 			}
+			thrown.push(error);
+		} finally {
+			outer.forwardLocalWorkFrom(undefined);
 		}
 
-		if (lastErrorEvent) {
-			outer.push(lastErrorEvent);
+		if (committed) {
+			outer.fail(new Error(`Pifrost ${attempt.protocol} attempt ended after emitting output without a terminal event`));
 			return;
 		}
-		const errors = thrown.map((error) => error instanceof Error ? error : new Error(String(error)));
-		outer.fail(
-			errors.length > 1
-				? new AggregateError(errors, `Pifrost route ${plan.logicalModel} failed before producing output`)
-				: errors[0] ?? new Error(`Pifrost route ${plan.logicalModel} exhausted without a response`),
-		);
-	})();
+	}
 
-	return outer;
+	if (lastErrorEvent) {
+		outer.push(lastErrorEvent);
+		return;
+	}
+	const errors = thrown.map((error) => error instanceof Error ? error : new Error(String(error)));
+	outer.fail(
+		errors.length > 1
+			? new AggregateError(errors, `Pifrost route ${plan.logicalModel} failed before producing output`)
+			: errors[0] ?? new Error(`Pifrost route ${plan.logicalModel} exhausted without a response`),
+	);
 }
