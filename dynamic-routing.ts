@@ -9,6 +9,7 @@ export const DEFAULT_CONTEXT_BYTES_PER_TOKEN = 2.5;
 export const DEFAULT_CONTEXT_SAFETY_MARGIN = 0.1;
 export const DEFAULT_CONTEXT_FIXED_HEADROOM = 2_048;
 export const DEFAULT_IMAGE_TOKEN_RESERVE = 4_096;
+export const PIFROST_NATIVE_PROTOCOLS = ["openai-completions", "openai-responses"] as const satisfies readonly PifrostWireProtocol[];
 
 export interface DynamicRouteMemberProfile {
 	reference: string;
@@ -52,6 +53,23 @@ export interface DynamicRouteDecision {
 	requiredContextTokens: number;
 	primary: string;
 	fallbacks: string[];
+	excluded: Array<{ reference: string; reasons: string[] }>;
+}
+
+export interface DynamicRouteAttempt {
+	protocol: PifrostWireProtocol;
+	primary: string;
+	fallbacks: string[];
+	members: DynamicRouteMemberProfile[];
+}
+
+export interface DynamicRoutePlan {
+	logicalModel: string;
+	estimatedInputTokens: number;
+	outputReserveTokens: number;
+	outputReserveExplicit: boolean;
+	requiredContextTokens: number;
+	attempts: DynamicRouteAttempt[];
 	excluded: Array<{ reference: string; reasons: string[] }>;
 }
 
@@ -285,15 +303,33 @@ function requestUsesReasoning(body: Record<string, unknown>): boolean {
 	return body.reasoning !== undefined || body.reasoning_effort !== undefined;
 }
 
+export function resolveDynamicMemberProtocol(
+	member: DynamicRouteMemberProfile,
+	supportedProtocols: readonly PifrostWireProtocol[],
+): PifrostWireProtocol | undefined {
+	if (!member.protocols?.length) {
+		return supportedProtocols.includes(PIFROST_WIRE_PROTOCOL) ? PIFROST_WIRE_PROTOCOL : supportedProtocols[0];
+	}
+	// Preserve the long-standing Chat path whenever the member supports it; only
+	// switch protocols when the physical provider contract requires that.
+	if (member.protocols.includes(PIFROST_WIRE_PROTOCOL) && supportedProtocols.includes(PIFROST_WIRE_PROTOCOL)) {
+		return PIFROST_WIRE_PROTOCOL;
+	}
+	return member.protocols.find((protocol) => supportedProtocols.includes(protocol));
+}
+
 function memberExclusionReasons(
 	member: DynamicRouteMemberProfile,
 	body: Record<string, unknown>,
 	requiredContextTokens: number,
 	outputReserveTokens: number,
+	supportedProtocols: readonly PifrostWireProtocol[],
 ): string[] {
 	const reasons: string[] = [];
-	if (member.protocols?.length && !member.protocols.includes(PIFROST_WIRE_PROTOCOL)) {
-		reasons.push(`protocol ${member.protocols.join(",")} incompatible with ${PIFROST_WIRE_PROTOCOL}`);
+	const protocol = resolveDynamicMemberProtocol(member, supportedProtocols);
+	if (!protocol) {
+		const advertised = member.protocols?.length ? member.protocols.join(",") : "unknown";
+		reasons.push(`protocol ${advertised} incompatible with ${supportedProtocols.join(",")}`);
 	}
 	if (member.contextWindow < requiredContextTokens) reasons.push("context " + member.contextWindow + " < required " + requiredContextTokens);
 	if (member.maxTokens < outputReserveTokens) reasons.push("max-output " + member.maxTokens + " < requested " + outputReserveTokens);
@@ -329,35 +365,105 @@ export class DynamicRouteCapacityError extends Error {
 	}
 }
 
-export function rewriteDynamicOpenAIRequest(
+function evaluateDynamicRoute(
 	profile: DynamicRouteProfile,
 	body: Record<string, unknown>,
-	options: DynamicRouteEstimateOptions = {},
-): { body: Record<string, unknown>; decision: DynamicRouteDecision } {
+	options: DynamicRouteEstimateOptions,
+	supportedProtocols: readonly PifrostWireProtocol[],
+): {
+	estimatedInputTokens: number;
+	outputReserveTokens: number;
+	outputReserveExplicit: boolean;
+	requiredContextTokens: number;
+	eligible: Array<{ member: DynamicRouteMemberProfile; protocol: PifrostWireProtocol }>;
+	excluded: Array<{ reference: string; reasons: string[] }>;
+} {
 	const estimatedInputTokens = estimateOpenAIRequestInputTokens(body, options);
 	const outputBudget = requestedOutputBudget(body, profile, options);
 	const outputReserveTokens = outputBudget.tokens;
 	const requiredContextTokens = estimatedInputTokens + outputReserveTokens;
-	const excluded: DynamicRouteDecision["excluded"] = [];
-	const eligible: DynamicRouteMemberProfile[] = [];
+	const excluded: Array<{ reference: string; reasons: string[] }> = [];
+	const eligible: Array<{ member: DynamicRouteMemberProfile; protocol: PifrostWireProtocol }> = [];
 	for (const member of profile.members) {
-		const reasons = memberExclusionReasons(member, body, requiredContextTokens, outputReserveTokens);
-		if (reasons.length) excluded.push({ reference: member.reference, reasons });
-		else eligible.push(member);
+		const reasons = memberExclusionReasons(
+			member,
+			body,
+			requiredContextTokens,
+			outputReserveTokens,
+			supportedProtocols,
+		);
+		const protocol = resolveDynamicMemberProtocol(member, supportedProtocols);
+		if (reasons.length || !protocol) {
+			excluded.push({ reference: member.reference, reasons });
+		} else {
+			eligible.push({ member, protocol });
+		}
 	}
 	if (!eligible.length) {
 		const outputLabel = outputBudget.explicit ? "requested output reserve" : "implicit OMP/model output cap";
-		const details = excluded
-			.map((item) => item.reference + " [" + item.reasons.join("; ") + "]")
-			.join(" | ");
+		const details = excluded.map((item) => item.reference + " [" + item.reasons.join("; ") + "]").join(" | ");
 		throw new DynamicRouteCapacityError(
 			"Pifrost dynamic route " + profile.id + " has no eligible member for estimated input " +
 			estimatedInputTokens + " + " + outputLabel + " " + outputReserveTokens + " = " +
 			requiredContextTokens + " tokens" + (details ? "; exclusions: " + details : ""),
 		);
 	}
-	const primary = eligible[0]!.reference;
-	const fallbacks = eligible.slice(1).map((member) => member.reference);
+	return {
+		estimatedInputTokens,
+		outputReserveTokens,
+		outputReserveExplicit: outputBudget.explicit,
+		requiredContextTokens,
+		eligible,
+		excluded,
+	};
+}
+
+/**
+ * Build ordered, contiguous protocol groups for one logical route. Route order
+ * is never changed: a later Responses member cannot jump ahead of an
+ * intervening Chat member merely because it shares a protocol with the first.
+ */
+export function planDynamicRouteAttempts(
+	profile: DynamicRouteProfile,
+	body: Record<string, unknown>,
+	options: DynamicRouteEstimateOptions = {},
+	supportedProtocols: readonly PifrostWireProtocol[] = PIFROST_NATIVE_PROTOCOLS,
+): DynamicRoutePlan {
+	const evaluated = evaluateDynamicRoute(profile, body, options, supportedProtocols);
+	const attempts: DynamicRouteAttempt[] = [];
+	for (const item of evaluated.eligible) {
+		const previous = attempts.at(-1);
+		if (previous?.protocol === item.protocol) {
+			previous.members.push(item.member);
+			previous.fallbacks.push(item.member.reference);
+			continue;
+		}
+		attempts.push({
+			protocol: item.protocol,
+			primary: item.member.reference,
+			fallbacks: [],
+			members: [item.member],
+		});
+	}
+	return {
+		logicalModel: profile.id,
+		estimatedInputTokens: evaluated.estimatedInputTokens,
+		outputReserveTokens: evaluated.outputReserveTokens,
+		outputReserveExplicit: evaluated.outputReserveExplicit,
+		requiredContextTokens: evaluated.requiredContextTokens,
+		attempts,
+		excluded: evaluated.excluded,
+	};
+}
+
+export function rewriteDynamicOpenAIRequest(
+	profile: DynamicRouteProfile,
+	body: Record<string, unknown>,
+	options: DynamicRouteEstimateOptions = {},
+): { body: Record<string, unknown>; decision: DynamicRouteDecision } {
+	const evaluated = evaluateDynamicRoute(profile, body, options, [PIFROST_WIRE_PROTOCOL]);
+	const primary = evaluated.eligible[0]!.member.reference;
+	const fallbacks = evaluated.eligible.slice(1).map((item) => item.member.reference);
 	return {
 		body: {
 			...body,
@@ -366,13 +472,13 @@ export function rewriteDynamicOpenAIRequest(
 		},
 		decision: {
 			logicalModel: profile.id,
-			estimatedInputTokens,
-			outputReserveTokens,
-			outputReserveExplicit: outputBudget.explicit,
-			requiredContextTokens,
+			estimatedInputTokens: evaluated.estimatedInputTokens,
+			outputReserveTokens: evaluated.outputReserveTokens,
+			outputReserveExplicit: evaluated.outputReserveExplicit,
+			requiredContextTokens: evaluated.requiredContextTokens,
 			primary,
 			fallbacks,
-			excluded,
+			excluded: evaluated.excluded,
 		},
 	};
 }
