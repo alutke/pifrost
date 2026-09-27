@@ -21,4 +21,3 @@ for (const source of sources) {
   writeFileSync(outputPath, output, "utf8");
 }
 
-console.log(`Built ${sources.length} standalone CLI runtime modules in dist/`);
