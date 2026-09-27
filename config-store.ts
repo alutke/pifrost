@@ -1,7 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
-import type { BifrostConfig } from "./index.ts";
+export interface PifrostRuntimeConfig {
+	url: string;
+	apiKey?: string;
+	virtualKey?: string;
+}
 
 export interface PifrostStoredConfig {
 	schemaVersion?: number;
@@ -99,7 +103,7 @@ export function storedRuntimeConfigDiagnostics(env: NodeJS.ProcessEnv = process.
 	return [config.error, secrets.error].filter((value): value is string => Boolean(value));
 }
 
-export function loadStoredRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Partial<BifrostConfig> {
+export function loadStoredRuntimeConfig(env: NodeJS.ProcessEnv = process.env): Partial<PifrostRuntimeConfig> {
 	const config = loadStoredConfig(env);
 	const secrets = loadStoredSecrets(env);
 	return {
