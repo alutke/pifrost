@@ -122,7 +122,8 @@ test("attempt models use native protocol endpoints and preserve same-protocol Bi
 	assert.equal(responses.id, "opencode-go/muse-spark-1.3-contributor");
 	assert.equal(chat.api, "openai-completions");
 	assert.equal(chat.id, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
-	assert.deepEqual((chat.compat.extraBody as Record<string, unknown>)?.fallbacks, ["deepseek/deepseek-flash"]);
+	const chatCompat = (chat as import("@oh-my-pi/pi-ai").Model<"openai-completions">).compat;
+	assert.deepEqual((chatCompat.extraBody as Record<string, unknown> | undefined)?.fallbacks, ["deepseek/deepseek-flash"]);
 	assert.equal(bifrostAttemptExtraBody(route.attempts[0]!), undefined);
 });
 
