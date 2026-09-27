@@ -2,10 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
-import { CATALOG_CACHE_SCHEMA_VERSION } from "./cache.ts";
+import { CATALOG_CACHE_SCHEMA_VERSION } from "./dist/cache-schema.js";
 import { createDiagnosticResult, DIAGNOSTIC_STATUS } from "./diagnostic-result.mjs";
 
-export { CATALOG_CACHE_SCHEMA_VERSION as EXPECTED_CACHE_SCHEMA_VERSION } from "./cache.ts";
+export { CATALOG_CACHE_SCHEMA_VERSION as EXPECTED_CACHE_SCHEMA_VERSION } from "./dist/cache-schema.js";
 
 // OMP 18's OpenAI-compatible fallback ladder for a sparse reasoning model.
 // Pifrost's provider uses openai-completions, so when a cached model has
