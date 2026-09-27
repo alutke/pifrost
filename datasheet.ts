@@ -1,5 +1,9 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { PeakHoursSchedule, RoutePricingDiagnostic } from "./pricing-time.ts";
+import {
+	wireProtocolsFrom,
+	type PifrostWireProtocol,
+} from "./protocol-capability.ts";
 
 import {
 	findCatalogCapabilityFallback,
@@ -44,6 +48,7 @@ export interface DatasheetCapabilitySources {
 	forcedToolChoice?: CapabilitySource;
 	namedToolChoice?: CapabilitySource;
 	reasoningWithTools?: CapabilitySource;
+	protocol?: CapabilitySource;
 }
 
 export interface PricingDatasheetEntry {
@@ -469,6 +474,29 @@ function selectTools(
 	return { value: false };
 }
 
+function selectProtocols(
+	liveModel: BifrostProviderModel,
+	parameters: MatchedEntry<ModelParameterEntry> | undefined,
+	catalog: CatalogCapabilityFallback | undefined,
+	vendor: CatalogCapabilityFallback | undefined,
+): Selected<PifrostWireProtocol[]> {
+	if (liveModel.capabilitySources?.protocol === "live" && liveModel.protocols?.length) {
+		return { value: [...liveModel.protocols], source: "live" };
+	}
+	const sheetProtocols = wireProtocolsFrom(parameters?.value.supported_endpoints);
+	if (sheetProtocols?.length) {
+		return {
+			value: sheetProtocols,
+			source: sheetSource(parameters, "protocol") ?? "bifrost-datasheet",
+		};
+	}
+	// OMP's provider-qualified catalog is authoritative for provider transport
+	// routing (e.g. OpenCode Go Muse=Responses while Command Code variants use Chat).
+	if (catalog?.protocols?.length) return { value: [...catalog.protocols], source: fallbackSource(catalog) };
+	if (vendor?.protocols?.length) return { value: [...vendor.protocols], source: "vendor-override" };
+	return {};
+}
+
 export function buildRichRouteCatalog(
 	liveModels: readonly BifrostProviderModel[],
 	aliasConfig: PifrostAliasConfig,
@@ -544,6 +572,7 @@ export function buildRichRouteCatalog(
 		const reasoning = selectReasoning(liveModel, parameters, vendor, catalog);
 		const thinking = reasoning.value ? selectThinking(liveModel, parameters, vendor, catalog) : {};
 		const tools = selectTools(liveModel, parameters, vendor, catalog);
+		const protocols = selectProtocols(liveModel, parameters, catalog, vendor);
 		const toolChoice = selectBooleanCapability(
 			liveModel.compat.supportsToolChoice,
 			liveModel.capabilitySources?.toolChoice,
@@ -601,6 +630,7 @@ export function buildRichRouteCatalog(
 			forcedToolChoice: forcedToolChoice.source,
 			namedToolChoice: namedToolChoice.source,
 			reasoningWithTools: reasoningWithTools.source,
+			protocol: protocols.source,
 		};
 
 		models.push({
@@ -615,6 +645,7 @@ export function buildRichRouteCatalog(
 			reasoning: Boolean(reasoning.value),
 			thinking: reasoning.value ? thinking.value : undefined,
 			supportsTools: Boolean(tools.value),
+			...(protocols.value?.length ? { protocols: [...protocols.value] } : {}),
 			capabilitySources: sources,
 			cost: {
 				input: inputCost,
