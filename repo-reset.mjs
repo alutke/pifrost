@@ -3,15 +3,12 @@ import {
   bifrostManagementBase,
   listVirtualKeys,
   managementHeaders,
+  repoVirtualKeyName,
   requestJson,
 } from "./cli-lib.mjs";
 
 export function canonicalRepoVirtualKeyName(repo) {
-  const safe = String(repo?.name ?? "repo")
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "") || "repo";
-  return `omp-${safe}-mcp`;
+  return repoVirtualKeyName(repo);
 }
 
 /**
