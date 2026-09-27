@@ -9,10 +9,25 @@ import {
 	resolveModelReference,
 	type ModelResolutionKind,
 } from "./model-resolution.ts";
+import {
+	PIFROST_WIRE_PROTOCOL,
+	wireProtocolsFrom,
+	type PifrostWireProtocol,
+} from "./protocol-capability.ts";
 
 export const PROVIDER_ID = "bifrost";
 export const PIFROST_API = "pifrost-openai-completions";
-export const PIFROST_VERSION = "0.4.1";
+
+function packageVersion(): string {
+	try {
+		const parsed = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")) as { version?: unknown };
+		return typeof parsed.version === "string" && parsed.version.trim() ? parsed.version.trim() : "unknown";
+	} catch {
+		return "unknown";
+	}
+}
+
+export const PIFROST_VERSION = packageVersion();
 const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DEFAULT_MAX_TOKENS = 8_192;
 const THINKING_EFFORTS = ["minimal", "low", "medium", "high", "xhigh", "max"] as const;
@@ -33,7 +48,8 @@ export type CapabilityKey =
 	| "toolChoice"
 	| "forcedToolChoice"
 	| "namedToolChoice"
-	| "reasoningWithTools";
+	| "reasoningWithTools"
+	| "protocol";
 export type CapabilityProvenance = Partial<Record<CapabilityKey, CapabilitySource>>;
 
 export interface BifrostConfig {
@@ -92,6 +108,8 @@ export interface BifrostProviderModel {
 	maxTokens: number;
 	/** Diagnostic capability. OMP defaults to normal tool support when this field is absent upstream. */
 	supportsTools: boolean;
+	/** Authoritative physical wire protocols when known. Undefined means unknown. */
+	protocols?: PifrostWireProtocol[];
 	/** Per-capability provenance used only for safe route synthesis and diagnostics. */
 	capabilitySources?: CapabilityProvenance;
 	compat: {
@@ -145,6 +163,7 @@ export interface AliasMemberDiagnostic {
 	resolution?: ModelResolutionKind;
 	status: "resolved" | "unresolved";
 	reason?: string;
+	protocols?: PifrostWireProtocol[];
 	sources?: CapabilityProvenance;
 	pricing?: RoutePricingDiagnostic;
 }
@@ -339,10 +358,10 @@ function pricePerMillion(value: string | number | undefined): number | undefined
 	return parsed <= 0.01 ? parsed * 1_000_000 : parsed;
 }
 
-function isChatModel(model: BifrostModel): boolean {
+function isTextGenerationModel(model: BifrostModel): boolean {
 	const methods = model.supported_methods?.map((method) => method.toLowerCase()) ?? [];
 	if (methods.length === 0) return true;
-	return methods.some((method) => /chat|message|generate|completion/u.test(method));
+	return methods.some((method) => /chat|message|generate|completion|response/u.test(method));
 }
 
 function modelThinking(model: BifrostModel): OmpThinkingConfig | undefined {
@@ -371,7 +390,8 @@ function modelThinking(model: BifrostModel): OmpThinkingConfig | undefined {
 
 export function toProviderModel(model: BifrostModel): BifrostProviderModel | undefined {
 	const id = nonEmpty(model.id);
-	if (!id || !isChatModel(model)) return undefined;
+	if (!id || !isTextGenerationModel(model)) return undefined;
+	const protocols = wireProtocolsFrom(model.supported_methods);
 
 	const liveContextWindow = positiveInteger(
 		model.context_length,
@@ -416,6 +436,7 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		contextWindow,
 		maxTokens,
 		supportsTools,
+		...(protocols ? { protocols } : {}),
 		capabilitySources: {
 			contextWindow: liveContextWindow ? "live" : "fallback",
 			maxTokens: liveMaxTokens ? "live" : "fallback",
@@ -424,6 +445,7 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			reasoningEfforts: (model.reasoning?.supported_efforts?.length ?? 0) > 0 ? "live" : "fallback",
 			tools: hasParameterInventory ? "live" : "fallback",
 			toolChoice: hasParameterInventory ? "live" : "fallback",
+			protocol: protocols ? "live" : "fallback",
 		},
 		compat: {
 			// A heterogeneous route must stay safe when a fallback only accepts system messages.
@@ -558,6 +580,7 @@ export function synthesizeAlias(
 			resolution: rich?.resolution ?? entry.resolution.kind,
 			status: model ? "resolved" : "unresolved",
 			reason: model ? rich?.reason : rich?.reason ?? ambiguous ?? "no safe live/capability match",
+			protocols: model?.protocols,
 			sources: model?.capabilitySources ?? rich?.sources,
 			pricing: rich?.pricing,
 		};
@@ -601,6 +624,7 @@ export function synthesizeAlias(
 			contextWindow: diagnostic.contextWindow!,
 			maxTokens: diagnostic.maxTokens!,
 			supportsTools: diagnostic.tools,
+			protocols: [PIFROST_WIRE_PROTOCOL],
 			compat: {
 				supportsDeveloperRole: false,
 				supportsReasoningEffort:
@@ -729,6 +753,7 @@ function formatSources(sources: CapabilityProvenance | undefined): string {
 		"forcedToolChoice",
 		"namedToolChoice",
 		"reasoningWithTools",
+		"protocol",
 	] as CapabilityKey[])
 		.filter((key) => sources[key])
 		.map((key) => `${key}=${sources[key]}`)
@@ -751,7 +776,8 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 			const target = member.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";
 			const resolution = member.resolution ? ` resolution=${member.resolution}` : "";
 			const reason = member.reason ? ` reason=${member.reason}` : "";
-			lines.push(`  ${member.status} ${member.reference}${target}${resolution} sources=${formatSources(member.sources)}${reason}`);
+			const protocols = member.protocols?.length ? ` protocols=${member.protocols.join(",")}` : " protocols=unknown";
+			lines.push(`  ${member.status} ${member.reference}${target}${resolution}${protocols} sources=${formatSources(member.sources)}${reason}`);
 			if (member.pricing) lines.push(`    ${formatRoutePricing(member.pricing, at)}`);
 		}
 		if (item.unresolved.length && !(item.members?.length)) lines.push(`  unresolved: ${item.unresolved.join(" | ")}`);
