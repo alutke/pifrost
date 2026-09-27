@@ -8,7 +8,6 @@ import {
 	type OpenAIResponsesOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-responses";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
-import { Tokenizer } from "@oh-my-pi/pi-agent-core/tokenizer";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
@@ -41,7 +40,11 @@ import {
 } from "./pricing-normalize.ts";
 import { augmentLiveInventoryForRoutes } from "./route-inventory.ts";
 import { createBifrostUsageProvider } from "./bifrost-usage.ts";
-import { estimateOmpContextInputTokens } from "./context-estimator.ts";
+import {
+	createApproximateContextTokenizer,
+	estimateOmpContextInputTokens,
+	type PifrostContextTokenizer,
+} from "./context-estimator.ts";
 import {
 	applyDynamicRouteProfiles,
 	createDynamicRoutingFetch,
@@ -74,6 +77,7 @@ import {
 } from "./agent-attribution.ts";
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
+const runtimeSessionTokenizers = new Map<string, PifrostContextTokenizer>();
 
 function installDynamicRouteProfiles(models: readonly import("./index.ts").BifrostProviderModel[]): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
@@ -86,6 +90,22 @@ const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
+}
+
+function bindRuntimeSessionTokenizer(sessionId: string, tokenizer: PifrostContextTokenizer): void {
+	const normalized = nonEmpty(sessionId);
+	if (!normalized) return;
+	runtimeSessionTokenizers.set(normalized, tokenizer);
+}
+
+function releaseRuntimeSessionTokenizer(sessionId: string): void {
+	const normalized = nonEmpty(sessionId);
+	if (!normalized) return;
+	runtimeSessionTokenizers.delete(normalized);
+}
+
+function contextTokenizerForSession(sessionId: string): PifrostContextTokenizer {
+	return runtimeSessionTokenizers.get(sessionId) ?? createApproximateContextTokenizer();
 }
 
 function normalizePifrostReasoningOptions(
@@ -190,8 +210,10 @@ function streamDynamicPifrostRoute(
 	profile: DynamicRouteProfile,
 ) {
 	const planningBody = dynamicRoutePlanningBody(model, context, options);
-	const tokenizer = new Tokenizer(model);
-	const estimatedInputTokens = estimateOmpContextInputTokens(context, tokenizer);
+	const estimatedInputTokens = estimateOmpContextInputTokens(
+		context,
+		contextTokenizerForSession(sessionId),
+	);
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
 		estimatedInputTokens,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
@@ -495,15 +517,21 @@ export default function pifrostProvider(pi: ExtensionAPI): void {
 	// exceed OMP's generic 30-second handler budget. The coordinator only runs
 	// while the session is idle and fails open to the final-wire skip guard.
 	pi.on("agent_end", (_event, ctx) => {
-		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
+		const sessionId = ctx.sessionManager.getSessionId();
+		bindAgentSession(sessionId, ctx.agent);
+		bindRuntimeSessionTokenizer(sessionId, ctx.agent.tokenizer);
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_start", (_event, ctx) => {
-		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
+		const sessionId = ctx.sessionManager.getSessionId();
+		bindAgentSession(sessionId, ctx.agent);
+		bindRuntimeSessionTokenizer(sessionId, ctx.agent.tokenizer);
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
-		releaseAgentSession(ctx.sessionManager.getSessionId());
+		const sessionId = ctx.sessionManager.getSessionId();
+		releaseRuntimeSessionTokenizer(sessionId);
+		releaseAgentSession(sessionId);
 	});
 
 	pi.registerCommand("pifrost", {
