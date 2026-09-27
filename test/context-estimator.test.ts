@@ -119,3 +119,36 @@ test("history rewrite marker rejects a predated retained-tail usage anchor", () 
 	const estimate = estimateOmpContextInputTokens(context, createApproximateContextTokenizer());
 	assert.ok(estimate < 100, `predated retained-tail anchor survived rewrite: ${estimate}`);
 });
+
+
+test("pure-output usage is not trusted as a provider prompt anchor", () => {
+	const context = {
+		messages: [
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "locally counted answer" }],
+				api: "openai-completions",
+				provider: "test",
+				model: "test",
+				usage: {
+					input: 0,
+					output: 900_000,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 900_000,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: 1,
+			},
+			{
+				role: "user",
+				content: "small tail",
+				timestamp: 2,
+			},
+		],
+	} as unknown as Context;
+
+	const estimate = estimateOmpContextInputTokens(context, createApproximateContextTokenizer());
+	assert.ok(estimate < 100, `pure-output usage was incorrectly trusted as context: ${estimate}`);
+});
