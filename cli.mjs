@@ -125,6 +125,7 @@ Repo init options:
   --clients <a,b>                 Direct MCP clients to grant
   --tools <*|tool1,tool2>         Tool allow-list for selected direct MCP clients
   --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
+  --rotate-existing               Explicitly rotate an adopted existing repo Virtual Key when its raw value is unavailable
   --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
 
 Repo reset options:
@@ -748,7 +749,14 @@ async function commandRepoInit(flags) {
     );
   }
 
-  const vk = await upsertRepoVirtualKey({ state, repo, clients, url, managementKey });
+  const vk = await upsertRepoVirtualKey({
+    state,
+    repo,
+    clients,
+    url,
+    managementKey,
+    rotateExisting: flags["rotate-existing"] === true,
+  });
   if (flags["no-mcp-instructions"]) {
     updateRepoState(state, repo.id, { mcpInstructions: false });
   }
