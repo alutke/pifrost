@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.5 — 2026-09-27
+
+- Changed Git/GitHub installation packaging to ship the standalone CLI runtime as committed `dist/` artifacts instead of building them on the consumer machine.
+- Removed the `prepare` lifecycle hook entirely. npm therefore no longer enters its Git-dependency build/repack path for Pifrost global installs, avoiding the install-state failures seen after 0.6.4.
+- Kept `build:runtime` as an explicit development/release maintenance command only; CI rebuilds `dist/` from the TypeScript sources and fails if committed artifacts are stale.
+- Added a Linux CI regression that performs the same global GitHub install shape used by users — `npm install --global --prefix <temp> github:alutke/pifrost#<sha>` — and verifies that the installed package directory, executable link and `pifrost --version` all survive the install.
+- Retained the existing packed-tarball installation check and OMP/Bifrost compatibility suite, so both registry-style and GitHub-source installation paths are now release-gated.
+
 ## 0.6.4 — 2026-09-27
 
 - Fixed Git/GitHub npm installs failing during `prepare` with `tsc: not found` on global installs where development dependencies are unavailable.
