@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
-import { storedRuntimeConfigDiagnostics } from "./config-store.ts";
+import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
 import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
 import { printModelDoctor } from "./model-diagnostics.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
