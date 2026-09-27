@@ -485,6 +485,12 @@ function selectProtocols(
 	if (liveModel.capabilitySources?.protocol === "live" && liveModel.protocols?.length) {
 		return { value: [...liveModel.protocols], source: "live" };
 	}
+	// Provider-specific OMP api-routes describe the actual gateway transport for
+	// ids such as OpenCode Go Muse. They must outrank generic Bifrost/model-family
+	// datasheet rows: a sibling provider may expose the same underlying model over
+	// Chat while this provider requires Responses.
+	const policyProtocols = findCatalogProtocolCapability(reference, liveModel.id);
+	if (policyProtocols?.length) return { value: policyProtocols, source: "canonical-family" };
 	const sheetProtocols = wireProtocolsFrom(parameters?.value.supported_endpoints);
 	if (sheetProtocols?.length) {
 		return {
@@ -492,10 +498,6 @@ function selectProtocols(
 			source: sheetSource(parameters, "protocol") ?? "bifrost-datasheet",
 		};
 	}
-	// OMP's compiled provider api-routes rules cover gateway-only ids that are
-	// intentionally absent from the bundled static model snapshot.
-	const policyProtocols = findCatalogProtocolCapability(reference, liveModel.id);
-	if (policyProtocols?.length) return { value: policyProtocols, source: "canonical-family" };
 	// Bundled provider rows remain useful for providers whose transport is
 	// encoded directly on the model rather than in a separate api-routes rule.
 	if (catalog?.protocols?.length) return { value: [...catalog.protocols], source: fallbackSource(catalog) };
