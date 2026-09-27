@@ -73,8 +73,7 @@
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "cli": "node cli.mjs",
-    "build:runtime": "node --no-warnings scripts/build-runtime.mjs",
-    "prepare": "npm run build:runtime"
+    "build:runtime": "node --no-warnings scripts/build-runtime.mjs"
   },
   "dependencies": {
     "@oh-my-pi/pi-ai": "18.3.2",
