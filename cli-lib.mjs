@@ -1397,17 +1397,40 @@ export function virtualKeyMcpConfigs(vk) {
         nonEmpty(config?.mcp_client_name) ??
         nonEmpty(config?.mcp_client?.name) ??
         nonEmpty(config?.client_name);
-      const rawId = config?.mcp_client?.client_id ?? config?.mcp_client_id ?? config?.mcp_client?.id;
-      const id = rawId === undefined || rawId === null ? undefined : nonEmpty(String(rawId));
-      if (!name && !id) return undefined;
+      const rawClientId = config?.mcp_client?.client_id ?? config?.mcp_client_id ?? config?.mcp_client?.id;
+      const clientId = rawClientId === undefined || rawClientId === null ? undefined : nonEmpty(String(rawClientId));
+      const rawConfigId = config?.id;
+      const configId = Number(rawConfigId);
+      const id = Number.isSafeInteger(configId) && configId > 0 ? configId : undefined;
+      if (!name && !clientId) return undefined;
       const tools = Array.isArray(config?.tools_to_execute) ? config.tools_to_execute.map(String) : [];
       return {
-        ...(id ? { mcp_client_id: id } : {}),
+        ...(id ? { id } : {}),
+        ...(clientId ? { mcp_client_id: clientId } : {}),
         ...(name ? { mcp_client_name: name } : {}),
         tools_to_execute: tools,
       };
     })
     .filter(Boolean);
+}
+
+function reconcileVirtualKeyMcpConfigs(vk, clients) {
+  if (!Array.isArray(clients)) return undefined;
+  const existingByName = new Map();
+  for (const config of virtualKeyMcpConfigs(vk)) {
+    const name = nonEmpty(config?.mcp_client_name);
+    if (name) existingByName.set(name.toLowerCase(), config);
+  }
+  return clients.map((client) => {
+    const name = nonEmpty(client?.name);
+    if (!name) throw new Error("MCP client name is required");
+    const existing = existingByName.get(name.toLowerCase());
+    return {
+      ...(existing?.id ? { id: existing.id } : {}),
+      mcp_client_name: name,
+      tools_to_execute: Array.isArray(client.tools) ? client.tools : [],
+    };
+  });
 }
 
 function mergeToolGrant(entry, tools, source) {
@@ -1532,23 +1555,20 @@ export async function upsertRepoVirtualKey({
   let created = false;
   let associatedName;
 
-  const updateRequest = (name) => {
+  const updateRequest = (name, currentVk) => {
     const request = {
       is_active: true,
     };
     if (name) request.name = name;
-    if (Array.isArray(clients)) {
-      request.mcp_configs = clients.map((client) => ({
-        mcp_client_name: client.name,
-        tools_to_execute: client.tools,
-      }));
-    }
+    const mcpConfigs = reconcileVirtualKeyMcpConfigs(currentVk, clients);
+    if (mcpConfigs) request.mcp_configs = mcpConfigs;
     return request;
   };
 
   if (local?.virtualKeyId) {
     try {
-      const localName = local.virtualKeyName ?? keyName;
+      const currentVk = await getVirtualKey(url, managementKey, local.virtualKeyId);
+      const localName = local.virtualKeyName ?? currentVk?.name ?? keyName;
       let requestedName;
       if (localName !== keyName) {
         // Bifrost 2.2.3's UpdateVirtualKey store resolves by "id OR name".
@@ -1568,7 +1588,7 @@ export async function upsertRepoVirtualKey({
         url,
         managementKey,
         local.virtualKeyId,
-        updateRequest(requestedName),
+        updateRequest(requestedName, currentVk),
       );
       associatedName = requestedName ?? local.virtualKeyName ?? vk?.name ?? keyName;
     } catch (error) {
@@ -1579,8 +1599,9 @@ export async function upsertRepoVirtualKey({
   if (!vk) {
     let existing = await findVirtualKeyByExactName(url, managementKey, keyName);
     if (existing?.id) {
-      vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest());
-      associatedName = existing.name ?? vk?.name ?? keyName;
+      const currentVk = await getVirtualKey(url, managementKey, existing.id);
+      vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest(undefined, currentVk));
+      associatedName = existing.name ?? currentVk?.name ?? vk?.name ?? keyName;
       if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
     } else {
       try {
@@ -1607,8 +1628,9 @@ export async function upsertRepoVirtualKey({
         created = false;
         existing = await findVirtualKeyByExactName(url, managementKey, keyName);
         if (!existing?.id) throw error;
-        vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest());
-        associatedName = existing.name ?? vk?.name ?? keyName;
+        const currentVk = await getVirtualKey(url, managementKey, existing.id);
+        vk = await updateVirtualKey(url, managementKey, existing.id, updateRequest(undefined, currentVk));
+        associatedName = existing.name ?? currentVk?.name ?? vk?.name ?? keyName;
         if (!usableVirtualKeyValue(vk?.value) && usableVirtualKeyValue(existing?.value)) vk.value = existing.value;
       }
     }
