@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.8.0",
+  "version": "0.8.1",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -42,6 +42,7 @@
     "pricing-normalize.ts",
     "pricing-time.ts",
     "routing-core.ts",
+    "route-eligibility.ts",
     "http-client.mjs",
     "doctor-probes.mjs",
     "skills-bridge.mjs",
