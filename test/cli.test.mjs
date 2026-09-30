@@ -46,11 +46,15 @@ test("parses and compares upstream semantic versions conservatively", () => {
   assert.equal(versionAtLeast("2.2.2", "2.2.3"), false);
 });
 
-test("OMP compatibility matrix gates the Pifrost baseline and 18.3 feature contracts", () => {
-  const current = ompCompatibilityMatrix("18.3.2");
+test("OMP compatibility matrix gates the Pifrost 18.4.5 baseline and preserves earlier feature floors", () => {
+  const current = ompCompatibilityMatrix("18.4.5");
   assert.ok(current.every((item) => item.status === "supported"));
+  const previous = ompCompatibilityMatrix("18.3.2");
+  assert.equal(previous.find((item) => item.id === "omp-baseline")?.status, "unavailable");
+  assert.equal(previous.find((item) => item.id === "omp-mcp-instructions")?.status, "supported");
+  assert.equal(previous.find((item) => item.id === "omp-cfg-protocol")?.status, "supported");
+  assert.equal(previous.find((item) => item.id === "omp-modern-model-metadata")?.status, "unavailable");
   const old = ompCompatibilityMatrix("18.3.0");
-  assert.equal(old.find((item) => item.id === "omp-baseline")?.status, "unavailable");
   assert.equal(old.find((item) => item.id === "omp-mcp-instructions")?.status, "unavailable");
   assert.equal(old.find((item) => item.id === "omp-cfg-protocol")?.status, "unavailable");
 });
