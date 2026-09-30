@@ -97,15 +97,134 @@ export function formatCapabilitySources(sources) {
   return parts.length ? parts.join(" ") : "unknown";
 }
 
+function formatMemberCapabilities(capabilities) {
+  if (!capabilities) return "";
+  const parts = [
+    `context=${capabilities.contextWindow ?? "?"}`,
+    `output=${capabilities.maxTokens ?? "?"}`,
+    `image=${capabilities.image ? "yes" : "no"}`,
+    `reasoning=${capabilities.reasoning ? "yes" : "no"}`,
+    `tools=${capabilities.tools ? "yes" : "no"}`,
+    `toolSearch=${capabilities.toolSearch === undefined ? "?" : capabilities.toolSearch ? "yes" : "no"}`,
+    `betweenTools=${capabilities.betweenToolsThinking === undefined ? "?" : capabilities.betweenToolsThinking ? "yes" : "no"}`,
+    `tiers=${capabilities.serviceTiers?.join(",") || (capabilities.serviceTier ? "supported" : "none")}`,
+  ];
+  return ` capabilities=${parts.join(",")}`;
+}
+
 export function formatMemberDiagnostic(member) {
   const target = member?.resolvedModelId ? ` -> ${member.resolvedModelId}` : "";
   const resolution = member?.resolution ? ` resolution=${member.resolution}` : "";
   const protocols = Array.isArray(member?.protocols) && member.protocols.length
     ? ` protocols=${member.protocols.join(",")}`
     : " protocols=unknown";
+  const capabilities = formatMemberCapabilities(member?.capabilities);
   const sourceText = ` sources=${formatCapabilitySources(member?.sources)}`;
   const reason = member?.reason ? ` reason=${member.reason}` : "";
-  return `    ${member?.status ?? "unknown"} ${member?.reference ?? "<unknown>"}${target}${resolution}${protocols}${sourceText}${reason}`;
+  return `    ${member?.status ?? "unknown"} ${member?.reference ?? "<unknown>"}${target}${resolution}${protocols}${capabilities}${sourceText}${reason}`;
+}
+
+function aliasIdFromSelector(selector) {
+  const value = String(selector ?? "").trim().split(":", 1)[0];
+  const match = /^(?:bifrost\/)?(omp-[a-z0-9._-]+)$/iu.exec(value);
+  return match?.[1]?.toLowerCase();
+}
+
+export function formatEffectiveRouteReport(modelRoles, diagnostics) {
+  const roles = modelRoles && typeof modelRoles === "object" && !Array.isArray(modelRoles) ? modelRoles : {};
+  const byId = new Map((diagnostics ?? []).map((item) => [String(item.id).toLowerCase(), item]));
+  const lines = ["Effective OMP → Pifrost → Bifrost routes:"];
+  const entries = Object.entries(roles).sort(([a], [b]) => a.localeCompare(b));
+  if (!entries.length) return `${lines[0]}\n  unavailable (OMP modelRoles could not be read)`;
+
+  for (const [role, rawSelector] of entries) {
+    const selector = String(rawSelector ?? "");
+    const primary = selector.split(",")[0]?.trim();
+    const aliasId = aliasIdFromSelector(primary);
+    if (!aliasId) {
+      lines.push(`  ${role}: ${selector || "<unset>"} (not Pifrost-managed)`);
+      continue;
+    }
+    const diagnostic = byId.get(aliasId);
+    if (!diagnostic) {
+      lines.push(`  ${role}: ${primary} -> ${aliasId} [catalog missing]`);
+      continue;
+    }
+    lines.push(`  ${role}: ${primary} -> ${aliasId}`);
+    for (const member of diagnostic.members ?? []) lines.push(formatMemberDiagnostic(member));
+  }
+  return lines.join("\n");
+}
+
+export function explainRouteRequest(diagnostic, request = {}) {
+  if (!diagnostic) return { alias: undefined, members: [], error: "alias not found" };
+  const inputTokens = Number.isFinite(Number(request.inputTokens)) && Number(request.inputTokens) >= 0
+    ? Math.ceil(Number(request.inputTokens))
+    : 0;
+  const requestedOutput = Number.isFinite(Number(request.outputTokens)) && Number(request.outputTokens) > 0
+    ? Math.ceil(Number(request.outputTokens))
+    : Number(diagnostic.maxTokens ?? 0);
+  const members = (diagnostic.members ?? []).map((member) => {
+    const reasons = [];
+    const caps = member.capabilities;
+    if (member.status !== "resolved" || !caps) {
+      reasons.push(member.reason ?? "route member is unresolved");
+      return { reference: member.reference, eligible: false, reasons };
+    }
+    const outputReserve = Math.min(requestedOutput, caps.maxTokens);
+    const requiredContext = inputTokens + outputReserve;
+    if (requiredContext > caps.contextWindow) {
+      reasons.push(`context needs ${requiredContext} tokens; member supports ${caps.contextWindow}`);
+    }
+    if (request.image && !caps.image) reasons.push("no image-input support");
+    if (request.tools && !caps.tools) reasons.push("no tool support");
+    if (request.reasoning && request.tools && caps.reasoningWithTools === false) {
+      reasons.push("cannot combine reasoning with tools");
+    }
+    if (request.toolSearch) {
+      if (caps.toolSearch !== true) reasons.push("no tool-search/deferred-tool support");
+      if (!(member.protocols ?? []).includes("openai-responses")) reasons.push("tool search requires Responses transport");
+    }
+    if (request.betweenTools && caps.betweenToolsThinking !== true) {
+      reasons.push("no between-tools thinking support");
+    }
+    const tier = typeof request.serviceTier === "string" ? request.serviceTier.trim() : "";
+    if (tier && tier !== "auto") {
+      if (caps.serviceTier !== true) reasons.push("no service-tier support");
+      else if (caps.serviceTiers?.length && !caps.serviceTiers.includes(tier)) reasons.push(`service tier ${tier} unavailable`);
+    }
+    return {
+      reference: member.reference,
+      resolvedModelId: member.resolvedModelId,
+      eligible: reasons.length === 0,
+      reasons,
+      requiredContext,
+      outputReserve,
+      protocols: member.protocols ?? [],
+    };
+  });
+  return {
+    alias: diagnostic.id,
+    inputTokens,
+    requestedOutput,
+    members,
+  };
+}
+
+export function formatRouteExplanation(explanation) {
+  if (explanation?.error) return `Route explanation unavailable: ${explanation.error}`;
+  const lines = [
+    `Route explanation: ${explanation.alias}`,
+    `  request input=${explanation.inputTokens} output<=${explanation.requestedOutput}`,
+  ];
+  for (const member of explanation.members ?? []) {
+    lines.push(
+      `  [${member.eligible ? "ELIGIBLE" : "EXCLUDED"}] ${member.reference}${member.resolvedModelId ? ` -> ${member.resolvedModelId}` : ""}`,
+    );
+    if (member.reasons?.length) lines.push(`    ${member.reasons.join("; ")}`);
+    else lines.push(`    context=${member.requiredContext} output-reserve=${member.outputReserve} protocols=${member.protocols.join(",") || "unknown"}`);
+  }
+  return lines.join("\n");
 }
 
 export function printModelDoctor(env = process.env, out = console) {
