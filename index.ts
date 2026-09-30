@@ -51,6 +51,11 @@ export type CapabilityKey =
 	| "forcedToolChoice"
 	| "namedToolChoice"
 	| "reasoningWithTools"
+	| "toolSearch"
+	| "betweenToolsThinking"
+	| "serviceTier"
+	| "serviceTiers"
+	| "pricingStatus"
 	| "protocol";
 export type CapabilityProvenance = Partial<Record<CapabilityKey, CapabilitySource>>;
 
@@ -91,6 +96,8 @@ export interface BifrostModel {
 	};
 	supported_parameters?: string[];
 	supported_methods?: string[];
+	service_tiers?: Array<string | { id?: string; name?: string }>;
+	pricing_status?: "free" | "included" | "variable" | "unknown";
 	reasoning?: {
 		mandatory?: boolean;
 		default_enabled?: boolean;
@@ -110,6 +117,14 @@ export interface BifrostProviderModel {
 	maxTokens: number;
 	/** Diagnostic capability. OMP defaults to normal tool support when this field is absent upstream. */
 	supportsTools: boolean;
+	/** Bifrost/OpenAI server-side tool-search capability when authoritatively known. */
+	supportsToolSearch?: boolean;
+	/** Whether the physical target accepts a service_tier request. */
+	supportsServiceTier?: boolean;
+	/** Named service tiers advertised by the physical target, when known. */
+	serviceTiers?: readonly string[];
+	/** OMP pricing semantics for zero/variable/included routes. Fixed pricing is represented by non-zero cost. */
+	pricingStatus?: OmpModel["pricingStatus"];
 	/** Authoritative physical wire protocols when known. Undefined means unknown. */
 	protocols?: PifrostWireProtocol[];
 	/** Per-capability provenance used only for safe route synthesis and diagnostics. */
@@ -124,6 +139,8 @@ export interface BifrostProviderModel {
 		supportsNamedToolChoice?: boolean;
 		/** Whether reasoning and an offered tool set can coexist on the same request. */
 		supportsReasoningWithTools?: boolean;
+		/** Bifrost 2.2.4+ can preserve Anthropic between-tools thinking on compatible targets. */
+		supportsBetweenToolsThinking?: boolean;
 		/** OMP wire-policy flag: suppress reasoning when a tool_choice field is actually sent. */
 		disableReasoningOnToolChoice?: boolean;
 	};
@@ -188,6 +205,11 @@ export interface AliasDiagnostic {
 	forcedToolChoice?: boolean;
 	namedToolChoice?: boolean;
 	reasoningWithTools?: boolean;
+	toolSearch?: boolean;
+	betweenToolsThinking?: boolean;
+	serviceTier?: boolean;
+	serviceTiers?: string[];
+	pricingStatus?: OmpModel["pricingStatus"];
 	routingPins?: PifrostRoutePin[];
 	members?: AliasMemberDiagnostic[];
 }
