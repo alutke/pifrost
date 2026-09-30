@@ -15,6 +15,7 @@
   "files": [
     "config-store.ts",
     "routing-core.ts",
+    "route-eligibility.ts",
     "cache-schema.ts"
   ]
 }
