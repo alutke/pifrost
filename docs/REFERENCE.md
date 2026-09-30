@@ -177,6 +177,29 @@ The generic compatibility defaults used for a sparse physical `/v1/models` entry
 
 Model identity matching tolerates provider/aggregator prefix changes, mixed capitalization, and explicitly known entitlement aliases such as the current Ox Alpha spellings. It does not blindly strip arbitrary `-free` suffixes, and it rejects ambiguous vendor-qualified matches rather than assuming two same-tailed model names are identical.
 
+### Doctor 2.0 and route explanations
+
+Pifrost persists the resolved capability surface of each physical route member, not only the conservative logical alias envelope. This lets the standalone CLI explain the effective path without becoming the router.
+
+`pifrost routes effective` reads OMP's effective `modelRoles` and joins each Pifrost selector to its cached Bifrost alias and physical members. `pifrost doctor` includes the same report after model-catalog validation.
+
+`pifrost routes explain <role|alias>` accepts hypothetical request constraints such as `--input-tokens`, `--output-tokens`, `--image`, `--tools`, `--reasoning`, `--tool-search`, `--between-tools` and `--service-tier`. It reports each physical member as eligible or excluded with concrete reasons. The command is diagnostic only; runtime selection and fallback remain owned by Bifrost within the compatible route set.
+
+### Search and MCP presentation diagnostics
+
+Repository status distinguishes four separate facts that were previously easy to conflate:
+
+1. whether a 4get MCP client/tool is present in Bifrost management metadata;
+2. whether the repository Virtual Key is granted the tool through a direct grant, Virtual MCP, or allow-by-default client;
+3. whether the tool is actually returned by a live repository-key-scoped Bifrost MCP `tools/list`;
+4. how OMP presents the resulting MCP tool surface.
+
+Canonical 4get tools are recognized after Bifrost client-name prefixing, so a client named `fourget` exposing `fourget_web_search` is still recognized when the gateway returns a name such as `fourget-fourget_web_search`.
+
+OMP MCP tools are normally presented as `discoverable`; that is not synonymous with provider-side `defer_loading`. Pifrost reports the live gateway tool count and an approximate all-tools schema footprint separately from model/route Tool Search capability.
+
+The same status section reads OMP's effective `modelRoles.web` and `retry.fallbackChains.web`. An unset web role is reported as OMP's built-in default search chain, not as a missing native-search capability. Pifrost does not create a synthetic web model or take ownership of search-provider fallback.
+
 ### Effective thinking display
 
 Pifrost stores the pre-normalization provider catalog. OMP 18 may subsequently derive a thinking-control surface for sparse reasoning models. `pifrost models doctor` and `pifrost doctor` report the **OMP-effective** result:
@@ -235,7 +258,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.7.0
+0.8.0
 ```
 
 Bun can also install the package globally:
