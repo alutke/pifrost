@@ -60,7 +60,6 @@ export function createPifrostAttemptModelSpec(
 		reasoning: primary.reasoning,
 		supportsTools: primary.supportsTools,
 		...(primary.serviceTiers?.length ? { serviceTiers: [...primary.serviceTiers] } : {}),
-		...(primary.pricingStatus ? { pricingStatus: primary.pricingStatus } : {}),
 	};
 	if (attempt.protocol === "openai-responses") {
 		return {
