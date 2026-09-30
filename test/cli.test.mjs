@@ -410,6 +410,22 @@ test("OMP web diagnostics distinguish unavailable and unreadable config from an 
   assert.match(unreadable.error, /config boom/u);
 });
 
+test("generic MCP version tools do not masquerade as Hound", () => {
+  const diagnostics = houndMcpDiagnostics(
+    { effective: [], virtualMcps: [] },
+    [{ name: "other", state: "connected", tools: ["version"] }],
+    [],
+    {
+      liveTools: [{ name: "other-version", inputSchema: { type: "object" } }],
+      ompSearch: webSearchConfigDiagnostics({}, {}),
+    },
+  );
+  assert.equal(diagnostics.hound.available, false);
+  assert.equal(diagnostics.hound.configured, false);
+  assert.equal(diagnostics.hound.capabilities.version.available, false);
+  assert.equal(diagnostics.search.path, "OMP native web_search");
+});
+
 test("optional-only Hound grants are still recognized through the Bifrost MCP surface", () => {
   const policy = {
     effective: [{ client: "hound", tools: ["mcp_screenshot"], sources: ["direct"] }],
