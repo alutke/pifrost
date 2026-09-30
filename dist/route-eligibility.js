@@ -1,3 +1,25 @@
+export function resolveRouteMemberProtocol(
+	protocols,
+	supportedProtocols,
+	options = {},
+) {
+	const defaultProtocol = options.defaultProtocol ?? "openai-completions";
+	if (!protocols?.length) {
+		return supportedProtocols.includes(defaultProtocol) ? defaultProtocol : supportedProtocols[0];
+	}
+	if (
+		options.toolSearch === true &&
+		protocols.includes("openai-responses") &&
+		supportedProtocols.includes("openai-responses")
+	) {
+		return "openai-responses";
+	}
+	if (protocols.includes(defaultProtocol) && supportedProtocols.includes(defaultProtocol)) {
+		return defaultProtocol;
+	}
+	return protocols.find((protocol) => supportedProtocols.includes(protocol));
+}
+
 /**
  * Canonical capability eligibility evaluator shared by runtime prewalk and CLI
  * diagnostics. It is deliberately policy-neutral: route order, provider
