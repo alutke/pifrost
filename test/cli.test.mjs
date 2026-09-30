@@ -14,11 +14,16 @@ import {
   effectiveRepoMcpPolicy,
   diffAliases,
   loadState,
+  listMcpGatewayTools,
+  mcpToolSurfaceDiagnostics,
   normalizeBifrostUrl,
+  normalizeMcpClient,
   normalizeVirtualMcp,
   quotaGovernanceSources,
   formatQuotaGovernanceSource,
   ompCompatibilityMatrix,
+  searchBackendDiagnostics,
+  webSearchConfigDiagnostics,
   parseSemver,
   versionAtLeast,
   repoMcpInstructions,
@@ -34,7 +39,9 @@ test("canonical CLI help exposes the full repo Skills/reset surface", () => {
   assert.match(result.stdout, /pifrost repo skills sync \[name\]/u);
   assert.match(result.stdout, /pifrost repo reset \[--delete-remote\] \[--recover-by-name\] \[--yes\]/u);
   assert.match(result.stdout, /--rotate-existing/u);
-  assert.doesNotMatch(result.stdout, /pifrost routes diagnose/u);
+  assert.match(result.stdout, /pifrost routes diagnose/u);
+  assert.match(result.stdout, /pifrost routes effective/u);
+  assert.match(result.stdout, /pifrost routes explain <role\|alias>/u);
 });
 
 test("parses and compares upstream semantic versions conservatively", () => {
@@ -303,6 +310,107 @@ test("Virtual MCP normalization and name resolution are portable and case-insens
   assert.deepEqual(resolveVirtualMcpNames(vmcps, ["development tools"]).map((item) => item.id), [12]);
   assert.deepEqual(virtualMcpsForVirtualKey(vmcps, "vk-repo").map((item) => item.name), ["Development Tools"]);
   assert.throws(() => resolveVirtualMcpNames(vmcps, ["missing"]), /Unknown Bifrost Virtual MCP/);
+});
+
+test("MCP normalization retains tool schemas for footprint diagnostics", () => {
+  const client = normalizeMcpClient({
+    name: "fourget",
+    state: "connected",
+    tools: [{
+      name: "fourget_web_search",
+      description: "Search the web",
+      inputSchema: { type: "object", properties: { query: { type: "string" } } },
+    }],
+  });
+  assert.deepEqual(client.tools, ["fourget_web_search"]);
+  assert.equal(client.toolDefinitions[0].name, "fourget_web_search");
+  assert.equal(client.toolDefinitions[0].description, "Search the web");
+  assert.equal(client.toolDefinitions[0].inputSchema.properties.query.type, "string");
+});
+
+test("4get diagnostics distinguish configured grants from live gateway visibility", () => {
+  const clients = [{
+    id: "fourget-id",
+    name: "fourget",
+    state: "connected",
+    disabled: false,
+    allowOnAllVirtualKeys: false,
+    tools: ["fourget_web_search", "fourget_news_search", "fourget_image_search"],
+  }];
+  const vk = {
+    id: "vk-repo",
+    mcp_configs: [{
+      mcp_client_id: "fourget-id",
+      mcp_client: { client_id: "fourget-id", name: "fourget" },
+      tools_to_execute: ["*"],
+    }],
+  };
+  const policy = effectiveRepoMcpPolicy(vk, [], clients);
+  const omp = webSearchConfigDiagnostics(
+    { web: "web/duckduckgo" },
+    { web: ["web/parallel", "web/hosted"] },
+  );
+  const diagnostics = searchBackendDiagnostics(policy, clients, [], {
+    liveTools: [
+      { name: "fourget-fourget_web_search", inputSchema: { type: "object" } },
+      { name: "fourget-fourget_news_search", inputSchema: { type: "object" } },
+      { name: "fourget-fourget_image_search", inputSchema: { type: "object" } },
+    ],
+    ompSearch: omp,
+  });
+  assert.equal(diagnostics.preferredPath, "MCP/4get");
+  assert.equal(diagnostics.fourget.complete, true);
+  assert.equal(diagnostics.fourget.clients[0].name, "fourget");
+  assert.equal(diagnostics.fourget.tools.fourget_web_search.configured, true);
+  assert.equal(diagnostics.fourget.tools.fourget_web_search.gatewayVisible, true);
+  assert.equal(diagnostics.fourget.tools.fourget_web_search.gatewayName, "fourget-fourget_web_search");
+  assert.equal(diagnostics.omp.primary, "web/duckduckgo");
+  assert.deepEqual(diagnostics.omp.fallbacks, ["web/parallel", "web/hosted"]);
+  assert.equal(diagnostics.mcpSurface.ompDefaultLoadMode, "discoverable");
+});
+
+test("OMP web diagnostics report the built-in chain when no explicit web role exists", () => {
+  const diagnostics = webSearchConfigDiagnostics({ default: "bifrost/omp-default" }, {});
+  assert.equal(diagnostics.available, true);
+  assert.equal(diagnostics.configured, false);
+  assert.equal(diagnostics.primary, undefined);
+  assert.match(diagnostics.source, /built-in default search chain/u);
+});
+
+test("MCP tool surface reports discoverable presentation separately from provider deferral", () => {
+  const surface = mcpToolSurfaceDiagnostics([
+    { name: "fourget-fourget_web_search", description: "Search", inputSchema: { type: "object" } },
+    { name: "github-search", description: "Search GitHub", inputSchema: { type: "object" } },
+  ]);
+  assert.equal(surface.visibleTools, 2);
+  assert.equal(surface.discoverableTools, 2);
+  assert.equal(surface.ompDefaultLoadMode, "discoverable");
+  assert.equal(surface.providerDeferral, "route-dependent");
+  assert.ok(surface.estimatedSchemaTokens > 0);
+});
+
+test("live MCP tool listing accepts Bifrost-prefixed tool names", async () => {
+  const calls = [];
+  const tools = await listMcpGatewayTools("http://bifrost.test/v1", "vk-test", {
+    fetch: async (url, init) => {
+      calls.push({ url: String(url), init });
+      return new Response(JSON.stringify({
+        jsonrpc: "2.0",
+        id: 2,
+        result: {
+          tools: [{
+            name: "fourget-fourget_web_search",
+            description: "Search",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } },
+          }],
+        },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    },
+  });
+  assert.equal(calls[0].url, "http://bifrost.test/mcp");
+  assert.equal(calls[0].init.headers["x-bf-vk"], "vk-test");
+  assert.deepEqual(tools.map((tool) => tool.name), ["fourget-fourget_web_search"]);
+  assert.equal(tools[0].inputSchema.properties.query.type, "string");
 });
 
 test("effective repo MCP policy unions direct grants, Virtual MCPs and allowed-by-default clients", () => {

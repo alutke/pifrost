@@ -462,6 +462,18 @@ test("alias intersects Tool Search, between-tools thinking and service tiers con
 	assert.equal(result.diagnostic.toolSearch, true);
 	assert.equal(result.diagnostic.betweenToolsThinking, true);
 	assert.deepEqual(result.diagnostic.serviceTiers, ["priority"]);
+	assert.deepEqual(result.diagnostic.members?.[0]?.capabilities, {
+		contextWindow: 128000,
+		maxTokens: 8192,
+		image: false,
+		reasoning: true,
+		tools: true,
+		toolSearch: true,
+		reasoningWithTools: undefined,
+		betweenToolsThinking: true,
+		serviceTier: true,
+		serviceTiers: ["priority", "ultrafast"],
+	});
 });
 
 test("alias with one incompatible fallback does not advertise Tool Search or between-tools thinking", () => {
