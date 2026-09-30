@@ -32,7 +32,7 @@ function canonicalHoundToolName(name) {
 function houndClient(client) {
   if (!client) return false;
   const tools = new Set((client.tools ?? []).map(canonicalHoundToolName).filter(Boolean));
-  return HOUND_CORE_TOOLS.some((name) => tools.has(name));
+  return HOUND_TOOLS.some((name) => tools.has(name));
 }
 
 function toolStatusMap(policy, clients, liveTools) {
