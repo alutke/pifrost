@@ -19,12 +19,16 @@ export interface DynamicRouteMemberProfile {
 	input: ("text" | "image")[];
 	reasoning: boolean;
 	supportsTools: boolean;
+	supportsToolSearch?: boolean;
+	supportsServiceTier?: boolean;
+	serviceTiers?: readonly string[];
 	protocols?: PifrostWireProtocol[];
 	compat: {
 		supportsToolChoice?: boolean;
 		supportsForcedToolChoice?: boolean;
 		supportsNamedToolChoice?: boolean;
 		supportsReasoningWithTools?: boolean;
+		supportsBetweenToolsThinking?: boolean;
 		disableReasoningOnToolChoice?: boolean;
 	};
 }
@@ -184,12 +188,16 @@ export function applyDynamicRouteProfiles(
 				input: [...member.input],
 				reasoning: member.reasoning,
 				supportsTools: member.supportsTools,
+				supportsToolSearch: member.supportsToolSearch,
+				supportsServiceTier: member.supportsServiceTier,
+				...(member.serviceTiers?.length ? { serviceTiers: [...member.serviceTiers] } : {}),
 				...(member.protocols?.length ? { protocols: [...member.protocols] } : {}),
 				compat: {
 					supportsToolChoice: member.compat.supportsToolChoice,
 					supportsForcedToolChoice: member.compat.supportsForcedToolChoice,
 					supportsNamedToolChoice: member.compat.supportsNamedToolChoice,
 					supportsReasoningWithTools: member.compat.supportsReasoningWithTools,
+					supportsBetweenToolsThinking: member.compat.supportsBetweenToolsThinking,
 					disableReasoningOnToolChoice: member.compat.disableReasoningOnToolChoice,
 				},
 			};
@@ -308,6 +316,27 @@ function requestUsesReasoning(body: Record<string, unknown>): boolean {
 	return body.reasoning !== undefined || body.reasoning_effort !== undefined;
 }
 
+function requestUsesToolSearch(body: Record<string, unknown>): boolean {
+	const tools = Array.isArray(body.tools) ? body.tools : [];
+	return tools.some((tool) => {
+		if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
+		const record = tool as Record<string, unknown>;
+		if (record.type === "tool_search") return true;
+		if (record.defer_loading === true || record.deferLoading === true) return true;
+		const fn = record.function;
+		return Boolean(fn && typeof fn === "object" && !Array.isArray(fn) && (fn as Record<string, unknown>).defer_loading === true);
+	});
+}
+
+function requestUsesBetweenToolsThinking(body: Record<string, unknown>): boolean {
+	const reasoning = body.reasoning;
+	return Boolean(reasoning && typeof reasoning === "object" && !Array.isArray(reasoning) && (reasoning as Record<string, unknown>).type === "between_tools");
+}
+
+function requestedServiceTier(body: Record<string, unknown>): string | undefined {
+	return typeof body.service_tier === "string" && body.service_tier.trim() ? body.service_tier.trim() : undefined;
+}
+
 export function resolveDynamicMemberProtocol(
 	member: DynamicRouteMemberProfile,
 	supportedProtocols: readonly PifrostWireProtocol[],
@@ -323,6 +352,24 @@ export function resolveDynamicMemberProtocol(
 	return member.protocols.find((protocol) => supportedProtocols.includes(protocol));
 }
 
+function resolveDynamicMemberProtocolForRequest(
+	member: DynamicRouteMemberProfile,
+	body: Record<string, unknown>,
+	supportedProtocols: readonly PifrostWireProtocol[],
+): PifrostWireProtocol | undefined {
+	// Server-side tool search is a Responses contract in Pifrost. Prefer that
+	// transport when the physical member advertises it instead of silently
+	// degrading the request onto Chat Completions.
+	if (
+		requestUsesToolSearch(body) &&
+		member.protocols?.includes("openai-responses") &&
+		supportedProtocols.includes("openai-responses")
+	) {
+		return "openai-responses";
+	}
+	return resolveDynamicMemberProtocol(member, supportedProtocols);
+}
+
 function memberExclusionReasons(
 	member: DynamicRouteMemberProfile,
 	body: Record<string, unknown>,
@@ -331,7 +378,7 @@ function memberExclusionReasons(
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): string[] {
 	const reasons: string[] = [];
-	const protocol = resolveDynamicMemberProtocol(member, supportedProtocols);
+	const protocol = resolveDynamicMemberProtocolForRequest(member, body, supportedProtocols);
 	if (!protocol) {
 		const advertised = member.protocols?.length ? member.protocols.join(",") : "unknown";
 		reasons.push(`protocol ${advertised} incompatible with ${supportedProtocols.join(",")}`);
@@ -359,6 +406,20 @@ function memberExclusionReasons(
 	if (requestUsesReasoning(body) && !member.reasoning) reasons.push("no reasoning support");
 	if (requestUsesReasoning(body) && usesTools && member.compat.supportsReasoningWithTools === false) {
 		reasons.push("cannot combine reasoning with tools");
+	}
+	if (requestUsesToolSearch(body)) {
+		if (member.supportsToolSearch !== true) reasons.push("no tool-search/deferred-tool support");
+		if (protocol !== "openai-responses") reasons.push("tool search requires Responses transport");
+	}
+	if (requestUsesBetweenToolsThinking(body) && member.compat.supportsBetweenToolsThinking !== true) {
+		reasons.push("no between-tools thinking support");
+	}
+	const serviceTier = requestedServiceTier(body);
+	if (serviceTier && serviceTier !== "auto") {
+		if (member.supportsServiceTier !== true) reasons.push("no service-tier support");
+		if (member.serviceTiers?.length && !member.serviceTiers.includes(serviceTier)) {
+			reasons.push(`service tier ${serviceTier} unavailable`);
+		}
 	}
 	if (
 		requestUsesReasoning(body) &&
@@ -405,7 +466,7 @@ function evaluateDynamicRoute(
 			outputReserveTokens,
 			supportedProtocols,
 		);
-		const protocol = resolveDynamicMemberProtocol(member, supportedProtocols);
+		const protocol = resolveDynamicMemberProtocolForRequest(member, body, supportedProtocols);
 		if (reasons.length || !protocol) {
 			excluded.push({ reference: member.reference, reasons });
 		} else {
