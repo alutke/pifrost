@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.7.0 — 2026-09-30
+
+- Raised Pifrost's tested OMP baseline to 18.4.5 and Bifrost baseline to 2.2.4 so route synthesis can consume the current service-tier, pricing and reasoning capability contracts instead of relying on the 18.3.2-era model surface.
+- Expanded physical and logical route capability modelling with Tool Search, between-tools thinking, service-tier support/available tiers and OMP pricing status. Heterogeneous aliases continue to expose only capabilities that are safe across their eligible route members.
+- Extended context-aware prewalk to reject physical members that cannot satisfy a wire-level Tool Search request, between-tools thinking request or explicit service tier. Tool Search requests prefer OpenAI Responses when that is the compatible physical transport.
+- Added a capability bridge for OMP deferred-tool intent on compatible Responses routes: deferred function tools regain `defer_loading` and a server `tool_search` meta-tool after OMP serialization. The bridge is capability-gated and does not silently degrade onto Chat Completions.
+- Added between-tools thinking bridging through Bifrost. When OMP requests reasoning-off semantics on a route whose eligible members support Bifrost's between-tools contract, Pifrost emits `reasoning.type=between_tools` instead of forcing an incompatible disabled/low-effort form.
+- Extended Doctor compatibility reporting for the 18.4.5/2.2.4 baseline and Bifrost Tool Search, between-tools thinking and service-tier capability support.
+- Extended MCP diagnostics with per-client instruction caps/upstream instruction presence, Virtual MCP `instructions`/`instructions_mode`, effective repository instruction provenance and explicit 4get search-path detection for `fourget_web_search`, `fourget_news_search` and `fourget_image_search`.
+- Kept search architecture deliberately layered: 4get remains an MCP search backend and Pifrost does not introduce a synthetic `bifrost/omp-web` route or take ownership of OMP's native web-search fallback chain.
+- Advanced the model-catalog cache schema to v12 so 0.6.x cached route envelopes cannot hide the new capability metadata after upgrade.
+
+
 ## 0.6.19 — 2026-09-27
 
 - Fixed OpenRouter agentic-harness-gated free models through Bifrost. Direct testing confirmed `thinkingmachines/inkling:free` returns HTTP 403 without application attribution, succeeds with `HTTP-Referer: https://pi.dev/` plus `X-Title: pi`, fails through plain Bifrost, and succeeds when those headers are forwarded through Bifrost's `x-bf-eh-*` escape mechanism.
