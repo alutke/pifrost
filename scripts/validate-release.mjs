@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 
 const root = new URL("../", import.meta.url);
 const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
+const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8"));
 const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 
@@ -17,6 +18,10 @@ function commandError(label, result) {
 }
 
 if (!/^\d+\.\d+\.\d+$/u.test(pkg.version)) fail(`package.json version is not a release semver: ${pkg.version}`);
+if (lock?.lockfileVersion !== 3) fail(`package-lock.json must use lockfileVersion 3; got ${lock?.lockfileVersion ?? "missing"}`);
+if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.version) {
+  fail(`package-lock.json version does not match package.json ${pkg.version}`);
+}
 if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "mu"))) {
   fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
 }
