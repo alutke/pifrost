@@ -1388,12 +1388,14 @@ export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
   };
 }
 
-export function readOmpConfigValueResult(key) {
-  if (!commandExists("omp")) {
+export function readOmpConfigValueResult(key, options = {}) {
+  const exists = options.commandExists ?? commandExists;
+  const run = options.runCommand ?? runCommand;
+  if (!exists("omp")) {
     return { status: "unavailable", value: undefined, error: "`omp` is not installed or not on PATH" };
   }
   try {
-    const { stdout } = runCommand("omp", ["config", "get", key, "--json"]);
+    const { stdout } = run("omp", ["config", "get", key, "--json"]);
     const parsed = JSON.parse(stdout);
     return { status: "ok", value: parsed?.value };
   } catch (error) {
@@ -1405,14 +1407,14 @@ export function readOmpConfigValueResult(key) {
   }
 }
 
-export function readOmpConfigValue(key) {
-  const result = readOmpConfigValueResult(key);
+export function readOmpConfigValue(key, options = {}) {
+  const result = readOmpConfigValueResult(key, options);
   return result.status === "ok" ? result.value : undefined;
 }
 
-export function ompWebSearchDiagnostics() {
-  const roles = readOmpConfigValueResult("modelRoles");
-  const fallback = readOmpConfigValueResult("retry.fallbackChains");
+export function ompWebSearchDiagnostics(options = {}) {
+  const roles = readOmpConfigValueResult("modelRoles", options);
+  const fallback = readOmpConfigValueResult("retry.fallbackChains", options);
   if (roles.status !== "ok" || fallback.status !== "ok") {
     const unavailable = roles.status === "unavailable" && fallback.status === "unavailable";
     return {
