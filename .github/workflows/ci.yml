@@ -25,11 +25,11 @@ jobs:
         run: node scripts/validate-public-datasheets.mjs
       - name: Validate current OMP route envelopes
         run: npx tsx scripts/validate-current-routing.ts
-      - name: Validate Bifrost 2.0 and current 2.x contracts
+      - name: Validate Bifrost 2.2.4 and current 2.x contracts
         run: node scripts/validate-bifrost-v2-contract.mjs
-      - name: Validate released OMP 18.3.2 contracts
+      - name: Validate released OMP 18.4.5 contracts
         run: node scripts/validate-omp-18.3-contract.mjs
-      - name: Validate with released OMP 18.3.2 CLI/plugin loader
+      - name: Validate with released OMP 18.4.5 CLI/plugin loader
         run: |
           export HOME="$RUNNER_TEMP/omp-home-local"
           mkdir -p "$HOME"
