@@ -1,6 +1,4 @@
 const HOUND_COMMIT = "86d1b1329c0eed6133f29e3effe6a40a29f9dcdc";
-const sourceUrl =
-  `https://raw.githubusercontent.com/dondai1234/master-fetch/${HOUND_COMMIT}/src/master_fetch/server.py`;
 
 const expectedTools = [
   "mcp_smart_search",
@@ -11,29 +9,37 @@ const expectedTools = [
   "version",
 ];
 
-const response = await fetch(sourceUrl, {
-  headers: { "User-Agent": "pifrost-hound-contract-check" },
-});
-if (!response.ok) {
-  throw new Error(`Failed to fetch pinned Hound contract (HTTP ${response.status})`);
-}
-const source = await response.text();
-
-for (const tool of expectedTools) {
-  const token = `"name": "${tool}"`;
-  if (!source.includes(token)) {
-    throw new Error(`Pinned Hound MCP contract is missing ${tool}`);
-  }
-}
-
-for (const token of [
+const requiredServerTokens = [
   'Route("/mcp", endpoint=_StreamableHTTPASGIApp())',
   "@server.list_tools()",
   "@server.call_tool(validate_input=False)",
-]) {
-  if (!source.includes(token)) {
-    throw new Error(`Pinned Hound Streamable HTTP contract is missing: ${token}`);
+];
+
+async function fetchSource(ref) {
+  const url = `https://raw.githubusercontent.com/dondai1234/master-fetch/${ref}/src/master_fetch/server.py`;
+  const response = await fetch(url, {
+    headers: { "User-Agent": "pifrost-hound-contract-check" },
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Hound contract ${ref} (HTTP ${response.status})`);
   }
+  return await response.text();
 }
 
-console.log(`Validated Hound MCP contract at ${HOUND_COMMIT}: ${expectedTools.join(", ")}`);
+function validateSource(label, source) {
+  for (const tool of expectedTools) {
+    const token = `"name": "${tool}"`;
+    if (!source.includes(token)) {
+      throw new Error(`${label} is missing Hound MCP tool ${tool}`);
+    }
+  }
+  for (const token of requiredServerTokens) {
+    if (!source.includes(token)) {
+      throw new Error(`${label} is missing Hound Streamable HTTP contract: ${token}`);
+    }
+  }
+  console.log(`Validated ${label}: ${expectedTools.join(", ")}`);
+}
+
+validateSource(`pinned Hound ${HOUND_COMMIT}`, await fetchSource(HOUND_COMMIT));
+validateSource("current Hound master", await fetchSource("master"));
