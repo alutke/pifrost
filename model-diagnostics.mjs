@@ -3,6 +3,10 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 import { CATALOG_CACHE_SCHEMA_VERSION } from "./dist/cache-schema.js";
+import {
+  evaluateRouteMemberEligibility,
+  resolveRouteMemberProtocol,
+} from "./dist/route-eligibility.js";
 import { createDiagnosticResult, DIAGNOSTIC_STATUS } from "./diagnostic-result.mjs";
 
 export { CATALOG_CACHE_SCHEMA_VERSION as EXPECTED_CACHE_SCHEMA_VERSION } from "./dist/cache-schema.js";
@@ -57,7 +61,22 @@ export function effectiveThinking(model) {
   return { efforts: [...OMP_OPENAI_COMPAT_DEFAULT_EFFORTS], source: "omp-derived" };
 }
 
-export function readCatalog(env = process.env) {
+export const DEFAULT_CATALOG_FRESHNESS_MS = 6 * 60 * 60_000;
+
+function catalogFreshness(cache, env = process.env, now = Date.now()) {
+  const generatedAtMs = Date.parse(cache?.generatedAt ?? "");
+  if (!Number.isFinite(generatedAtMs)) {
+    return { generatedAtMs: undefined, ageMs: undefined, stale: true };
+  }
+  const configured = Number(env.PIFROST_REFRESH_INTERVAL_MS);
+  const maxFreshMs = Number.isFinite(configured) && configured > 0
+    ? Math.floor(configured)
+    : DEFAULT_CATALOG_FRESHNESS_MS;
+  const ageMs = Math.max(0, now - generatedAtMs);
+  return { generatedAtMs, ageMs, stale: ageMs >= maxFreshMs, maxFreshMs };
+}
+
+export function readCatalog(env = process.env, now = Date.now()) {
   const path = cachePath(env);
   if (!existsSync(path)) return { path, cache: undefined };
   try {
@@ -65,7 +84,7 @@ export function readCatalog(env = process.env) {
     if (cache?.schemaVersion !== CATALOG_CACHE_SCHEMA_VERSION) {
       return { path, cache: undefined, staleSchema: cache?.schemaVersion };
     }
-    return { path, cache };
+    return { path, cache, ...catalogFreshness(cache, env, now) };
   } catch {
     return { path, cache: undefined };
   }
@@ -133,9 +152,9 @@ function aliasIdFromSelector(selector) {
 export function formatEffectiveRouteReport(modelRoles, diagnostics) {
   const roles = modelRoles && typeof modelRoles === "object" && !Array.isArray(modelRoles) ? modelRoles : {};
   const byId = new Map((diagnostics ?? []).map((item) => [String(item.id).toLowerCase(), item]));
-  const lines = ["Effective OMP → Pifrost → Bifrost routes:"];
+  const lines = [];
   const entries = Object.entries(roles).sort(([a], [b]) => a.localeCompare(b));
-  if (!entries.length) return `${lines[0]}\n  unavailable (OMP modelRoles could not be read)`;
+  if (!entries.length) return "  unavailable (OMP modelRoles could not be read)";
 
   for (const [role, rawSelector] of entries) {
     const selector = String(rawSelector ?? "");
@@ -156,6 +175,13 @@ export function formatEffectiveRouteReport(modelRoles, diagnostics) {
   return lines.join("\n");
 }
 
+function diagnosticToolChoiceKind(value) {
+  if (!value) return undefined;
+  if (value === "required" || value === "any" || value === "forced") return "forced";
+  if (value === "named" || String(value).startsWith("name:")) return "named";
+  return "auto";
+}
+
 export function explainRouteRequest(diagnostic, request = {}) {
   if (!diagnostic) return { alias: undefined, members: [], error: "alias not found" };
   const inputTokens = Number.isFinite(Number(request.inputTokens)) && Number(request.inputTokens) >= 0
@@ -164,43 +190,68 @@ export function explainRouteRequest(diagnostic, request = {}) {
   const requestedOutput = Number.isFinite(Number(request.outputTokens)) && Number(request.outputTokens) > 0
     ? Math.ceil(Number(request.outputTokens))
     : Number(diagnostic.maxTokens ?? 0);
+  const supportedProtocols = ["openai-completions", "openai-responses"];
+  const toolChoiceKind = diagnosticToolChoiceKind(request.toolChoice);
   const members = (diagnostic.members ?? []).map((member) => {
-    const reasons = [];
+    if (member.status !== "resolved" || !member.capabilities) {
+      return {
+        reference: member.reference,
+        resolvedModelId: member.resolvedModelId,
+        eligible: false,
+        reasons: [member.reason ?? "route member is unresolved"],
+        notices: [],
+        protocols: member.protocols ?? [],
+      };
+    }
     const caps = member.capabilities;
-    if (member.status !== "resolved" || !caps) {
-      reasons.push(member.reason ?? "route member is unresolved");
-      return { reference: member.reference, eligible: false, reasons };
-    }
-    const outputReserve = Math.min(requestedOutput, caps.maxTokens);
-    const requiredContext = inputTokens + outputReserve;
-    if (requiredContext > caps.contextWindow) {
-      reasons.push(`context needs ${requiredContext} tokens; member supports ${caps.contextWindow}`);
-    }
-    if (request.image && !caps.image) reasons.push("no image-input support");
-    if (request.tools && !caps.tools) reasons.push("no tool support");
-    if (request.reasoning && request.tools && caps.reasoningWithTools === false) {
-      reasons.push("cannot combine reasoning with tools");
-    }
-    if (request.toolSearch) {
-      if (caps.toolSearch !== true) reasons.push("no tool-search/deferred-tool support");
-      if (!(member.protocols ?? []).includes("openai-responses")) reasons.push("tool search requires Responses transport");
-    }
-    if (request.betweenTools && caps.betweenToolsThinking !== true) {
-      reasons.push("no between-tools thinking support");
-    }
-    const tier = typeof request.serviceTier === "string" ? request.serviceTier.trim() : "";
-    if (tier && tier !== "auto") {
-      if (caps.serviceTier !== true) reasons.push("no service-tier support");
-      else if (caps.serviceTiers?.length && !caps.serviceTiers.includes(tier)) reasons.push(`service tier ${tier} unavailable`);
-    }
+    const protocol = resolveRouteMemberProtocol(
+      member.protocols,
+      supportedProtocols,
+      { toolSearch: request.toolSearch === true, defaultProtocol: "openai-completions" },
+    );
+    const result = evaluateRouteMemberEligibility({
+      contextWindow: caps.contextWindow,
+      maxTokens: caps.maxTokens,
+      input: caps.image ? ["text", "image"] : ["text"],
+      reasoning: caps.reasoning,
+      supportsTools: caps.tools,
+      supportsToolSearch: caps.toolSearch,
+      supportsServiceTier: caps.serviceTier,
+      serviceTiers: caps.serviceTiers,
+      protocols: member.protocols,
+      compat: {
+        supportsToolChoice: caps.toolChoice,
+        supportsForcedToolChoice: caps.forcedToolChoice,
+        supportsNamedToolChoice: caps.namedToolChoice,
+        supportsReasoningWithTools: caps.reasoningWithTools,
+        supportsBetweenToolsThinking: caps.betweenToolsThinking,
+        disableReasoningOnToolChoice: caps.disableReasoningOnToolChoice,
+      },
+    }, {
+      estimatedInputTokens: inputTokens,
+      outputReserveTokens: requestedOutput,
+      hasImages: request.image === true,
+      usesTools: request.tools === true || request.toolSearch === true || request.betweenTools === true,
+      usesReasoning: request.reasoning === true || request.betweenTools === true,
+      usesToolSearch: request.toolSearch === true,
+      usesBetweenToolsThinking: request.betweenTools === true,
+      toolChoicePresent: toolChoiceKind !== undefined,
+      toolChoiceKind,
+      serviceTier: request.serviceTier,
+      protocol,
+      protocolAvailable: Boolean(protocol),
+      supportedProtocols,
+    });
     return {
       reference: member.reference,
       resolvedModelId: member.resolvedModelId,
-      eligible: reasons.length === 0,
-      reasons,
-      requiredContext,
-      outputReserve,
+      eligible: result.eligible,
+      reasons: result.reasons,
+      notices: result.notices,
+      requiredContext: result.requiredContextTokens,
+      outputReserve: result.effectiveOutputReserveTokens,
       protocols: member.protocols ?? [],
+      protocol,
     };
   });
   return {
@@ -222,13 +273,14 @@ export function formatRouteExplanation(explanation) {
       `  [${member.eligible ? "ELIGIBLE" : "EXCLUDED"}] ${member.reference}${member.resolvedModelId ? ` -> ${member.resolvedModelId}` : ""}`,
     );
     if (member.reasons?.length) lines.push(`    ${member.reasons.join("; ")}`);
-    else lines.push(`    context=${member.requiredContext} output-reserve=${member.outputReserve} protocols=${member.protocols.join(",") || "unknown"}`);
+    else lines.push(`    context=${member.requiredContext} output-reserve=${member.outputReserve} protocol=${member.protocol ?? "unknown"}`);
+    if (member.notices?.length) lines.push(`    note: ${member.notices.join("; ")}`);
   }
   return lines.join("\n");
 }
 
 export function printModelDoctor(env = process.env, out = console) {
-  const { path, cache, staleSchema } = readCatalog(env);
+  const { path, cache, staleSchema, ageMs, stale } = readCatalog(env);
   out.log("\n## Pifrost model catalog\n");
   if (!cache) {
     const summary = staleSchema !== undefined
@@ -255,6 +307,10 @@ export function printModelDoctor(env = process.env, out = console) {
 
   out.log(`Cache: ${path}`);
   out.log(`Generated: ${cache.generatedAt ?? "unknown"}`);
+  if (Number.isFinite(ageMs)) {
+    const minutes = Math.floor(ageMs / 60_000);
+    out.log(`Catalog age: ${minutes}m${stale ? " (STALE; refresh recommended)" : ""}`);
+  }
   const models = Array.isArray(cache.models) ? cache.models : [];
   for (const model of models) out.log(formatModelDiagnostic(model));
 
