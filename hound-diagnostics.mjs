@@ -1,14 +1,17 @@
 const HOUND_TOOL_SPECS = Object.freeze([
-  { name: "mcp_smart_search", capability: "search", core: true },
-  { name: "mcp_smart_fetch", capability: "fetch", core: true },
-  { name: "mcp_smart_crawl", capability: "crawl", core: true },
-  { name: "mcp_screenshot", capability: "screenshot", core: false },
-  { name: "cache_clear", capability: "cache", core: false },
-  { name: "version", capability: "version", core: false },
+  { name: "mcp_smart_search", capability: "search", research: true },
+  { name: "mcp_smart_fetch", capability: "fetch", research: true },
+  { name: "mcp_smart_crawl", capability: "crawl", research: true },
+  { name: "mcp_screenshot", capability: "screenshot", research: false },
+  { name: "cache_clear", capability: "cache", research: false },
+  { name: "version", capability: "version", research: false },
 ]);
 
 export const HOUND_TOOLS = Object.freeze(HOUND_TOOL_SPECS.map((item) => item.name));
-export const HOUND_CORE_TOOLS = Object.freeze(HOUND_TOOL_SPECS.filter((item) => item.core).map((item) => item.name));
+export const HOUND_RESEARCH_TOOLS = Object.freeze(
+  HOUND_TOOL_SPECS.filter((item) => item.research).map((item) => item.name),
+);
+
 const HOUND_IDENTITY_TOOLS = Object.freeze([
   "mcp_smart_search",
   "mcp_smart_fetch",
@@ -16,9 +19,26 @@ const HOUND_IDENTITY_TOOLS = Object.freeze([
   "mcp_screenshot",
 ]);
 
+export const BIFROST_CODE_MODE_TOOLS = Object.freeze([
+  "listToolFiles",
+  "readToolFile",
+  "getToolDocs",
+  "executeToolCode",
+]);
+
+const BIFROST_IMAGE_TRANSPORT_WARNING =
+  "Hound screenshot is callable, but the current supported Bifrost MCP gateway flattens MCP ImageContent to text; multimodal screenshot delivery is not verified end-to-end.";
+
 function nonEmpty(value) {
   const text = typeof value === "string" ? value.trim() : "";
   return text || undefined;
+}
+
+function normalizeIdentity(value) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/gu, "");
 }
 
 function prefixedToolMatches(value, clientName, canonical) {
@@ -37,28 +57,37 @@ function prefixedToolMatches(value, clientName, canonical) {
   return false;
 }
 
-function canonicalHoundToolName(name, clientNames = []) {
+function suffixToolMatch(value, canonical) {
+  if (value === canonical) return true;
+  return ["-", "_", "__", ".", "/", ":"].some((separator) =>
+    value.endsWith(`${separator}${canonical}`)
+  );
+}
+
+export function canonicalHoundToolName(name, clientNames = []) {
   const value = nonEmpty(String(name ?? ""))?.toLowerCase();
   if (!value) return undefined;
 
   for (const canonical of HOUND_TOOLS) {
     if (value === canonical) return canonical;
-    if (HOUND_IDENTITY_TOOLS.includes(canonical)) {
-      if (
-        value.endsWith(`-${canonical}`) ||
-        value.endsWith(`_${canonical}`) ||
-        value.endsWith(`__${canonical}`) ||
-        value.endsWith(`.${canonical}`) ||
-        value.endsWith(`/${canonical}`) ||
-        value.endsWith(`:${canonical}`)
-      ) return canonical;
-      continue;
+    if (HOUND_IDENTITY_TOOLS.includes(canonical) && suffixToolMatch(value, canonical)) {
+      return canonical;
     }
     if (clientNames.some((clientName) => prefixedToolMatches(value, clientName, canonical))) {
       return canonical;
     }
   }
   return undefined;
+}
+
+export function canonicalCodeModeToolName(name) {
+  const value = nonEmpty(String(name ?? ""));
+  if (!value) return undefined;
+  const lower = value.toLowerCase();
+  return BIFROST_CODE_MODE_TOOLS.find((canonical) => {
+    const target = canonical.toLowerCase();
+    return lower === target || suffixToolMatch(lower, target);
+  });
 }
 
 function houndClient(client) {
@@ -69,14 +98,30 @@ function houndClient(client) {
   return HOUND_IDENTITY_TOOLS.some((name) => tools.has(name));
 }
 
-function toolStatusMap(policy, clients, liveTools) {
+function matchingPolicyClient(grant, clients) {
+  return (clients ?? []).find(
+    (item) => item?.name?.toLowerCase() === String(grant.client ?? "").toLowerCase(),
+  );
+}
+
+export function houndCodeModeClientNames(policy, clients = []) {
+  const names = [];
+  for (const grant of policy?.effective ?? []) {
+    const client = matchingPolicyClient(grant, clients);
+    if (!client?.isCodeModeClient || !houndClient(client)) continue;
+    if (!names.some((name) => name.toLowerCase() === client.name.toLowerCase())) {
+      names.push(client.name);
+    }
+  }
+  return names;
+}
+
+function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
   const granted = new Map();
   const clientRows = [];
 
   for (const grant of policy?.effective ?? []) {
-    const client = (clients ?? []).find(
-      (item) => item?.name?.toLowerCase() === String(grant.client ?? "").toLowerCase(),
-    );
+    const client = matchingPolicyClient(grant, clients);
     if (!houndClient(client)) continue;
 
     const canonicalAvailable = new Map();
@@ -102,33 +147,38 @@ function toolStatusMap(policy, clients, liveTools) {
       state: client?.state,
       sources: grant.sources ?? [],
       granted: [...canonicalGranted],
+      isCodeModeClient: client?.isCodeModeClient === true,
       serverInstructions: Boolean(client?.serverInstructions),
       maxInstructionsLength: client?.maxInstructionsLength,
     });
 
     for (const canonical of canonicalGranted) {
       const rows = granted.get(canonical) ?? [];
-      rows.push({ client: grant.client, sources: grant.sources ?? [] });
+      rows.push({
+        client: grant.client,
+        sources: grant.sources ?? [],
+        isCodeModeClient: client?.isCodeModeClient === true,
+      });
       granted.set(canonical, rows);
     }
   }
 
+  const rawLiveTools = Array.isArray(liveTools) ? liveTools : [];
   const liveKnown = liveTools !== undefined;
   const houndClientNames = clientRows.map((item) => item.name);
-  const rawLiveTools = Array.isArray(liveTools) ? liveTools : [];
   const liveCanonical = new Map();
+  const codeModeMeta = new Map();
 
-  // First identify Hound from its distinctive MCP tool contract.
   for (const tool of rawLiveTools) {
     const name = typeof tool === "string" ? tool : tool?.name;
     const canonical = canonicalHoundToolName(name);
     if (canonical && HOUND_IDENTITY_TOOLS.includes(canonical)) {
       liveCanonical.set(canonical, name);
     }
+    const codeModeCanonical = canonicalCodeModeToolName(name);
+    if (codeModeCanonical) codeModeMeta.set(codeModeCanonical, name);
   }
 
-  // Generic names such as "version" are accepted only after a Hound client
-  // has been identified by management metadata or a distinctive live tool.
   const houndIdentityKnown = houndClientNames.length > 0 ||
     HOUND_IDENTITY_TOOLS.some((name) => liveCanonical.has(name));
   if (houndIdentityKnown) {
@@ -139,19 +189,62 @@ function toolStatusMap(policy, clients, liveTools) {
     }
   }
 
-  const tools = Object.fromEntries(HOUND_TOOLS.map((name) => [name, {
-    configured: granted.has(name),
-    gatewayVisible: liveKnown ? liveCanonical.has(name) : undefined,
-    gatewayName: liveCanonical.get(name),
-    grants: granted.get(name) ?? [],
-  }]));
+  const codeModeClients = clientRows.filter((item) => item.isCodeModeClient);
+  const codeModeConfigured = codeModeClients.length > 0;
+  const codeModeProbeKnown = codeModeProbe !== undefined;
+  const codeModeTools = new Set(codeModeProbe?.ok ? codeModeProbe.tools ?? [] : []);
 
-  return { tools, clientRows, liveKnown };
+  const tools = Object.fromEntries(HOUND_TOOLS.map((name) => {
+    const classicVisible = liveCanonical.has(name);
+    const codeModeVisible = codeModeProbe?.ok === true && codeModeTools.has(name) && granted.has(name);
+    let gatewayVisible;
+    let gatewayName = liveCanonical.get(name);
+
+    if (liveKnown) {
+      if (classicVisible || codeModeVisible) {
+        gatewayVisible = true;
+        if (!gatewayName && codeModeVisible) {
+          gatewayName = `Code Mode:${codeModeProbe.fileName ?? codeModeProbe.serverName ?? "hound"}`;
+        }
+      } else if (codeModeConfigured && !codeModeProbeKnown) {
+        gatewayVisible = undefined;
+      } else {
+        gatewayVisible = false;
+      }
+    }
+
+    return [name, {
+      configured: granted.has(name),
+      gatewayVisible,
+      gatewayName,
+      grants: granted.get(name) ?? [],
+    }];
+  }));
+
+  return {
+    tools,
+    clientRows,
+    liveKnown,
+    codeMode: {
+      configured: codeModeConfigured,
+      clients: codeModeClients.map((item) => item.name),
+      metaTools: Object.fromEntries(BIFROST_CODE_MODE_TOOLS.map((name) => [name, {
+        gatewayVisible: liveKnown ? codeModeMeta.has(name) : undefined,
+        gatewayName: codeModeMeta.get(name),
+      }])),
+      gatewayMetaComplete: liveKnown
+        ? BIFROST_CODE_MODE_TOOLS.every((name) => codeModeMeta.has(name))
+        : undefined,
+      probe: codeModeProbe,
+    },
+  };
 }
 
 function capabilityStatus(tools, liveKnown, name) {
   const row = tools[name];
-  const available = liveKnown ? row?.gatewayVisible === true : row?.configured === true;
+  const available = liveKnown
+    ? row?.gatewayVisible === true
+    : row?.configured === true;
   return {
     tool: name,
     available,
@@ -161,12 +254,146 @@ function capabilityStatus(tools, liveKnown, name) {
   };
 }
 
+function mcpToolResultText(result) {
+  if (typeof result === "string") return result;
+  if (typeof result?.text === "string") return result.text;
+  const blocks = Array.isArray(result?.content) ? result.content : [];
+  return blocks
+    .map((block) => typeof block === "string" ? block : block?.type === "text" ? block.text : undefined)
+    .filter((value) => typeof value === "string")
+    .join("\n");
+}
+
+function parseCodeModeFileTree(text) {
+  const files = [];
+  const stack = [];
+  for (const line of String(text ?? "").split(/\r?\n/u)) {
+    if (!line.trim() || line.trimStart().startsWith("#")) continue;
+    const indent = line.match(/^ */u)?.[0].length ?? 0;
+    const level = Math.floor(indent / 2);
+    const token = line.trim();
+    if (token.endsWith("/")) {
+      stack[level] = token.slice(0, -1);
+      stack.length = level + 1;
+      continue;
+    }
+    if (!token.endsWith(".pyi")) continue;
+    const parts = [...stack.slice(0, level), token].filter(Boolean);
+    const path = parts.join("/");
+    if (path.startsWith("servers/")) files.push(path);
+  }
+  return [...new Set(files)];
+}
+
+function fileServerName(path) {
+  const parts = String(path ?? "").split("/");
+  if (parts[0] !== "servers" || parts.length < 2) return undefined;
+  return parts.length === 2
+    ? parts[1].replace(/\.pyi$/u, "")
+    : parts[1];
+}
+
+function houndToolsInText(text) {
+  const value = String(text ?? "");
+  return HOUND_TOOLS.filter((name) => value.includes(name));
+}
+
+function houndToolsInToolLevelFiles(files, serverName) {
+  const prefix = `servers/${serverName}/`;
+  return HOUND_TOOLS.filter((name) =>
+    files.some((file) => file === `${prefix}${name}.pyi`)
+  );
+}
+
+/**
+ * Non-destructively verify a Hound binding hidden behind Bifrost Code Mode.
+ * This performs only listToolFiles/readToolFile calls; it never invokes Hound
+ * search/fetch/crawl/browser tools or reaches the public Internet itself.
+ */
+export async function probeHoundCodeMode(callTool, clientNames = [], options = {}) {
+  if (typeof callTool !== "function") throw new Error("Code Mode probe requires a tool caller");
+
+  const listResult = await callTool("listToolFiles", {});
+  const listText = mcpToolResultText(listResult);
+  const files = parseCodeModeFileTree(listText);
+  if (!files.length) {
+    return { ok: false, error: "Bifrost Code Mode returned no virtual tool files", files: [] };
+  }
+
+  const wanted = new Set(clientNames.map(normalizeIdentity).filter(Boolean));
+  const serverNames = [...new Set(files.map(fileServerName).filter(Boolean))];
+  const orderedServers = [
+    ...serverNames.filter((name) => wanted.has(normalizeIdentity(name))),
+    ...serverNames.filter((name) => !wanted.has(normalizeIdentity(name))),
+  ];
+
+  const maxServers = Math.max(1, Number(options.maxServers ?? 20));
+  for (const serverName of orderedServers.slice(0, maxServers)) {
+    const serverFile = `servers/${serverName}.pyi`;
+    const expectedServer = wanted.has(normalizeIdentity(serverName));
+    if (files.includes(serverFile)) {
+      const readResult = await callTool("readToolFile", { fileName: serverFile });
+      const tools = houndToolsInText(mcpToolResultText(readResult));
+      if (
+        HOUND_IDENTITY_TOOLS.some((name) => tools.includes(name)) ||
+        (expectedServer && tools.length > 0)
+      ) {
+        return {
+          ok: true,
+          bindingLevel: "server",
+          serverName,
+          fileName: serverFile,
+          tools,
+          files,
+        };
+      }
+      continue;
+    }
+
+    const candidateTools = houndToolsInToolLevelFiles(files, serverName);
+    if (!candidateTools.length) continue;
+    if (
+      !expectedServer &&
+      !HOUND_IDENTITY_TOOLS.some((name) => candidateTools.includes(name))
+    ) continue;
+
+    const confirmTool =
+      candidateTools.find((name) => HOUND_IDENTITY_TOOLS.includes(name)) ??
+      candidateTools[0];
+    const confirmFile = `servers/${serverName}/${confirmTool}.pyi`;
+    const readResult = await callTool("readToolFile", { fileName: confirmFile });
+    const confirmed = houndToolsInText(mcpToolResultText(readResult));
+    if (!confirmed.includes(confirmTool)) continue;
+
+    return {
+      ok: true,
+      bindingLevel: "tool",
+      serverName,
+      fileName: confirmFile,
+      tools: candidateTools,
+      files,
+    };
+  }
+
+  return {
+    ok: false,
+    error: "No Hound tool signature was found in the repository-scoped Bifrost Code Mode virtual files",
+    files,
+  };
+}
+
 /**
  * Hound is always consumed through Bifrost MCP. Pifrost never starts Hound,
  * reaches its HTTP endpoint directly, or creates a synthetic model/route.
  */
 export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], options = {}) {
-  const { tools, clientRows, liveKnown } = toolStatusMap(policy, clients, options.liveTools);
+  const { tools, clientRows, liveKnown, codeMode } = toolStatusMap(
+    policy,
+    clients,
+    options.liveTools,
+    options.codeModeProbe,
+  );
+
   const configuredCount = HOUND_TOOLS.filter((name) => tools[name].configured).length;
   const visibleCount = HOUND_TOOLS.filter((name) => tools[name].gatewayVisible === true).length;
 
@@ -192,8 +419,43 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
     source: "OMP search configuration not inspected",
   };
 
+  const codeModeRows = clientRows.filter((item) => item.isCodeModeClient);
+  const classicRows = clientRows.filter((item) => !item.isCodeModeClient);
+  const mode = codeModeRows.length && classicRows.length
+    ? "mixed"
+    : codeModeRows.length
+      ? "code"
+      : "classic";
+
+  const searchReady = capabilities.search.available;
+  const webResearchReady = capabilities.search.available && capabilities.fetch.available;
+  const deepResearchReady = webResearchReady && capabilities.crawl.available;
+  const screenshotCallable = capabilities.screenshot.available;
+  const imageContentPreserved = options.imageContentPreserved === true;
+  const visualWebReady = screenshotCallable && imageContentPreserved;
+  const administrativeComplete = capabilities.cache.available && capabilities.version.available;
+  const contractComplete = HOUND_TOOLS.every((name) =>
+    liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true
+  );
+
+  const transportWarnings = [];
+  if (screenshotCallable && !imageContentPreserved) {
+    transportWarnings.push(BIFROST_IMAGE_TRANSPORT_WARNING);
+  }
+
+  const classicLive = HOUND_IDENTITY_TOOLS.some((name) => {
+    const gatewayName = tools[name].gatewayName;
+    return gatewayName && !String(gatewayName).startsWith("Code Mode:");
+  });
+  const codeModeLiveVerified = codeMode.configured
+    ? codeMode.gatewayMetaComplete === true && codeMode.probe?.ok === true
+    : false;
+  const liveVerified = liveKnown && (classicLive || codeModeLiveVerified || !codeMode.configured);
+
   const searchPath = capabilities.search.available
-    ? "MCP/Hound mcp_smart_search"
+    ? mode === "code" || String(capabilities.search.gatewayName ?? "").startsWith("Code Mode:")
+      ? "MCP/Hound mcp_smart_search (Bifrost Code Mode)"
+      : "MCP/Hound mcp_smart_search"
     : omp.available
       ? "OMP native web_search"
       : "unavailable";
@@ -202,19 +464,32 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
     hound: {
       available: Object.values(capabilities).some((item) => item.available),
       configured: configuredCount > 0,
-      complete: liveKnown ? visibleCount === HOUND_TOOLS.length : configuredCount === HOUND_TOOLS.length,
-      coreReady: HOUND_CORE_TOOLS.every((name) =>
-        liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true,
-      ),
+      complete: contractComplete,
+      contractComplete,
+      researchComplete: deepResearchReady,
+      administrativeComplete,
+      coreReady: deepResearchReady,
+      searchReady,
+      webResearchReady,
+      deepResearchReady,
+      screenshotCallable,
+      visualWebReady,
+      imageContentPreserved,
       configuredCount,
       visibleCount: liveKnown ? visibleCount : undefined,
-      liveVerified: liveKnown,
+      liveVerified,
+      mode,
       clients: clientRows,
       tools,
       capabilities,
       missing: HOUND_TOOLS.filter((name) =>
-        liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured,
+        liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured
       ),
+      missingResearch: HOUND_RESEARCH_TOOLS.filter((name) =>
+        liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured
+      ),
+      codeMode,
+      transportWarnings,
     },
     search: {
       path: searchPath,

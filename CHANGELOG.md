@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.8.3 — 2026-09-30
+
+- Made Hound diagnostics fully aware of Bifrost MCP Code Mode. Code-mode clients are no longer misreported as missing merely because Bifrost intentionally hides their raw tools behind `listToolFiles`, `readToolFile`, `getToolDocs` and `executeToolCode`.
+- Added a repository-key-scoped, non-destructive Code Mode verifier that inspects Bifrost's virtual `.pyi` files with `listToolFiles` + `readToolFile`, supporting both server-level and tool-level binding without invoking Hound search/fetch/crawl/browser actions.
+- Split Hound readiness into search, web research (search + fetch), deep research (search + fetch + crawl), screenshot-callable, visual-web, contract-complete and administrative-complete states instead of one overloaded core/complete label.
+- Added an explicit Bifrost image-transport warning. Current supported Bifrost MCP code flattens upstream MCP `ImageContent` to text, so Hound screenshot remains callable but Pifrost does not claim end-to-end multimodal screenshot support.
+- Preserved repository Virtual Key governance for Code Mode. Pifrost probes only through the existing Bifrost MCP endpoint and does not add a direct Hound connection or deployment/runtime management.
+- Added a generic repository-scoped MCP `tools/call` helper used by the Code Mode probe, preserving id-aware Streamable HTTP/SSE handling and the repo `x-bf-vk` credential boundary.
+- Consolidated MCP client shape normalization behind one pure implementation shared by the CLI and helper module, eliminating field drift around Code Mode, tool schemas, instruction metadata, allow-by-default and session settings.
+- Expanded Hound regression coverage for full/partial Code Mode, server- and tool-level bindings, optional-only grants, MCP tool-call transport and normalization parity.
+- Corrected the supported Hound contract pin to the actual v12.4.1 commit `1dab81b7fc03721688cfb7775fc1222c7f9805ba`. Release CI validates the pinned contract only; current Hound master moved to a scheduled upstream canary so upstream changes cannot randomly break an otherwise reproducible release.
+- Release version advanced to 0.8.3; model-catalog schema remains v14 because model/route capability metadata is unchanged.
+
 ## 0.8.2 — 2026-09-30
 
 - Removed the previous three-tool MCP search adapter completely from Pifrost runtime diagnostics, CLI output, tests and current documentation.

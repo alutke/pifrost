@@ -26,6 +26,7 @@ import {
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
 import { postMcpJsonRpc } from "./mcp-rpc.mjs";
+import { normalizeMcpClientShape } from "./mcp-client-shape.mjs";
 
 export { PifrostHttpError, requestJson };
 export { aliasIdFromRule, deriveAliasesFromRules, routingFeatureSummary, targetReference };
@@ -1237,57 +1238,7 @@ function arrayFromResponse(body, keys) {
 }
 
 export function normalizeMcpClient(client) {
-  const name = nonEmpty(client?.name) ?? nonEmpty(client?.client_name) ?? nonEmpty(client?.client_id) ?? String(client?.id ?? "");
-  const rawTools = Array.isArray(client?.tools)
-    ? client.tools
-    : Array.isArray(client?.available_tools)
-      ? client.available_tools
-      : [];
-  const toolDefinitions = rawTools
-    .map((tool) => {
-      if (typeof tool === "string") return { name: nonEmpty(tool) };
-      const name = nonEmpty(tool?.name) ?? nonEmpty(tool?.function?.name) ?? nonEmpty(tool?.tool_name);
-      if (!name) return undefined;
-      const description = nonEmpty(tool?.description) ?? nonEmpty(tool?.function?.description);
-      const inputSchema =
-        tool?.inputSchema ??
-        tool?.input_schema ??
-        tool?.parameters ??
-        tool?.function?.parameters;
-      return {
-        name,
-        ...(description ? { description } : {}),
-        ...(inputSchema && typeof inputSchema === "object" ? { inputSchema } : {}),
-      };
-    })
-    .filter(Boolean);
-  const tools = unique(toolDefinitions.map((tool) => tool.name));
-  const config = client?.config && typeof client.config === "object" && !Array.isArray(client.config)
-    ? client.config
-    : client;
-  return {
-    id: config?.client_id ?? client?.client_id ?? client?.id,
-    name: nonEmpty(config?.name) ?? name,
-    state: client?.state ?? client?.status ?? client?.connection_state,
-    disabled: Boolean(config?.disabled ?? client?.disabled),
-    allowOnAllVirtualKeys: Boolean(
-      config?.allow_by_default ??
-      client?.allow_by_default ??
-      config?.allow_on_all_virtual_keys ??
-      client?.allow_on_all_virtual_keys
-    ),
-    endpointSlug: nonEmpty(config?.endpoint_slug),
-    connectionType: nonEmpty(config?.connection_type),
-    authType: nonEmpty(config?.auth_type),
-    isCodeModeClient: Boolean(config?.is_code_mode_client),
-    toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute) ? config.tools_to_auto_execute.map(String) : [],
-    needsSessionStickiness: typeof config?.needs_session_stickiness === "boolean" ? config.needs_session_stickiness : undefined,
-    maxInstructionsLength: Number.isFinite(Number(config?.max_instructions_length)) ? Number(config.max_instructions_length) : undefined,
-    serverInstructions: nonEmpty(client?.server_instructions) ?? nonEmpty(config?.server_instructions),
-    tools,
-    toolDefinitions,
-    raw: client,
-  };
+  return normalizeMcpClientShape(client);
 }
 
 export async function listMcpClients(url, managementAuth) {
@@ -1850,6 +1801,38 @@ export async function listMcpGatewayTools(url, virtualKey, options = {}) {
       };
     })
     .filter(Boolean);
+}
+
+export async function callMcpGatewayTool(url, virtualKey, toolName, args = {}, options = {}) {
+  const name = nonEmpty(toolName);
+  if (!name) throw new Error("MCP tool name is required");
+  const { requestId = 3, ...rpcOptions } = options;
+  const request = {
+    jsonrpc: "2.0",
+    id: requestId,
+    method: "tools/call",
+    params: {
+      name,
+      arguments: args && typeof args === "object" && !Array.isArray(args) ? args : {},
+    },
+  };
+  const response = await postMcpJsonRpc(bifrostMcpUrl(url), virtualKey, request, rpcOptions);
+  if (!response.ok) throw new Error(`Bifrost MCP tools/call failed for ${name} (HTTP ${response.status})`);
+  const body = response.body;
+  if (body?.error) {
+    throw new Error(`Bifrost MCP tools/call failed for ${name}: ${body.error.message ?? JSON.stringify(body.error)}`);
+  }
+  const result = body?.result;
+  if (result?.isError === true) {
+    const text = Array.isArray(result?.content)
+      ? result.content
+        .map((block) => typeof block === "string" ? block : block?.type === "text" ? block.text : undefined)
+        .filter((value) => typeof value === "string")
+        .join("\n")
+      : "";
+    throw new Error(`Bifrost MCP tool ${name} returned an error${text ? `: ${text}` : ""}`);
+  }
+  return result;
 }
 
 export async function testMcp(url, virtualKey, options = {}) {

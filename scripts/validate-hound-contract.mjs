@@ -1,4 +1,5 @@
-const HOUND_COMMIT = "86d1b1329c0eed6133f29e3effe6a40a29f9dcdc";
+const HOUND_VERSION = "v12.4.1";
+const HOUND_COMMIT = "1dab81b7fc03721688cfb7775fc1222c7f9805ba";
 
 const expectedTools = [
   "mcp_smart_search",
@@ -41,5 +42,11 @@ function validateSource(label, source) {
   console.log(`Validated ${label}: ${expectedTools.join(", ")}`);
 }
 
-validateSource(`pinned Hound ${HOUND_COMMIT}`, await fetchSource(HOUND_COMMIT));
-validateSource("current Hound master", await fetchSource("master"));
+validateSource(
+  `supported Hound ${HOUND_VERSION} (${HOUND_COMMIT})`,
+  await fetchSource(HOUND_COMMIT),
+);
+
+if (process.env.PIFROST_HOUND_UPSTREAM_CANARY === "1") {
+  validateSource("current Hound master canary", await fetchSource("master"));
+}

@@ -197,36 +197,53 @@ Pifrost preserves the relative order of all surviving Bifrost members and never 
 
 ### Hound and MCP presentation diagnostics
 
-Repository status distinguishes the Hound/Bifrost MCP path at four levels:
+Hound remains an external repository-scoped Bifrost MCP client. Pifrost does not own its process lifecycle, browser runtime, HTTP endpoint, search engines, BYOK keys, proxy pool or cache policy.
 
-1. whether a Bifrost MCP client advertises canonical Hound tools;
-2. whether the repository Virtual Key receives those tools through a direct grant, Virtual MCP or allow-by-default client;
-3. whether the tools are actually returned by a live repository-key-scoped Bifrost MCP `tools/list`;
-4. how OMP presents the resulting MCP tool surface.
-
-Pifrost recognizes the six `master-fetch` MCP tools: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`. Recognition is tool-contract based rather than client-name based and tolerates Bifrost client prefixes on the gateway-visible name.
-
-The core research readiness check requires search + fetch + crawl. Screenshot, cache management and version reporting are surfaced independently so a lean/partial Hound grant is described accurately rather than treated as an all-or-nothing search backend.
-
-Hound is never contacted directly by Pifrost. The flow is:
+The flow remains:
 
 ```text
 OMP/model
    │
    ▼
-repository-scoped Bifrost MCP
+repository .omp/mcp.json + repo Virtual Key
+   │
+   ▼
+Bifrost MCP gateway
    │
    ▼
 Hound / master-fetch
 ```
 
-Pifrost does not own Hound process lifecycle, HTTP configuration, search-engine selection, BYOK search keys, browser escalation or cache policy.
+Pifrost recognizes the six supported Hound tools: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`. Management-side recognition uses the discovered tool contract rather than requiring the client to be literally named `hound`.
 
-OMP MCP tools are normally presented as `discoverable`; that is not synonymous with provider-side `defer_loading`. Pifrost reports the live gateway tool count and an approximate all-tools schema footprint separately from model/route Tool Search capability.
+There are two live verification paths:
 
-The same status section reads OMP's effective `modelRoles.web` and `retry.fallbackChains.web`. It distinguishes an unset role (OMP's built-in default search chain) from OMP being unavailable or the configuration read failing. Hound `mcp_smart_search` is reported as an independent MCP search path; `mcp_smart_fetch`, `mcp_smart_crawl` and `mcp_screenshot` remain web-research tools rather than synthetic OMP model roles. Live MCP Streamable HTTP responses are matched by JSON-RPC request id so notifications/unrelated SSE events cannot be mistaken for `tools/list`.
+1. **Classic MCP.** Repository-key-scoped Bifrost `tools/list` exposes the Hound tools directly. Pifrost normalizes Bifrost client prefixes back to canonical Hound names.
+2. **Bifrost Code Mode.** A code-mode Hound client intentionally disappears from the raw tool list and Bifrost exposes `listToolFiles`, `readToolFile`, `getToolDocs` and `executeToolCode` instead. Pifrost verifies those four meta-tools, calls `listToolFiles`, then uses `readToolFile` to confirm the Hound binding and exact repository-visible Hound functions. The probe supports both Bifrost server-level and tool-level Code Mode binding.
 
-The Hound upstream contract is pinned in CI to the six canonical MCP tools plus its Streamable HTTP `/mcp` endpoint. This protects Pifrost diagnostics from silently drifting if master-fetch changes its public MCP tool names.
+The Code Mode probe is deliberately non-destructive. It never invokes Hound search/fetch/crawl/screenshot, never launches Hound's browser and never makes an Internet research request. Nested Hound calls remain governed by Bifrost's repository Virtual Key and its `tools_to_execute` policy.
+
+Capability reporting is derived rather than binary:
+
+- `searchReady`: search is available.
+- `webResearchReady`: search + fetch are available.
+- `deepResearchReady`: search + fetch + crawl are available.
+- `screenshotCallable`: the screenshot tool can be invoked.
+- `visualWebReady`: screenshot content is preserved as genuine multimodal image content end-to-end.
+- `contractComplete`: all six Hound tools are repository-visible.
+- `administrativeComplete`: cache + version support are repository-visible.
+
+This distinction prevents missing `cache_clear` or `version` from making a complete research surface look unusable, and prevents search-only access from being described as deep research.
+
+#### Screenshot transport limitation
+
+The current supported Bifrost MCP implementation converts upstream MCP `ImageContent` into text while handling MCP tool results and its MCP gateway returns text tool results. Consequently, Hound `mcp_screenshot` is callable through Bifrost but the screenshot is not preserved as a native image block for OMP's multimodal model path. Pifrost reports this explicitly and does **not** mark visual web as ready. Fixing image-block passthrough belongs in Bifrost, not in Pifrost; Pifrost does not add a direct-Hound bypass because that would weaken the single Bifrost governance boundary.
+
+OMP's native `modelRoles.web` and `retry.fallbackChains.web` remain independent from Hound. An unset OMP web role is still distinguished from OMP being unavailable or its config being unreadable. Pifrost reports availability and does not choose the tool/model route.
+
+OMP MCP `discoverable` presentation, Bifrost Code Mode and provider-side `defer_loading`/Tool Search are also separate mechanisms. Pifrost reports the live gateway surface and approximate eager schema footprint without conflating those features.
+
+The release CI pins the Hound contract to **v12.4.1 / commit `1dab81b7fc03721688cfb7775fc1222c7f9805ba`**. Current Hound `master` is checked separately by a scheduled upstream canary so upstream drift remains visible without making unrelated Pifrost releases non-reproducible.
 
 ### Effective thinking display
 
