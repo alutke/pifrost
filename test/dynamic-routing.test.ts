@@ -455,3 +455,105 @@ test("context eligibility reserves the clamped member output ceiling", () => {
 	assert.deepEqual(plan.excluded, []);
 	assert.equal(plan.requiredContextTokens, 1_162_144);
 });
+
+
+test("Tool Search prewalk keeps only Responses members that explicitly support it", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		protocols: ["openai-responses", "openai-completions"],
+		supportsToolSearch: true,
+	};
+	route.members[1] = {
+		...route.members[1]!,
+		protocols: ["openai-responses"],
+		supportsToolSearch: false,
+	};
+	route.members[2] = {
+		...route.members[2]!,
+		protocols: ["openai-completions"],
+		supportsToolSearch: true,
+	};
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "search" }],
+			tools: [
+				{ type: "function", name: "fourget_web_search", parameters: { type: "object" }, defer_loading: true },
+				{ type: "tool_search", execution: "server" },
+			],
+			max_output_tokens: 32_000,
+		},
+		{ estimatedInputTokens: 2_000, outputCapExplicit: true },
+	);
+	assert.deepEqual(plan.attempts.map((attempt) => [attempt.protocol, attempt.primary]), [
+		["openai-responses", "provider/large"],
+	]);
+	assert.deepEqual(plan.excluded, [
+		{ reference: "provider/small", reasons: ["no tool-search/deferred-tool support"] },
+		{ reference: "provider/large-two", reasons: ["tool search requires Responses transport"] },
+	]);
+});
+
+test("between-tools thinking excludes members that cannot preserve the requested semantics", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		compat: { ...route.members[0]!.compat, supportsBetweenToolsThinking: true },
+	};
+	route.members[1] = {
+		...route.members[1]!,
+		compat: { ...route.members[1]!.compat, supportsBetweenToolsThinking: false },
+	};
+	route.members[2] = {
+		...route.members[2]!,
+		compat: { ...route.members[2]!.compat, supportsBetweenToolsThinking: true },
+	};
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "continue" }],
+			reasoning: { type: "between_tools" },
+			max_tokens: 32_000,
+		},
+		{ estimatedInputTokens: 2_000, outputCapExplicit: true },
+	);
+	assert.deepEqual(plan.excluded, [
+		{ reference: "provider/small", reasons: ["no between-tools thinking support"] },
+	]);
+});
+
+test("service-tier prewalk preserves only members that advertise the requested tier", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		supportsServiceTier: true,
+		serviceTiers: ["priority", "ultrafast"],
+	};
+	route.members[1] = {
+		...route.members[1]!,
+		supportsServiceTier: true,
+		serviceTiers: ["priority"],
+	};
+	route.members[2] = {
+		...route.members[2]!,
+		supportsServiceTier: false,
+	};
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "fast" }],
+			service_tier: "ultrafast",
+			max_tokens: 32_000,
+		},
+		{ estimatedInputTokens: 2_000, outputCapExplicit: true },
+	);
+	assert.equal(plan.attempts[0]?.primary, "provider/large");
+	assert.deepEqual(plan.excluded, [
+		{ reference: "provider/small", reasons: ["service tier ultrafast unavailable"] },
+		{ reference: "provider/large-two", reasons: ["no service-tier support"] },
+	]);
+});
