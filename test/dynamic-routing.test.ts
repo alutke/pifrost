@@ -480,7 +480,7 @@ test("Tool Search prewalk keeps only Responses members that explicitly support i
 			model: "omp-default",
 			messages: [{ role: "user", content: "search" }],
 			tools: [
-				{ type: "function", name: "fourget_web_search", parameters: { type: "object" }, defer_loading: true },
+				{ type: "function", name: "mcp_smart_search", parameters: { type: "object" }, defer_loading: true },
 				{ type: "tool_search", execution: "server" },
 			],
 			max_output_tokens: 32_000,
