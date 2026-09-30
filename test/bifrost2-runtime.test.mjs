@@ -10,6 +10,7 @@ import {
   detachVirtualMcpFromVirtualKey,
   getVirtualKeyQuota,
   listVirtualMcps,
+  searchBackendDiagnostics,
   testInference,
 } from "../cli-lib.mjs";
 
@@ -77,6 +78,8 @@ test("Bifrost Virtual MCP list and VK assignment helpers use the released manage
           name: "Development Tools",
           endpoint_slug: "development-tools",
           enabled: true,
+          instructions: "Use repository-safe tools.",
+          instructions_mode: "replace",
           tools: [{ mcp_client_id: "railway", tool_names: ["*"] }],
           virtual_key_ids: ["vk-repo"],
         }],
@@ -106,6 +109,8 @@ test("Bifrost Virtual MCP list and VK assignment helpers use the released manage
     const virtualMcps = await listVirtualMcps(url, auth);
     assert.equal(virtualMcps[0]?.name, "Development Tools");
     assert.deepEqual(virtualMcps[0]?.virtualKeyIds, ["vk-repo"]);
+    assert.equal(virtualMcps[0]?.instructions, "Use repository-safe tools.");
+    assert.equal(virtualMcps[0]?.instructionsMode, "replace");
     await attachVirtualMcpToVirtualKey(url, auth, 12, "vk-repo");
     await detachVirtualMcpFromVirtualKey(url, auth, 12, "vk-repo");
     assert.ok(requests.some((item) => item.method === "POST" && item.url === "/api/mcp/virtual-mcps/12/virtual-keys/vk-repo"));
@@ -169,7 +174,7 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
   try {
     const matrix = await bifrostCompatibilityMatrix({
       url,
-      version: "2.2.3",
+      version: "2.2.4",
       managementAuth: auth,
       virtualKey: "sk-bf-test",
     });
@@ -179,6 +184,9 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
       ["bifrost-session-affinity", "supported"],
       ["bifrost-pinned-fallbacks", "supported"],
       ["bifrost-quota-sourceref", "supported"],
+      ["bifrost-tool-search", "supported"],
+      ["bifrost-between-tools-thinking", "supported"],
+      ["bifrost-service-tier", "supported"],
     ]);
     assert.match(matrix.find((item) => item.id === "bifrost-pinned-fallbacks")?.detail ?? "", /object fallbacks observed=1/);
     assert.ok(requests.every((item) => item.method === "GET"));
@@ -242,4 +250,35 @@ test("compatibility doctor distinguishes contract drift, inaccessible probes and
   } finally {
     server.close();
   }
+});
+
+
+test("4get diagnostics distinguish MCP search from OMP native web search", () => {
+  const policy = {
+    effective: [{
+      client: "4get",
+      tools: ["fourget_web_search", "fourget_news_search"],
+      sources: ["virtual:Search"],
+    }],
+    virtualMcps: [{ name: "Search", enabled: true }],
+  };
+  const clients = [{
+    name: "4get",
+    tools: ["fourget_web_search", "fourget_news_search", "fourget_image_search"],
+  }];
+  const virtualMcps = [{
+    name: "Search",
+    instructions: "Prefer current sources.",
+    instructionsMode: "append",
+  }];
+  const result = searchBackendDiagnostics(policy, clients, virtualMcps);
+  assert.equal(result.preferredPath, "MCP/4get");
+  assert.equal(result.fourget.available, true);
+  assert.equal(result.fourget.complete, false);
+  assert.deepEqual(result.fourget.missing, ["fourget_image_search"]);
+  assert.deepEqual(result.instructions, [{
+    name: "Search",
+    mode: "append",
+    instructions: "Prefer current sources.",
+  }]);
 });
