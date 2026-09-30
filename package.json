@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.6.19",
+  "version": "0.7.0",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -32,6 +32,7 @@
     "protocol-capability.ts",
     "route-inventory.ts",
     "dynamic-routing.ts",
+    "capability-bridge.ts",
     "context-estimator.ts",
     "multi-protocol-routing.ts",
     "compact-before-skip.ts",
@@ -79,11 +80,11 @@
     "build:runtime": "node --no-warnings scripts/build-runtime.mjs"
   },
   "dependencies": {
-    "@oh-my-pi/pi-ai": "18.3.2",
-    "@oh-my-pi/pi-catalog": "18.3.2"
+    "@oh-my-pi/pi-ai": "18.4.5",
+    "@oh-my-pi/pi-catalog": "18.4.5"
   },
   "devDependencies": {
-    "@oh-my-pi/pi-coding-agent": "18.3.2",
+    "@oh-my-pi/pi-coding-agent": "18.4.5",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"
