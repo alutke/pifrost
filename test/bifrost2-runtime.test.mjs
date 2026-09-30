@@ -10,9 +10,9 @@ import {
   detachVirtualMcpFromVirtualKey,
   getVirtualKeyQuota,
   listVirtualMcps,
-  searchBackendDiagnostics,
   testInference,
 } from "../cli-lib.mjs";
+import { houndMcpDiagnostics } from "../hound-diagnostics.mjs";
 
 test("Bifrost 2.x control-plane probes and VK-only inference use canonical endpoints", async () => {
   const requests = [];
@@ -253,32 +253,33 @@ test("compatibility doctor distinguishes contract drift, inaccessible probes and
 });
 
 
-test("4get diagnostics distinguish MCP search from OMP native web search", () => {
+test("Hound diagnostics distinguish Bifrost MCP research from OMP native web search", () => {
   const policy = {
     effective: [{
-      client: "4get",
-      tools: ["fourget_web_search", "fourget_news_search"],
-      sources: ["virtual:Search"],
+      client: "hound",
+      tools: ["mcp_smart_search", "mcp_smart_fetch", "mcp_smart_crawl"],
+      sources: ["virtual:Research"],
     }],
-    virtualMcps: [{ name: "Search", enabled: true }],
+    virtualMcps: [{ name: "Research", enabled: true }],
   };
   const clients = [{
-    name: "4get",
-    tools: ["fourget_web_search", "fourget_news_search", "fourget_image_search"],
+    name: "hound",
+    tools: ["mcp_smart_search", "mcp_smart_fetch", "mcp_smart_crawl", "mcp_screenshot", "cache_clear", "version"],
   }];
   const virtualMcps = [{
-    name: "Search",
-    instructions: "Prefer current sources.",
+    name: "Research",
+    instructions: "Use Hound for web research.",
     instructionsMode: "append",
   }];
-  const result = searchBackendDiagnostics(policy, clients, virtualMcps);
-  assert.equal(result.preferredPath, "MCP/4get");
-  assert.equal(result.fourget.available, true);
-  assert.equal(result.fourget.complete, false);
-  assert.deepEqual(result.fourget.missing, ["fourget_image_search"]);
+  const result = houndMcpDiagnostics(policy, clients, virtualMcps);
+  assert.equal(result.hound.available, true);
+  assert.equal(result.hound.coreReady, true);
+  assert.equal(result.hound.complete, false);
+  assert.deepEqual(result.hound.missing, ["mcp_screenshot", "cache_clear", "version"]);
+  assert.equal(result.search.path, "MCP/Hound mcp_smart_search");
   assert.deepEqual(result.instructions, [{
-    name: "Search",
+    name: "Research",
     mode: "append",
-    instructions: "Prefer current sources.",
+    instructions: "Use Hound for web research.",
   }]);
 });
