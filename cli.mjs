@@ -939,13 +939,15 @@ async function commandRepoStatus(snapshot) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
       }
       console.log("Web research backends:");
-      const houndState = hound.hound.complete
-        ? "complete"
-        : hound.hound.available
-          ? "partial"
-          : hound.hound.configured
-            ? "configured but not gateway-verified"
-            : "not configured";
+      const houndState = !hound.hound.liveVerified
+        ? hound.hound.configured
+          ? "configured; gateway unverified"
+          : "not configured"
+        : hound.hound.complete
+          ? "complete"
+          : hound.hound.available
+            ? "partial"
+            : "not visible";
       console.log(`  MCP/Hound:        ${houndState}`);
       for (const client of hound.hound.clients) {
         const upstream = client.serverInstructions ? "present" : "none";
