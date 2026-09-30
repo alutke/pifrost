@@ -23,6 +23,7 @@ import {
   routeExplanationRequestFromFlags,
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
+import { houndMcpDiagnostics } from "./hound-diagnostics.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -79,7 +80,6 @@ import {
   runCommand,
   runtimeConfigFromState,
   saveState,
-  searchBackendDiagnostics,
   ompWebSearchDiagnostics,
   readOmpConfigValue,
   testInference,
@@ -920,7 +920,7 @@ async function commandRepoStatus(snapshot) {
         }
       }
       const ompSearch = ompWebSearchDiagnostics();
-      const search = searchBackendDiagnostics(policy, clients, virtualMcps, {
+      const hound = houndMcpDiagnostics(policy, clients, virtualMcps, {
         ...(liveTools ? { liveTools } : {}),
         ompSearch,
       });
@@ -937,33 +937,46 @@ async function commandRepoStatus(snapshot) {
       for (const item of policy.unresolved) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
       }
-      console.log("Search backends:");
-      console.log(`  MCP/4get:         ${search.fourget.available ? "available" : search.fourget.configured ? "configured but not gateway-verified" : "not configured"}`);
-      for (const client of search.fourget.clients) {
-        console.log(`    client=${client.name} state=${client.state ?? "unknown"} via=${client.sources.join("+") || "unknown"}`);
+      console.log("Web research backends:");
+      const houndState = hound.hound.complete
+        ? "complete"
+        : hound.hound.available
+          ? "partial"
+          : hound.hound.configured
+            ? "configured but not gateway-verified"
+            : "not configured";
+      console.log(`  MCP/Hound:        ${houndState}`);
+      for (const client of hound.hound.clients) {
+        const upstream = client.serverInstructions ? "present" : "none";
+        const cap = client.maxInstructionsLength === undefined ? "" : ` maxInstructions=${client.maxInstructionsLength}`;
+        console.log(`    client=${client.name} state=${client.state ?? "unknown"} via=${client.sources.join("+") || "unknown"} upstream-instructions=${upstream}${cap}`);
       }
-      for (const [name, status] of Object.entries(search.fourget.tools)) {
-        const gateway = status.gatewayVisible === undefined ? "unverified" : status.gatewayVisible ? `yes (${status.gatewayName ?? name})` : "no";
-        console.log(`    ${name}: configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
+      for (const [capability, status] of Object.entries(hound.hound.capabilities)) {
+        const gateway = status.gatewayVisible === undefined
+          ? "unverified"
+          : status.gatewayVisible
+            ? `yes (${status.gatewayName ?? status.tool})`
+            : "no";
+        console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
       }
+      console.log(`    core research:  ${hound.hound.coreReady ? "ready" : "incomplete"}`);
+      if (hound.hound.missing.length) console.log(`    missing:        ${hound.hound.missing.join(", ")}`);
       if (liveToolsError) console.log(`    gateway tools/list: unavailable (${liveToolsError})`);
-      console.log(`  OMP native web:   ${search.omp.available ? search.omp.source : `${search.omp.status}: ${search.omp.source}`}`);
-      if (search.omp.error) console.log(`    error:          ${search.omp.error}`);
-      if (search.omp.primary) console.log(`    primary:        ${search.omp.primary}`);
-      if (search.omp.fallbacks.length) console.log(`    fallbacks:      ${search.omp.fallbacks.join(" -> ")}`);
-      console.log("  Effective search paths:");
-      console.log(`    web:            ${search.paths.web}`);
-      console.log(`    news:           ${search.paths.news}`);
-      console.log(`    images:         ${search.paths.images}`);
-      console.log("    selection remains OMP/model-driven; Pifrost reports availability only.");
-      if (search.mcpSurface) {
+      console.log(`  OMP native web:   ${hound.search.omp.available ? hound.search.omp.source : `${hound.search.omp.status}: ${hound.search.omp.source}`}`);
+      if (hound.search.omp.error) console.log(`    error:          ${hound.search.omp.error}`);
+      if (hound.search.omp.primary) console.log(`    primary:        ${hound.search.omp.primary}`);
+      if (hound.search.omp.fallbacks.length) console.log(`    fallbacks:      ${hound.search.omp.fallbacks.join(" -> ")}`);
+      console.log(`  Search path:      ${hound.search.path}`);
+      console.log("    Hound remains a repository-scoped Bifrost MCP backend; OMP/model tool choice is unchanged.");
+      if (liveTools) {
+        const surface = mcpToolSurfaceDiagnostics(liveTools);
         console.log("MCP tool presentation:");
-        console.log(`  gateway-visible:  ${search.mcpSurface.visibleTools}`);
-        console.log(`  OMP default mode: ${search.mcpSurface.ompDefaultLoadMode} (${search.mcpSurface.discoverableTools} MCP tools)`);
-        console.log(`  schema footprint: ~${search.mcpSurface.estimatedSchemaTokens} tokens if eagerly serialized (${search.mcpSurface.schemaBytes} bytes)`);
-        console.log(`  wire deferral:    ${search.mcpSurface.providerDeferral}; discoverable is not the same as provider defer_loading`);
+        console.log(`  gateway-visible:  ${surface.visibleTools}`);
+        console.log(`  OMP default mode: ${surface.ompDefaultLoadMode} (${surface.discoverableTools} MCP tools)`);
+        console.log(`  schema footprint: ~${surface.estimatedSchemaTokens} tokens if eagerly serialized (${surface.schemaBytes} bytes)`);
+        console.log(`  wire deferral:    ${surface.providerDeferral}; discoverable is not the same as provider defer_loading`);
       }
-      for (const item of search.instructions) {
+      for (const item of hound.instructions) {
         console.log(`  VMCP instructions: ${item.name} mode=${item.mode} text=${item.instructions ? "set" : "none"}`);
       }
     } catch (error) {
