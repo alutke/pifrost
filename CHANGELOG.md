@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## 0.8.0 — 2026-09-30
+
+- Completed Doctor 2.0's effective-route view. Pifrost now joins OMP's effective `modelRoles` to each `bifrost/omp-*` alias and shows the underlying Bifrost physical members with their individual context, output, image, tool, Tool Search, between-tools-thinking, service-tier and protocol capabilities.
+- Added `pifrost routes effective` for the same role → Pifrost alias → Bifrost physical-route report outside the full doctor.
+- Added `pifrost routes explain <role|alias>` with request constraints for context/output reserve, image/tools, reasoning, Tool Search, between-tools thinking and service tier. It reports each physical member as eligible or excluded and gives the exact capability reason without taking routing ownership away from Bifrost.
+- Deepened 4get diagnostics from configuration inference to live gateway verification. Repository status now calls Bifrost MCP `tools/list` with the repository Virtual Key and recognizes canonical 4get web/news/image tools after Bifrost client-name prefixing.
+- Added dual search-path reporting: MCP/4get state is shown alongside OMP's effective native `modelRoles.web` selector and `retry.fallbackChains.web`; an unset web role is correctly reported as OMP's built-in default search chain.
+- Added MCP presentation/context diagnostics: live gateway tool count, OMP's default discoverable presentation, approximate eager schema bytes/tokens, and an explicit distinction between discoverable tools and provider-side `defer_loading`/Tool Search.
+- Preserved MCP tool schemas from Bifrost management metadata so diagnostics can measure the visible tool surface instead of counting names only.
+- Kept all new behavior diagnostic/control-plane only: Bifrost remains authoritative for physical routing and fallback, OMP remains authoritative for native web-search orchestration, and Pifrost still does not manufacture an `omp-web` model.
+- Advanced the model-catalog cache schema to v13 because route-member capability detail is now persisted for offline/effective-route diagnostics.
+
+
 ## 0.7.0 — 2026-09-30
 
 - Raised Pifrost's tested OMP baseline to 18.4.5 and Bifrost baseline to 2.2.4 so route synthesis can consume the current service-tier, pricing and reasoning capability contracts instead of relying on the 18.3.2-era model surface.
