@@ -7,6 +7,9 @@ import test from "node:test";
 import { CATALOG_CACHE_SCHEMA_VERSION } from "../cache.ts";
 import {
   EXPECTED_CACHE_SCHEMA_VERSION,
+  explainRouteRequest,
+  formatEffectiveRouteReport,
+  formatRouteExplanation,
   readCatalog,
   printModelDoctor,
 } from "../model-diagnostics.mjs";
@@ -52,4 +55,99 @@ test("schema-v12 catalog is accepted and emits the shared diagnostic result", ()
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+
+test("effective route report maps OMP roles through Pifrost aliases to physical members", () => {
+  const diagnostics = [{
+    id: "omp-default",
+    members: [{
+      reference: "openai/gpt-test",
+      resolvedModelId: "openai/gpt-test",
+      status: "resolved",
+      protocols: ["openai-responses"],
+      capabilities: {
+        contextWindow: 1000000,
+        maxTokens: 128000,
+        image: true,
+        reasoning: true,
+        tools: true,
+        toolSearch: true,
+        betweenToolsThinking: true,
+        serviceTier: true,
+        serviceTiers: ["priority"],
+      },
+    }],
+  }];
+  const report = formatEffectiveRouteReport(
+    { default: "bifrost/omp-default", web: "web/duckduckgo" },
+    diagnostics,
+  );
+  assert.match(report, /default: bifrost\/omp-default -> omp-default/u);
+  assert.match(report, /openai\/gpt-test/u);
+  assert.match(report, /toolSearch=yes/u);
+  assert.match(report, /web: web\/duckduckgo \(not Pifrost-managed\)/u);
+});
+
+test("request explanation identifies member-specific capability exclusions", () => {
+  const diagnostic = {
+    id: "omp-plan",
+    maxTokens: 128000,
+    members: [
+      {
+        reference: "openai/strong",
+        resolvedModelId: "openai/strong",
+        status: "resolved",
+        protocols: ["openai-responses"],
+        capabilities: {
+          contextWindow: 1000000,
+          maxTokens: 128000,
+          image: true,
+          reasoning: true,
+          tools: true,
+          toolSearch: true,
+          reasoningWithTools: true,
+          betweenToolsThinking: true,
+          serviceTier: true,
+          serviceTiers: ["priority", "ultrafast"],
+        },
+      },
+      {
+        reference: "deepseek/fallback",
+        resolvedModelId: "deepseek/fallback",
+        status: "resolved",
+        protocols: ["openai-completions"],
+        capabilities: {
+          contextWindow: 128000,
+          maxTokens: 32000,
+          image: false,
+          reasoning: true,
+          tools: true,
+          toolSearch: false,
+          reasoningWithTools: true,
+          betweenToolsThinking: false,
+          serviceTier: false,
+        },
+      },
+    ],
+  };
+  const result = explainRouteRequest(diagnostic, {
+    inputTokens: 120000,
+    outputTokens: 16000,
+    image: true,
+    tools: true,
+    reasoning: true,
+    toolSearch: true,
+    betweenTools: true,
+    serviceTier: "ultrafast",
+  });
+  assert.equal(result.members[0].eligible, true);
+  assert.equal(result.members[1].eligible, false);
+  assert.ok(result.members[1].reasons.some((reason) => /context needs 136000/u.test(reason)));
+  assert.ok(result.members[1].reasons.includes("no image-input support"));
+  assert.ok(result.members[1].reasons.includes("no tool-search/deferred-tool support"));
+  assert.ok(result.members[1].reasons.includes("tool search requires Responses transport"));
+  assert.ok(result.members[1].reasons.includes("no between-tools thinking support"));
+  assert.ok(result.members[1].reasons.includes("no service-tier support"));
+  assert.match(formatRouteExplanation(result), /\[EXCLUDED\] deepseek\/fallback/u);
 });
