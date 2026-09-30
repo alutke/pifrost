@@ -410,6 +410,27 @@ test("OMP web diagnostics distinguish unavailable and unreadable config from an 
   assert.match(unreadable.error, /config boom/u);
 });
 
+test("optional-only Hound grants are still recognized through the Bifrost MCP surface", () => {
+  const policy = {
+    effective: [{ client: "hound", tools: ["mcp_screenshot"], sources: ["direct"] }],
+    virtualMcps: [],
+  };
+  const clients = [{
+    name: "hound",
+    state: "connected",
+    tools: ["mcp_screenshot"],
+  }];
+  const diagnostics = houndMcpDiagnostics(policy, clients, [], {
+    liveTools: [{ name: "master-fetch-mcp_screenshot", inputSchema: { type: "object" } }],
+    ompSearch: webSearchConfigDiagnostics({}, {}),
+  });
+  assert.equal(diagnostics.hound.available, true);
+  assert.equal(diagnostics.hound.coreReady, false);
+  assert.equal(diagnostics.hound.capabilities.screenshot.available, true);
+  assert.equal(diagnostics.hound.capabilities.search.available, false);
+  assert.equal(diagnostics.search.path, "OMP native web_search");
+});
+
 test("partial Hound grants report only the capabilities actually exposed by Bifrost", () => {
   const policy = {
     effective: [{ client: "hound", tools: ["mcp_smart_search"], sources: ["direct"] }],
