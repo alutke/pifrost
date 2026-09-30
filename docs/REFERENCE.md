@@ -179,11 +179,21 @@ Model identity matching tolerates provider/aggregator prefix changes, mixed capi
 
 ### Doctor 2.0 and route explanations
 
-Pifrost persists the resolved capability surface of each physical route member, not only the conservative logical alias envelope. This lets the standalone CLI explain the effective path without becoming the router.
+Pifrost persists the resolved capability surface of each physical route member, not only the conservative logical alias envelope. This lets the standalone CLI explain compatibility without becoming the policy router.
 
-`pifrost routes effective` reads OMP's effective `modelRoles` and joins each Pifrost selector to its cached Bifrost alias and physical members. `pifrost doctor` includes the same report after model-catalog validation.
+`pifrost routes effective` reads OMP's effective `modelRoles` and joins each Pifrost selector to its cached Bifrost alias and physical members. The output includes the catalogue timestamp and age; a stale snapshot is explicitly marked because it may no longer match live Bifrost membership. `pifrost doctor` includes the same provenance/freshness information.
 
-`pifrost routes explain <role|alias>` accepts hypothetical request constraints such as `--input-tokens`, `--output-tokens`, `--image`, `--tools`, `--reasoning`, `--tool-search`, `--between-tools` and `--service-tier`. It reports each physical member as eligible or excluded with concrete reasons. The command is diagnostic only; runtime selection and fallback remain owned by Bifrost within the compatible route set.
+`pifrost routes explain <role|alias>` accepts hypothetical request constraints such as `--input-tokens`, `--output-tokens`, `--image`, `--tools`, `--reasoning`, `--tool-search`, `--between-tools`, `--tool-choice` and `--service-tier`. Runtime prewalk and the CLI call the same dependency-free eligibility evaluator, so the reported exclusions cannot drift from the routing implementation.
+
+Between-tools thinking is intentionally not a hard Pifrost exclusion. Bifrost 2.2.4+ rewrites unsupported `between_tools` fallbacks to a compatible disabled/adaptive form; Pifrost therefore keeps those members in the configured chain and reports the downgrade as a notice.
+
+Routing ownership is explicit:
+
+- **OMP** owns agent/tool orchestration and native web-search orchestration.
+- **Pifrost** owns capability/protocol compatibility prefiltering and may cross protocol groups only when an earlier group fails before emitting model output.
+- **Bifrost** owns provider/model ordering, credentials, physical policy routing, same-protocol fallbacks and governance.
+
+Pifrost preserves the relative order of all surviving Bifrost members and never reorders them for quality, cost, quota, availability preference or provider preference.
 
 ### Search and MCP presentation diagnostics
 
@@ -198,7 +208,7 @@ Canonical 4get tools are recognized after Bifrost client-name prefixing, so a cl
 
 OMP MCP tools are normally presented as `discoverable`; that is not synonymous with provider-side `defer_loading`. Pifrost reports the live gateway tool count and an approximate all-tools schema footprint separately from model/route Tool Search capability.
 
-The same status section reads OMP's effective `modelRoles.web` and `retry.fallbackChains.web`. An unset web role is reported as OMP's built-in default search chain, not as a missing native-search capability. Pifrost does not create a synthetic web model or take ownership of search-provider fallback.
+The same status section reads OMP's effective `modelRoles.web` and `retry.fallbackChains.web`. It distinguishes an unset role (OMP's built-in default search chain) from OMP being unavailable or the configuration read failing. 4get availability is modality-specific for web, news and images; a partial grant affects only the corresponding modality. Live MCP Streamable HTTP responses are matched by JSON-RPC request id so notifications/unrelated SSE events cannot be mistaken for `tools/list`. Pifrost does not create a synthetic web model or take ownership of search-provider fallback.
 
 ### Effective thinking display
 
@@ -258,7 +268,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.0
+0.8.1
 ```
 
 Bun can also install the package globally:
