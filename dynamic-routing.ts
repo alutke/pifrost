@@ -322,7 +322,7 @@ function requestUsesToolSearch(body: Record<string, unknown>): boolean {
 		if (!tool || typeof tool !== "object" || Array.isArray(tool)) return false;
 		const record = tool as Record<string, unknown>;
 		if (record.type === "tool_search") return true;
-		if (record.defer_loading === true || record.deferLoading === true) return true;
+		if (record.defer_loading === true) return true;
 		const fn = record.function;
 		return Boolean(fn && typeof fn === "object" && !Array.isArray(fn) && (fn as Record<string, unknown>).defer_loading === true);
 	});
