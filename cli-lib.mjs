@@ -25,6 +25,7 @@ import {
   targetReference,
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
+import { postMcpJsonRpc } from "./mcp-rpc.mjs";
 
 export { PifrostHttpError, requestJson };
 export { aliasIdFromRule, deriveAliasesFromRules, routingFeatureSummary, targetReference };
@@ -1901,89 +1902,41 @@ export async function upsertRepoVirtualKey({
   return vk;
 }
 
-function parseMcpResponse(text) {
-  if (!text) return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {}
-  for (const line of text.split(/\r?\n/u)) {
-    if (!line.startsWith("data:")) continue;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try {
-      return JSON.parse(payload);
-    } catch {}
-  }
-  return text;
-}
-
 export async function listMcpGatewayTools(url, virtualKey, options = {}) {
-  const endpoint = bifrostMcpUrl(url);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
-  try {
-    const fetchImpl = options.fetch ?? globalThis.fetch;
-    const response = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        "x-bf-vk": virtualKey,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const body = parseMcpResponse(text);
-    if (!response.ok) throw new Error(`Bifrost MCP tools/list failed (HTTP ${response.status})`);
-    if (body?.error) throw new Error(`Bifrost MCP tools/list failed: ${body.error.message ?? JSON.stringify(body.error)}`);
-    const rawTools = Array.isArray(body?.result?.tools) ? body.result.tools : [];
-    return rawTools
-      .map((tool) => {
-        const name = nonEmpty(tool?.name);
-        if (!name) return undefined;
-        return {
-          name,
-          ...(nonEmpty(tool?.description) ? { description: nonEmpty(tool.description) } : {}),
-          ...(tool?.inputSchema && typeof tool.inputSchema === "object" ? { inputSchema: tool.inputSchema } : {}),
-        };
-      })
-      .filter(Boolean);
-  } finally {
-    clearTimeout(timer);
-  }
+  const request = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
+  const response = await postMcpJsonRpc(bifrostMcpUrl(url), virtualKey, request, options);
+  if (!response.ok) throw new Error(`Bifrost MCP tools/list failed (HTTP ${response.status})`);
+  const body = response.body;
+  if (body?.error) throw new Error(`Bifrost MCP tools/list failed: ${body.error.message ?? JSON.stringify(body.error)}`);
+  const rawTools = Array.isArray(body?.result?.tools) ? body.result.tools : [];
+  return rawTools
+    .map((tool) => {
+      const name = nonEmpty(tool?.name);
+      if (!name) return undefined;
+      return {
+        name,
+        ...(nonEmpty(tool?.description) ? { description: nonEmpty(tool.description) } : {}),
+        ...(tool?.inputSchema && typeof tool.inputSchema === "object" ? { inputSchema: tool.inputSchema } : {}),
+      };
+    })
+    .filter(Boolean);
 }
 
-export async function testMcp(url, virtualKey) {
-  const endpoint = bifrostMcpUrl(url);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "x-bf-vk": virtualKey,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: "pifrost-cli", version: VERSION },
-        },
-      }),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const body = parseMcpResponse(text);
-    return { ok: response.ok, status: response.status, body };
-  } finally {
-    clearTimeout(timer);
-  }
+export async function testMcp(url, virtualKey, options = {}) {
+  const request = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "pifrost-cli", version: VERSION },
+    },
+  };
+  return await postMcpJsonRpc(bifrostMcpUrl(url), virtualKey, request, {
+    timeoutMs: 15_000,
+    ...options,
+  });
 }
 
 export function currentRepoState(state, cwd = process.cwd()) {
