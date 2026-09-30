@@ -67,9 +67,9 @@ That gives you five useful properties:
 | Component | Requirement |
 | --- | --- |
 | Node.js | **22.19+** |
-| OhMyPi | **18.3.2+** in the 18.x line |
-| Maxim Bifrost | **2.0.0+** |
-| Recommended Bifrost | **2.2.3+** for the complete current feature set |
+| OhMyPi | **18.4.5+** in the 18.x line |
+| Maxim Bifrost | **2.2.4+** |
+| Recommended Bifrost | **2.2.4+** for the complete current feature set |
 
 You also need:
 
@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.19
+0.7.0
 ```
 
 Bun also works:
@@ -278,6 +278,12 @@ pifrost repo vmcp list
 pifrost repo vmcp add 'Development Tools'
 pifrost repo vmcp remove 'Development Tools'
 ~~~
+
+### Search backends and 4get
+
+Pifrost treats MCP search and OMP's native <code>web_search</code> role as separate mechanisms. A 4get MCP server remains a normal repository-scoped MCP backend; Pifrost does not create a synthetic <code>omp-web</code> model for it.
+
+When the effective repository MCP policy exposes any of <code>fourget_web_search</code>, <code>fourget_news_search</code> or <code>fourget_image_search</code>, <code>pifrost repo status</code> reports <code>MCP/4get</code> as the available search path and shows missing 4get tools. OMP native web search remains independently configurable in OMP.
 
 ### MCP server instructions
 

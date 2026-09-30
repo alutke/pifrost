@@ -128,7 +128,7 @@ Pifrost integrates the Bifrost features that affect the OMP boundary: Virtual-Ke
 
 Features that are transparent gateway responsibilities remain owned by Bifrost and require no duplicate Pifrost implementation: provider adapters, semantic caching, request/response logging, OpenTelemetry, cost accounting, guardrails, fallback execution, batch handling, storage backends, and Bifrost's own dashboard/configuration. Pifrost should observe those contracts where relevant, not become a second Bifrost.
 
-One Bifrost request control is deliberately **not projected onto heterogeneous `omp-*` aliases**: `service_tier`. OMP 18.3 stores service tiers by provider family and only resolves a wire tier when the selected model has a known family. A Pifrost logical alias can resolve inside Bifrost to OpenAI, Google, DeepSeek, Xiaomi, GLM, or another family after the request has already left OMP. Inventing one family for the alias would make OMP's `/fast` state and pricing semantics wrong for valid fallbacks. Pifrost therefore leaves service-tier selection to direct/homogeneous provider routes until OMP or Bifrost exposes a route-aware tier contract.
+Pifrost 0.7 projects `service_tier` only through capability-safe routes. The logical alias advertises only service tiers common to every known route member; context-aware prewalk additionally removes a physical member when it cannot honor the specific requested tier. Bifrost still owns provider/model selection among the remaining compatible members. Pifrost does not invent a provider family or choose a faster physical model itself.
 
 ---
 
@@ -151,7 +151,10 @@ OMP only sees `bifrost/omp-slow`. Pifrost therefore calculates a conservative ca
 - reasoning = enabled only when every member supports reasoning
 - explicit thinking efforts = intersection of published effort levels
 - tool support = true only when every member advertises tool support
-- displayed cost = conservative maximum across route members
+- deferred Tool Search and between-tools thinking = enabled only when every known member can preserve the semantic contract
+- service tiers = intersection of tiers exposed by every known member
+- pricing status = preserved when uniform; reported as variable when the route mixes pricing semantics
+- displayed token cost = conservative maximum across route members
 
 If a route member cannot be resolved safely, Pifrost withholds the alias instead of fabricating metadata.
 
@@ -200,8 +203,8 @@ thinking=high,max source=explicit
 ## Requirements
 
 - Node.js **22.19 or later**
-- OhMyPi **18.3.2 or later** in the 18.x line
-- Maxim Bifrost **2.0.0 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
+- OhMyPi **18.4.5 or later** in the 18.x line
+- Maxim Bifrost **2.2.4 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
 - outbound HTTPS access to `getbifrost.ai` when refreshing public capability metadata
@@ -232,7 +235,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.6.19
+0.7.0
 ```
 
 Bun can also install the package globally:
@@ -712,16 +715,21 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ```text
 Upstream compatibility
-OMP version:             18.3.2 (Pifrost minimum 18.3.2)
-  [OK] Pifrost OMP baseline >=18.3.2 — available in OMP 18.3.2
-  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.3.2
-  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.3.2
-Bifrost version:         2.2.3 (Pifrost baseline 2.0.0)
+OMP version:             18.4.5 (Pifrost minimum 18.4.5)
+  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.4.5
+  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.4.5
+  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.4.5
+  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.4.5
+  [OK] OMP model presets >=18.4.5 — available in OMP 18.4.5
+Bifrost version:         2.2.4 (Pifrost baseline 2.2.4)
   [OK] Virtual MCPs >=2.2.0 — live API contract verified
   [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
   [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable
   [OK] Pinned routing fallbacks >=2.2.3 — version contract satisfied; routing API verified
   [OK] Quota SourceRef provenance >=2.2.3 — live quota contract verified
+  [OK] Deferred Tool Search >=2.2.4 — available in Bifrost 2.2.4
+  [OK] Between-tools thinking >=2.2.4 — available in Bifrost 2.2.4
+  [OK] Service-tier capability metadata >=2.2.4 — available in Bifrost 2.2.4
 Compatibility summary:  OK
 ```
 
@@ -798,6 +806,8 @@ railway  state=connected  tools=30
 ```
 
 On Bifrost 2.x, Pifrost also surfaces MCP-client-global capabilities such as connection/auth type, per-user OAuth/headers or token exchange, Code Mode, Agent Mode auto-execute tools, endpoint slug and session stickiness. Repository Virtual Keys continue to control only **which MCP clients/tools the repository may execute**. Pifrost deliberately does not rewrite an MCP client's global auth, Code Mode or Agent Mode configuration when assigning it to a repo.
+
+Pifrost 0.7 also reports the effective MCP instruction path: per-client upstream instructions and byte caps where Bifrost exposes them, plus Virtual MCP `instructions` and `instructions_mode`. For search, Pifrost treats 4get as an MCP backend rather than a logical model. If the effective repo policy exposes `fourget_web_search`, `fourget_news_search`, or `fourget_image_search`, `pifrost repo status` reports the MCP/4get path and any missing 4get tools. OMP's own `web_search` role remains separately owned by OMP.
 
 ### Interactive initialization
 

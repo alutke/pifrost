@@ -34,6 +34,8 @@ export interface CatalogModelLike {
 	thinkingLevelMap?: Record<string, string | null | undefined>;
 	input?: string[];
 	supportsTools?: boolean;
+	serviceTiers?: readonly string[];
+	pricingStatus?: OmpModel["pricingStatus"];
 	cost?: {
 		input?: number;
 		output?: number;
@@ -47,6 +49,7 @@ export interface CatalogModelLike {
 		supportsForcedToolChoice?: boolean;
 		supportsNamedToolChoice?: boolean;
 		supportsReasoningWithTools?: boolean;
+		supportsBetweenToolsThinking?: boolean;
 		disableReasoningOnToolChoice?: boolean;
 	};
 }
@@ -67,6 +70,11 @@ export interface CatalogCapabilityFallback {
 	supportsForcedToolChoice: boolean;
 	supportsNamedToolChoice: boolean;
 	supportsReasoningWithTools?: boolean;
+	supportsToolSearch?: boolean;
+	supportsBetweenToolsThinking?: boolean;
+	supportsServiceTier?: boolean;
+	serviceTiers?: string[];
+	pricingStatus?: OmpModel["pricingStatus"];
 	disableReasoningOnToolChoice: boolean;
 	protocols?: PifrostWireProtocol[];
 }
@@ -437,6 +445,22 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		: complete.every((model) => model.compat?.supportsReasoningWithTools === true)
 			? true
 			: undefined;
+	const betweenToolsThinking = complete.some((model) => model.compat?.supportsBetweenToolsThinking === false)
+		? false
+		: complete.every((model) => model.compat?.supportsBetweenToolsThinking === true)
+			? true
+			: undefined;
+	const serviceTierLists = complete.map((model) => model.serviceTiers?.map(String).filter(Boolean));
+	const serviceTiers = serviceTierLists.every((tiers) => Boolean(tiers?.length))
+		? [...serviceTierLists.slice(1).reduce(
+			(set, tiers) => new Set([...set].filter((tier) => tiers!.includes(tier))),
+			new Set(serviceTierLists[0]!),
+		)]
+		: undefined;
+	const pricingStates = complete.map((model) => model.pricingStatus ?? (Object.values(model.cost ?? {}).some((value) => typeof value === "number" && value > 0) ? "fixed" : "unknown"));
+	const pricingStatus: OmpModel["pricingStatus"] = new Set(pricingStates).size === 1
+		? (pricingStates[0] === "fixed" ? undefined : pricingStates[0] as OmpModel["pricingStatus"])
+		: "variable";
 	return {
 		source,
 		matched: complete.map((model) => `${model.provider ?? "unknown"}/${model.id}`),
@@ -458,6 +482,10 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		supportsForcedToolChoice: complete.every((model) => model.compat?.supportsForcedToolChoice !== false),
 		supportsNamedToolChoice: complete.every((model) => model.compat?.supportsNamedToolChoice !== false),
 		...(reasoningWithTools !== undefined ? { supportsReasoningWithTools: reasoningWithTools } : {}),
+		...(betweenToolsThinking !== undefined ? { supportsBetweenToolsThinking: betweenToolsThinking } : {}),
+		supportsServiceTier: complete.every((model) => (model.serviceTiers?.length ?? 0) > 0),
+		...(serviceTiers?.length ? { serviceTiers } : {}),
+		...(pricingStatus ? { pricingStatus } : {}),
 		disableReasoningOnToolChoice: complete.some((model) => model.compat?.disableReasoningOnToolChoice === true),
 		...(protocols ? { protocols } : {}),
 	};

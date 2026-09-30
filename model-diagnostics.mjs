@@ -25,6 +25,15 @@ const CAPABILITY_KEYS = Object.freeze([
   "reasoning",
   "reasoningEfforts",
   "tools",
+  "toolChoice",
+  "forcedToolChoice",
+  "namedToolChoice",
+  "reasoningWithTools",
+  "toolSearch",
+  "betweenToolsThinking",
+  "serviceTier",
+  "serviceTiers",
+  "pricingStatus",
   "protocol",
 ]);
 
@@ -71,7 +80,13 @@ export function formatModelDiagnostic(model) {
   const dynamic = route?.mode === "context-aware"
     ? ` dynamic-context=${route.staticContextWindow}->${route.advertisedContextWindow}`
     : "";
-  return `${String(model?.id ?? "").padEnd(16)} context=${String(model?.contextWindow ?? "-").padEnd(8)} max=${String(model?.maxTokens ?? "-").padEnd(8)} thinking=${effortText.padEnd(24)} images=${images}${source}${dynamic}`;
+  const modern = [
+    model?.supportsToolSearch === true ? "tool-search" : undefined,
+    model?.compat?.supportsBetweenToolsThinking === true ? "between-tools" : undefined,
+    model?.supportsServiceTier === true ? `service-tier[${(model.serviceTiers ?? []).join(",")}]` : undefined,
+    model?.pricingStatus ? `pricing=${model.pricingStatus}` : undefined,
+  ].filter(Boolean);
+  return `${String(model?.id ?? "").padEnd(16)} context=${String(model?.contextWindow ?? "-").padEnd(8)} max=${String(model?.maxTokens ?? "-").padEnd(8)} thinking=${effortText.padEnd(24)} images=${images}${source}${dynamic}${modern.length ? ` capabilities=${modern.join(",")}` : ""}`;
 }
 
 export function formatCapabilitySources(sources) {

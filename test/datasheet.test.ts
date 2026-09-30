@@ -404,3 +404,46 @@ test("rich route diagnostics retain Bifrost time-of-day pricing without changing
 	assert.equal(catalog.models[0]?.cost.input, 0.44);
 	assert.equal(catalog.diagnostics[0]?.members?.[0]?.pricing?.pricingKey, "deepseek/deepseek-v4-flash");
 });
+
+
+test("Bifrost 2.2.4 datasheet metadata enriches Tool Search, between-tools thinking and service tiers", () => {
+	const modernAliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-modern": ["provider/modern"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("provider/modern")],
+		modernAliases,
+		{
+			pricing: {
+				"provider/modern": {
+					provider: "provider",
+					mode: "chat",
+					context_length: 256_000,
+					max_output_tokens: 32_000,
+					input_cost_per_token: 0.000001,
+					output_cost_per_token: 0.000002,
+					architecture: { input_modalities: ["text"] },
+				},
+			},
+			parameters: {
+				"provider/modern": {
+					provider: "provider",
+					supports_function_calling: true,
+					supports_reasoning: true,
+					supports_tool_search: true,
+					supports_between_tools_thinking: true,
+					supports_service_tier: true,
+					service_tiers: ["priority", "ultrafast"],
+				},
+			},
+		},
+		[],
+	);
+	assert.equal(rich.models[0]?.supportsToolSearch, true);
+	assert.equal(rich.models[0]?.compat.supportsBetweenToolsThinking, true);
+	assert.equal(rich.models[0]?.supportsServiceTier, true);
+	assert.deepEqual(rich.models[0]?.serviceTiers, ["priority", "ultrafast"]);
+	assert.equal(rich.models[0]?.capabilitySources?.toolSearch, "bifrost-datasheet");
+	assert.equal(rich.models[0]?.capabilitySources?.betweenToolsThinking, "bifrost-datasheet");
+});

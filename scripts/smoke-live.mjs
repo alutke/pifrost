@@ -68,8 +68,8 @@ async function main() {
   const version = await getBifrostVersion(url);
   const parsed = parseSemver(version);
   if (!parsed) throw new Error(`Bifrost returned an unparseable version: ${version ?? "missing"}`);
-  if (versionAtLeast(parsed, "2.2.3") !== true) {
-    throw new Error(`Live smoke requires Bifrost >=2.2.3; detected ${parsed.version}`);
+  if (versionAtLeast(parsed, "2.2.4") !== true) {
+    throw new Error(`Live smoke requires Bifrost >=2.2.4; detected ${parsed.version}`);
   }
   console.log(`[OK] version ${parsed.version}`);
 

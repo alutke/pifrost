@@ -73,7 +73,9 @@ test("maps rich Bifrost model metadata to canonical OMP thinking metadata", () =
 		context_length: 1_000_000,
 		max_output_tokens: 128_000,
 		architecture: { input_modalities: ["text", "image"] },
-		supported_parameters: ["tools", "reasoning_effort"],
+		supported_parameters: ["tools", "reasoning_effort", "defer_loading", "service_tier"],
+		service_tiers: ["priority", { id: "ultrafast" }],
+		pricing_status: "included",
 		reasoning: { supported_efforts: ["low", "high", "max"], default_effort: "high" },
 	});
 	assert.ok(mapped);
@@ -85,6 +87,10 @@ test("maps rich Bifrost model metadata to canonical OMP thinking metadata", () =
 	assert.equal(mapped.thinking?.mode, "effort");
 	assert.deepEqual(mapped.thinking?.efforts.map(String), ["low", "high", "max"]);
 	assert.equal(String(mapped.thinking?.defaultLevel), "high");
+	assert.equal(mapped.supportsToolSearch, true);
+	assert.equal(mapped.supportsServiceTier, true);
+	assert.deepEqual(mapped.serviceTiers, ["priority", "ultrafast"]);
+	assert.equal(mapped.pricingStatus, "included");
 });
 
 test("maps Bifrost 2.x reasoning effort none onto OMP minimal wire semantics", () => {
@@ -415,4 +421,75 @@ test("doctor report surfaces routing key pins without exposing credentials", () 
 	const report = formatDoctorReport([result.diagnostic]);
 	assert.match(report, /pinned-target: one \[key-id=key-123\]/);
 	assert.match(report, /pinned-fallback: one \[provider-key=Provider Primary\]/);
+});
+
+
+test("alias intersects Tool Search, between-tools thinking and service tiers conservatively", () => {
+	const commonCompat = {
+		supportsDeveloperRole: false,
+		supportsReasoningEffort: true,
+		supportsUsageInStreaming: true,
+		supportsBetweenToolsThinking: true,
+	};
+	const result = synthesizeAlias(
+		"modern-capabilities",
+		["one", "two"],
+		[
+			model("one", {
+				reasoning: true,
+				supportsToolSearch: true,
+				supportsServiceTier: true,
+				serviceTiers: ["priority", "ultrafast"],
+				pricingStatus: "included",
+				compat: commonCompat,
+			}),
+			model("two", {
+				reasoning: true,
+				supportsToolSearch: true,
+				supportsServiceTier: true,
+				serviceTiers: ["priority"],
+				pricingStatus: "free",
+				compat: commonCompat,
+			}),
+		],
+	);
+	assert.ok(result.model);
+	assert.equal(result.model.supportsToolSearch, true);
+	assert.equal(result.model.supportsServiceTier, true);
+	assert.deepEqual(result.model.serviceTiers, ["priority"]);
+	assert.equal(result.model.compat.supportsBetweenToolsThinking, true);
+	assert.equal(result.model.pricingStatus, "variable");
+	assert.equal(result.diagnostic.toolSearch, true);
+	assert.equal(result.diagnostic.betweenToolsThinking, true);
+	assert.deepEqual(result.diagnostic.serviceTiers, ["priority"]);
+});
+
+test("alias with one incompatible fallback does not advertise Tool Search or between-tools thinking", () => {
+	const result = synthesizeAlias(
+		"mixed-modern-capabilities",
+		["one", "two"],
+		[
+			model("one", {
+				supportsToolSearch: true,
+				compat: {
+					supportsDeveloperRole: false,
+					supportsReasoningEffort: true,
+					supportsUsageInStreaming: true,
+					supportsBetweenToolsThinking: true,
+				},
+			}),
+			model("two", {
+				supportsToolSearch: false,
+				compat: {
+					supportsDeveloperRole: false,
+					supportsReasoningEffort: true,
+					supportsUsageInStreaming: true,
+					supportsBetweenToolsThinking: false,
+				},
+			}),
+		],
+	);
+	assert.ok(result.model);
+	assert.equal(result.model.supportsToolSearch, false);
+	assert.equal(result.model.compat.supportsBetweenToolsThinking, false);
 });

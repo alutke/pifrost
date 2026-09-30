@@ -49,6 +49,11 @@ export interface DatasheetCapabilitySources {
 	forcedToolChoice?: CapabilitySource;
 	namedToolChoice?: CapabilitySource;
 	reasoningWithTools?: CapabilitySource;
+	toolSearch?: CapabilitySource;
+	betweenToolsThinking?: CapabilitySource;
+	serviceTier?: CapabilitySource;
+	serviceTiers?: CapabilitySource;
+	pricingStatus?: CapabilitySource;
 	protocol?: CapabilitySource;
 }
 
@@ -84,6 +89,10 @@ export interface ModelParameterEntry {
 	supports_tool_choice?: boolean;
 	supports_forced_tool_choice?: boolean;
 	supports_reasoning_with_tool_calls?: boolean;
+	supports_tool_search?: boolean;
+	supports_between_tools_thinking?: boolean;
+	supports_service_tier?: boolean;
+	service_tiers?: string[];
 	tool_choice_struct_supported?: boolean;
 	unsupported_fields?: Record<string, boolean>;
 	supports_reasoning?: boolean;
@@ -617,6 +626,45 @@ export function buildRichRouteCatalog(
 			catalog?.supportsReasoningWithTools,
 			catalogCapabilitySource,
 		);
+		const toolSearch = selectBooleanCapability(
+			liveModel.supportsToolSearch,
+			liveModel.capabilitySources?.toolSearch,
+			parameters?.value.supports_tool_search,
+			sheetSource(parameters, "toolSearch"),
+			vendor?.supportsToolSearch,
+			catalog?.supportsToolSearch,
+			catalogCapabilitySource,
+		);
+		const betweenToolsThinking = selectBooleanCapability(
+			liveModel.compat.supportsBetweenToolsThinking,
+			liveModel.capabilitySources?.betweenToolsThinking,
+			parameters?.value.supports_between_tools_thinking,
+			sheetSource(parameters, "betweenToolsThinking"),
+			vendor?.supportsBetweenToolsThinking,
+			catalog?.supportsBetweenToolsThinking,
+			catalogCapabilitySource,
+		);
+		const serviceTier = selectBooleanCapability(
+			liveModel.supportsServiceTier,
+			liveModel.capabilitySources?.serviceTier,
+			parameters?.value.supports_service_tier,
+			sheetSource(parameters, "serviceTier"),
+			vendor?.supportsServiceTier,
+			catalog?.supportsServiceTier,
+			catalogCapabilitySource,
+		);
+		const serviceTiers = liveModel.serviceTiers?.length
+			? { value: [...liveModel.serviceTiers], source: liveModel.capabilitySources?.serviceTiers ?? "live" as CapabilitySource }
+			: parameters?.value.service_tiers?.length
+				? { value: unique(parameters.value.service_tiers.map(String)), source: sheetSource(parameters, "serviceTiers") ?? "bifrost-datasheet" as CapabilitySource }
+				: catalog?.serviceTiers?.length
+					? { value: [...catalog.serviceTiers], source: catalogCapabilitySource }
+					: {};
+		const pricingStatus = liveModel.pricingStatus ?? catalog?.pricingStatus;
+		const pricingStatusSource = liveModel.pricingStatus
+			? (liveModel.capabilitySources?.pricingStatus ?? "live" as CapabilitySource)
+			: catalog?.pricingStatus ? catalogCapabilitySource : undefined;
+
 		const disableReasoningOnToolChoice =
 			vendor?.disableReasoningOnToolChoice ??
 			catalog?.disableReasoningOnToolChoice ??
@@ -642,6 +690,11 @@ export function buildRichRouteCatalog(
 			forcedToolChoice: forcedToolChoice.source,
 			namedToolChoice: namedToolChoice.source,
 			reasoningWithTools: reasoningWithTools.source,
+			toolSearch: toolSearch.source,
+			betweenToolsThinking: betweenToolsThinking.source,
+			serviceTier: serviceTier.source,
+			serviceTiers: serviceTiers.source,
+			pricingStatus: pricingStatusSource,
 			protocol: protocols.source,
 		};
 
@@ -657,6 +710,10 @@ export function buildRichRouteCatalog(
 			reasoning: Boolean(reasoning.value),
 			thinking: reasoning.value ? thinking.value : undefined,
 			supportsTools: Boolean(tools.value),
+			supportsToolSearch: toolSearch.value,
+			supportsServiceTier: serviceTier.value,
+			...(serviceTiers.value?.length ? { serviceTiers: [...serviceTiers.value] } : {}),
+			...(pricingStatus ? { pricingStatus } : {}),
 			...(protocols.value?.length ? { protocols: [...protocols.value] } : {}),
 			capabilitySources: sources,
 			cost: {
@@ -674,6 +731,7 @@ export function buildRichRouteCatalog(
 				supportsForcedToolChoice: forcedToolChoice.value ?? liveModel.compat.supportsForcedToolChoice ?? true,
 				supportsNamedToolChoice: namedToolChoice.value ?? liveModel.compat.supportsNamedToolChoice ?? true,
 				supportsReasoningWithTools: reasoning.value ? reasoningWithTools.value : true,
+				supportsBetweenToolsThinking: betweenToolsThinking.value,
 				disableReasoningOnToolChoice: reasoning.value ? disableReasoningOnToolChoice : false,
 			},
 		});

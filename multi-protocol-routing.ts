@@ -58,6 +58,8 @@ export function createPifrostAttemptModelSpec(
 		maxTokens: primary.maxTokens,
 		input: [...primary.input],
 		reasoning: primary.reasoning,
+		supportsTools: primary.supportsTools,
+		...(primary.serviceTiers?.length ? { serviceTiers: [...primary.serviceTiers] } : {}),
 	};
 	if (attempt.protocol === "openai-responses") {
 		return {
