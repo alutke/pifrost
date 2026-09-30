@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.7.0
+0.8.0
 ```
 
 Bun also works:
@@ -150,6 +150,7 @@ For narrower checks:
 ~~~bash
 pifrost global status
 pifrost routes list
+pifrost routes effective
 pifrost models doctor
 ~~~
 
@@ -179,6 +180,21 @@ pifrost routes diff
 pifrost routes sync
 pifrost doctor
 ~~~
+
+For an effective role-to-physical-route view:
+
+~~~bash
+pifrost routes effective
+~~~
+
+To explain why physical members would be eligible or excluded for a hypothetical request:
+
+~~~bash
+pifrost routes explain plan --input-tokens 120000 --output-tokens 16000 --tools --reasoning
+pifrost routes explain plan --tool-search --service-tier ultrafast
+~~~
+
+The explanation uses the same capability semantics as runtime prewalk: context/output reserve, image/tool support, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking, and service-tier availability.
 
 ### How capability safety works
 
@@ -283,7 +299,11 @@ pifrost repo vmcp remove 'Development Tools'
 
 Pifrost treats MCP search and OMP's native <code>web_search</code> role as separate mechanisms. A 4get MCP server remains a normal repository-scoped MCP backend; Pifrost does not create a synthetic <code>omp-web</code> model for it.
 
-When the effective repository MCP policy exposes any of <code>fourget_web_search</code>, <code>fourget_news_search</code> or <code>fourget_image_search</code>, <code>pifrost repo status</code> reports <code>MCP/4get</code> as the available search path and shows missing 4get tools. OMP native web search remains independently configurable in OMP.
+<code>pifrost repo status</code> now verifies this at two levels: the Bifrost management policy and a live, repository-key-scoped <code>tools/list</code> call against the MCP gateway. It recognizes the canonical 4get tool names even when Bifrost prefixes them with the MCP client name (for example <code>fourget-fourget_web_search</code>).
+
+The same report shows OMP's native <code>modelRoles.web</code> selector and configured web fallback chain alongside MCP/4get. If no explicit OMP web role is set, Pifrost reports that OMP's built-in default search chain applies. The displayed preferred path is diagnostic policy only; Pifrost does not replace OMP/model tool choice or introduce a synthetic <code>omp-web</code> model.
+
+Pifrost also reports the live MCP tool count, OMP's default <code>discoverable</code> presentation for MCP tools, and an approximate schema footprint if all visible tools were eagerly serialized. Discoverable presentation and provider-side <code>defer_loading</code>/Tool Search are reported separately because they are different mechanisms.
 
 ### MCP server instructions
 
