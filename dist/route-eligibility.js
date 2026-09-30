@@ -1,8 +1,54 @@
+                                                              
+
+                                         
+	                      
+	                  
+	                                     
+	                   
+	                       
+	                             
+	                              
+	                                 
+	                              
+	         
+		                             
+		                                   
+		                                  
+		                                     
+		                                       
+		                                       
+	  
+ 
+
+                                           
+	                             
+	                            
+	                   
+	                   
+	                       
+	                        
+	                                  
+	                           
+	                                     
+	                     
+	                  
+	                           
+	                                       
+ 
+
+                                         
+	                  
+	                  
+	                  
+	                                     
+	                              
+ 
+
 export function resolveRouteMemberProtocol(
-	protocols,
-	supportedProtocols,
-	options = {},
-) {
+	protocols                               ,
+	supportedProtocols                   ,
+	options                                                     = {},
+)                     {
 	const defaultProtocol = options.defaultProtocol ?? "openai-completions";
 	if (!protocols?.length) {
 		return supportedProtocols.includes(defaultProtocol) ? defaultProtocol : supportedProtocols[0];
@@ -31,11 +77,11 @@ export function resolveRouteMemberProtocol(
  * chain while Pifrost remains responsible only for request/protocol safety.
  */
 export function evaluateRouteMemberEligibility(
-	member,
-	request,
-) {
-	const reasons = [];
-	const notices = [];
+	member                        ,
+	request                          ,
+)                         {
+	const reasons           = [];
+	const notices           = [];
 
 	if (!request.protocolAvailable) {
 		const advertised = member.protocols?.length ? member.protocols.join(",") : "unknown";
@@ -103,3 +149,6 @@ export function evaluateRouteMemberEligibility(
 		requiredContextTokens,
 	};
 }
+
+
+//# sourceURL=/home/runner/work/pifrost/pifrost/route-eligibility.ts
