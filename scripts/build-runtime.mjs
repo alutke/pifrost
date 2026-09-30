@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(fileURLToPath(new URL("../", import.meta.url)));
 const outDir = resolve(root, "dist");
-const sources = ["config-store.ts", "routing-core.ts", "cache-schema.ts"];
+const sources = ["config-store.ts", "routing-core.ts", "route-eligibility.ts", "cache-schema.ts"];
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
