@@ -102,7 +102,7 @@ Usage:
   pifrost routes sync [--no-refresh]
   pifrost routes diagnose
   pifrost routes effective
-  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--service-tier tier]
+  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
   pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions]
@@ -713,13 +713,18 @@ function currentOmpModelRoles() {
 }
 
 function commandRoutesEffective() {
-  const { path, cache, staleSchema } = readCatalog();
+  const { path, cache, staleSchema, ageMs, stale } = readCatalog();
   printHeader("Effective OMP → Pifrost → Bifrost routes");
   if (!cache) {
     console.log(`Model catalog unavailable at ${path}${staleSchema !== undefined ? ` (schema ${staleSchema} is stale)` : ""}.`);
     console.log("Run: pifrost models refresh --force");
     process.exitCode = 2;
     return;
+  }
+  if (Number.isFinite(ageMs)) {
+    const minutes = Math.floor(ageMs / 60_000);
+    console.log(`Catalog snapshot: ${cache.generatedAt ?? "unknown"}; age=${minutes}m${stale ? " STALE" : ""}`);
+    if (stale) console.log("WARN route membership may have changed in Bifrost; run `pifrost models refresh --force` for a fresh effective view.");
   }
   console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
 }
@@ -756,6 +761,7 @@ function commandRoutesExplain(input, flags = {}) {
     reasoning: flags.reasoning === true || flags["between-tools"] === true,
     toolSearch: flags["tool-search"] === true,
     betweenTools: flags["between-tools"] === true,
+    toolChoice: flagString(flags, "tool-choice"),
     serviceTier: flagString(flags, "service-tier"),
   });
   printHeader(`Route request: ${input}`);
