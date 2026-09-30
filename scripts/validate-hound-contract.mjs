@@ -28,8 +28,8 @@ for (const tool of expectedTools) {
 
 for (const token of [
   'Route("/mcp", endpoint=_StreamableHTTPASGIApp())',
-  'method == "tools/list"',
-  'method == "tools/call"',
+  "@server.list_tools()",
+  "@server.call_tool(validate_input=False)",
 ]) {
   if (!source.includes(token)) {
     throw new Error(`Pinned Hound Streamable HTTP contract is missing: ${token}`);
