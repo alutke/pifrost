@@ -1026,7 +1026,23 @@ export async function buildCompatibilityMatrix({
           minimum: "18.3.1",
           status: "unavailable",
           detail: "OMP is not installed or not on PATH",
-          impact: "Future cfg:// integration is unavailable",
+          impact: "cfg:// integration is unavailable",
+        },
+        {
+          id: "omp-modern-model-metadata",
+          label: "OMP 18.4 model capability metadata",
+          minimum: "18.4.5",
+          status: "unavailable",
+          detail: "OMP is not installed or not on PATH",
+          impact: "Service tiers, pricing status and current model-role semantics cannot be trusted",
+        },
+        {
+          id: "omp-model-presets",
+          label: "OMP model presets",
+          minimum: "18.4.5",
+          status: "unavailable",
+          detail: "OMP is not installed or not on PATH",
+          impact: "OMP-owned model preset workflows are unavailable",
         },
       ];
 
