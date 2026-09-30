@@ -60,6 +60,7 @@ import {
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
+import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import {
 	activePifrostCfgSession,
 	applyPifrostOmpProfile,
@@ -94,7 +95,9 @@ function nonEmpty(value: string | undefined): string | undefined {
 function normalizePifrostReasoningOptions(
 	model: Model,
 	options: SimpleStreamOptions | undefined,
+	allowBetweenToolsThinking = false,
 ): SimpleStreamOptions | undefined {
+	if (allowBetweenToolsThinking && options?.disableReasoning === true) return options;
 	if (
 		!model.reasoning ||
 		!model.thinking?.requiresEffort ||
@@ -148,13 +151,20 @@ function dynamicRoutePlanningBody(
 	model: Model,
 	context: Context,
 	options: SimpleStreamOptions | undefined,
+	capabilities: { deferredTools: ReadonlySet<string>; betweenToolsThinking: boolean },
 ): Record<string, unknown> {
 	const body: Record<string, unknown> = {
 		model: model.id,
 		messages: context.messages,
 		max_completion_tokens: options?.maxTokens ?? model.maxTokens,
 	};
-	if (context.tools?.length) body.tools = context.tools;
+	if (context.tools?.length) {
+		body.tools = capabilities.deferredTools.size
+			? [...context.tools, { type: "tool_search" }]
+			: context.tools;
+	}
+	if (options?.serviceTier) body.service_tier = options.serviceTier;
+	if (capabilities.betweenToolsThinking) body.reasoning = { type: "between_tools" };
 	const toolChoice = mapPifrostOpenAIToolChoice(options?.toolChoice);
 	if (toolChoice !== undefined) body.tool_choice = toolChoice;
 	if (!options?.disableReasoning && !options?.forceReasoningOff) {
@@ -192,7 +202,9 @@ function streamDynamicPifrostRoute(
 	sessionId: string,
 	profile: DynamicRouteProfile,
 ) {
-	const planningBody = dynamicRoutePlanningBody(model, context, options);
+	const deferredTools = deferredToolNames(context.tools);
+	const betweenToolsThinking = options?.disableReasoning === true && profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true);
+	const planningBody = dynamicRoutePlanningBody(model, context, options, { deferredTools, betweenToolsThinking });
 	const estimatedInputTokens = estimateOmpContextInputTokens(
 		context,
 		createApproximateContextTokenizer(),
@@ -210,6 +222,7 @@ function streamDynamicPifrostRoute(
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
 		if (attempt.protocol === "openai-responses") {
+			const upstreamOnPayload = options?.onPayload;
 			const responseOptions: OpenAIResponsesOptions = {
 				...options,
 				apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -223,6 +236,14 @@ function streamDynamicPifrostRoute(
 				maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 				promptCache: options?.promptCache,
 				statefulResponses: false,
+				onPayload: async (payload, requestModel, signal) => {
+					const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
+					return bridgePifrostPayload(upstream, {
+						deferredTools,
+						enableToolSearch: deferredTools.size > 0,
+						betweenToolsThinking,
+					});
+				},
 				extraBody: bifrostAttemptExtraBody(attempt),
 				fetch: baseFetch,
 			};
@@ -233,6 +254,7 @@ function streamDynamicPifrostRoute(
 			);
 		}
 
+		const upstreamOnPayload = options?.onPayload;
 		const chatOptions: OpenAICompletionsOptions = {
 			...options,
 			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -245,6 +267,12 @@ function streamDynamicPifrostRoute(
 			openrouterVariant: options?.openrouterVariant,
 			maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 			promptCache: options?.promptCache,
+			onPayload: betweenToolsThinking
+				? async (payload, requestModel, signal) => {
+					const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
+					return bridgePifrostPayload(upstream, { betweenToolsThinking: true });
+				}
+				: upstreamOnPayload,
 			fetch: baseFetch,
 		};
 		return streamOpenAICompletions(
@@ -275,8 +303,11 @@ function streamPifrostOpenAI(
 		throw new Error("Pifrost requires OMP to supply an inference session id");
 	}
 	recordAgentRequest(sessionId, model.id);
-	const options = normalizePifrostReasoningOptions(model, rawOptions);
 	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
+	const allowBetweenToolsThinking = profile
+		? profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true)
+		: model.compat.supportsBetweenToolsThinking === true;
+	const options = normalizePifrostReasoningOptions(model, rawOptions, allowBetweenToolsThinking);
 	if (profile) {
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}
@@ -290,6 +321,8 @@ function streamPifrostOpenAI(
 		compat: model.compatConfig,
 	} as ModelSpec<"openai-completions">);
 	const baseFetch = options?.fetch ?? globalThis.fetch;
+	const upstreamOnPayload = options?.onPayload;
+	const betweenToolsThinking = options?.disableReasoning === true && model.compat.supportsBetweenToolsThinking === true;
 	const streamOptions: OpenAICompletionsOptions = {
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -302,6 +335,12 @@ function streamPifrostOpenAI(
 		openrouterVariant: options?.openrouterVariant,
 		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 		promptCache: options?.promptCache,
+		onPayload: betweenToolsThinking
+			? async (payload, requestModel, signal) => {
+				const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
+				return bridgePifrostPayload(upstream, { betweenToolsThinking: true });
+			}
+			: upstreamOnPayload,
 		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes, {
 			outputCapExplicit: rawOptions?.maxTokens !== undefined,
 		}),
