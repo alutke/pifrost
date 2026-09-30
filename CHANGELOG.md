@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.8.2 — 2026-09-30
+
+- Removed the previous three-tool MCP search adapter completely from Pifrost runtime diagnostics, CLI output, tests and current documentation.
+- Added first-class diagnostics for Hound / `master-fetch` when it is exposed **only through repository-scoped Bifrost MCP**. Pifrost does not install, start, proxy or connect directly to Hound.
+- Detects Hound by its six canonical MCP tools rather than by Bifrost client name: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`.
+- Normalizes Bifrost-prefixed gateway tool names back to the canonical Hound contract and distinguishes configured grants from tools actually visible through the repository Virtual Key's live `tools/list`.
+- Reports Hound capabilities independently: search, fetch, crawl, screenshot, cache and version. Core research readiness requires search + fetch + crawl; optional capabilities can be granted independently without being misreported as a complete Hound surface.
+- Compares only Hound's `mcp_smart_search` with OMP native `web_search`; fetch/crawl/screenshot remain MCP research tools and no synthetic `omp-web` model or Pifrost-owned search router is introduced.
+- Preserves Hound's intended search→fetch workflow: search supplies ranked URLs/snippets while source content is obtained with `mcp_smart_fetch`.
+- Surfaces Bifrost client instruction presence/limits and attached Virtual MCP instruction provenance alongside the Hound tool surface.
+- Added a CI-pinned upstream Hound contract canary against `master-fetch` commit `86d1b1329c0eed6133f29e3effe6a40a29f9dcdc`, covering the six canonical tools and Streamable HTTP `/mcp` contract.
+- Added Hound-specific MCP policy/gateway/prefix/partial-grant regression coverage and moved all Tool Search examples to Hound tool names.
+- Release version advanced to 0.8.2; model-catalog schema remains v14 because model/route capability metadata is unchanged.
+
+
 ## 0.8.1 — 2026-09-30
 
 - Hardened the 0.7/0.8 capability architecture after a full routing/code-quality audit without expanding Pifrost into a second policy router.
@@ -11,10 +26,10 @@
 - Persisted the additional member-level tool-choice compatibility fields required for offline diagnostics and advanced the catalogue cache schema to v14.
 - Made `routes effective` expose the catalogue snapshot timestamp/age and warn when route membership may be stale instead of presenting cached data as implicitly live.
 - Made OMP native-web diagnostics tri-state: an intentionally unset `modelRoles.web` is distinct from OMP being unavailable or `omp config` failing.
-- Made 4get search-path reporting modality-specific. General web, news and image availability are now reported independently, so a partial 4get grant cannot claim an unrelated search mode.
+- Made the previous three-tool MCP search adapter's reporting modality-specific so partial grants could not claim unrelated search modes.
 - Hardened Bifrost MCP Streamable HTTP parsing by matching JSON-RPC request ids and ignoring notifications/unrelated SSE events.
 - Added exact Bifrost 2.2.4 contract gates for Tool Search, between-tools downgrade behavior and service-tier capability metadata, and renamed the OMP contract validator to the version-neutral `validate-omp-contract.mjs`.
-- Added regression coverage for preserved fallback order, between-tools downgrade, shared runtime/CLI eligibility, cache freshness, partial 4get grants, OMP unavailable/error states and id-aware MCP SSE responses.
+- Added regression coverage for preserved fallback order, between-tools downgrade, shared runtime/CLI eligibility, cache freshness, partial MCP-search grants, OMP unavailable/error states and id-aware MCP SSE responses.
 - Began decomposing large modules by extracting shared route eligibility, route CLI helpers and MCP JSON-RPC transport into focused modules.
 - Switched CI to reproducible lockfile-based dependency installation and added cross-module transport/integration coverage.
 
@@ -24,8 +39,8 @@
 - Completed Doctor 2.0's effective-route view. Pifrost now joins OMP's effective `modelRoles` to each `bifrost/omp-*` alias and shows the underlying Bifrost physical members with their individual context, output, image, tool, Tool Search, between-tools-thinking, service-tier and protocol capabilities.
 - Added `pifrost routes effective` for the same role → Pifrost alias → Bifrost physical-route report outside the full doctor.
 - Added `pifrost routes explain <role|alias>` with request constraints for context/output reserve, image/tools, reasoning, Tool Search, between-tools thinking and service tier. It reports each physical member as eligible or excluded and gives the exact capability reason without taking routing ownership away from Bifrost.
-- Deepened 4get diagnostics from configuration inference to live gateway verification. Repository status now calls Bifrost MCP `tools/list` with the repository Virtual Key and recognizes canonical 4get web/news/image tools after Bifrost client-name prefixing.
-- Added dual search-path reporting: MCP/4get state is shown alongside OMP's effective native `modelRoles.web` selector and `retry.fallbackChains.web`; an unset web role is correctly reported as OMP's built-in default search chain.
+- Deepened the then-current three-tool MCP search diagnostics from configuration inference to live gateway verification, using repository-key-scoped Bifrost `tools/list` and prefix-aware canonicalization.
+- Added dual MCP/native search-path reporting alongside OMP's effective `modelRoles.web` selector and `retry.fallbackChains.web`; an unset web role is correctly reported as OMP's built-in default search chain.
 - Added MCP presentation/context diagnostics: live gateway tool count, OMP's default discoverable presentation, approximate eager schema bytes/tokens, and an explicit distinction between discoverable tools and provider-side `defer_loading`/Tool Search.
 - Preserved MCP tool schemas from Bifrost management metadata so diagnostics can measure the visible tool surface instead of counting names only.
 - Kept all new behavior diagnostic/control-plane only: Bifrost remains authoritative for physical routing and fallback, OMP remains authoritative for native web-search orchestration, and Pifrost still does not manufacture an `omp-web` model.
@@ -40,8 +55,8 @@
 - Added a capability bridge for OMP deferred-tool intent on compatible Responses routes: deferred function tools regain `defer_loading` and a server `tool_search` meta-tool after OMP serialization. The bridge is capability-gated and does not silently degrade onto Chat Completions.
 - Added between-tools thinking bridging through Bifrost. When OMP requests reasoning-off semantics on a route whose eligible members support Bifrost's between-tools contract, Pifrost emits `reasoning.type=between_tools` instead of forcing an incompatible disabled/low-effort form.
 - Extended Doctor compatibility reporting for the 18.4.5/2.2.4 baseline and Bifrost Tool Search, between-tools thinking and service-tier capability support.
-- Extended MCP diagnostics with per-client instruction caps/upstream instruction presence, Virtual MCP `instructions`/`instructions_mode`, effective repository instruction provenance and explicit 4get search-path detection for `fourget_web_search`, `fourget_news_search` and `fourget_image_search`.
-- Kept search architecture deliberately layered: 4get remains an MCP search backend and Pifrost does not introduce a synthetic `bifrost/omp-web` route or take ownership of OMP's native web-search fallback chain.
+- Extended MCP diagnostics with per-client instruction caps/upstream instruction presence, Virtual MCP `instructions`/`instructions_mode`, effective repository instruction provenance and explicit detection for the then-current three-tool MCP search contract.
+- Kept search architecture deliberately layered: the MCP search backend remained separate from OMP native web search, with no synthetic `bifrost/omp-web` route or Pifrost-owned native-search fallback chain.
 - Advanced the model-catalog cache schema to v12 so 0.6.x cached route envelopes cannot hide the new capability metadata after upgrade.
 
 

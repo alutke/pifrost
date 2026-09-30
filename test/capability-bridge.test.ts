@@ -6,19 +6,19 @@ import { bridgePifrostPayload, deferredToolNames } from "../capability-bridge.ts
 test("extracts OMP deferred-tool intent without treating ordinary tools as deferred", () => {
 	const names = deferredToolNames([
 		{ name: "read" },
-		{ name: "fourget_web_search", deferLoading: true },
-		{ name: "fourget_news_search", deferLoading: true },
+		{ name: "mcp_smart_search", deferLoading: true },
+		{ name: "mcp_smart_fetch", deferLoading: true },
 	]);
-	assert.deepEqual([...names], ["fourget_web_search", "fourget_news_search"]);
+	assert.deepEqual([...names], ["mcp_smart_search", "mcp_smart_fetch"]);
 });
 
 test("bridges deferred functions to Responses Tool Search only when explicitly enabled", () => {
-	const deferred = new Set(["fourget_web_search"]);
+	const deferred = new Set(["mcp_smart_search"]);
 	const payload = {
 		model: "provider/model",
 		tools: [
 			{ type: "function", name: "read", parameters: { type: "object" } },
-			{ type: "function", name: "fourget_web_search", parameters: { type: "object" } },
+			{ type: "function", name: "mcp_smart_search", parameters: { type: "object" } },
 		],
 	};
 	const bridged = bridgePifrostPayload(payload, {

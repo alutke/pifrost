@@ -195,20 +195,38 @@ Routing ownership is explicit:
 
 Pifrost preserves the relative order of all surviving Bifrost members and never reorders them for quality, cost, quota, availability preference or provider preference.
 
-### Search and MCP presentation diagnostics
+### Hound and MCP presentation diagnostics
 
-Repository status distinguishes four separate facts that were previously easy to conflate:
+Repository status distinguishes the Hound/Bifrost MCP path at four levels:
 
-1. whether a 4get MCP client/tool is present in Bifrost management metadata;
-2. whether the repository Virtual Key is granted the tool through a direct grant, Virtual MCP, or allow-by-default client;
-3. whether the tool is actually returned by a live repository-key-scoped Bifrost MCP `tools/list`;
+1. whether a Bifrost MCP client advertises canonical Hound tools;
+2. whether the repository Virtual Key receives those tools through a direct grant, Virtual MCP or allow-by-default client;
+3. whether the tools are actually returned by a live repository-key-scoped Bifrost MCP `tools/list`;
 4. how OMP presents the resulting MCP tool surface.
 
-Canonical 4get tools are recognized after Bifrost client-name prefixing, so a client named `fourget` exposing `fourget_web_search` is still recognized when the gateway returns a name such as `fourget-fourget_web_search`.
+Pifrost recognizes the six `master-fetch` MCP tools: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`. Recognition is tool-contract based rather than client-name based and tolerates Bifrost client prefixes on the gateway-visible name.
+
+The core research readiness check requires search + fetch + crawl. Screenshot, cache management and version reporting are surfaced independently so a lean/partial Hound grant is described accurately rather than treated as an all-or-nothing search backend.
+
+Hound is never contacted directly by Pifrost. The flow is:
+
+```text
+OMP/model
+   │
+   ▼
+repository-scoped Bifrost MCP
+   │
+   ▼
+Hound / master-fetch
+```
+
+Pifrost does not own Hound process lifecycle, HTTP configuration, search-engine selection, BYOK search keys, browser escalation or cache policy.
 
 OMP MCP tools are normally presented as `discoverable`; that is not synonymous with provider-side `defer_loading`. Pifrost reports the live gateway tool count and an approximate all-tools schema footprint separately from model/route Tool Search capability.
 
-The same status section reads OMP's effective `modelRoles.web` and `retry.fallbackChains.web`. It distinguishes an unset role (OMP's built-in default search chain) from OMP being unavailable or the configuration read failing. 4get availability is modality-specific for web, news and images; a partial grant affects only the corresponding modality. Live MCP Streamable HTTP responses are matched by JSON-RPC request id so notifications/unrelated SSE events cannot be mistaken for `tools/list`. Pifrost does not create a synthetic web model or take ownership of search-provider fallback.
+The same status section reads OMP's effective `modelRoles.web` and `retry.fallbackChains.web`. It distinguishes an unset role (OMP's built-in default search chain) from OMP being unavailable or the configuration read failing. Hound `mcp_smart_search` is reported as an independent MCP search path; `mcp_smart_fetch`, `mcp_smart_crawl` and `mcp_screenshot` remain web-research tools rather than synthetic OMP model roles. Live MCP Streamable HTTP responses are matched by JSON-RPC request id so notifications/unrelated SSE events cannot be mistaken for `tools/list`.
+
+The Hound upstream contract is pinned in CI to the six canonical MCP tools plus its Streamable HTTP `/mcp` endpoint. This protects Pifrost diagnostics from silently drifting if master-fetch changes its public MCP tool names.
 
 ### Effective thinking display
 
@@ -268,7 +286,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.1
+0.8.2
 ```
 
 Bun can also install the package globally:
@@ -840,7 +858,7 @@ railway  state=connected  tools=30
 
 On Bifrost 2.x, Pifrost also surfaces MCP-client-global capabilities such as connection/auth type, per-user OAuth/headers or token exchange, Code Mode, Agent Mode auto-execute tools, endpoint slug and session stickiness. Repository Virtual Keys continue to control only **which MCP clients/tools the repository may execute**. Pifrost deliberately does not rewrite an MCP client's global auth, Code Mode or Agent Mode configuration when assigning it to a repo.
 
-Pifrost 0.7 also reports the effective MCP instruction path: per-client upstream instructions and byte caps where Bifrost exposes them, plus Virtual MCP `instructions` and `instructions_mode`. For search, Pifrost treats 4get as an MCP backend rather than a logical model. If the effective repo policy exposes `fourget_web_search`, `fourget_news_search`, or `fourget_image_search`, `pifrost repo status` reports the MCP/4get path and any missing 4get tools. OMP's own `web_search` role remains separately owned by OMP.
+Pifrost 0.7 also reports the effective MCP instruction path: per-client upstream instructions and byte caps where Bifrost exposes them, plus Virtual MCP `instructions` and `instructions_mode`. For web research, Pifrost treats Hound as a Bifrost-hosted MCP backend rather than a logical model. If the effective repository policy exposes Hound's canonical MCP tools, `pifrost repo status` reports search/fetch/crawl/screenshot/cache/version visibility and any missing tools. OMP's own `web_search` role remains separately owned by OMP.
 
 ### Interactive initialization
 

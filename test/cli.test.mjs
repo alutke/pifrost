@@ -23,7 +23,6 @@ import {
   formatQuotaGovernanceSource,
   ompCompatibilityMatrix,
   ompWebSearchDiagnostics,
-  searchBackendDiagnostics,
   webSearchConfigDiagnostics,
   parseSemver,
   versionAtLeast,
@@ -32,6 +31,7 @@ import {
   virtualMcpsForVirtualKey,
   saveState,
 } from "../cli-lib.mjs";
+import { houndMcpDiagnostics } from "../hound-diagnostics.mjs";
 import { parseMcpJsonRpcResponse } from "../mcp-rpc.mjs";
 
 test("canonical CLI help exposes the full repo Skills/reset surface", () => {
@@ -314,66 +314,75 @@ test("Virtual MCP normalization and name resolution are portable and case-insens
   assert.throws(() => resolveVirtualMcpNames(vmcps, ["missing"]), /Unknown Bifrost Virtual MCP/);
 });
 
-test("MCP normalization retains tool schemas for footprint diagnostics", () => {
+test("MCP normalization retains Hound tool schemas for footprint diagnostics", () => {
   const client = normalizeMcpClient({
-    name: "fourget",
+    name: "hound",
     state: "connected",
+    server_instructions: "Hound = web access.",
+    max_instructions_length: 8192,
     tools: [{
-      name: "fourget_web_search",
+      name: "mcp_smart_search",
       description: "Search the web",
       inputSchema: { type: "object", properties: { query: { type: "string" } } },
     }],
   });
-  assert.deepEqual(client.tools, ["fourget_web_search"]);
-  assert.equal(client.toolDefinitions[0].name, "fourget_web_search");
+  assert.deepEqual(client.tools, ["mcp_smart_search"]);
+  assert.equal(client.toolDefinitions[0].name, "mcp_smart_search");
   assert.equal(client.toolDefinitions[0].description, "Search the web");
   assert.equal(client.toolDefinitions[0].inputSchema.properties.query.type, "string");
+  assert.equal(client.serverInstructions, "Hound = web access.");
+  assert.equal(client.maxInstructionsLength, 8192);
 });
 
-test("4get diagnostics distinguish configured grants from live gateway visibility", () => {
+test("Hound diagnostics distinguish Bifrost grants from live gateway visibility", () => {
+  const houndTools = [
+    "mcp_smart_search",
+    "mcp_smart_fetch",
+    "mcp_smart_crawl",
+    "mcp_screenshot",
+    "cache_clear",
+    "version",
+  ];
   const clients = [{
-    id: "fourget-id",
-    name: "fourget",
+    id: "hound-id",
+    name: "hound",
     state: "connected",
     disabled: false,
     allowOnAllVirtualKeys: false,
-    tools: ["fourget_web_search", "fourget_news_search", "fourget_image_search"],
+    serverInstructions: "Hound = web access.",
+    maxInstructionsLength: 8192,
+    tools: houndTools,
   }];
   const vk = {
     id: "vk-repo",
     mcp_configs: [{
-      mcp_client_id: "fourget-id",
-      mcp_client: { client_id: "fourget-id", name: "fourget" },
+      mcp_client_id: "hound-id",
+      mcp_client: { client_id: "hound-id", name: "hound" },
       tools_to_execute: ["*"],
     }],
   };
   const policy = effectiveRepoMcpPolicy(vk, [], clients);
-  const omp = webSearchConfigDiagnostics(
-    { web: "web/duckduckgo" },
-    { web: ["web/parallel", "web/hosted"] },
-  );
-  const diagnostics = searchBackendDiagnostics(policy, clients, [], {
-    liveTools: [
-      { name: "fourget-fourget_web_search", inputSchema: { type: "object" } },
-      { name: "fourget-fourget_news_search", inputSchema: { type: "object" } },
-      { name: "fourget-fourget_image_search", inputSchema: { type: "object" } },
-    ],
-    ompSearch: omp,
+  const diagnostics = houndMcpDiagnostics(policy, clients, [], {
+    liveTools: houndTools.map((name) => ({ name: `hound-${name}`, inputSchema: { type: "object" } })),
+    ompSearch: webSearchConfigDiagnostics(
+      { web: "web/duckduckgo" },
+      { web: ["web/parallel", "web/hosted"] },
+    ),
   });
-  assert.equal(diagnostics.preferredPath, "MCP/4get");
-  assert.deepEqual(diagnostics.paths, {
-    web: "MCP/4get",
-    news: "MCP/4get",
-    images: "MCP/4get",
-  });
-  assert.equal(diagnostics.fourget.complete, true);
-  assert.equal(diagnostics.fourget.clients[0].name, "fourget");
-  assert.equal(diagnostics.fourget.tools.fourget_web_search.configured, true);
-  assert.equal(diagnostics.fourget.tools.fourget_web_search.gatewayVisible, true);
-  assert.equal(diagnostics.fourget.tools.fourget_web_search.gatewayName, "fourget-fourget_web_search");
-  assert.equal(diagnostics.omp.primary, "web/duckduckgo");
-  assert.deepEqual(diagnostics.omp.fallbacks, ["web/parallel", "web/hosted"]);
-  assert.equal(diagnostics.mcpSurface.ompDefaultLoadMode, "discoverable");
+  assert.equal(diagnostics.hound.complete, true);
+  assert.equal(diagnostics.hound.coreReady, true);
+  assert.equal(diagnostics.hound.clients[0].name, "hound");
+  assert.equal(diagnostics.hound.clients[0].serverInstructions, true);
+  assert.equal(diagnostics.hound.clients[0].maxInstructionsLength, 8192);
+  assert.equal(diagnostics.hound.tools.mcp_smart_search.configured, true);
+  assert.equal(diagnostics.hound.tools.mcp_smart_search.gatewayVisible, true);
+  assert.equal(diagnostics.hound.tools.mcp_smart_search.gatewayName, "hound-mcp_smart_search");
+  assert.equal(diagnostics.hound.capabilities.fetch.available, true);
+  assert.equal(diagnostics.hound.capabilities.crawl.available, true);
+  assert.equal(diagnostics.hound.capabilities.screenshot.available, true);
+  assert.equal(diagnostics.search.path, "MCP/Hound mcp_smart_search");
+  assert.equal(diagnostics.search.omp.primary, "web/duckduckgo");
+  assert.deepEqual(diagnostics.search.omp.fallbacks, ["web/parallel", "web/hosted"]);
 });
 
 test("OMP web diagnostics report the built-in chain when no explicit web role exists", () => {
@@ -401,30 +410,69 @@ test("OMP web diagnostics distinguish unavailable and unreadable config from an 
   assert.match(unreadable.error, /config boom/u);
 });
 
-test("partial 4get installs only affect the matching search modality", () => {
+test("generic MCP version tools do not masquerade as Hound", () => {
+  const diagnostics = houndMcpDiagnostics(
+    { effective: [], virtualMcps: [] },
+    [{ name: "other", state: "connected", tools: ["version"] }],
+    [],
+    {
+      liveTools: [{ name: "other-version", inputSchema: { type: "object" } }],
+      ompSearch: webSearchConfigDiagnostics({}, {}),
+    },
+  );
+  assert.equal(diagnostics.hound.available, false);
+  assert.equal(diagnostics.hound.configured, false);
+  assert.equal(diagnostics.hound.capabilities.version.available, false);
+  assert.equal(diagnostics.search.path, "OMP native web_search");
+});
+
+test("optional-only Hound grants are still recognized through the Bifrost MCP surface", () => {
   const policy = {
-    effective: [{ client: "fourget", tools: ["fourget_image_search"], sources: ["direct"] }],
+    effective: [{ client: "hound", tools: ["mcp_screenshot"], sources: ["direct"] }],
     virtualMcps: [],
   };
   const clients = [{
-    name: "fourget",
+    name: "hound",
     state: "connected",
-    tools: ["fourget_image_search"],
+    tools: ["mcp_screenshot"],
   }];
-  const diagnostics = searchBackendDiagnostics(policy, clients, [], {
-    liveTools: [{ name: "fourget-fourget_image_search", inputSchema: { type: "object" } }],
+  const diagnostics = houndMcpDiagnostics(policy, clients, [], {
+    liveTools: [{ name: "master-fetch-mcp_screenshot", inputSchema: { type: "object" } }],
     ompSearch: webSearchConfigDiagnostics({}, {}),
   });
-  assert.equal(diagnostics.paths.web, "OMP native web_search");
-  assert.equal(diagnostics.paths.images, "MCP/4get");
-  assert.equal(diagnostics.paths.news, "OMP/native or model-selected search");
-  assert.equal(diagnostics.preferredPath, "OMP native web_search");
+  assert.equal(diagnostics.hound.available, true);
+  assert.equal(diagnostics.hound.coreReady, false);
+  assert.equal(diagnostics.hound.capabilities.screenshot.available, true);
+  assert.equal(diagnostics.hound.capabilities.search.available, false);
+  assert.equal(diagnostics.search.path, "OMP native web_search");
 });
 
+test("partial Hound grants report only the capabilities actually exposed by Bifrost", () => {
+  const policy = {
+    effective: [{ client: "hound", tools: ["mcp_smart_search"], sources: ["direct"] }],
+    virtualMcps: [],
+  };
+  const clients = [{
+    name: "hound",
+    state: "connected",
+    tools: ["mcp_smart_search", "mcp_smart_fetch", "mcp_smart_crawl", "mcp_screenshot", "cache_clear", "version"],
+  }];
+  const diagnostics = houndMcpDiagnostics(policy, clients, [], {
+    liveTools: [{ name: "hound-mcp_smart_search", inputSchema: { type: "object" } }],
+    ompSearch: webSearchConfigDiagnostics({}, {}),
+  });
+  assert.equal(diagnostics.hound.complete, false);
+  assert.equal(diagnostics.hound.coreReady, false);
+  assert.equal(diagnostics.hound.capabilities.search.available, true);
+  assert.equal(diagnostics.hound.capabilities.fetch.available, false);
+  assert.equal(diagnostics.hound.capabilities.crawl.available, false);
+  assert.equal(diagnostics.search.path, "MCP/Hound mcp_smart_search");
+  assert.ok(diagnostics.hound.missing.includes("mcp_smart_fetch"));
+});
 
 test("MCP tool surface reports discoverable presentation separately from provider deferral", () => {
   const surface = mcpToolSurfaceDiagnostics([
-    { name: "fourget-fourget_web_search", description: "Search", inputSchema: { type: "object" } },
+    { name: "hound-mcp_smart_search", description: "Search", inputSchema: { type: "object" } },
     { name: "github-search", description: "Search GitHub", inputSchema: { type: "object" } },
   ]);
   assert.equal(surface.visibleTools, 2);
@@ -444,7 +492,7 @@ test("live MCP tool listing ignores SSE notifications and selects the matching J
         "",
         'data: {"jsonrpc":"2.0","id":99,"result":{"tools":[]}}',
         "",
-        'data: {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"fourget-fourget_web_search","description":"Search","inputSchema":{"type":"object","properties":{"query":{"type":"string"}}}}]}}',
+        'data: {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"hound-mcp_smart_search","description":"Search","inputSchema":{"type":"object","properties":{"query":{"type":"string"}}}}]}}',
         "",
       ].join("\n");
       return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
@@ -452,7 +500,7 @@ test("live MCP tool listing ignores SSE notifications and selects the matching J
   });
   assert.equal(calls[0].url, "http://bifrost.test/mcp");
   assert.equal(calls[0].init.headers["x-bf-vk"], "vk-test");
-  assert.deepEqual(tools.map((tool) => tool.name), ["fourget-fourget_web_search"]);
+  assert.deepEqual(tools.map((tool) => tool.name), ["hound-mcp_smart_search"]);
   assert.equal(tools[0].inputSchema.properties.query.type, "string");
 });
 
