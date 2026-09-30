@@ -17,6 +17,11 @@ import {
   printModelDoctor,
   readCatalog,
 } from "./model-diagnostics.mjs";
+import {
+  formatCatalogSnapshot,
+  routeAliasForInput,
+  routeExplanationRequestFromFlags,
+} from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
 import {
@@ -723,27 +728,12 @@ function commandRoutesEffective() {
   }
   if (Number.isFinite(ageMs)) {
     const minutes = Math.floor(ageMs / 60_000);
-    console.log(`Catalog snapshot: ${cache.generatedAt ?? "unknown"}; age=${minutes}m${stale ? " STALE" : ""}`);
+    console.log(formatCatalogSnapshot(cache, ageMs, stale));
     if (stale) console.log("WARN route membership may have changed in Bifrost; run `pifrost models refresh --force` for a fresh effective view.");
   }
   console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
 }
 
-function routeAliasForInput(input, roles) {
-  const raw = String(input ?? "").trim();
-  if (!raw) return undefined;
-  const selected = roles?.[raw] ?? raw;
-  const primary = String(selected).split(",")[0]?.trim() ?? "";
-  return primary.replace(/^bifrost\//iu, "").split(":", 1)[0].toLowerCase();
-}
-
-function numericFlag(flags, name) {
-  const raw = flagString(flags, name);
-  if (raw === undefined) return undefined;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) throw new Error(`--${name} must be a non-negative number`);
-  return value;
-}
 
 function commandRoutesExplain(input, flags = {}) {
   if (!input) throw new Error("Usage: pifrost routes explain <role|alias> [request flags]");
@@ -753,17 +743,7 @@ function commandRoutesExplain(input, flags = {}) {
   const alias = routeAliasForInput(input, roles);
   const diagnostic = cache.diagnostics.find((item) => String(item.id).toLowerCase() === alias);
   if (!diagnostic) throw new Error(`No Pifrost alias diagnostic found for ${input} (resolved alias: ${alias})`);
-  const explanation = explainRouteRequest(diagnostic, {
-    inputTokens: numericFlag(flags, "input-tokens"),
-    outputTokens: numericFlag(flags, "output-tokens"),
-    image: flags.image === true,
-    tools: flags.tools === true || flags["tool-search"] === true || flags["between-tools"] === true,
-    reasoning: flags.reasoning === true || flags["between-tools"] === true,
-    toolSearch: flags["tool-search"] === true,
-    betweenTools: flags["between-tools"] === true,
-    toolChoice: flagString(flags, "tool-choice"),
-    serviceTier: flagString(flags, "service-tier"),
-  });
+  const explanation = explainRouteRequest(diagnostic, routeExplanationRequestFromFlags(flags));
   printHeader(`Route request: ${input}`);
   console.log(formatRouteExplanation(explanation));
 }
