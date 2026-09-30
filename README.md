@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.1
+0.8.2
 ```
 
 Bun also works:
@@ -298,15 +298,26 @@ pifrost repo vmcp add 'Development Tools'
 pifrost repo vmcp remove 'Development Tools'
 ~~~
 
-### Search backends and 4get
+### Web research through Hound MCP
 
-Pifrost treats MCP search and OMP's native <code>web_search</code> role as separate mechanisms. A 4get MCP server remains a normal repository-scoped MCP backend; Pifrost does not create a synthetic <code>omp-web</code> model for it.
+Pifrost treats Hound as a normal repository-scoped **Bifrost MCP client**. Pifrost does not install Hound, start it, connect to Hound directly, proxy its HTTP endpoint, or create a synthetic `omp-web` model. Bifrost remains the sole MCP boundary exposed to OMP.
 
-<code>pifrost repo status</code> verifies this at two levels: the Bifrost management policy and a live, repository-key-scoped <code>tools/list</code> call against the MCP gateway. The MCP Streamable HTTP parser matches the JSON-RPC request id, so notifications or unrelated SSE responses do not masquerade as the requested tool inventory. It recognizes the canonical 4get tool names even when Bifrost prefixes them with the MCP client name (for example <code>fourget-fourget_web_search</code>).
+The supported Hound MCP contract is the six tools published by `master-fetch`:
 
-The same report shows OMP's native <code>modelRoles.web</code> selector and configured web fallback chain alongside MCP/4get. Pifrost distinguishes an intentionally unset web role from OMP being unavailable or its configuration being unreadable. Search availability is reported separately for general web, news and images, so an image-only 4get grant is not misreported as a general-web backend. These are availability diagnostics only; Pifrost does not replace OMP/model tool choice or introduce a synthetic <code>omp-web</code> model.
+- `mcp_smart_search` — keyless/BYOK web search returning ranked URLs and snippets.
+- `mcp_smart_fetch` — URL/PDF fetch with focused extraction, pagination, bulk fetch and anti-bot escalation.
+- `mcp_smart_crawl` — same-domain crawl, sitemap discovery and selective crawl.
+- `mcp_screenshot` — page screenshot for multimodal use.
+- `cache_clear` — Hound cache maintenance.
+- `version` — Hound version/update information.
 
-Pifrost also reports the live MCP tool count, OMP's default <code>discoverable</code> presentation for MCP tools, and an approximate schema footprint if all visible tools were eagerly serialized. Discoverable presentation and provider-side <code>defer_loading</code>/Tool Search are reported separately because they are different mechanisms.
+`pifrost repo status` inspects Hound at two layers: Bifrost management policy (what the repository Virtual Key should receive) and a live repository-key-scoped Bifrost MCP `tools/list` call (what OMP can actually see). Detection is by canonical Hound tool names rather than by MCP client name, so a Bifrost client named `hound`, `master-fetch`, or another name is supported. Bifrost-prefixed gateway names such as `hound-mcp_smart_search` are normalized back to their canonical Hound tools.
+
+Search is reported separately from Hound's fetch/crawl/screenshot capabilities. If `mcp_smart_search` is visible, the repository has an MCP/Hound search path; OMP's native `modelRoles.web` and `retry.fallbackChains.web` remain independently owned by OMP. Pifrost reports availability only and does not choose between Hound and OMP native search for the model.
+
+Hound's search/fetch workflow is intentionally preserved: `mcp_smart_search` returns ranked URLs/snippets and the agent should use `mcp_smart_fetch` for source content rather than treating search snippets as the evidence payload.
+
+Pifrost also reports the live Bifrost MCP tool count, OMP's default `discoverable` presentation, approximate eager schema footprint, Bifrost client instruction metadata where exposed, and attached Virtual MCP instruction provenance. Discoverable presentation and provider-side `defer_loading`/Tool Search remain separate mechanisms.
 
 ### MCP server instructions
 
