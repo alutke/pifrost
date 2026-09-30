@@ -144,7 +144,7 @@ try {
     "http-client.mjs",
     "mcp-rpc.mjs",
     "hound-diagnostics.mjs",
-  "route-cli.mjs",
+    "route-cli.mjs",
     "doctor-probes.mjs",
     "diagnostic-result.mjs",
     "cli-preconditions.mjs",
