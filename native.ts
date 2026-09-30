@@ -92,6 +92,12 @@ function nonEmpty(value: string | undefined): string | undefined {
 	return trimmed ? trimmed : undefined;
 }
 
+function pifrostSupportsBetweenToolsThinking(model: Model): boolean {
+	const compat = model.compatConfig as (Record<string, unknown> | undefined);
+	return compat?.supportsBetweenToolsThinking === true;
+}
+
+
 function normalizePifrostReasoningOptions(
 	model: Model,
 	options: SimpleStreamOptions | undefined,
@@ -306,7 +312,7 @@ function streamPifrostOpenAI(
 	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
 	const allowBetweenToolsThinking = profile
 		? profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true)
-		: model.compat.supportsBetweenToolsThinking === true;
+		: pifrostSupportsBetweenToolsThinking(model);
 	const options = normalizePifrostReasoningOptions(model, rawOptions, allowBetweenToolsThinking);
 	if (profile) {
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
@@ -322,7 +328,7 @@ function streamPifrostOpenAI(
 	} as ModelSpec<"openai-completions">);
 	const baseFetch = options?.fetch ?? globalThis.fetch;
 	const upstreamOnPayload = options?.onPayload;
-	const betweenToolsThinking = options?.disableReasoning === true && model.compat.supportsBetweenToolsThinking === true;
+	const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
 	const streamOptions: OpenAICompletionsOptions = {
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
