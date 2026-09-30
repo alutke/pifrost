@@ -122,6 +122,7 @@ try {
   for (const path of [
     "package.json",
     "native.ts",
+    "capability-bridge.ts",
     "context-estimator.ts",
     "routing-core.ts",
     "protocol-capability.ts",
