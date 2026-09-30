@@ -63,6 +63,7 @@ import {
   installOmpPlugin,
   listMcpClients,
   listMcpGatewayTools,
+  mcpToolSurfaceDiagnostics,
   listVirtualMcps,
   loadAliasManifest,
   loadState,
