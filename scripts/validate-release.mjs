@@ -38,9 +38,12 @@ for (const path of [
   "omp-cfg.ts",
   "pricing-time.ts",
   "routing-core.ts",
+  "route-eligibility.ts",
   "protocol-capability.ts",
   "cache-schema.ts",
   "http-client.mjs",
+  "mcp-rpc.mjs",
+  "route-cli.mjs",
   "doctor-probes.mjs",
   "diagnostic-result.mjs",
   "cli-preconditions.mjs",
@@ -76,7 +79,7 @@ const cleanRuntimeBuild = spawnSync(process.execPath, ["--no-warnings", "scripts
   },
 });
 if (cleanRuntimeBuild.status !== 0) fail(commandError("clean Node-only runtime build", cleanRuntimeBuild));
-for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/cache-schema.js"]) {
+for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/route-eligibility.js", "dist/cache-schema.js"]) {
   if (!existsSync(new URL(path, root))) fail(`clean runtime build did not create ${path}`);
 }
 
@@ -125,12 +128,16 @@ try {
     "capability-bridge.ts",
     "context-estimator.ts",
     "routing-core.ts",
+    "route-eligibility.ts",
     "protocol-capability.ts",
     "cache-schema.ts",
     "dist/config-store.js",
     "dist/routing-core.js",
+    "dist/route-eligibility.js",
     "dist/cache-schema.js",
     "http-client.mjs",
+    "mcp-rpc.mjs",
+    "route-cli.mjs",
     "doctor-probes.mjs",
     "diagnostic-result.mjs",
     "cli-preconditions.mjs",
