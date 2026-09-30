@@ -123,7 +123,7 @@ test("real MCP Streamable HTTP boundary ignores notifications and unrelated resp
 			"",
 			'data: {"jsonrpc":"2.0","id":91,"result":{"tools":[]}}',
 			"",
-			'data: {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"fourget-fourget_web_search"}]}}',
+			'data: {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"hound-mcp_smart_search"}]}}',
 			"",
 		].join("\n"));
 	});
@@ -137,7 +137,7 @@ test("real MCP Streamable HTTP boundary ignores notifications and unrelated resp
 		assert.equal(virtualKey, "vk-integration");
 		assert.equal(requestBody?.method, "tools/list");
 		assert.equal(result.body?.id, 2);
-		assert.deepEqual(result.body?.result?.tools, [{ name: "fourget-fourget_web_search" }]);
+		assert.deepEqual(result.body?.result?.tools, [{ name: "hound-mcp_smart_search" }]);
 	} finally {
 		await server.close();
 	}
@@ -156,14 +156,14 @@ test("Tool Search planning and wire bridging agree on the same Responses-only ca
 	]);
 	const toolDefinitions = [
 		{ name: "read" },
-		{ name: "fourget_web_search", deferLoading: true },
+		{ name: "mcp_smart_search", deferLoading: true },
 	];
 	const serialized = {
 		model: route.id,
 		input: [{ role: "user", content: [{ type: "input_text", text: "search" }] }],
 		tools: [
 			{ type: "function", name: "read", parameters: { type: "object" } },
-			{ type: "function", name: "fourget_web_search", parameters: { type: "object" } },
+			{ type: "function", name: "mcp_smart_search", parameters: { type: "object" } },
 		],
 		max_output_tokens: 16_000,
 	};
@@ -184,6 +184,6 @@ test("Tool Search planning and wire bridging agree on the same Responses-only ca
 		reasons: ["no tool-search/deferred-tool support", "tool search requires Responses transport"],
 	}]);
 	const tools = bridged.tools as Array<Record<string, unknown>>;
-	assert.equal(tools.find((tool) => tool.name === "fourget_web_search")?.defer_loading, true);
+	assert.equal(tools.find((tool) => tool.name === "mcp_smart_search")?.defer_loading, true);
 	assert.ok(tools.some((tool) => tool.type === "tool_search" && tool.execution === "server"));
 });
