@@ -441,7 +441,7 @@ pifrost repo rotate-key
 ## Development
 
 ~~~bash
-npm install
+npm ci
 npm run check
 npm test
 ~~~
