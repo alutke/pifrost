@@ -13,10 +13,10 @@ import {
 
 test("terminal model diagnostics use the cache.ts schema constant", () => {
   assert.equal(EXPECTED_CACHE_SCHEMA_VERSION, CATALOG_CACHE_SCHEMA_VERSION);
-  assert.equal(CATALOG_CACHE_SCHEMA_VERSION, 11);
+  assert.equal(CATALOG_CACHE_SCHEMA_VERSION, 12);
 });
 
-test("schema-v11 catalog is accepted and emits the shared diagnostic result", () => {
+test("schema-v12 catalog is accepted and emits the shared diagnostic result", () => {
   const root = mkdtempSync(join(tmpdir(), "pifrost-model-diagnostic-schema-"));
   const agent = join(root, "agent");
   mkdirSync(agent, { recursive: true });
