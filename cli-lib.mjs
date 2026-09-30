@@ -1242,13 +1242,25 @@ export function normalizeMcpClient(client) {
     : Array.isArray(client?.available_tools)
       ? client.available_tools
       : [];
-  const tools = unique(
-    rawTools.map((tool) =>
-      typeof tool === "string"
-        ? nonEmpty(tool)
-        : nonEmpty(tool?.name) ?? nonEmpty(tool?.function?.name) ?? nonEmpty(tool?.tool_name),
-    ),
-  );
+  const toolDefinitions = rawTools
+    .map((tool) => {
+      if (typeof tool === "string") return { name: nonEmpty(tool) };
+      const name = nonEmpty(tool?.name) ?? nonEmpty(tool?.function?.name) ?? nonEmpty(tool?.tool_name);
+      if (!name) return undefined;
+      const description = nonEmpty(tool?.description) ?? nonEmpty(tool?.function?.description);
+      const inputSchema =
+        tool?.inputSchema ??
+        tool?.input_schema ??
+        tool?.parameters ??
+        tool?.function?.parameters;
+      return {
+        name,
+        ...(description ? { description } : {}),
+        ...(inputSchema && typeof inputSchema === "object" ? { inputSchema } : {}),
+      };
+    })
+    .filter(Boolean);
+  const tools = unique(toolDefinitions.map((tool) => tool.name));
   const config = client?.config && typeof client.config === "object" && !Array.isArray(client.config)
     ? client.config
     : client;
@@ -1272,6 +1284,7 @@ export function normalizeMcpClient(client) {
     maxInstructionsLength: Number.isFinite(Number(config?.max_instructions_length)) ? Number(config.max_instructions_length) : undefined,
     serverInstructions: nonEmpty(client?.server_instructions) ?? nonEmpty(config?.server_instructions),
     tools,
+    toolDefinitions,
     raw: client,
   };
 }
@@ -1339,18 +1352,127 @@ export function virtualMcpsForVirtualKey(virtualMcps, virtualKeyId) {
   return (virtualMcps ?? []).filter((item) => item.virtualKeyIds?.includes(id));
 }
 
-export function searchBackendDiagnostics(policy, clients = [], virtualMcps = []) {
-  const expected = ["fourget_web_search", "fourget_news_search", "fourget_image_search"];
-  const granted = new Set();
+const FOURGET_TOOLS = Object.freeze(["fourget_web_search", "fourget_news_search", "fourget_image_search"]);
+
+function canonicalFourgetToolName(name) {
+  const value = nonEmpty(String(name ?? ""))?.toLowerCase();
+  if (!value) return undefined;
+  return FOURGET_TOOLS.find((canonical) =>
+    value === canonical ||
+    value.endsWith(`-${canonical}`) ||
+    value.endsWith(`_${canonical}`) ||
+    value.endsWith(`__${canonical}`)
+  );
+}
+
+export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
+  const role = modelRoles && typeof modelRoles === "object" && !Array.isArray(modelRoles)
+    ? nonEmpty(modelRoles.web)
+    : undefined;
+  const fallback = fallbackChains && typeof fallbackChains === "object" && !Array.isArray(fallbackChains)
+    ? fallbackChains.web
+    : undefined;
+  const fallbacks = Array.isArray(fallback)
+    ? fallback.map(String).map(nonEmpty).filter(Boolean)
+    : nonEmpty(fallback)
+      ? [nonEmpty(fallback)]
+      : [];
+  return {
+    available: true,
+    configured: Boolean(role),
+    primary: role,
+    fallbacks,
+    source: role ? "configured modelRoles.web" : "OMP built-in default search chain",
+  };
+}
+
+export function readOmpConfigValue(key) {
+  if (!commandExists("omp")) return undefined;
+  try {
+    const { stdout } = runCommand("omp", ["config", "get", key, "--json"]);
+    const parsed = JSON.parse(stdout);
+    return parsed?.value;
+  } catch {
+    return undefined;
+  }
+}
+
+export function ompWebSearchDiagnostics() {
+  return webSearchConfigDiagnostics(
+    readOmpConfigValue("modelRoles"),
+    readOmpConfigValue("retry.fallbackChains"),
+  );
+}
+
+function gatewayToolTokenEstimate(tools) {
+  const bytes = Buffer.byteLength(JSON.stringify(tools ?? []), "utf8");
+  return { schemaBytes: bytes, estimatedSchemaTokens: Math.ceil(bytes / 4) };
+}
+
+export function mcpToolSurfaceDiagnostics(liveTools = []) {
+  const tools = Array.isArray(liveTools) ? liveTools : [];
+  const estimate = gatewayToolTokenEstimate(tools);
+  return {
+    visibleTools: tools.length,
+    discoverableTools: tools.length,
+    ompDefaultLoadMode: "discoverable",
+    providerDeferral: "route-dependent",
+    ...estimate,
+  };
+}
+
+export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [], options = {}) {
+  const granted = new Map();
+  const fourgetClients = [];
   for (const grant of policy?.effective ?? []) {
     const client = (clients ?? []).find((item) => item?.name?.toLowerCase() === String(grant.client ?? "").toLowerCase());
     const available = new Set(client?.tools ?? []);
+    const canonicalAvailable = new Map();
+    for (const tool of available) {
+      const canonical = canonicalFourgetToolName(tool);
+      if (canonical) canonicalAvailable.set(canonical, tool);
+    }
+    const canonicalGranted = new Set();
     if (grant.tools?.includes("*")) {
-      for (const tool of available) granted.add(tool);
+      for (const canonical of canonicalAvailable.keys()) canonicalGranted.add(canonical);
     } else {
-      for (const tool of grant.tools ?? []) if (available.has(tool) || tool.startsWith("fourget_")) granted.add(tool);
+      for (const tool of grant.tools ?? []) {
+        const canonical = canonicalFourgetToolName(tool);
+        if (canonical && (available.has(tool) || canonicalAvailable.has(canonical))) canonicalGranted.add(canonical);
+      }
+    }
+    if (canonicalGranted.size) {
+      fourgetClients.push({
+        name: grant.client,
+        state: client?.state,
+        sources: grant.sources ?? [],
+        granted: [...canonicalGranted],
+      });
+      for (const canonical of canonicalGranted) {
+        const rows = granted.get(canonical) ?? [];
+        rows.push({ client: grant.client, sources: grant.sources ?? [] });
+        granted.set(canonical, rows);
+      }
     }
   }
+
+  const liveTools = Array.isArray(options.liveTools) ? options.liveTools : [];
+  const liveCanonical = new Map();
+  for (const tool of liveTools) {
+    const name = typeof tool === "string" ? tool : tool?.name;
+    const canonical = canonicalFourgetToolName(name);
+    if (canonical) liveCanonical.set(canonical, name);
+  }
+  const liveKnown = options.liveTools !== undefined;
+  const tools = Object.fromEntries(FOURGET_TOOLS.map((name) => [name, {
+    configured: granted.has(name),
+    gatewayVisible: liveKnown ? liveCanonical.has(name) : undefined,
+    gatewayName: liveCanonical.get(name),
+    grants: granted.get(name) ?? [],
+  }]));
+  const configuredCount = FOURGET_TOOLS.filter((name) => tools[name].configured).length;
+  const visibleCount = FOURGET_TOOLS.filter((name) => tools[name].gatewayVisible === true).length;
+
   const attachedNames = new Set((policy?.virtualMcps ?? []).map((item) => item.name));
   const instructionRows = (virtualMcps ?? [])
     .filter((item) => attachedNames.has(item.name))
@@ -1359,16 +1481,24 @@ export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [])
       mode: item.instructionsMode ?? "append",
       instructions: item.instructions,
     }));
-  const tools = Object.fromEntries(expected.map((name) => [name, granted.has(name)]));
-  const availableCount = expected.filter((name) => granted.has(name)).length;
+
+  const omp = options.ompSearch ?? webSearchConfigDiagnostics(undefined, undefined);
+  const fourgetUsable = liveKnown ? visibleCount > 0 : configuredCount > 0;
   return {
-    preferredPath: availableCount > 0 ? "MCP/4get" : "OMP native web_search",
+    preferredPath: fourgetUsable ? "MCP/4get" : "OMP native web_search",
     fourget: {
-      available: availableCount > 0,
-      complete: availableCount === expected.length,
+      available: fourgetUsable,
+      configured: configuredCount > 0,
+      complete: liveKnown ? visibleCount === FOURGET_TOOLS.length : configuredCount === FOURGET_TOOLS.length,
+      configuredCount,
+      visibleCount: liveKnown ? visibleCount : undefined,
+      liveVerified: liveKnown,
+      clients: fourgetClients,
       tools,
-      missing: expected.filter((name) => !granted.has(name)),
+      missing: FOURGET_TOOLS.filter((name) => liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured),
     },
+    omp,
+    mcpSurface: liveKnown ? mcpToolSurfaceDiagnostics(liveTools) : undefined,
     instructions: instructionRows,
   };
 }
@@ -1771,6 +1901,59 @@ export async function upsertRepoVirtualKey({
   return vk;
 }
 
+function parseMcpResponse(text) {
+  if (!text) return undefined;
+  try {
+    return JSON.parse(text);
+  } catch {}
+  for (const line of text.split(/\r?\n/u)) {
+    if (!line.startsWith("data:")) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === "[DONE]") continue;
+    try {
+      return JSON.parse(payload);
+    } catch {}
+  }
+  return text;
+}
+
+export async function listMcpGatewayTools(url, virtualKey, options = {}) {
+  const endpoint = bifrostMcpUrl(url);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
+  try {
+    const fetchImpl = options.fetch ?? globalThis.fetch;
+    const response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "x-bf-vk": virtualKey,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
+      signal: controller.signal,
+    });
+    const text = await response.text();
+    const body = parseMcpResponse(text);
+    if (!response.ok) throw new Error(`Bifrost MCP tools/list failed (HTTP ${response.status})`);
+    if (body?.error) throw new Error(`Bifrost MCP tools/list failed: ${body.error.message ?? JSON.stringify(body.error)}`);
+    const rawTools = Array.isArray(body?.result?.tools) ? body.result.tools : [];
+    return rawTools
+      .map((tool) => {
+        const name = nonEmpty(tool?.name);
+        if (!name) return undefined;
+        return {
+          name,
+          ...(nonEmpty(tool?.description) ? { description: nonEmpty(tool.description) } : {}),
+          ...(tool?.inputSchema && typeof tool.inputSchema === "object" ? { inputSchema: tool.inputSchema } : {}),
+        };
+      })
+      .filter(Boolean);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function testMcp(url, virtualKey) {
   const endpoint = bifrostMcpUrl(url);
   const controller = new AbortController();
@@ -1796,12 +1979,7 @@ export async function testMcp(url, virtualKey) {
       signal: controller.signal,
     });
     const text = await response.text();
-    let body;
-    try {
-      body = text ? JSON.parse(text) : text;
-    } catch {
-      body = text;
-    }
+    const body = parseMcpResponse(text);
     return { ok: response.ok, status: response.status, body };
   } finally {
     clearTimeout(timer);
