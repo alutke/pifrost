@@ -469,8 +469,12 @@ test("alias intersects Tool Search, between-tools thinking and service tiers con
 		reasoning: true,
 		tools: true,
 		toolSearch: true,
+		toolChoice: undefined,
+		forcedToolChoice: undefined,
+		namedToolChoice: undefined,
 		reasoningWithTools: undefined,
 		betweenToolsThinking: true,
+		disableReasoningOnToolChoice: undefined,
 		serviceTier: true,
 		serviceTiers: ["priority", "ultrafast"],
 	});
