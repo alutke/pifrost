@@ -23,7 +23,11 @@ import {
   routeExplanationRequestFromFlags,
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
-import { houndMcpDiagnostics } from "./hound-diagnostics.mjs";
+import {
+  houndCodeModeClientNames,
+  houndMcpDiagnostics,
+  probeHoundCodeMode,
+} from "./hound-diagnostics.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -62,6 +66,7 @@ import {
   getVirtualKey,
   installOmpPlugin,
   listMcpClients,
+  callMcpGatewayTool,
   listMcpGatewayTools,
   mcpToolSurfaceDiagnostics,
   listVirtualMcps,
@@ -920,9 +925,31 @@ async function commandRepoStatus(snapshot) {
           liveToolsError = formatError(error);
         }
       }
+      let codeModeProbe;
+      const codeModeClientNames = houndCodeModeClientNames(policy, clients);
+      if (codeModeClientNames.length && liveTools && repoState.secret?.mcpVirtualKey) {
+        try {
+          codeModeProbe = await probeHoundCodeMode(
+            (toolName, args) => callMcpGatewayTool(
+              runtime.url,
+              repoState.secret.mcpVirtualKey,
+              toolName,
+              args,
+            ),
+            codeModeClientNames,
+          );
+        } catch (error) {
+          codeModeProbe = {
+            ok: false,
+            error: formatError(error),
+            files: [],
+          };
+        }
+      }
       const ompSearch = ompWebSearchDiagnostics();
       const hound = houndMcpDiagnostics(policy, clients, virtualMcps, {
         ...(liveTools ? { liveTools } : {}),
+        ...(codeModeProbe ? { codeModeProbe } : {}),
         ompSearch,
       });
       const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
@@ -939,20 +966,23 @@ async function commandRepoStatus(snapshot) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
       }
       console.log("Web research backends:");
-      const houndState = !hound.hound.liveVerified
-        ? hound.hound.configured
-          ? "configured; gateway unverified"
-          : "not configured"
-        : hound.hound.complete
-          ? "complete"
-          : hound.hound.available
-            ? "partial"
-            : "not visible";
-      console.log(`  MCP/Hound:        ${houndState}`);
+      const houndState = !hound.hound.configured
+        ? "not configured"
+        : !hound.hound.liveVerified
+          ? hound.hound.mode === "code"
+            ? "configured; Code Mode binding unverified"
+            : "configured; gateway unverified"
+          : hound.hound.researchComplete
+            ? "research ready"
+            : hound.hound.available
+              ? "partial"
+              : "not visible";
+      console.log(`  MCP/Hound:        ${houndState} mode=${hound.hound.mode}`);
       for (const client of hound.hound.clients) {
         const upstream = client.serverInstructions ? "present" : "none";
+        const mode = client.isCodeModeClient ? "code" : "classic";
         const cap = client.maxInstructionsLength === undefined ? "" : ` maxInstructions=${client.maxInstructionsLength}`;
-        console.log(`    client=${client.name} state=${client.state ?? "unknown"} via=${client.sources.join("+") || "unknown"} upstream-instructions=${upstream}${cap}`);
+        console.log(`    client=${client.name} mode=${mode} state=${client.state ?? "unknown"} via=${client.sources.join("+") || "unknown"} upstream-instructions=${upstream}${cap}`);
       }
       for (const [capability, status] of Object.entries(hound.hound.capabilities)) {
         const gateway = status.gatewayVisible === undefined
@@ -962,8 +992,26 @@ async function commandRepoStatus(snapshot) {
             : "no";
         console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
       }
-      console.log(`    core research:  ${hound.hound.coreReady ? "ready" : "incomplete"}`);
-      if (hound.hound.missing.length) console.log(`    missing:        ${hound.hound.missing.join(", ")}`);
+      console.log(`    search ready:   ${hound.hound.searchReady ? "yes" : "no"}`);
+      console.log(`    web research:   ${hound.hound.webResearchReady ? "ready" : "incomplete"}`);
+      console.log(`    deep research:  ${hound.hound.deepResearchReady ? "ready" : "incomplete"}`);
+      console.log(`    screenshot:     ${hound.hound.screenshotCallable ? "callable" : "unavailable"}`);
+      console.log(`    visual web:     ${hound.hound.visualWebReady ? "ready" : "not multimodal-ready"}`);
+      console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.visibleCount ?? hound.hound.configuredCount}/6 tools available`}`);
+      if (hound.hound.codeMode.configured) {
+        const metaCount = Object.values(hound.hound.codeMode.metaTools)
+          .filter((item) => item.gatewayVisible === true).length;
+        const binding = hound.hound.codeMode.probe?.ok
+          ? `${hound.hound.codeMode.probe.bindingLevel} (${hound.hound.codeMode.probe.serverName})`
+          : "unverified";
+        console.log(`    Code Mode:      ${metaCount}/4 meta-tools binding=${binding}`);
+        if (hound.hound.codeMode.probe?.error) {
+          console.log(`      probe:         ${hound.hound.codeMode.probe.error}`);
+        }
+      }
+      if (hound.hound.missingResearch.length) console.log(`    missing research: ${hound.hound.missingResearch.join(", ")}`);
+      if (hound.hound.missing.length) console.log(`    missing contract: ${hound.hound.missing.join(", ")}`);
+      for (const warning of hound.hound.transportWarnings) console.log(`    WARN ${warning}`);
       if (liveToolsError) console.log(`    gateway tools/list: unavailable (${liveToolsError})`);
       console.log(`  OMP native web:   ${hound.search.omp.available ? hound.search.omp.source : `${hound.search.omp.status}: ${hound.search.omp.source}`}`);
       if (hound.search.omp.error) console.log(`    error:          ${hound.search.omp.error}`);

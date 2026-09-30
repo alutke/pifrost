@@ -4,10 +4,7 @@ import {
   nonEmpty,
   requestJson,
 } from "./cli-lib.mjs";
-
-function unique(values) {
-  return [...new Set(values.filter(Boolean))];
-}
+import { normalizeMcpClientShape } from "./mcp-client-shape.mjs";
 
 function arrayFromResponse(body, keys) {
   if (Array.isArray(body)) return body;
@@ -17,88 +14,8 @@ function arrayFromResponse(body, keys) {
   return [];
 }
 
-/**
- * Normalize MCP clients returned by current and older Bifrost releases.
- *
- * Current Bifrost returns:
- *   { config: { client_id, name, disabled, allow_on_all_virtual_keys, ... },
- *     tools: [...], state, vk_configs }
- *
- * Older/alternate surfaces may expose those identity/config fields flat.
- */
 export function normalizeMcpClient(client) {
-  const config = client?.config && typeof client.config === "object" && !Array.isArray(client.config)
-    ? client.config
-    : {};
-
-  const id =
-    nonEmpty(config?.client_id) ??
-    nonEmpty(client?.client_id) ??
-    nonEmpty(client?.id) ??
-    undefined;
-
-  const name =
-    nonEmpty(config?.name) ??
-    nonEmpty(client?.name) ??
-    nonEmpty(client?.client_name) ??
-    id ??
-    "";
-
-  const rawTools = Array.isArray(client?.tools)
-    ? client.tools
-    : Array.isArray(client?.available_tools)
-      ? client.available_tools
-      : Array.isArray(config?.tools)
-        ? config.tools
-        : [];
-
-  const tools = unique(
-    rawTools.map((tool) =>
-      typeof tool === "string"
-        ? nonEmpty(tool)
-        : nonEmpty(tool?.name) ??
-          nonEmpty(tool?.function?.name) ??
-          nonEmpty(tool?.tool_name) ??
-          nonEmpty(tool?.function_name),
-    ),
-  );
-
-  return {
-    id,
-    name,
-    state: client?.state ?? client?.status ?? client?.connection_state,
-    disabled: Boolean(config?.disabled ?? client?.disabled),
-    allowOnAllVirtualKeys: Boolean(
-      config?.allow_on_all_virtual_keys ?? client?.allow_on_all_virtual_keys,
-    ),
-    endpointSlug: nonEmpty(config?.endpoint_slug) ?? nonEmpty(client?.endpoint_slug),
-    connectionType: nonEmpty(config?.connection_type) ?? nonEmpty(client?.connection_type),
-    authType: nonEmpty(config?.auth_type) ?? nonEmpty(client?.auth_type),
-    isCodeModeClient: Boolean(config?.is_code_mode_client ?? client?.is_code_mode_client),
-    toolsToExecute: Array.isArray(config?.tools_to_execute)
-      ? config.tools_to_execute.map(String)
-      : Array.isArray(client?.tools_to_execute)
-        ? client.tools_to_execute.map(String)
-        : [],
-    toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute)
-      ? config.tools_to_auto_execute.map(String)
-      : Array.isArray(client?.tools_to_auto_execute)
-        ? client.tools_to_auto_execute.map(String)
-        : [],
-    needsSessionStickiness:
-      typeof (config?.needs_session_stickiness ?? client?.needs_session_stickiness) === "boolean"
-        ? Boolean(config?.needs_session_stickiness ?? client?.needs_session_stickiness)
-        : undefined,
-    isPingAvailable:
-      typeof (config?.is_ping_available ?? client?.is_ping_available) === "boolean"
-        ? Boolean(config?.is_ping_available ?? client?.is_ping_available)
-        : undefined,
-    perUserHeaderKeys: Array.isArray(config?.per_user_header_keys)
-      ? config.per_user_header_keys.map(String)
-      : [],
-    tools,
-    raw: client,
-  };
+  return normalizeMcpClientShape(client);
 }
 
 export async function listMcpClients(url, managementAuth) {
@@ -107,7 +24,7 @@ export async function listMcpClients(url, managementAuth) {
     headers: managementHeaders(managementAuth),
   });
   const clients = arrayFromResponse(body, ["clients", "mcp_clients", "items"])
-    .map(normalizeMcpClient)
+    .map(normalizeMcpClientShape)
     .filter((client) => client.name);
   return clients;
 }

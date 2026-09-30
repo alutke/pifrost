@@ -14,6 +14,7 @@ import {
   effectiveRepoMcpPolicy,
   diffAliases,
   loadState,
+  callMcpGatewayTool,
   listMcpGatewayTools,
   mcpToolSurfaceDiagnostics,
   normalizeBifrostUrl,
@@ -31,7 +32,14 @@ import {
   virtualMcpsForVirtualKey,
   saveState,
 } from "../cli-lib.mjs";
-import { houndMcpDiagnostics } from "../hound-diagnostics.mjs";
+import {
+  BIFROST_CODE_MODE_TOOLS,
+  HOUND_TOOLS,
+  houndCodeModeClientNames,
+  houndMcpDiagnostics,
+  probeHoundCodeMode,
+} from "../hound-diagnostics.mjs";
+import { normalizeMcpClient as normalizeStandaloneMcpClient } from "../mcp-client-normalization.mjs";
 import { parseMcpJsonRpcResponse } from "../mcp-rpc.mjs";
 
 test("canonical CLI help exposes the full repo Skills/reset surface", () => {
@@ -609,4 +617,206 @@ test("quota governance diagnostics distinguish direct and external SourceRef ori
   ]);
   assert.equal(formatQuotaGovernanceSource(sources[1]), 'Access Profile "Engineering" [ap-eng]');
   assert.equal(formatQuotaGovernanceSource(sources[3]), "Direct provider config: deepseek");
+});
+
+
+test("canonical MCP normalization stays identical across CLI and helper modules", () => {
+  const raw = {
+    config: {
+      client_id: "hound-id",
+      name: "hound",
+      is_code_mode_client: true,
+      allow_by_default: true,
+      tools_to_execute: ["*"],
+      tools_to_auto_execute: ["mcp_smart_search"],
+      needs_session_stickiness: true,
+      max_instructions_length: 4096,
+    },
+    state: "connected",
+    server_instructions: "Use Hound for web research.",
+    tools: [{
+      name: "mcp_smart_search",
+      description: "Search",
+      inputSchema: { type: "object", properties: { query: { type: "string" } } },
+    }],
+  };
+  assert.deepEqual(normalizeMcpClient(raw), normalizeStandaloneMcpClient(raw));
+  assert.equal(normalizeMcpClient(raw).isCodeModeClient, true);
+  assert.equal(normalizeMcpClient(raw).allowOnAllVirtualKeys, true);
+  assert.equal(normalizeMcpClient(raw).toolDefinitions[0].name, "mcp_smart_search");
+  assert.equal(normalizeMcpClient(raw).maxInstructionsLength, 4096);
+});
+
+test("Hound Code Mode diagnostics verify the hidden tool surface through Bifrost", () => {
+  const clients = [{
+    id: "hound-id",
+    name: "hound",
+    state: "connected",
+    isCodeModeClient: true,
+    tools: HOUND_TOOLS,
+  }];
+  const policy = {
+    effective: [{ client: "hound", tools: ["*"], sources: ["direct"] }],
+    virtualMcps: [],
+  };
+  assert.deepEqual(houndCodeModeClientNames(policy, clients), ["hound"]);
+
+  const diagnostics = houndMcpDiagnostics(policy, clients, [], {
+    liveTools: BIFROST_CODE_MODE_TOOLS.map((name) => ({ name })),
+    codeModeProbe: {
+      ok: true,
+      bindingLevel: "server",
+      serverName: "hound",
+      fileName: "servers/hound.pyi",
+      tools: HOUND_TOOLS,
+      files: ["servers/hound.pyi"],
+    },
+    ompSearch: webSearchConfigDiagnostics({}, {}),
+  });
+
+  assert.equal(diagnostics.hound.mode, "code");
+  assert.equal(diagnostics.hound.liveVerified, true);
+  assert.equal(diagnostics.hound.contractComplete, true);
+  assert.equal(diagnostics.hound.searchReady, true);
+  assert.equal(diagnostics.hound.webResearchReady, true);
+  assert.equal(diagnostics.hound.deepResearchReady, true);
+  assert.equal(diagnostics.hound.screenshotCallable, true);
+  assert.equal(diagnostics.hound.visualWebReady, false);
+  assert.equal(diagnostics.hound.imageContentPreserved, false);
+  assert.equal(diagnostics.hound.codeMode.gatewayMetaComplete, true);
+  assert.match(diagnostics.hound.transportWarnings[0], /ImageContent/u);
+  assert.match(diagnostics.search.path, /Code Mode/u);
+});
+
+test("partial Hound Code Mode grants report web research without overstating deep research", () => {
+  const clients = [{
+    id: "hound-id",
+    name: "research",
+    state: "connected",
+    isCodeModeClient: true,
+    tools: HOUND_TOOLS,
+  }];
+  const policy = {
+    effective: [{
+      client: "research",
+      tools: ["mcp_smart_search", "mcp_smart_fetch"],
+      sources: ["direct"],
+    }],
+    virtualMcps: [],
+  };
+  const diagnostics = houndMcpDiagnostics(policy, clients, [], {
+    liveTools: BIFROST_CODE_MODE_TOOLS.map((name) => ({ name })),
+    codeModeProbe: {
+      ok: true,
+      bindingLevel: "server",
+      serverName: "research",
+      fileName: "servers/research.pyi",
+      tools: ["mcp_smart_search", "mcp_smart_fetch"],
+      files: ["servers/research.pyi"],
+    },
+    ompSearch: webSearchConfigDiagnostics({}, {}),
+  });
+  assert.equal(diagnostics.hound.webResearchReady, true);
+  assert.equal(diagnostics.hound.deepResearchReady, false);
+  assert.equal(diagnostics.hound.researchComplete, false);
+  assert.equal(diagnostics.hound.contractComplete, false);
+  assert.equal(diagnostics.hound.capabilities.search.gatewayVisible, true);
+  assert.equal(diagnostics.hound.capabilities.crawl.gatewayVisible, false);
+});
+
+test("Hound Code Mode probe supports server-level binding without invoking Hound", async () => {
+  const calls = [];
+  const probe = await probeHoundCodeMode(async (name, args) => {
+    calls.push({ name, args });
+    if (name === "listToolFiles") {
+      return {
+        content: [{
+          type: "text",
+          text: [
+            "# Workflow",
+            "",
+            "servers/",
+            "  github.pyi",
+            "  research.pyi",
+          ].join("\n"),
+        }],
+      };
+    }
+    if (name === "readToolFile" && args.fileName === "servers/research.pyi") {
+      return {
+        content: [{
+          type: "text",
+          text: [
+            "def mcp_smart_search(query: str) -> dict:",
+            "def mcp_smart_fetch(url: str) -> dict:",
+            "def mcp_smart_crawl(url: str) -> dict:",
+            "def mcp_screenshot(url: str) -> dict:",
+            "def cache_clear() -> dict:",
+            "def version() -> dict:",
+          ].join("\n"),
+        }],
+      };
+    }
+    throw new Error(`unexpected call ${name} ${JSON.stringify(args)}`);
+  }, ["research"]);
+
+  assert.equal(probe.ok, true);
+  assert.equal(probe.bindingLevel, "server");
+  assert.equal(probe.serverName, "research");
+  assert.deepEqual(probe.tools, HOUND_TOOLS);
+  assert.deepEqual(calls.map((item) => item.name), ["listToolFiles", "readToolFile"]);
+});
+
+test("Hound Code Mode probe supports tool-level binding and optional-only grants", async () => {
+  const probe = await probeHoundCodeMode(async (name, args) => {
+    if (name === "listToolFiles") {
+      return {
+        content: [{
+          type: "text",
+          text: [
+            "servers/",
+            "  hound/",
+            "    cache_clear.pyi",
+            "    version.pyi",
+          ].join("\n"),
+        }],
+      };
+    }
+    if (name === "readToolFile" && args.fileName === "servers/hound/cache_clear.pyi") {
+      return {
+        content: [{ type: "text", text: "def cache_clear() -> dict:" }],
+      };
+    }
+    throw new Error("unexpected Code Mode probe call");
+  }, ["hound"]);
+
+  assert.equal(probe.ok, true);
+  assert.equal(probe.bindingLevel, "tool");
+  assert.deepEqual(probe.tools, ["cache_clear", "version"]);
+});
+
+test("generic MCP tool caller preserves repository Virtual Key scope and parses tools/call", async () => {
+  const calls = [];
+  const result = await callMcpGatewayTool(
+    "http://bifrost.test/v1",
+    "vk-repo",
+    "listToolFiles",
+    {},
+    {
+      requestId: 33,
+      fetch: async (url, init) => {
+        calls.push({ url: String(url), init });
+        const body = [
+          'data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":1}}',
+          "",
+          'data: {"jsonrpc":"2.0","id":33,"result":{"content":[{"type":"text","text":"servers/\\n  hound.pyi"}]}}',
+          "",
+        ].join("\n");
+        return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
+      },
+    },
+  );
+  assert.equal(calls[0].url, "http://bifrost.test/mcp");
+  assert.equal(calls[0].init.headers["x-bf-vk"], "vk-repo");
+  assert.match(result.content[0].text, /hound\.pyi/u);
 });

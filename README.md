@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.2
+0.8.3
 ```
 
 Bun also works:
@@ -302,22 +302,23 @@ pifrost repo vmcp remove 'Development Tools'
 
 Pifrost treats Hound as a normal repository-scoped **Bifrost MCP client**. Pifrost does not install Hound, start it, connect to Hound directly, proxy its HTTP endpoint, or create a synthetic `omp-web` model. Bifrost remains the sole MCP boundary exposed to OMP.
 
-The supported Hound MCP contract is the six tools published by `master-fetch`:
+The supported Hound MCP contract is the six tools published by `master-fetch`: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`.
 
-- `mcp_smart_search` — keyless/BYOK web search returning ranked URLs and snippets.
-- `mcp_smart_fetch` — URL/PDF fetch with focused extraction, pagination, bulk fetch and anti-bot escalation.
-- `mcp_smart_crawl` — same-domain crawl, sitemap discovery and selective crawl.
-- `mcp_screenshot` — page screenshot for multimodal use.
-- `cache_clear` — Hound cache maintenance.
-- `version` — Hound version/update information.
+`pifrost repo status` validates Hound through the repository Virtual Key. In classic MCP mode it checks the canonical Hound tools returned by Bifrost `tools/list`. If the Hound client has **Bifrost Code Mode** enabled, the raw Hound tools are intentionally hidden; Pifrost instead verifies the four Code Mode meta-tools, calls `listToolFiles`, and reads the Hound virtual `.pyi` stub with `readToolFile`. Those probes are local and non-destructive: Pifrost does not run a search, fetch a page, crawl a site, or start a browser during status/doctor.
 
-`pifrost repo status` inspects Hound at two layers: Bifrost management policy (what the repository Virtual Key should receive) and a live repository-key-scoped Bifrost MCP `tools/list` call (what OMP can actually see). Detection is by canonical Hound tool names rather than by MCP client name, so a Bifrost client named `hound`, `master-fetch`, or another name is supported. Bifrost-prefixed gateway names such as `hound-mcp_smart_search` are normalized back to their canonical Hound tools.
+Readiness is reported separately:
 
-Search is reported separately from Hound's fetch/crawl/screenshot capabilities. If `mcp_smart_search` is visible, the repository has an MCP/Hound search path; OMP's native `modelRoles.web` and `retry.fallbackChains.web` remain independently owned by OMP. Pifrost reports availability only and does not choose between Hound and OMP native search for the model.
+- **search ready** — `mcp_smart_search`
+- **web research ready** — search + fetch
+- **deep research ready** — search + fetch + crawl
+- **screenshot callable** — Hound exposes `mcp_screenshot`
+- **visual web ready** — screenshot content is preserved as actual multimodal image content end-to-end
 
-Hound's search/fetch workflow is intentionally preserved: `mcp_smart_search` returns ranked URLs/snippets and the agent should use `mcp_smart_fetch` for source content rather than treating search snippets as the evidence payload.
+Current supported Bifrost MCP releases flatten upstream MCP `ImageContent` into text while relaying tool results. Pifrost therefore reports Hound screenshot as callable but **not multimodal-ready through Bifrost** and emits a warning rather than overstating the capability. Search, fetch, crawl, PDF/OCR extraction and other text/structured Hound functions remain compatible with Bifrost Code Mode.
 
-Pifrost also reports the live Bifrost MCP tool count, OMP's default `discoverable` presentation, approximate eager schema footprint, Bifrost client instruction metadata where exposed, and attached Virtual MCP instruction provenance. Discoverable presentation and provider-side `defer_loading`/Tool Search remain separate mechanisms.
+OMP's native `modelRoles.web` / `retry.fallbackChains.web` remain a separate mechanism. Pifrost reports the Hound MCP path and native web path independently; it does not choose between them for the model.
+
+Pifrost also reports the live Bifrost MCP tool count, OMP's default `discoverable` presentation, approximate eager schema footprint, Bifrost client instruction metadata where exposed, and attached Virtual MCP instruction provenance. Discoverable presentation, Bifrost Code Mode and provider-side `defer_loading`/Tool Search are separate mechanisms.
 
 ### MCP server instructions
 

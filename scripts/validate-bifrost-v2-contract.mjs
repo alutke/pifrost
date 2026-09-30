@@ -178,6 +178,14 @@ const SOURCES = [
     ],
   },
   {
+    name: "Bifrost 2.2.4 MCP image relay limitation contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_4_COMMIT}/transports/bifrost-http/handlers/mcpserver.go`,
+    required: [
+      "ChatContentBlockTypeText",
+      "mcp.NewToolResultText(resultText)",
+    ],
+  },
+  {
     name: "current Bifrost dev routing canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/routingRules.ts",
     required: ["chain_rule", "virtual_key", "priority", "fallbacks", "weight"],

@@ -1,0 +1,22 @@
+name: Upstream canary
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hound-master:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check current Hound master contract
+        env:
+          PIFROST_HOUND_UPSTREAM_CANARY: "1"
+        run: node scripts/validate-hound-contract.mjs
