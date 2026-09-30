@@ -115,11 +115,28 @@ function toolStatusMap(policy, clients, liveTools) {
 
   const liveKnown = liveTools !== undefined;
   const houndClientNames = clientRows.map((item) => item.name);
+  const rawLiveTools = Array.isArray(liveTools) ? liveTools : [];
   const liveCanonical = new Map();
-  for (const tool of Array.isArray(liveTools) ? liveTools : []) {
+
+  // First identify Hound from its distinctive MCP tool contract.
+  for (const tool of rawLiveTools) {
     const name = typeof tool === "string" ? tool : tool?.name;
-    const canonical = canonicalHoundToolName(name, houndClientNames);
-    if (canonical) liveCanonical.set(canonical, name);
+    const canonical = canonicalHoundToolName(name);
+    if (canonical && HOUND_IDENTITY_TOOLS.includes(canonical)) {
+      liveCanonical.set(canonical, name);
+    }
+  }
+
+  // Generic names such as "version" are accepted only after a Hound client
+  // has been identified by management metadata or a distinctive live tool.
+  const houndIdentityKnown = houndClientNames.length > 0 ||
+    HOUND_IDENTITY_TOOLS.some((name) => liveCanonical.has(name));
+  if (houndIdentityKnown) {
+    for (const tool of rawLiveTools) {
+      const name = typeof tool === "string" ? tool : tool?.name;
+      const canonical = canonicalHoundToolName(name, houndClientNames);
+      if (canonical) liveCanonical.set(canonical, name);
+    }
   }
 
   const tools = Object.fromEntries(HOUND_TOOLS.map((name) => [name, {
