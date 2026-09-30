@@ -34,8 +34,8 @@ export const MCP_SCHEMA_URL =
   "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json";
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
-export const PIFROST_OMP_MIN_VERSION = "18.3.2";
-export const PIFROST_BIFROST_MIN_VERSION = "2.0.0";
+export const PIFROST_OMP_MIN_VERSION = "18.4.5";
+export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
 
 export const ROLE_MAP = Object.freeze({
   default: "bifrost/omp-default",
@@ -592,7 +592,9 @@ export function ompCompatibilityMatrix(version) {
   return [
     feature("omp-baseline", "Pifrost OMP baseline", PIFROST_OMP_MIN_VERSION, "Pifrost's tested OMP contract is not guaranteed"),
     feature("omp-mcp-instructions", "MCP instructions:false", "18.3.1", "Repo MCP instruction suppression is unavailable"),
-    feature("omp-cfg-protocol", "cfg:// protocol", "18.3.1", "Future cfg:// integration is unavailable"),
+    feature("omp-cfg-protocol", "cfg:// protocol", "18.3.1", "cfg:// integration is unavailable"),
+    feature("omp-modern-model-metadata", "OMP 18.4 model capability metadata", "18.4.5", "Service tiers, pricing status and current model-role semantics cannot be trusted"),
+    feature("omp-model-presets", "OMP model presets", "18.4.5", "OMP-owned model preset workflows are unavailable"),
   ];
 }
 
@@ -943,6 +945,38 @@ export async function bifrostCompatibilityMatrix({
     }
   }
 
+  for (const feature of [
+    {
+      id: "bifrost-tool-search",
+      label: "Deferred Tool Search",
+      minimum: "2.2.4",
+      impact: "Deferred MCP tools cannot be safely routed through Bifrost",
+    },
+    {
+      id: "bifrost-between-tools-thinking",
+      label: "Between-tools thinking",
+      minimum: "2.2.4",
+      impact: "Between-tools reasoning semantics cannot be preserved",
+    },
+    {
+      id: "bifrost-service-tier",
+      label: "Service-tier capability metadata",
+      minimum: "2.2.4",
+      impact: "Pifrost cannot safely gate service-tier requests by route member",
+    },
+  ]) {
+    results.push(
+      featureUnavailable(feature.id, feature.label, feature.minimum, installedVersion, feature.impact) ?? {
+        id: feature.id,
+        label: feature.label,
+        minimum: feature.minimum,
+        status: "supported",
+        detail: `available in Bifrost ${installedVersion}`,
+        impact: undefined,
+      },
+    );
+  }
+
   return results;
 }
 
@@ -1219,6 +1253,8 @@ export function normalizeMcpClient(client) {
     isCodeModeClient: Boolean(config?.is_code_mode_client),
     toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute) ? config.tools_to_auto_execute.map(String) : [],
     needsSessionStickiness: typeof config?.needs_session_stickiness === "boolean" ? config.needs_session_stickiness : undefined,
+    maxInstructionsLength: Number.isFinite(Number(config?.max_instructions_length)) ? Number(config.max_instructions_length) : undefined,
+    serverInstructions: nonEmpty(client?.server_instructions) ?? nonEmpty(config?.server_instructions),
     tools,
     raw: client,
   };
@@ -1242,6 +1278,8 @@ export function normalizeVirtualMcp(vmcp) {
     name: nonEmpty(vmcp?.name) ?? String(vmcp?.id ?? ""),
     endpointSlug: nonEmpty(vmcp?.endpoint_slug),
     description: nonEmpty(vmcp?.description),
+    instructions: nonEmpty(vmcp?.instructions),
+    instructionsMode: nonEmpty(vmcp?.instructions_mode) ?? "append",
     enabled: vmcp?.enabled !== false,
     tools: rawTools
       .map((spec) => {
@@ -1283,6 +1321,40 @@ export function virtualMcpsForVirtualKey(virtualMcps, virtualKeyId) {
   const id = nonEmpty(virtualKeyId);
   if (!id) return [];
   return (virtualMcps ?? []).filter((item) => item.virtualKeyIds?.includes(id));
+}
+
+export function searchBackendDiagnostics(policy, clients = [], virtualMcps = []) {
+  const expected = ["fourget_web_search", "fourget_news_search", "fourget_image_search"];
+  const granted = new Set();
+  for (const grant of policy?.effective ?? []) {
+    const client = (clients ?? []).find((item) => item?.name?.toLowerCase() === String(grant.client ?? "").toLowerCase());
+    const available = new Set(client?.tools ?? []);
+    if (grant.tools?.includes("*")) {
+      for (const tool of available) granted.add(tool);
+    } else {
+      for (const tool of grant.tools ?? []) if (available.has(tool) || tool.startsWith("fourget_")) granted.add(tool);
+    }
+  }
+  const attachedNames = new Set((policy?.virtualMcps ?? []).map((item) => item.name));
+  const instructionRows = (virtualMcps ?? [])
+    .filter((item) => attachedNames.has(item.name))
+    .map((item) => ({
+      name: item.name,
+      mode: item.instructionsMode ?? "append",
+      instructions: item.instructions,
+    }));
+  const tools = Object.fromEntries(expected.map((name) => [name, granted.has(name)]));
+  const availableCount = expected.filter((name) => granted.has(name)).length;
+  return {
+    preferredPath: availableCount > 0 ? "MCP/4get" : "OMP native web_search",
+    fourget: {
+      available: availableCount > 0,
+      complete: availableCount === expected.length,
+      tools,
+      missing: expected.filter((name) => !granted.has(name)),
+    },
+    instructions: instructionRows,
+  };
 }
 
 export async function attachVirtualMcpToVirtualKey(url, managementAuth, virtualMcpId, virtualKeyId) {
