@@ -452,6 +452,15 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 	const supportsToolChoice = supportsTools && (
 		!hasParameterInventory || parameters.some((parameter) => /tool_choice/u.test(parameter))
 	);
+	const supportsToolSearch = hasParameterInventory
+		? parameters.some((parameter) => /tool_search|defer_loading/u.test(parameter))
+		: undefined;
+	const supportsServiceTier = hasParameterInventory
+		? parameters.some((parameter) => /service_tier/u.test(parameter))
+		: undefined;
+	const serviceTiers = model.service_tiers
+		?.map((tier) => typeof tier === "string" ? tier.trim() : (tier.id ?? tier.name ?? "").trim())
+		.filter((tier): tier is string => Boolean(tier));
 	const inputModalities = model.architecture?.input_modalities?.map((modality) => modality.toLowerCase()) ?? [];
 	const hasInputModalities = inputModalities.length > 0;
 	const inputPrice = pricePerMillion(model.pricing?.prompt) ?? 0;
@@ -472,6 +481,10 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		contextWindow,
 		maxTokens,
 		supportsTools,
+		...(supportsToolSearch !== undefined ? { supportsToolSearch } : {}),
+		...(supportsServiceTier !== undefined ? { supportsServiceTier } : {}),
+		...(serviceTiers?.length ? { serviceTiers: [...new Set(serviceTiers)] } : {}),
+		pricingStatus: model.pricing_status ?? (inputPrice === 0 && outputPrice === 0 ? "unknown" : undefined),
 		...(protocols ? { protocols } : {}),
 		capabilitySources: {
 			contextWindow: liveContextWindow ? "live" : "fallback",
@@ -481,6 +494,10 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			reasoningEfforts: (model.reasoning?.supported_efforts?.length ?? 0) > 0 ? "live" : "fallback",
 			tools: hasParameterInventory ? "live" : "fallback",
 			toolChoice: hasParameterInventory ? "live" : "fallback",
+			toolSearch: hasParameterInventory ? "live" : "fallback",
+			serviceTier: hasParameterInventory ? "live" : "fallback",
+			serviceTiers: serviceTiers?.length ? "live" : "fallback",
+			pricingStatus: model.pricing_status ? "live" : "fallback",
 			protocol: protocols ? "live" : "fallback",
 		},
 		compat: {
@@ -609,6 +626,21 @@ export function synthesizeAlias(
 		: members.length > 0 && members.every((model) => model.compat.supportsReasoningWithTools === true)
 			? true
 			: undefined;
+	const supportsToolSearch = members.length > 0 && members.every((model) => model.supportsToolSearch === true);
+	const supportsBetweenToolsThinking = members.length > 0 && members.every((model) => model.compat.supportsBetweenToolsThinking === true);
+	const supportsServiceTier = members.length > 0 && members.every((model) => model.supportsServiceTier === true);
+	const serviceTiers = members.length > 0 && members.every((model) => model.serviceTiers?.length)
+		? [...members.slice(1).reduce(
+			(set, model) => new Set([...set].filter((tier) => model.serviceTiers!.includes(tier))),
+			new Set(members[0]!.serviceTiers!),
+		)]
+		: undefined;
+	const memberPricingStatuses = members.map((model) => model.pricingStatus ?? (Object.values(model.cost).some((value) => value > 0) ? "fixed" : "unknown"));
+	const pricingStatus: OmpModel["pricingStatus"] = members.length === 0
+		? undefined
+		: new Set(memberPricingStatuses).size === 1
+			? (memberPricingStatuses[0] === "fixed" ? undefined : memberPricingStatuses[0] as OmpModel["pricingStatus"])
+			: "variable";
 	const disableReasoningOnToolChoice = members.some((model) => model.compat.disableReasoningOnToolChoice === true);
 	const memberDiagnostics: AliasMemberDiagnostic[] = resolutionEntries.map((entry) => {
 		const model = entry.resolution.model;
@@ -642,6 +674,11 @@ export function synthesizeAlias(
 		forcedToolChoice,
 		namedToolChoice,
 		reasoningWithTools,
+		toolSearch: supportsToolSearch,
+		betweenToolsThinking: supportsBetweenToolsThinking,
+		serviceTier: supportsServiceTier,
+		...(serviceTiers?.length ? { serviceTiers } : {}),
+		...(pricingStatus ? { pricingStatus } : {}),
 		...(normalized.routingPins?.length ? { routingPins: normalized.routingPins.map((pin) => ({ ...pin })) } : {}),
 		members: memberDiagnostics,
 	};
@@ -664,6 +701,10 @@ export function synthesizeAlias(
 			contextWindow: diagnostic.contextWindow!,
 			maxTokens: diagnostic.maxTokens!,
 			supportsTools: diagnostic.tools,
+			supportsToolSearch,
+			supportsServiceTier,
+			...(serviceTiers?.length ? { serviceTiers } : {}),
+			...(pricingStatus ? { pricingStatus } : {}),
 			protocols: [PIFROST_WIRE_PROTOCOL],
 			compat: {
 				supportsDeveloperRole: false,
@@ -674,6 +715,7 @@ export function synthesizeAlias(
 				supportsForcedToolChoice: forcedToolChoice,
 				supportsNamedToolChoice: namedToolChoice,
 				supportsReasoningWithTools: reasoningWithTools,
+				supportsBetweenToolsThinking,
 				disableReasoningOnToolChoice,
 			},
 		},
@@ -794,6 +836,11 @@ function formatSources(sources: CapabilityProvenance | undefined): string {
 		"forcedToolChoice",
 		"namedToolChoice",
 		"reasoningWithTools",
+		"toolSearch",
+		"betweenToolsThinking",
+		"serviceTier",
+		"serviceTiers",
+		"pricingStatus",
 		"protocol",
 	] as CapabilityKey[])
 		.filter((key) => sources[key])
@@ -807,7 +854,7 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 	for (const item of diagnostics) {
 		const status = item.unresolved.length ? "WARN" : "OK";
 		lines.push(
-			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"} toolChoice=${item.toolChoice === undefined ? "n/a" : item.toolChoice ? "yes" : "no"} forcedTool=${item.forcedToolChoice === undefined ? "n/a" : item.forcedToolChoice ? "yes" : "no"} reasoningWithTools=${item.reasoningWithTools === undefined ? "n/a" : item.reasoningWithTools ? "yes" : "no"}`,
+			`${status} ${item.id}: context=${formatNumber(item.contextWindow)} output=${formatNumber(item.maxTokens)} image=${item.image ? "yes" : "no"} reasoning=${item.reasoning ? "yes" : "no"} efforts=${item.reasoningEfforts.join(",") || "none"} tools=${item.tools ? "yes" : "no"} toolChoice=${item.toolChoice === undefined ? "n/a" : item.toolChoice ? "yes" : "no"} forcedTool=${item.forcedToolChoice === undefined ? "n/a" : item.forcedToolChoice ? "yes" : "no"} reasoningWithTools=${item.reasoningWithTools === undefined ? "n/a" : item.reasoningWithTools ? "yes" : "no"} toolSearch=${item.toolSearch === undefined ? "n/a" : item.toolSearch ? "yes" : "no"} betweenTools=${item.betweenToolsThinking === undefined ? "n/a" : item.betweenToolsThinking ? "yes" : "no"} serviceTier=${item.serviceTier === undefined ? "n/a" : item.serviceTier ? "yes" : "no"} tiers=${item.serviceTiers?.join(",") || "n/a"} pricing=${item.pricingStatus ?? "fixed/unknown"}`,
 		);
 		for (const pin of item.routingPins ?? []) {
 			const key = pin.providerKeyName ? `provider-key=${pin.providerKeyName}` : pin.keyId ? `key-id=${pin.keyId}` : "key-pin";
