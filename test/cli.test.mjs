@@ -22,6 +22,7 @@ import {
   quotaGovernanceSources,
   formatQuotaGovernanceSource,
   ompCompatibilityMatrix,
+  ompWebSearchDiagnostics,
   searchBackendDiagnostics,
   webSearchConfigDiagnostics,
   parseSemver,
@@ -31,6 +32,7 @@ import {
   virtualMcpsForVirtualKey,
   saveState,
 } from "../cli-lib.mjs";
+import { parseMcpJsonRpcResponse } from "../mcp-rpc.mjs";
 
 test("canonical CLI help exposes the full repo Skills/reset surface", () => {
   const cli = resolve(import.meta.dirname, "../cli.mjs");
@@ -359,6 +361,11 @@ test("4get diagnostics distinguish configured grants from live gateway visibilit
     ompSearch: omp,
   });
   assert.equal(diagnostics.preferredPath, "MCP/4get");
+  assert.deepEqual(diagnostics.paths, {
+    web: "MCP/4get",
+    news: "MCP/4get",
+    images: "MCP/4get",
+  });
   assert.equal(diagnostics.fourget.complete, true);
   assert.equal(diagnostics.fourget.clients[0].name, "fourget");
   assert.equal(diagnostics.fourget.tools.fourget_web_search.configured, true);
@@ -377,6 +384,44 @@ test("OMP web diagnostics report the built-in chain when no explicit web role ex
   assert.match(diagnostics.source, /built-in default search chain/u);
 });
 
+test("OMP web diagnostics distinguish unavailable and unreadable config from an unset web role", () => {
+  const unavailable = ompWebSearchDiagnostics({
+    commandExists: () => false,
+  });
+  assert.equal(unavailable.status, "unavailable");
+  assert.equal(unavailable.available, false);
+  assert.equal(unavailable.source, "OMP unavailable");
+
+  const unreadable = ompWebSearchDiagnostics({
+    commandExists: () => true,
+    runCommand: () => { throw new Error("config boom"); },
+  });
+  assert.equal(unreadable.status, "error");
+  assert.equal(unreadable.available, false);
+  assert.match(unreadable.error, /config boom/u);
+});
+
+test("partial 4get installs only affect the matching search modality", () => {
+  const policy = {
+    effective: [{ client: "fourget", tools: ["fourget_image_search"], sources: ["direct"] }],
+    virtualMcps: [],
+  };
+  const clients = [{
+    name: "fourget",
+    state: "connected",
+    tools: ["fourget_image_search"],
+  }];
+  const diagnostics = searchBackendDiagnostics(policy, clients, [], {
+    liveTools: [{ name: "fourget-fourget_image_search", inputSchema: { type: "object" } }],
+    ompSearch: webSearchConfigDiagnostics({}, {}),
+  });
+  assert.equal(diagnostics.paths.web, "OMP native web_search");
+  assert.equal(diagnostics.paths.images, "MCP/4get");
+  assert.equal(diagnostics.paths.news, "OMP/native or model-selected search");
+  assert.equal(diagnostics.preferredPath, "OMP native web_search");
+});
+
+
 test("MCP tool surface reports discoverable presentation separately from provider deferral", () => {
   const surface = mcpToolSurfaceDiagnostics([
     { name: "fourget-fourget_web_search", description: "Search", inputSchema: { type: "object" } },
@@ -389,28 +434,41 @@ test("MCP tool surface reports discoverable presentation separately from provide
   assert.ok(surface.estimatedSchemaTokens > 0);
 });
 
-test("live MCP tool listing accepts Bifrost-prefixed tool names", async () => {
+test("live MCP tool listing ignores SSE notifications and selects the matching JSON-RPC response id", async () => {
   const calls = [];
   const tools = await listMcpGatewayTools("http://bifrost.test/v1", "vk-test", {
     fetch: async (url, init) => {
       calls.push({ url: String(url), init });
-      return new Response(JSON.stringify({
-        jsonrpc: "2.0",
-        id: 2,
-        result: {
-          tools: [{
-            name: "fourget-fourget_web_search",
-            description: "Search",
-            inputSchema: { type: "object", properties: { query: { type: "string" } } },
-          }],
-        },
-      }), { status: 200, headers: { "content-type": "application/json" } });
+      const body = [
+        'data: {"jsonrpc":"2.0","method":"notifications/tools/list_changed"}',
+        "",
+        'data: {"jsonrpc":"2.0","id":99,"result":{"tools":[]}}',
+        "",
+        'data: {"jsonrpc":"2.0","id":2,"result":{"tools":[{"name":"fourget-fourget_web_search","description":"Search","inputSchema":{"type":"object","properties":{"query":{"type":"string"}}}}]}}',
+        "",
+      ].join("\n");
+      return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } });
     },
   });
   assert.equal(calls[0].url, "http://bifrost.test/mcp");
   assert.equal(calls[0].init.headers["x-bf-vk"], "vk-test");
   assert.deepEqual(tools.map((tool) => tool.name), ["fourget-fourget_web_search"]);
   assert.equal(tools[0].inputSchema.properties.query.type, "string");
+});
+
+test("MCP SSE parser returns only the envelope matching the requested id", () => {
+  const body = [
+    'data: {"jsonrpc":"2.0","method":"notifications/progress","params":{"progress":1}}',
+    "",
+    'data: {"jsonrpc":"2.0","id":7,"result":{"ok":true}}',
+    "",
+  ].join("\n");
+  assert.deepEqual(parseMcpJsonRpcResponse(body, 7), {
+    jsonrpc: "2.0",
+    id: 7,
+    result: { ok: true },
+  });
+  assert.equal(parseMcpJsonRpcResponse(body, 8), undefined);
 });
 
 test("effective repo MCP policy unions direct grants, Virtual MCPs and allowed-by-default clients", () => {
