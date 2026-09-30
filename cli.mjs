@@ -26,6 +26,8 @@ import {
 
 import {
   VERSION,
+  PIFROST_OMP_MIN_VERSION,
+  PIFROST_BIFROST_MIN_VERSION,
   PifrostHttpError,
   aliasManifestPath,
   attachVirtualMcpToVirtualKey,
@@ -65,6 +67,7 @@ import {
   runCommand,
   runtimeConfigFromState,
   saveState,
+  searchBackendDiagnostics,
   testInference,
   testManagement,
   syncVirtualMcpAssignments,
@@ -220,12 +223,12 @@ async function commandCompatibilityDoctor(snapshot) {
   });
 
   printHeader("Upstream compatibility");
-  console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (Pifrost minimum 18.3.2)`);
+  console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (Pifrost minimum ${PIFROST_OMP_MIN_VERSION})`);
   for (const item of matrix.omp) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
-  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (Pifrost baseline 2.0.0)`);
+  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (Pifrost baseline ${PIFROST_BIFROST_MIN_VERSION})`);
   for (const item of matrix.bifrost) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
@@ -854,6 +857,7 @@ async function commandRepoStatus(snapshot) {
           : listMcpClients(runtime.url, managementAuth),
       ]);
       const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
+      const search = searchBackendDiagnostics(policy, clients, virtualMcps);
       const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
       console.log(`Live Virtual MCPs:${liveVirtual.length ? ` ${liveVirtual.join(", ")}` : " none"}`);
       if (policy.effective.length) {
@@ -866,6 +870,15 @@ async function commandRepoStatus(snapshot) {
       }
       for (const item of policy.unresolved) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
+      }
+      console.log(`Search path:        ${search.preferredPath}`);
+      if (search.fourget.available) {
+        const present = Object.entries(search.fourget.tools).filter(([, value]) => value).map(([name]) => name);
+        console.log(`  4get tools:       ${present.join(", ")}`);
+        if (search.fourget.missing.length) console.log(`  4get missing:     ${search.fourget.missing.join(", ")}`);
+      }
+      for (const item of search.instructions) {
+        console.log(`  VMCP instructions: ${item.name} mode=${item.mode} text=${item.instructions ? "set" : "none"}`);
       }
     } catch (error) {
       console.log(`Effective MCP policy: unavailable (${formatError(error)})`);
@@ -1011,10 +1024,12 @@ async function commandRepoMcpList() {
       client.authType ? `auth=${client.authType}` : undefined,
       client.connectionType ? `transport=${client.connectionType}` : undefined,
       client.needsSessionStickiness === true ? "sticky" : undefined,
+      Number.isFinite(client.maxInstructionsLength) && client.maxInstructionsLength > 0 ? `instructions<=${client.maxInstructionsLength}B` : undefined,
     ].filter(Boolean);
     console.log(`${client.name}  state=${client.state ?? "unknown"}  tools=${client.tools.length || "unknown"}${modes.length ? `  ${modes.join(" ")}` : ""}`);
     if (client.endpointSlug) console.log(`  endpoint=/mcp/${client.endpointSlug}`);
     if (client.toolsToAutoExecute?.length) console.log(`  auto-execute: ${client.toolsToAutoExecute.join(", ")}`);
+    if (client.serverInstructions) console.log(`  upstream instructions: set (${Buffer.byteLength(client.serverInstructions, "utf8")}B)`);
     if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
   }
 }
@@ -1045,7 +1060,7 @@ async function commandRepoVirtualMcpList() {
       item.endpointSlug ? `/mcp/${item.endpointSlug}` : undefined,
     ].filter(Boolean);
     const toolCount = item.tools.reduce((sum, spec) => sum + (spec.toolNames.includes("*") ? 1 : spec.toolNames.length), 0);
-    console.log(`${item.name}  tools=${toolCount}${flags.length ? `  ${flags.join(" ")}` : ""}`);
+    console.log(`${item.name}  tools=${toolCount}${flags.length ? `  ${flags.join(" ")}` : ""}  instructions=${item.instructions ? "set" : "none"} mode=${item.instructionsMode ?? "append"}`);
   }
 }
 
