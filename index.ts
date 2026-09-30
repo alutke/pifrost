@@ -185,6 +185,18 @@ export interface AliasMemberDiagnostic {
 	status: "resolved" | "unresolved";
 	reason?: string;
 	protocols?: PifrostWireProtocol[];
+	capabilities?: {
+		contextWindow: number;
+		maxTokens: number;
+		image: boolean;
+		reasoning: boolean;
+		tools: boolean;
+		toolSearch?: boolean;
+		reasoningWithTools?: boolean;
+		betweenToolsThinking?: boolean;
+		serviceTier?: boolean;
+		serviceTiers?: string[];
+	};
 	sources?: CapabilityProvenance;
 	pricing?: RoutePricingDiagnostic;
 }
@@ -653,6 +665,18 @@ export function synthesizeAlias(
 			status: model ? "resolved" : "unresolved",
 			reason: model ? rich?.reason : rich?.reason ?? ambiguous ?? "no safe live/capability match",
 			protocols: model?.protocols,
+			capabilities: model ? {
+				contextWindow: model.contextWindow,
+				maxTokens: model.maxTokens,
+				image: model.input.includes("image"),
+				reasoning: model.reasoning,
+				tools: model.supportsTools,
+				toolSearch: model.supportsToolSearch,
+				reasoningWithTools: model.compat.supportsReasoningWithTools,
+				betweenToolsThinking: model.compat.supportsBetweenToolsThinking,
+				serviceTier: model.supportsServiceTier,
+				...(model.serviceTiers?.length ? { serviceTiers: [...model.serviceTiers] } : {}),
+			} : undefined,
 			sources: model?.capabilitySources ?? rich?.sources,
 			pricing: rich?.pricing,
 		};
