@@ -9,6 +9,7 @@ import {
 	type DynamicRouteMemberProfile,
 	type DynamicRouteProfile,
 } from "../dynamic-routing.ts";
+// @ts-expect-error mcp-rpc.mjs is intentionally dependency-free JavaScript used by the standalone CLI.
 import { postMcpJsonRpc } from "../mcp-rpc.mjs";
 
 async function listen(handler: (req: IncomingMessage, res: ServerResponse) => void | Promise<void>) {
