@@ -6,7 +6,7 @@ const SOURCES = [
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_4_5_COMMIT}/packages/catalog/src/types.ts`,
     required: [
       "webSearchModel?: string",
-      "serviceTiers?: readonly ServiceTier[]",
+      "serviceTiers?: readonly string[]",
       "pricingStatus?:",
       "supportsBetweenToolsThinking?: boolean",
     ],
