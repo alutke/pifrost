@@ -1379,6 +1379,7 @@ export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
       ? [nonEmpty(fallback)]
       : [];
   return {
+    status: "ok",
     available: true,
     configured: Boolean(role),
     primary: role,
@@ -1387,22 +1388,44 @@ export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
   };
 }
 
-export function readOmpConfigValue(key) {
-  if (!commandExists("omp")) return undefined;
+export function readOmpConfigValueResult(key) {
+  if (!commandExists("omp")) {
+    return { status: "unavailable", value: undefined, error: "`omp` is not installed or not on PATH" };
+  }
   try {
     const { stdout } = runCommand("omp", ["config", "get", key, "--json"]);
     const parsed = JSON.parse(stdout);
-    return parsed?.value;
-  } catch {
-    return undefined;
+    return { status: "ok", value: parsed?.value };
+  } catch (error) {
+    return {
+      status: "error",
+      value: undefined,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
+export function readOmpConfigValue(key) {
+  const result = readOmpConfigValueResult(key);
+  return result.status === "ok" ? result.value : undefined;
+}
+
 export function ompWebSearchDiagnostics() {
-  return webSearchConfigDiagnostics(
-    readOmpConfigValue("modelRoles"),
-    readOmpConfigValue("retry.fallbackChains"),
-  );
+  const roles = readOmpConfigValueResult("modelRoles");
+  const fallback = readOmpConfigValueResult("retry.fallbackChains");
+  if (roles.status !== "ok" || fallback.status !== "ok") {
+    const unavailable = roles.status === "unavailable" && fallback.status === "unavailable";
+    return {
+      status: unavailable ? "unavailable" : "error",
+      available: false,
+      configured: false,
+      primary: undefined,
+      fallbacks: [],
+      source: unavailable ? "OMP unavailable" : "OMP web-search configuration unreadable",
+      error: roles.error ?? fallback.error,
+    };
+  }
+  return webSearchConfigDiagnostics(roles.value, fallback.value);
 }
 
 function gatewayToolTokenEstimate(tools) {
@@ -1483,10 +1506,38 @@ export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [],
       instructions: item.instructions,
     }));
 
-  const omp = options.ompSearch ?? webSearchConfigDiagnostics(undefined, undefined);
-  const fourgetUsable = liveKnown ? visibleCount > 0 : configuredCount > 0;
+  const omp = options.ompSearch ?? {
+    status: "unavailable",
+    available: false,
+    configured: false,
+    primary: undefined,
+    fallbacks: [],
+    source: "OMP search configuration not inspected",
+  };
+  const toolUsable = (name) => liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true;
+  const modalities = {
+    web: {
+      tool: "fourget_web_search",
+      available: toolUsable("fourget_web_search"),
+    },
+    news: {
+      tool: "fourget_news_search",
+      available: toolUsable("fourget_news_search"),
+    },
+    images: {
+      tool: "fourget_image_search",
+      available: toolUsable("fourget_image_search"),
+    },
+  };
+  const paths = {
+    web: modalities.web.available ? "MCP/4get" : omp.available ? "OMP native web_search" : "unavailable",
+    news: modalities.news.available ? "MCP/4get" : "OMP/native or model-selected search",
+    images: modalities.images.available ? "MCP/4get" : "OMP/native or model-selected search",
+  };
+  const fourgetUsable = Object.values(modalities).some((item) => item.available);
   return {
-    preferredPath: fourgetUsable ? "MCP/4get" : "OMP native web_search",
+    preferredPath: paths.web,
+    paths,
     fourget: {
       available: fourgetUsable,
       configured: configuredCount > 0,
@@ -1496,6 +1547,7 @@ export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [],
       liveVerified: liveKnown,
       clients: fourgetClients,
       tools,
+      modalities,
       missing: FOURGET_TOOLS.filter((name) => liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured),
     },
     omp,
