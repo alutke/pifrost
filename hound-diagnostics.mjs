@@ -9,30 +9,64 @@ const HOUND_TOOL_SPECS = Object.freeze([
 
 export const HOUND_TOOLS = Object.freeze(HOUND_TOOL_SPECS.map((item) => item.name));
 export const HOUND_CORE_TOOLS = Object.freeze(HOUND_TOOL_SPECS.filter((item) => item.core).map((item) => item.name));
+const HOUND_IDENTITY_TOOLS = Object.freeze([
+  "mcp_smart_search",
+  "mcp_smart_fetch",
+  "mcp_smart_crawl",
+  "mcp_screenshot",
+]);
 
 function nonEmpty(value) {
   const text = typeof value === "string" ? value.trim() : "";
   return text || undefined;
 }
 
-function canonicalHoundToolName(name) {
+function prefixedToolMatches(value, clientName, canonical) {
+  const raw = nonEmpty(String(clientName ?? ""))?.toLowerCase();
+  if (!raw) return false;
+  const variants = new Set([
+    raw,
+    raw.replace(/[^a-z0-9]+/gu, "-").replace(/^-|-$/gu, ""),
+    raw.replace(/[^a-z0-9]+/gu, "_").replace(/^_|_$/gu, ""),
+  ].filter(Boolean));
+  for (const prefix of variants) {
+    for (const separator of ["-", "_", "__", ".", "/", ":"]) {
+      if (value === `${prefix}${separator}${canonical}`) return true;
+    }
+  }
+  return false;
+}
+
+function canonicalHoundToolName(name, clientNames = []) {
   const value = nonEmpty(String(name ?? ""))?.toLowerCase();
   if (!value) return undefined;
-  return HOUND_TOOLS.find((canonical) =>
-    value === canonical ||
-    value.endsWith(`-${canonical}`) ||
-    value.endsWith(`_${canonical}`) ||
-    value.endsWith(`__${canonical}`) ||
-    value.endsWith(`.${canonical}`) ||
-    value.endsWith(`/${canonical}`) ||
-    value.endsWith(`:${canonical}`)
-  );
+
+  for (const canonical of HOUND_TOOLS) {
+    if (value === canonical) return canonical;
+    if (HOUND_IDENTITY_TOOLS.includes(canonical)) {
+      if (
+        value.endsWith(`-${canonical}`) ||
+        value.endsWith(`_${canonical}`) ||
+        value.endsWith(`__${canonical}`) ||
+        value.endsWith(`.${canonical}`) ||
+        value.endsWith(`/${canonical}`) ||
+        value.endsWith(`:${canonical}`)
+      ) return canonical;
+      continue;
+    }
+    if (clientNames.some((clientName) => prefixedToolMatches(value, clientName, canonical))) {
+      return canonical;
+    }
+  }
+  return undefined;
 }
 
 function houndClient(client) {
   if (!client) return false;
-  const tools = new Set((client.tools ?? []).map(canonicalHoundToolName).filter(Boolean));
-  return HOUND_TOOLS.some((name) => tools.has(name));
+  const tools = new Set(
+    (client.tools ?? []).map((name) => canonicalHoundToolName(name, [client.name])).filter(Boolean),
+  );
+  return HOUND_IDENTITY_TOOLS.some((name) => tools.has(name));
 }
 
 function toolStatusMap(policy, clients, liveTools) {
@@ -47,7 +81,7 @@ function toolStatusMap(policy, clients, liveTools) {
 
     const canonicalAvailable = new Map();
     for (const tool of client?.tools ?? []) {
-      const canonical = canonicalHoundToolName(tool);
+      const canonical = canonicalHoundToolName(tool, [client?.name]);
       if (canonical) canonicalAvailable.set(canonical, tool);
     }
 
@@ -56,7 +90,7 @@ function toolStatusMap(policy, clients, liveTools) {
       for (const canonical of canonicalAvailable.keys()) canonicalGranted.add(canonical);
     } else {
       for (const tool of grant.tools ?? []) {
-        const canonical = canonicalHoundToolName(tool);
+        const canonical = canonicalHoundToolName(tool, [client?.name]);
         if (canonical && canonicalAvailable.has(canonical)) canonicalGranted.add(canonical);
       }
     }
@@ -80,10 +114,11 @@ function toolStatusMap(policy, clients, liveTools) {
   }
 
   const liveKnown = liveTools !== undefined;
+  const houndClientNames = clientRows.map((item) => item.name);
   const liveCanonical = new Map();
   for (const tool of Array.isArray(liveTools) ? liveTools : []) {
     const name = typeof tool === "string" ? tool : tool?.name;
-    const canonical = canonicalHoundToolName(name);
+    const canonical = canonicalHoundToolName(name, houndClientNames);
     if (canonical) liveCanonical.set(canonical, name);
   }
 
