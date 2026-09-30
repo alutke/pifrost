@@ -25,6 +25,7 @@ import {
   targetReference,
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
+import { postMcpJsonRpc } from "./mcp-rpc.mjs";
 
 export { PifrostHttpError, requestJson };
 export { aliasIdFromRule, deriveAliasesFromRules, routingFeatureSummary, targetReference };
@@ -1378,6 +1379,7 @@ export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
       ? [nonEmpty(fallback)]
       : [];
   return {
+    status: "ok",
     available: true,
     configured: Boolean(role),
     primary: role,
@@ -1386,22 +1388,46 @@ export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
   };
 }
 
-export function readOmpConfigValue(key) {
-  if (!commandExists("omp")) return undefined;
+export function readOmpConfigValueResult(key, options = {}) {
+  const exists = options.commandExists ?? commandExists;
+  const run = options.runCommand ?? runCommand;
+  if (!exists("omp")) {
+    return { status: "unavailable", value: undefined, error: "`omp` is not installed or not on PATH" };
+  }
   try {
-    const { stdout } = runCommand("omp", ["config", "get", key, "--json"]);
+    const { stdout } = run("omp", ["config", "get", key, "--json"]);
     const parsed = JSON.parse(stdout);
-    return parsed?.value;
-  } catch {
-    return undefined;
+    return { status: "ok", value: parsed?.value };
+  } catch (error) {
+    return {
+      status: "error",
+      value: undefined,
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
 }
 
-export function ompWebSearchDiagnostics() {
-  return webSearchConfigDiagnostics(
-    readOmpConfigValue("modelRoles"),
-    readOmpConfigValue("retry.fallbackChains"),
-  );
+export function readOmpConfigValue(key, options = {}) {
+  const result = readOmpConfigValueResult(key, options);
+  return result.status === "ok" ? result.value : undefined;
+}
+
+export function ompWebSearchDiagnostics(options = {}) {
+  const roles = readOmpConfigValueResult("modelRoles", options);
+  const fallback = readOmpConfigValueResult("retry.fallbackChains", options);
+  if (roles.status !== "ok" || fallback.status !== "ok") {
+    const unavailable = roles.status === "unavailable" && fallback.status === "unavailable";
+    return {
+      status: unavailable ? "unavailable" : "error",
+      available: false,
+      configured: false,
+      primary: undefined,
+      fallbacks: [],
+      source: unavailable ? "OMP unavailable" : "OMP web-search configuration unreadable",
+      error: roles.error ?? fallback.error,
+    };
+  }
+  return webSearchConfigDiagnostics(roles.value, fallback.value);
 }
 
 function gatewayToolTokenEstimate(tools) {
@@ -1482,10 +1508,38 @@ export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [],
       instructions: item.instructions,
     }));
 
-  const omp = options.ompSearch ?? webSearchConfigDiagnostics(undefined, undefined);
-  const fourgetUsable = liveKnown ? visibleCount > 0 : configuredCount > 0;
+  const omp = options.ompSearch ?? {
+    status: "unavailable",
+    available: false,
+    configured: false,
+    primary: undefined,
+    fallbacks: [],
+    source: "OMP search configuration not inspected",
+  };
+  const toolUsable = (name) => liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true;
+  const modalities = {
+    web: {
+      tool: "fourget_web_search",
+      available: toolUsable("fourget_web_search"),
+    },
+    news: {
+      tool: "fourget_news_search",
+      available: toolUsable("fourget_news_search"),
+    },
+    images: {
+      tool: "fourget_image_search",
+      available: toolUsable("fourget_image_search"),
+    },
+  };
+  const paths = {
+    web: modalities.web.available ? "MCP/4get" : omp.available ? "OMP native web_search" : "unavailable",
+    news: modalities.news.available ? "MCP/4get" : "OMP/native or model-selected search",
+    images: modalities.images.available ? "MCP/4get" : "OMP/native or model-selected search",
+  };
+  const fourgetUsable = Object.values(modalities).some((item) => item.available);
   return {
-    preferredPath: fourgetUsable ? "MCP/4get" : "OMP native web_search",
+    preferredPath: paths.web,
+    paths,
     fourget: {
       available: fourgetUsable,
       configured: configuredCount > 0,
@@ -1495,6 +1549,7 @@ export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [],
       liveVerified: liveKnown,
       clients: fourgetClients,
       tools,
+      modalities,
       missing: FOURGET_TOOLS.filter((name) => liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured),
     },
     omp,
@@ -1901,89 +1956,41 @@ export async function upsertRepoVirtualKey({
   return vk;
 }
 
-function parseMcpResponse(text) {
-  if (!text) return undefined;
-  try {
-    return JSON.parse(text);
-  } catch {}
-  for (const line of text.split(/\r?\n/u)) {
-    if (!line.startsWith("data:")) continue;
-    const payload = line.slice(5).trim();
-    if (!payload || payload === "[DONE]") continue;
-    try {
-      return JSON.parse(payload);
-    } catch {}
-  }
-  return text;
-}
-
 export async function listMcpGatewayTools(url, virtualKey, options = {}) {
-  const endpoint = bifrostMcpUrl(url);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
-  try {
-    const fetchImpl = options.fetch ?? globalThis.fetch;
-    const response = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        "x-bf-vk": virtualKey,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const body = parseMcpResponse(text);
-    if (!response.ok) throw new Error(`Bifrost MCP tools/list failed (HTTP ${response.status})`);
-    if (body?.error) throw new Error(`Bifrost MCP tools/list failed: ${body.error.message ?? JSON.stringify(body.error)}`);
-    const rawTools = Array.isArray(body?.result?.tools) ? body.result.tools : [];
-    return rawTools
-      .map((tool) => {
-        const name = nonEmpty(tool?.name);
-        if (!name) return undefined;
-        return {
-          name,
-          ...(nonEmpty(tool?.description) ? { description: nonEmpty(tool.description) } : {}),
-          ...(tool?.inputSchema && typeof tool.inputSchema === "object" ? { inputSchema: tool.inputSchema } : {}),
-        };
-      })
-      .filter(Boolean);
-  } finally {
-    clearTimeout(timer);
-  }
+  const request = { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} };
+  const response = await postMcpJsonRpc(bifrostMcpUrl(url), virtualKey, request, options);
+  if (!response.ok) throw new Error(`Bifrost MCP tools/list failed (HTTP ${response.status})`);
+  const body = response.body;
+  if (body?.error) throw new Error(`Bifrost MCP tools/list failed: ${body.error.message ?? JSON.stringify(body.error)}`);
+  const rawTools = Array.isArray(body?.result?.tools) ? body.result.tools : [];
+  return rawTools
+    .map((tool) => {
+      const name = nonEmpty(tool?.name);
+      if (!name) return undefined;
+      return {
+        name,
+        ...(nonEmpty(tool?.description) ? { description: nonEmpty(tool.description) } : {}),
+        ...(tool?.inputSchema && typeof tool.inputSchema === "object" ? { inputSchema: tool.inputSchema } : {}),
+      };
+    })
+    .filter(Boolean);
 }
 
-export async function testMcp(url, virtualKey) {
-  const endpoint = bifrostMcpUrl(url);
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15_000);
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "x-bf-vk": virtualKey,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "initialize",
-        params: {
-          protocolVersion: "2025-03-26",
-          capabilities: {},
-          clientInfo: { name: "pifrost-cli", version: VERSION },
-        },
-      }),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const body = parseMcpResponse(text);
-    return { ok: response.ok, status: response.status, body };
-  } finally {
-    clearTimeout(timer);
-  }
+export async function testMcp(url, virtualKey, options = {}) {
+  const request = {
+    jsonrpc: "2.0",
+    id: 1,
+    method: "initialize",
+    params: {
+      protocolVersion: "2025-03-26",
+      capabilities: {},
+      clientInfo: { name: "pifrost-cli", version: VERSION },
+    },
+  };
+  return await postMcpJsonRpc(bifrostMcpUrl(url), virtualKey, request, {
+    timeoutMs: 15_000,
+    ...options,
+  });
 }
 
 export function currentRepoState(state, cwd = process.cwd()) {

@@ -192,8 +192,12 @@ export interface AliasMemberDiagnostic {
 		reasoning: boolean;
 		tools: boolean;
 		toolSearch?: boolean;
+		toolChoice?: boolean;
+		forcedToolChoice?: boolean;
+		namedToolChoice?: boolean;
 		reasoningWithTools?: boolean;
 		betweenToolsThinking?: boolean;
+		disableReasoningOnToolChoice?: boolean;
 		serviceTier?: boolean;
 		serviceTiers?: string[];
 	};
@@ -672,8 +676,12 @@ export function synthesizeAlias(
 				reasoning: model.reasoning,
 				tools: model.supportsTools,
 				toolSearch: model.supportsToolSearch,
+				toolChoice: model.compat.supportsToolChoice,
+				forcedToolChoice: model.compat.supportsForcedToolChoice,
+				namedToolChoice: model.compat.supportsNamedToolChoice,
 				reasoningWithTools: model.compat.supportsReasoningWithTools,
 				betweenToolsThinking: model.compat.supportsBetweenToolsThinking,
+				disableReasoningOnToolChoice: model.compat.disableReasoningOnToolChoice,
 				serviceTier: model.supportsServiceTier,
 				...(model.serviceTiers?.length ? { serviceTiers: [...model.serviceTiers] } : {}),
 			} : undefined,

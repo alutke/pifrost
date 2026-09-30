@@ -6,7 +6,7 @@ Pifrost gives OMP a small set of stable logical models such as <code>bifrost/omp
 
 Pifrost also provides a terminal CLI for setup, route synchronization, diagnostics, repository-scoped MCP access and the optional Bifrost Skills → OMP Skills bridge.
 
-> **Design rule:** Pifrost is not a second model router. Bifrost remains authoritative for provider credentials, provider/model selection, routing, fallback and governance.
+> **Design rule:** Pifrost is not a second policy router. Bifrost remains authoritative for provider credentials, physical model/provider ordering, routing policy, same-protocol fallback and governance. Pifrost may remove members that cannot satisfy the request contract and may cross a wire-protocol boundary only before any model output is emitted; it never reorders surviving members for quality, cost, quota or preference.
 
 ## Start here
 
@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.0
+0.8.1
 ```
 
 Bun also works:
@@ -181,20 +181,23 @@ pifrost routes sync
 pifrost doctor
 ~~~
 
-For an effective role-to-physical-route view:
+For a role-to-physical-route view from the current Pifrost catalogue snapshot:
 
 ~~~bash
 pifrost routes effective
 ~~~
+
+The command prints the catalogue timestamp and age. If the snapshot is stale it warns you to run `pifrost models refresh --force` rather than presenting old Bifrost membership as live state.
 
 To explain why physical members would be eligible or excluded for a hypothetical request:
 
 ~~~bash
 pifrost routes explain plan --input-tokens 120000 --output-tokens 16000 --tools --reasoning
 pifrost routes explain plan --tool-search --service-tier ultrafast
+pifrost routes explain plan --tools --reasoning --tool-choice required
 ~~~
 
-The explanation uses the same capability semantics as runtime prewalk: context/output reserve, image/tool support, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking, and service-tier availability.
+The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
 ### How capability safety works
 
@@ -204,7 +207,7 @@ For straightforward global fallback routes, Pifrost also uses **context-aware pr
 
 On the native OMP path, context sizing uses a dependency-free semantic estimate of the actual provider Context rather than serializing OMP's internal objects. Pifrost reuses trustworthy provider usage as a prefix anchor, counts only the unreported tail locally, and otherwise counts the system prompt, tool schemas and semantic message content with conservative headroom. Internal metadata such as tool-result `details`, timestamps and usage records is not treated as model prompt content.
 
-Pifrost natively executes both **OpenAI Responses** and **OpenAI Chat Completions** route members. Eligible members stay in their original route order and are grouped only when adjacent members use the same protocol. Each protocol group is dispatched through OMP's native transport for that wire API; same-protocol fallbacks remain inside Bifrost's native `fallbacks` chain. If a protocol group fails before producing model output, Pifrost advances to the next group. Once any real output has been emitted, Pifrost never replays that turn on another model or protocol.
+Pifrost natively executes both **OpenAI Responses** and **OpenAI Chat Completions** route members. Eligible members stay in their original Bifrost order and are grouped only when adjacent members use the same protocol. Each protocol group is dispatched through OMP's native transport for that wire API; same-protocol fallbacks remain inside Bifrost's native `fallbacks` chain. If a protocol group fails before producing model output, Pifrost may advance to the next protocol group. Once any real output has been emitted, Pifrost never replays that turn on another model or protocol. This is protocol compatibility/failover, not policy routing: Pifrost never promotes a later member because of quality, price, quota or provider preference.
 
 That means a mixed route such as `Muse Responses -> CommandCode Chat -> DeepSeek Chat` genuinely tries Muse first through Bifrost `/v1/responses`, then falls back to the Chat group only if Muse fails before output. OpenCode Go attempts retain OMP's native OpenCode provider policy while using the provider-qualified Bifrost model id on the wire, and Pifrost forwards the OMP session identity through `x-bf-eh-x-opencode-session`.
 
@@ -299,9 +302,9 @@ pifrost repo vmcp remove 'Development Tools'
 
 Pifrost treats MCP search and OMP's native <code>web_search</code> role as separate mechanisms. A 4get MCP server remains a normal repository-scoped MCP backend; Pifrost does not create a synthetic <code>omp-web</code> model for it.
 
-<code>pifrost repo status</code> now verifies this at two levels: the Bifrost management policy and a live, repository-key-scoped <code>tools/list</code> call against the MCP gateway. It recognizes the canonical 4get tool names even when Bifrost prefixes them with the MCP client name (for example <code>fourget-fourget_web_search</code>).
+<code>pifrost repo status</code> verifies this at two levels: the Bifrost management policy and a live, repository-key-scoped <code>tools/list</code> call against the MCP gateway. The MCP Streamable HTTP parser matches the JSON-RPC request id, so notifications or unrelated SSE responses do not masquerade as the requested tool inventory. It recognizes the canonical 4get tool names even when Bifrost prefixes them with the MCP client name (for example <code>fourget-fourget_web_search</code>).
 
-The same report shows OMP's native <code>modelRoles.web</code> selector and configured web fallback chain alongside MCP/4get. If no explicit OMP web role is set, Pifrost reports that OMP's built-in default search chain applies. The displayed preferred path is diagnostic policy only; Pifrost does not replace OMP/model tool choice or introduce a synthetic <code>omp-web</code> model.
+The same report shows OMP's native <code>modelRoles.web</code> selector and configured web fallback chain alongside MCP/4get. Pifrost distinguishes an intentionally unset web role from OMP being unavailable or its configuration being unreadable. Search availability is reported separately for general web, news and images, so an image-only 4get grant is not misreported as a general-web backend. These are availability diagnostics only; Pifrost does not replace OMP/model tool choice or introduce a synthetic <code>omp-web</code> model.
 
 Pifrost also reports the live MCP tool count, OMP's default <code>discoverable</code> presentation for MCP tools, and an approximate schema footprint if all visible tools were eagerly serialized. Discoverable presentation and provider-side <code>defer_loading</code>/Tool Search are reported separately because they are different mechanisms.
 
@@ -438,7 +441,7 @@ pifrost repo rotate-key
 ## Development
 
 ~~~bash
-npm install
+npm ci
 npm run check
 npm test
 ~~~

@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+## 0.8.1 — 2026-09-30
+
+- Hardened the 0.7/0.8 capability architecture after a full routing/code-quality audit without expanding Pifrost into a second policy router.
+- Fixed between-tools reasoning fallback semantics. Pifrost no longer removes a physical fallback solely because it lacks native `between_tools`; Bifrost 2.2.4+ remains responsible for downgrading or omitting that mode per physical model.
+- Introduced one dependency-free route-eligibility engine shared by runtime prewalk and `pifrost routes explain`, covering protocol, context/output reserve, image/tools, tool-choice variants, reasoning-with-tools, Tool Search, between-tools notices and service tiers.
+- Formalized routing ownership: Pifrost may capability-filter and partition by wire protocol while preserving Bifrost order; Bifrost remains authoritative for physical model/provider ordering, policy routing and same-protocol fallback. Cross-protocol retry remains allowed only before any model output is committed.
+- Persisted the additional member-level tool-choice compatibility fields required for offline diagnostics and advanced the catalogue cache schema to v14.
+- Made `routes effective` expose the catalogue snapshot timestamp/age and warn when route membership may be stale instead of presenting cached data as implicitly live.
+- Made OMP native-web diagnostics tri-state: an intentionally unset `modelRoles.web` is distinct from OMP being unavailable or `omp config` failing.
+- Made 4get search-path reporting modality-specific. General web, news and image availability are now reported independently, so a partial 4get grant cannot claim an unrelated search mode.
+- Hardened Bifrost MCP Streamable HTTP parsing by matching JSON-RPC request ids and ignoring notifications/unrelated SSE events.
+- Added exact Bifrost 2.2.4 contract gates for Tool Search, between-tools downgrade behavior and service-tier capability metadata, and renamed the OMP contract validator to the version-neutral `validate-omp-contract.mjs`.
+- Added regression coverage for preserved fallback order, between-tools downgrade, shared runtime/CLI eligibility, cache freshness, partial 4get grants, OMP unavailable/error states and id-aware MCP SSE responses.
+- Began decomposing large modules by extracting shared route eligibility, route CLI helpers and MCP JSON-RPC transport into focused modules.
+- Switched CI to reproducible lockfile-based dependency installation and added cross-module transport/integration coverage.
+
+
 ## 0.8.0 — 2026-09-30
 
 - Completed Doctor 2.0's effective-route view. Pifrost now joins OMP's effective `modelRoles` to each `bifrost/omp-*` alias and shows the underlying Bifrost physical members with their individual context, output, image, tool, Tool Search, between-tools-thinking, service-tier and protocol capabilities.

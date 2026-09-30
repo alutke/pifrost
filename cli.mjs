@@ -17,6 +17,11 @@ import {
   printModelDoctor,
   readCatalog,
 } from "./model-diagnostics.mjs";
+import {
+  formatCatalogSnapshot,
+  routeAliasForInput,
+  routeExplanationRequestFromFlags,
+} from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
 import {
@@ -102,7 +107,7 @@ Usage:
   pifrost routes sync [--no-refresh]
   pifrost routes diagnose
   pifrost routes effective
-  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--service-tier tier]
+  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
   pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions]
@@ -713,7 +718,7 @@ function currentOmpModelRoles() {
 }
 
 function commandRoutesEffective() {
-  const { path, cache, staleSchema } = readCatalog();
+  const { path, cache, staleSchema, ageMs, stale } = readCatalog();
   printHeader("Effective OMP → Pifrost → Bifrost routes");
   if (!cache) {
     console.log(`Model catalog unavailable at ${path}${staleSchema !== undefined ? ` (schema ${staleSchema} is stale)` : ""}.`);
@@ -721,24 +726,14 @@ function commandRoutesEffective() {
     process.exitCode = 2;
     return;
   }
+  if (Number.isFinite(ageMs)) {
+    const minutes = Math.floor(ageMs / 60_000);
+    console.log(formatCatalogSnapshot(cache, ageMs, stale));
+    if (stale) console.log("WARN route membership may have changed in Bifrost; run `pifrost models refresh --force` for a fresh effective view.");
+  }
   console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
 }
 
-function routeAliasForInput(input, roles) {
-  const raw = String(input ?? "").trim();
-  if (!raw) return undefined;
-  const selected = roles?.[raw] ?? raw;
-  const primary = String(selected).split(",")[0]?.trim() ?? "";
-  return primary.replace(/^bifrost\//iu, "").split(":", 1)[0].toLowerCase();
-}
-
-function numericFlag(flags, name) {
-  const raw = flagString(flags, name);
-  if (raw === undefined) return undefined;
-  const value = Number(raw);
-  if (!Number.isFinite(value) || value < 0) throw new Error(`--${name} must be a non-negative number`);
-  return value;
-}
 
 function commandRoutesExplain(input, flags = {}) {
   if (!input) throw new Error("Usage: pifrost routes explain <role|alias> [request flags]");
@@ -748,16 +743,7 @@ function commandRoutesExplain(input, flags = {}) {
   const alias = routeAliasForInput(input, roles);
   const diagnostic = cache.diagnostics.find((item) => String(item.id).toLowerCase() === alias);
   if (!diagnostic) throw new Error(`No Pifrost alias diagnostic found for ${input} (resolved alias: ${alias})`);
-  const explanation = explainRouteRequest(diagnostic, {
-    inputTokens: numericFlag(flags, "input-tokens"),
-    outputTokens: numericFlag(flags, "output-tokens"),
-    image: flags.image === true,
-    tools: flags.tools === true || flags["tool-search"] === true || flags["between-tools"] === true,
-    reasoning: flags.reasoning === true || flags["between-tools"] === true,
-    toolSearch: flags["tool-search"] === true,
-    betweenTools: flags["between-tools"] === true,
-    serviceTier: flagString(flags, "service-tier"),
-  });
+  const explanation = explainRouteRequest(diagnostic, routeExplanationRequestFromFlags(flags));
   printHeader(`Route request: ${input}`);
   console.log(formatRouteExplanation(explanation));
 }
@@ -961,10 +947,15 @@ async function commandRepoStatus(snapshot) {
         console.log(`    ${name}: configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
       }
       if (liveToolsError) console.log(`    gateway tools/list: unavailable (${liveToolsError})`);
-      console.log(`  OMP native web:   ${search.omp.source}`);
+      console.log(`  OMP native web:   ${search.omp.available ? search.omp.source : `${search.omp.status}: ${search.omp.source}`}`);
+      if (search.omp.error) console.log(`    error:          ${search.omp.error}`);
       if (search.omp.primary) console.log(`    primary:        ${search.omp.primary}`);
       if (search.omp.fallbacks.length) console.log(`    fallbacks:      ${search.omp.fallbacks.join(" -> ")}`);
-      console.log(`  Preferred path:   ${search.preferredPath} (diagnostic preference; tool choice remains OMP/model-driven)`);
+      console.log("  Effective search paths:");
+      console.log(`    web:            ${search.paths.web}`);
+      console.log(`    news:           ${search.paths.news}`);
+      console.log(`    images:         ${search.paths.images}`);
+      console.log("    selection remains OMP/model-driven; Pifrost reports availability only.");
       if (search.mcpSurface) {
         console.log("MCP tool presentation:");
         console.log(`  gateway-visible:  ${search.mcpSurface.visibleTools}`);

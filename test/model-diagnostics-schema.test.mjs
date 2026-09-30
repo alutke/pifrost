@@ -16,10 +16,10 @@ import {
 
 test("terminal model diagnostics use the cache.ts schema constant", () => {
   assert.equal(EXPECTED_CACHE_SCHEMA_VERSION, CATALOG_CACHE_SCHEMA_VERSION);
-  assert.equal(CATALOG_CACHE_SCHEMA_VERSION, 13);
+  assert.equal(CATALOG_CACHE_SCHEMA_VERSION, 14);
 });
 
-test("schema-v13 catalog is accepted and emits the shared diagnostic result", () => {
+test("schema-v14 catalog is accepted and emits the shared diagnostic result", () => {
   const root = mkdtempSync(join(tmpdir(), "pifrost-model-diagnostic-schema-"));
   const agent = join(root, "agent");
   mkdirSync(agent, { recursive: true });
@@ -143,11 +143,36 @@ test("request explanation identifies member-specific capability exclusions", () 
   });
   assert.equal(result.members[0].eligible, true);
   assert.equal(result.members[1].eligible, false);
-  assert.ok(result.members[1].reasons.some((reason) => /context needs 136000/u.test(reason)));
-  assert.ok(result.members[1].reasons.includes("no image-input support"));
+  assert.ok(result.members[1].reasons.some((reason) => /context 128000 < required 136000/u.test(reason)));
+  assert.ok(result.members[1].reasons.includes("no image input"));
   assert.ok(result.members[1].reasons.includes("no tool-search/deferred-tool support"));
   assert.ok(result.members[1].reasons.includes("tool search requires Responses transport"));
-  assert.ok(result.members[1].reasons.includes("no between-tools thinking support"));
+  assert.ok(!result.members[1].reasons.includes("no between-tools thinking support"));
+  assert.ok(result.members[1].notices.some((notice) => /downgraded or omitted by Bifrost/u.test(notice)));
   assert.ok(result.members[1].reasons.includes("no service-tier support"));
   assert.match(formatRouteExplanation(result), /\[EXCLUDED\] deepseek\/fallback/u);
+});
+
+
+test("catalog diagnostics expose snapshot freshness separately from schema validity", () => {
+  const root = mkdtempSync(join(tmpdir(), "pifrost-model-diagnostic-freshness-"));
+  const agent = join(root, "agent");
+  mkdirSync(agent, { recursive: true });
+  writeFileSync(join(agent, "pifrost.catalog.json"), JSON.stringify({
+    schemaVersion: CATALOG_CACHE_SCHEMA_VERSION,
+    generatedAt: "2026-09-30T00:00:00.000Z",
+    models: [{ id: "omp-default", contextWindow: 128000, maxTokens: 8192, reasoning: false, input: ["text"] }],
+    diagnostics: [],
+  }));
+  const env = { ...process.env, PI_CODING_AGENT_DIR: agent };
+  try {
+    const fresh = readCatalog(env, Date.parse("2026-09-30T01:00:00.000Z"));
+    assert.equal(fresh.stale, false);
+    assert.equal(fresh.ageMs, 60 * 60_000);
+    const stale = readCatalog(env, Date.parse("2026-09-30T07:00:00.000Z"));
+    assert.equal(stale.stale, true);
+    assert.equal(stale.ageMs, 7 * 60 * 60_000);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

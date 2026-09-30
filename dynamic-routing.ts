@@ -3,6 +3,11 @@ import {
 	PIFROST_WIRE_PROTOCOL,
 	type PifrostWireProtocol,
 } from "./protocol-capability.ts";
+import {
+	evaluateRouteMemberEligibility,
+	resolveRouteMemberProtocol,
+	type RouteToolChoiceKind,
+} from "./route-eligibility.ts";
 
 export const DYNAMIC_ROUTE_MODE = "context-aware" as const;
 export const DEFAULT_CONTEXT_BYTES_PER_TOKEN = 2.5;
@@ -341,15 +346,11 @@ export function resolveDynamicMemberProtocol(
 	member: DynamicRouteMemberProfile,
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): PifrostWireProtocol | undefined {
-	if (!member.protocols?.length) {
-		return supportedProtocols.includes(PIFROST_WIRE_PROTOCOL) ? PIFROST_WIRE_PROTOCOL : supportedProtocols[0];
-	}
-	// Preserve the long-standing Chat path whenever the member supports it; only
-	// switch protocols when the physical provider contract requires that.
-	if (member.protocols.includes(PIFROST_WIRE_PROTOCOL) && supportedProtocols.includes(PIFROST_WIRE_PROTOCOL)) {
-		return PIFROST_WIRE_PROTOCOL;
-	}
-	return member.protocols.find((protocol) => supportedProtocols.includes(protocol));
+	return resolveRouteMemberProtocol(
+		member.protocols,
+		supportedProtocols,
+		{ defaultProtocol: PIFROST_WIRE_PROTOCOL },
+	) as PifrostWireProtocol | undefined;
 }
 
 function resolveDynamicMemberProtocolForRequest(
@@ -357,17 +358,22 @@ function resolveDynamicMemberProtocolForRequest(
 	body: Record<string, unknown>,
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): PifrostWireProtocol | undefined {
-	// Server-side tool search is a Responses contract in Pifrost. Prefer that
-	// transport when the physical member advertises it instead of silently
-	// degrading the request onto Chat Completions.
-	if (
-		requestUsesToolSearch(body) &&
-		member.protocols?.includes("openai-responses") &&
-		supportedProtocols.includes("openai-responses")
-	) {
-		return "openai-responses";
-	}
-	return resolveDynamicMemberProtocol(member, supportedProtocols);
+	return resolveRouteMemberProtocol(
+		member.protocols,
+		supportedProtocols,
+		{
+			toolSearch: requestUsesToolSearch(body),
+			defaultProtocol: PIFROST_WIRE_PROTOCOL,
+		},
+	) as PifrostWireProtocol | undefined;
+}
+
+function requestToolChoiceKind(body: Record<string, unknown>): RouteToolChoiceKind | undefined {
+	const toolChoice = body.tool_choice;
+	if (toolChoice === undefined) return undefined;
+	if (toolChoice === "required" || toolChoice === "any") return "forced";
+	if (toolChoice && typeof toolChoice === "object") return "named";
+	return "auto";
 }
 
 function memberExclusionReasons(
@@ -377,58 +383,22 @@ function memberExclusionReasons(
 	outputReserveTokens: number,
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): string[] {
-	const reasons: string[] = [];
 	const protocol = resolveDynamicMemberProtocolForRequest(member, body, supportedProtocols);
-	if (!protocol) {
-		const advertised = member.protocols?.length ? member.protocols.join(",") : "unknown";
-		reasons.push(`protocol ${advertised} incompatible with ${supportedProtocols.join(",")}`);
-	}
-	// The caller's output cap is a ceiling, not a capability requirement. A route
-	// member with a lower output ceiling remains usable as long as the request is
-	// clamped before dispatch. Context eligibility therefore reserves only the
-	// output tokens that this member can actually emit.
-	const effectiveOutputReserveTokens = Math.min(outputReserveTokens, member.maxTokens);
-	const memberRequiredContextTokens = estimatedInputTokens + effectiveOutputReserveTokens;
-	if (member.contextWindow < memberRequiredContextTokens) {
-		reasons.push("context " + member.contextWindow + " < required " + memberRequiredContextTokens);
-	}
-	if (requestHasImages(body) && !member.input.includes("image")) reasons.push("no image input");
-	const usesTools = requestUsesTools(body);
-	if (usesTools && !member.supportsTools) reasons.push("no tool support");
-	const toolChoice = body.tool_choice;
-	if (toolChoice !== undefined && member.compat.supportsToolChoice === false) reasons.push("no tool_choice support");
-	if ((toolChoice === "required" || toolChoice === "any") && member.compat.supportsForcedToolChoice === false) {
-		reasons.push("no forced tool_choice support");
-	}
-	if (toolChoice && typeof toolChoice === "object" && member.compat.supportsNamedToolChoice === false) {
-		reasons.push("no named tool_choice support");
-	}
-	if (requestUsesReasoning(body) && !member.reasoning) reasons.push("no reasoning support");
-	if (requestUsesReasoning(body) && usesTools && member.compat.supportsReasoningWithTools === false) {
-		reasons.push("cannot combine reasoning with tools");
-	}
-	if (requestUsesToolSearch(body)) {
-		if (member.supportsToolSearch !== true) reasons.push("no tool-search/deferred-tool support");
-		if (protocol !== "openai-responses") reasons.push("tool search requires Responses transport");
-	}
-	if (requestUsesBetweenToolsThinking(body) && member.compat.supportsBetweenToolsThinking !== true) {
-		reasons.push("no between-tools thinking support");
-	}
-	const serviceTier = requestedServiceTier(body);
-	if (serviceTier && serviceTier !== "auto") {
-		if (member.supportsServiceTier !== true) reasons.push("no service-tier support");
-		if (member.serviceTiers?.length && !member.serviceTiers.includes(serviceTier)) {
-			reasons.push(`service tier ${serviceTier} unavailable`);
-		}
-	}
-	if (
-		requestUsesReasoning(body) &&
-		body.tool_choice !== undefined &&
-		member.compat.disableReasoningOnToolChoice === true
-	) {
-		reasons.push("reasoning incompatible with tool_choice");
-	}
-	return reasons;
+	return evaluateRouteMemberEligibility(member, {
+		estimatedInputTokens,
+		outputReserveTokens,
+		hasImages: requestHasImages(body),
+		usesTools: requestUsesTools(body),
+		usesReasoning: requestUsesReasoning(body),
+		usesToolSearch: requestUsesToolSearch(body),
+		usesBetweenToolsThinking: requestUsesBetweenToolsThinking(body),
+		toolChoicePresent: body.tool_choice !== undefined,
+		toolChoiceKind: requestToolChoiceKind(body),
+		serviceTier: requestedServiceTier(body),
+		protocol,
+		protocolAvailable: Boolean(protocol),
+		supportedProtocols,
+	}).reasons;
 }
 
 export class DynamicRouteCapacityError extends Error {

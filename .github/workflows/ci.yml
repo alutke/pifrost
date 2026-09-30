@@ -16,7 +16,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.0
-      - run: npm install
+      - run: npm ci
       - run: npm run check
       - run: npm test
       - name: Validate release package
@@ -28,7 +28,7 @@ jobs:
       - name: Validate Bifrost 2.2.4 and current 2.x contracts
         run: node scripts/validate-bifrost-v2-contract.mjs
       - name: Validate released OMP 18.4.5 contracts
-        run: node scripts/validate-omp-18.3-contract.mjs
+        run: node scripts/validate-omp-contract.mjs
       - name: Validate with released OMP 18.4.5 CLI/plugin loader
         run: |
           export HOME="$RUNNER_TEMP/omp-home-local"

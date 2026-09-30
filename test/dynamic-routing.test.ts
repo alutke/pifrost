@@ -496,7 +496,7 @@ test("Tool Search prewalk keeps only Responses members that explicitly support i
 	]);
 });
 
-test("between-tools thinking excludes members that cannot preserve the requested semantics", () => {
+test("between-tools thinking preserves Bifrost fallbacks for gateway downgrade", () => {
 	const route = profile();
 	route.members[0] = {
 		...route.members[0]!,
@@ -520,9 +520,9 @@ test("between-tools thinking excludes members that cannot preserve the requested
 		},
 		{ estimatedInputTokens: 2_000, outputCapExplicit: true },
 	);
-	assert.deepEqual(plan.excluded, [
-		{ reference: "provider/small", reasons: ["no between-tools thinking support"] },
-	]);
+	assert.deepEqual(plan.excluded, []);
+	assert.equal(plan.attempts[0]?.primary, "provider/large");
+	assert.deepEqual(plan.attempts[0]?.fallbacks, ["provider/small", "provider/large-two"]);
 });
 
 test("service-tier prewalk preserves only members that advertise the requested tier", () => {
@@ -556,4 +556,36 @@ test("service-tier prewalk preserves only members that advertise the requested t
 		{ reference: "provider/small", reasons: ["service tier ultrafast unavailable"] },
 		{ reference: "provider/large-two", reasons: ["no service-tier support"] },
 	]);
+});
+
+
+test("capability prefilter never reorders surviving Bifrost members", () => {
+	const route = profile();
+	route.members[0] = {
+		...route.members[0]!,
+		input: ["text"],
+	};
+	route.members[1] = {
+		...route.members[1]!,
+		input: ["text", "image"],
+	};
+	route.members[2] = {
+		...route.members[2]!,
+		input: ["text", "image"],
+	};
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{
+				role: "user",
+				content: [{ type: "input_image", image_url: "data:image/png;base64,AA==" }],
+			}],
+			max_tokens: 32_000,
+		},
+		{ estimatedInputTokens: 2_000, outputCapExplicit: true },
+	);
+	assert.deepEqual(plan.excluded.map((item) => item.reference), ["provider/large"]);
+	assert.equal(plan.attempts[0]?.primary, "provider/small");
+	assert.deepEqual(plan.attempts[0]?.fallbacks, ["provider/large-two"]);
 });

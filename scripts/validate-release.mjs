@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 
 const root = new URL("../", import.meta.url);
 const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
+const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8"));
 const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 
@@ -17,6 +18,10 @@ function commandError(label, result) {
 }
 
 if (!/^\d+\.\d+\.\d+$/u.test(pkg.version)) fail(`package.json version is not a release semver: ${pkg.version}`);
+if (lock?.lockfileVersion !== 3) fail(`package-lock.json must use lockfileVersion 3; got ${lock?.lockfileVersion ?? "missing"}`);
+if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.version) {
+  fail(`package-lock.json version does not match package.json ${pkg.version}`);
+}
 if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "mu"))) {
   fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
 }
@@ -38,9 +43,12 @@ for (const path of [
   "omp-cfg.ts",
   "pricing-time.ts",
   "routing-core.ts",
+  "route-eligibility.ts",
   "protocol-capability.ts",
   "cache-schema.ts",
   "http-client.mjs",
+  "mcp-rpc.mjs",
+  "route-cli.mjs",
   "doctor-probes.mjs",
   "diagnostic-result.mjs",
   "cli-preconditions.mjs",
@@ -76,7 +84,7 @@ const cleanRuntimeBuild = spawnSync(process.execPath, ["--no-warnings", "scripts
   },
 });
 if (cleanRuntimeBuild.status !== 0) fail(commandError("clean Node-only runtime build", cleanRuntimeBuild));
-for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/cache-schema.js"]) {
+for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/route-eligibility.js", "dist/cache-schema.js"]) {
   if (!existsSync(new URL(path, root))) fail(`clean runtime build did not create ${path}`);
 }
 
@@ -125,12 +133,16 @@ try {
     "capability-bridge.ts",
     "context-estimator.ts",
     "routing-core.ts",
+    "route-eligibility.ts",
     "protocol-capability.ts",
     "cache-schema.ts",
     "dist/config-store.js",
     "dist/routing-core.js",
+    "dist/route-eligibility.js",
     "dist/cache-schema.js",
     "http-client.mjs",
+    "mcp-rpc.mjs",
+    "route-cli.mjs",
     "doctor-probes.mjs",
     "diagnostic-result.mjs",
     "cli-preconditions.mjs",

@@ -2,6 +2,7 @@ const BIFROST_2_0_0_COMMIT = "e4a30d6041c0446603aea615bc5da340dac001b1";
 const BIFROST_2_2_0_COMMIT = "fa3d4f2b97a25f5a0d5a233998777811b2bc05a8";
 const BIFROST_2_2_2_COMMIT = "9f0d71dba7274d8673de1e69529991035dae49e4";
 const BIFROST_2_2_3_COMMIT = "b840c82caed6919d84c21bd7be5bf7fa27a7ba17";
+const BIFROST_2_2_4_COMMIT = "ed8371a9779bfbc8aa689d4d77964cf8ce9308bf";
 
 const SOURCES = [
   {
@@ -143,6 +144,38 @@ const SOURCES = [
     name: "Bifrost 2.2.3 pinned-fallback config contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_3_COMMIT}/docs/providers/routing-rules.mdx`,
     required: ["provider_key_name", "key_id", "fallbacks"],
+  },
+  {
+    name: "Bifrost 2.2.4 capability schema contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_4_COMMIT}/core/schemas/modelcapabilities.go`,
+    required: [
+      "SupportsToolSearch",
+      "supports_tool_search",
+      "SupportsBetweenToolsThinking",
+      "supports_between_tools_thinking",
+      "SupportsServiceTier",
+      "supports_service_tier",
+      "ServiceTiers",
+      "service_tiers",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.4 between-tools downgrade contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_4_COMMIT}/core/providers/anthropic/utils.go`,
+    required: [
+      'req.Thinking.Type == "between_tools"',
+      "SupportsBetweenToolsThinking",
+      'req.Thinking.Type = "disabled"',
+    ],
+  },
+  {
+    name: "Bifrost 2.2.4 OpenAI Tool Search contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_4_COMMIT}/core/providers/openai/responses.go`,
+    required: [
+      "keepDeferLoading",
+      "SupportsToolSearch",
+      "defaultSupportsToolSearch",
+    ],
   },
   {
     name: "current Bifrost dev routing canary",
