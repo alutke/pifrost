@@ -10,7 +10,13 @@ import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
 import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
 import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
-import { printModelDoctor } from "./model-diagnostics.mjs";
+import {
+  explainRouteRequest,
+  formatEffectiveRouteReport,
+  formatRouteExplanation,
+  printModelDoctor,
+  readCatalog,
+} from "./model-diagnostics.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 
 import {
@@ -50,6 +56,7 @@ import {
   getVirtualKey,
   installOmpPlugin,
   listMcpClients,
+  listMcpGatewayTools,
   listVirtualMcps,
   loadAliasManifest,
   loadState,
@@ -68,6 +75,8 @@ import {
   runtimeConfigFromState,
   saveState,
   searchBackendDiagnostics,
+  ompWebSearchDiagnostics,
+  readOmpConfigValue,
   testInference,
   testManagement,
   syncVirtualMcpAssignments,
@@ -91,6 +100,9 @@ Usage:
   pifrost routes list
   pifrost routes diff
   pifrost routes sync [--no-refresh]
+  pifrost routes diagnose
+  pifrost routes effective
+  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
   pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions]
@@ -695,6 +707,61 @@ async function commandModelsDoctor() {
   return result;
 }
 
+function currentOmpModelRoles() {
+  const value = readOmpConfigValue("modelRoles");
+  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
+}
+
+function commandRoutesEffective() {
+  const { path, cache, staleSchema } = readCatalog();
+  printHeader("Effective OMP → Pifrost → Bifrost routes");
+  if (!cache) {
+    console.log(`Model catalog unavailable at ${path}${staleSchema !== undefined ? ` (schema ${staleSchema} is stale)` : ""}.`);
+    console.log("Run: pifrost models refresh --force");
+    process.exitCode = 2;
+    return;
+  }
+  console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
+}
+
+function routeAliasForInput(input, roles) {
+  const raw = String(input ?? "").trim();
+  if (!raw) return undefined;
+  const selected = roles?.[raw] ?? raw;
+  const primary = String(selected).split(",")[0]?.trim() ?? "";
+  return primary.replace(/^bifrost\//iu, "").split(":", 1)[0].toLowerCase();
+}
+
+function numericFlag(flags, name) {
+  const raw = flagString(flags, name);
+  if (raw === undefined) return undefined;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`--${name} must be a non-negative number`);
+  return value;
+}
+
+function commandRoutesExplain(input, flags = {}) {
+  if (!input) throw new Error("Usage: pifrost routes explain <role|alias> [request flags]");
+  const { cache, path } = readCatalog();
+  if (!cache) throw new Error(`Model catalog unavailable at ${path}; run pifrost models refresh --force`);
+  const roles = currentOmpModelRoles() ?? {};
+  const alias = routeAliasForInput(input, roles);
+  const diagnostic = cache.diagnostics.find((item) => String(item.id).toLowerCase() === alias);
+  if (!diagnostic) throw new Error(`No Pifrost alias diagnostic found for ${input} (resolved alias: ${alias})`);
+  const explanation = explainRouteRequest(diagnostic, {
+    inputTokens: numericFlag(flags, "input-tokens"),
+    outputTokens: numericFlag(flags, "output-tokens"),
+    image: flags.image === true,
+    tools: flags.tools === true || flags["tool-search"] === true || flags["between-tools"] === true,
+    reasoning: flags.reasoning === true || flags["between-tools"] === true,
+    toolSearch: flags["tool-search"] === true,
+    betweenTools: flags["between-tools"] === true,
+    serviceTier: flagString(flags, "service-tier"),
+  });
+  printHeader(`Route request: ${input}`);
+  console.log(formatRouteExplanation(explanation));
+}
+
 async function chooseClientsInteractively(clients) {
   if (!clients.length) throw new Error("Bifrost returned no MCP clients");
   return withPrompter(async (rl) => {
@@ -857,7 +924,20 @@ async function commandRepoStatus(snapshot) {
           : listMcpClients(runtime.url, managementAuth),
       ]);
       const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
-      const search = searchBackendDiagnostics(policy, clients, virtualMcps);
+      let liveTools;
+      let liveToolsError;
+      if (repoState.secret?.mcpVirtualKey) {
+        try {
+          liveTools = await listMcpGatewayTools(runtime.url, repoState.secret.mcpVirtualKey);
+        } catch (error) {
+          liveToolsError = formatError(error);
+        }
+      }
+      const ompSearch = ompWebSearchDiagnostics();
+      const search = searchBackendDiagnostics(policy, clients, virtualMcps, {
+        ...(liveTools ? { liveTools } : {}),
+        ompSearch,
+      });
       const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
       console.log(`Live Virtual MCPs:${liveVirtual.length ? ` ${liveVirtual.join(", ")}` : " none"}`);
       if (policy.effective.length) {
@@ -871,11 +951,26 @@ async function commandRepoStatus(snapshot) {
       for (const item of policy.unresolved) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
       }
-      console.log(`Search path:        ${search.preferredPath}`);
-      if (search.fourget.available) {
-        const present = Object.entries(search.fourget.tools).filter(([, value]) => value).map(([name]) => name);
-        console.log(`  4get tools:       ${present.join(", ")}`);
-        if (search.fourget.missing.length) console.log(`  4get missing:     ${search.fourget.missing.join(", ")}`);
+      console.log("Search backends:");
+      console.log(`  MCP/4get:         ${search.fourget.available ? "available" : search.fourget.configured ? "configured but not gateway-verified" : "not configured"}`);
+      for (const client of search.fourget.clients) {
+        console.log(`    client=${client.name} state=${client.state ?? "unknown"} via=${client.sources.join("+") || "unknown"}`);
+      }
+      for (const [name, status] of Object.entries(search.fourget.tools)) {
+        const gateway = status.gatewayVisible === undefined ? "unverified" : status.gatewayVisible ? `yes (${status.gatewayName ?? name})` : "no";
+        console.log(`    ${name}: configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
+      }
+      if (liveToolsError) console.log(`    gateway tools/list: unavailable (${liveToolsError})`);
+      console.log(`  OMP native web:   ${search.omp.source}`);
+      if (search.omp.primary) console.log(`    primary:        ${search.omp.primary}`);
+      if (search.omp.fallbacks.length) console.log(`    fallbacks:      ${search.omp.fallbacks.join(" -> ")}`);
+      console.log(`  Preferred path:   ${search.preferredPath} (diagnostic preference; tool choice remains OMP/model-driven)`);
+      if (search.mcpSurface) {
+        console.log("MCP tool presentation:");
+        console.log(`  gateway-visible:  ${search.mcpSurface.visibleTools}`);
+        console.log(`  OMP default mode: ${search.mcpSurface.ompDefaultLoadMode} (${search.mcpSurface.discoverableTools} MCP tools)`);
+        console.log(`  schema footprint: ~${search.mcpSurface.estimatedSchemaTokens} tokens if eagerly serialized (${search.mcpSurface.schemaBytes} bytes)`);
+        console.log(`  wire deferral:    ${search.mcpSurface.providerDeferral}; discoverable is not the same as provider defer_loading`);
       }
       for (const item of search.instructions) {
         console.log(`  VMCP instructions: ${item.name} mode=${item.mode} text=${item.instructions ? "set" : "none"}`);
@@ -1269,6 +1364,8 @@ async function commandDoctor() {
   await commandCompatibilityDoctor(snapshot);
   console.log("");
   await commandModelsDoctor();
+  console.log("");
+  commandRoutesEffective();
   try {
     getRepoRoot();
     console.log("");
@@ -1291,6 +1388,8 @@ const COMMANDS = new Map([
   ["routes diff", () => commandRoutesDiff()],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],
+  ["routes effective", () => commandRoutesEffective()],
+  ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
   ["models doctor", () => commandModelsDoctor()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
