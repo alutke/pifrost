@@ -1353,19 +1353,6 @@ export function virtualMcpsForVirtualKey(virtualMcps, virtualKeyId) {
   return (virtualMcps ?? []).filter((item) => item.virtualKeyIds?.includes(id));
 }
 
-const FOURGET_TOOLS = Object.freeze(["fourget_web_search", "fourget_news_search", "fourget_image_search"]);
-
-function canonicalFourgetToolName(name) {
-  const value = nonEmpty(String(name ?? ""))?.toLowerCase();
-  if (!value) return undefined;
-  return FOURGET_TOOLS.find((canonical) =>
-    value === canonical ||
-    value.endsWith(`-${canonical}`) ||
-    value.endsWith(`_${canonical}`) ||
-    value.endsWith(`__${canonical}`)
-  );
-}
-
 export function webSearchConfigDiagnostics(modelRoles, fallbackChains) {
   const role = modelRoles && typeof modelRoles === "object" && !Array.isArray(modelRoles)
     ? nonEmpty(modelRoles.web)
@@ -1444,117 +1431,6 @@ export function mcpToolSurfaceDiagnostics(liveTools = []) {
     ompDefaultLoadMode: "discoverable",
     providerDeferral: "route-dependent",
     ...estimate,
-  };
-}
-
-export function searchBackendDiagnostics(policy, clients = [], virtualMcps = [], options = {}) {
-  const granted = new Map();
-  const fourgetClients = [];
-  for (const grant of policy?.effective ?? []) {
-    const client = (clients ?? []).find((item) => item?.name?.toLowerCase() === String(grant.client ?? "").toLowerCase());
-    const available = new Set(client?.tools ?? []);
-    const canonicalAvailable = new Map();
-    for (const tool of available) {
-      const canonical = canonicalFourgetToolName(tool);
-      if (canonical) canonicalAvailable.set(canonical, tool);
-    }
-    const canonicalGranted = new Set();
-    if (grant.tools?.includes("*")) {
-      for (const canonical of canonicalAvailable.keys()) canonicalGranted.add(canonical);
-    } else {
-      for (const tool of grant.tools ?? []) {
-        const canonical = canonicalFourgetToolName(tool);
-        if (canonical && (available.has(tool) || canonicalAvailable.has(canonical))) canonicalGranted.add(canonical);
-      }
-    }
-    if (canonicalGranted.size) {
-      fourgetClients.push({
-        name: grant.client,
-        state: client?.state,
-        sources: grant.sources ?? [],
-        granted: [...canonicalGranted],
-      });
-      for (const canonical of canonicalGranted) {
-        const rows = granted.get(canonical) ?? [];
-        rows.push({ client: grant.client, sources: grant.sources ?? [] });
-        granted.set(canonical, rows);
-      }
-    }
-  }
-
-  const liveTools = Array.isArray(options.liveTools) ? options.liveTools : [];
-  const liveCanonical = new Map();
-  for (const tool of liveTools) {
-    const name = typeof tool === "string" ? tool : tool?.name;
-    const canonical = canonicalFourgetToolName(name);
-    if (canonical) liveCanonical.set(canonical, name);
-  }
-  const liveKnown = options.liveTools !== undefined;
-  const tools = Object.fromEntries(FOURGET_TOOLS.map((name) => [name, {
-    configured: granted.has(name),
-    gatewayVisible: liveKnown ? liveCanonical.has(name) : undefined,
-    gatewayName: liveCanonical.get(name),
-    grants: granted.get(name) ?? [],
-  }]));
-  const configuredCount = FOURGET_TOOLS.filter((name) => tools[name].configured).length;
-  const visibleCount = FOURGET_TOOLS.filter((name) => tools[name].gatewayVisible === true).length;
-
-  const attachedNames = new Set((policy?.virtualMcps ?? []).map((item) => item.name));
-  const instructionRows = (virtualMcps ?? [])
-    .filter((item) => attachedNames.has(item.name))
-    .map((item) => ({
-      name: item.name,
-      mode: item.instructionsMode ?? "append",
-      instructions: item.instructions,
-    }));
-
-  const omp = options.ompSearch ?? {
-    status: "unavailable",
-    available: false,
-    configured: false,
-    primary: undefined,
-    fallbacks: [],
-    source: "OMP search configuration not inspected",
-  };
-  const toolUsable = (name) => liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true;
-  const modalities = {
-    web: {
-      tool: "fourget_web_search",
-      available: toolUsable("fourget_web_search"),
-    },
-    news: {
-      tool: "fourget_news_search",
-      available: toolUsable("fourget_news_search"),
-    },
-    images: {
-      tool: "fourget_image_search",
-      available: toolUsable("fourget_image_search"),
-    },
-  };
-  const paths = {
-    web: modalities.web.available ? "MCP/4get" : omp.available ? "OMP native web_search" : "unavailable",
-    news: modalities.news.available ? "MCP/4get" : "OMP/native or model-selected search",
-    images: modalities.images.available ? "MCP/4get" : "OMP/native or model-selected search",
-  };
-  const fourgetUsable = Object.values(modalities).some((item) => item.available);
-  return {
-    preferredPath: paths.web,
-    paths,
-    fourget: {
-      available: fourgetUsable,
-      configured: configuredCount > 0,
-      complete: liveKnown ? visibleCount === FOURGET_TOOLS.length : configuredCount === FOURGET_TOOLS.length,
-      configuredCount,
-      visibleCount: liveKnown ? visibleCount : undefined,
-      liveVerified: liveKnown,
-      clients: fourgetClients,
-      tools,
-      modalities,
-      missing: FOURGET_TOOLS.filter((name) => liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured),
-    },
-    omp,
-    mcpSurface: liveKnown ? mcpToolSurfaceDiagnostics(liveTools) : undefined,
-    instructions: instructionRows,
   };
 }
 
