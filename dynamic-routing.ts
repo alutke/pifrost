@@ -3,7 +3,11 @@ import {
 	PIFROST_WIRE_PROTOCOL,
 	type PifrostWireProtocol,
 } from "./protocol-capability.ts";
-import { evaluateRouteMemberEligibility, type RouteToolChoiceKind } from "./route-eligibility.ts";
+import {
+	evaluateRouteMemberEligibility,
+	resolveRouteMemberProtocol,
+	type RouteToolChoiceKind,
+} from "./route-eligibility.ts";
 
 export const DYNAMIC_ROUTE_MODE = "context-aware" as const;
 export const DEFAULT_CONTEXT_BYTES_PER_TOKEN = 2.5;
@@ -342,15 +346,11 @@ export function resolveDynamicMemberProtocol(
 	member: DynamicRouteMemberProfile,
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): PifrostWireProtocol | undefined {
-	if (!member.protocols?.length) {
-		return supportedProtocols.includes(PIFROST_WIRE_PROTOCOL) ? PIFROST_WIRE_PROTOCOL : supportedProtocols[0];
-	}
-	// Preserve the long-standing Chat path whenever the member supports it; only
-	// switch protocols when the physical provider contract requires that.
-	if (member.protocols.includes(PIFROST_WIRE_PROTOCOL) && supportedProtocols.includes(PIFROST_WIRE_PROTOCOL)) {
-		return PIFROST_WIRE_PROTOCOL;
-	}
-	return member.protocols.find((protocol) => supportedProtocols.includes(protocol));
+	return resolveRouteMemberProtocol(
+		member.protocols,
+		supportedProtocols,
+		{ defaultProtocol: PIFROST_WIRE_PROTOCOL },
+	) as PifrostWireProtocol | undefined;
 }
 
 function resolveDynamicMemberProtocolForRequest(
@@ -358,17 +358,14 @@ function resolveDynamicMemberProtocolForRequest(
 	body: Record<string, unknown>,
 	supportedProtocols: readonly PifrostWireProtocol[],
 ): PifrostWireProtocol | undefined {
-	// Server-side tool search is a Responses contract in Pifrost. Prefer that
-	// transport when the physical member advertises it instead of silently
-	// degrading the request onto Chat Completions.
-	if (
-		requestUsesToolSearch(body) &&
-		member.protocols?.includes("openai-responses") &&
-		supportedProtocols.includes("openai-responses")
-	) {
-		return "openai-responses";
-	}
-	return resolveDynamicMemberProtocol(member, supportedProtocols);
+	return resolveRouteMemberProtocol(
+		member.protocols,
+		supportedProtocols,
+		{
+			toolSearch: requestUsesToolSearch(body),
+			defaultProtocol: PIFROST_WIRE_PROTOCOL,
+		},
+	) as PifrostWireProtocol | undefined;
 }
 
 function requestToolChoiceKind(body: Record<string, unknown>): RouteToolChoiceKind | undefined {
