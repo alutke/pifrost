@@ -28,7 +28,6 @@ if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.versi
 const requiredDirectRuntimeDependencies = [
   "@oh-my-pi/pi-ai",
   "@oh-my-pi/pi-catalog",
-  "@oh-my-pi/pi-utils",
 ];
 for (const dependency of requiredDirectRuntimeDependencies) {
   const declared = pkg.dependencies?.[dependency];
@@ -39,8 +38,8 @@ for (const dependency of requiredDirectRuntimeDependencies) {
     fail(`package-lock.json root dependency for ${dependency} must match package.json`);
   }
 }
-if (pkg.dependencies["@oh-my-pi/pi-utils"] !== pkg.dependencies["@oh-my-pi/pi-catalog"]) {
-  fail("@oh-my-pi/pi-utils must stay version-aligned with @oh-my-pi/pi-catalog for OMP plugin loading");
+if (pkg.dependencies?.["@oh-my-pi/pi-utils"] !== undefined) {
+  fail("@oh-my-pi/pi-utils must not be a direct dependency; compiled OMP owns the host runtime graph");
 }
 if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "mu"))) {
   fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
@@ -55,14 +54,19 @@ if (expectedRelease !== pkg.version) {
   fail(`README expected release is ${expectedRelease ?? "missing"}, package.json is ${pkg.version}`);
 }
 
-if (/@oh-my-pi\/pi-catalog\/build/u.test(native) || /from\s+["']@oh-my-pi\/pi-catalog\/build["']/u.test(transportModel)) {
+const catalogFallback = readFileSync(new URL("catalog-fallback.ts", root), "utf8");
+if (/@oh-my-pi\/pi-catalog\/build/u.test(native)) {
   fail("runtime package must not import @oh-my-pi/pi-catalog/build; compiled OMP 18.4.x cannot resolve that subpath");
 }
-if (/from\s+["']@oh-my-pi\/pi-catalog["']/u.test(transportModel)) {
-  fail("transport-model.ts must not import the broad pi-catalog root; use the bundled-safe compat/resolve surface only");
+for (const [name, source] of [["transport-model.ts", transportModel], ["catalog-fallback.ts", catalogFallback]]) {
+  if (/from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u.test(source)) {
+    fail(`${name} must not import pi-catalog at runtime; host imports belong in native.ts`);
+  }
 }
-if (!/@oh-my-pi\/pi-catalog\/compat\/resolve/u.test(transportModel)) {
-  fail("transport-model.ts must retain OMP compat/resolve policy materialization");
+if (!/from\s+["']@oh-my-pi\/pi-catalog["']/u.test(native) ||
+    !/@oh-my-pi\/pi-catalog\/compat\/resolve/u.test(native) ||
+    !/@oh-my-pi\/pi-catalog\/compat\/behavior/u.test(native)) {
+  fail("native.ts must own the supported OMP catalog root, compat/resolve and compat/behavior imports");
 }
 
 for (const path of [
