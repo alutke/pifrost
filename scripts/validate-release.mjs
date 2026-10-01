@@ -8,6 +8,8 @@ const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
 const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8"));
 const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
+const native = readFileSync(new URL("native.ts", root), "utf8");
+const transportModel = readFileSync(new URL("transport-model.ts", root), "utf8");
 
 function fail(message) {
   throw new Error(message);
@@ -35,8 +37,16 @@ if (expectedRelease !== pkg.version) {
   fail(`README expected release is ${expectedRelease ?? "missing"}, package.json is ${pkg.version}`);
 }
 
+if (/@oh-my-pi\/pi-catalog\/build/u.test(native) || /from\s+["']@oh-my-pi\/pi-catalog\/build["']/u.test(transportModel)) {
+  fail("runtime package must not import @oh-my-pi/pi-catalog/build; compiled OMP 18.4.x cannot resolve that subpath");
+}
+if (!/@oh-my-pi\/pi-catalog\/compat\/resolve/u.test(transportModel)) {
+  fail("transport-model.ts must retain OMP compat/resolve policy materialization");
+}
+
 for (const path of [
   "native.ts",
+  "transport-model.ts",
   "multi-protocol-routing.ts",
   "context-estimator.ts",
   "agent-attribution.ts",
@@ -133,6 +143,7 @@ try {
   for (const path of [
     "package.json",
     "native.ts",
+    "transport-model.ts",
     "capability-bridge.ts",
     "context-estimator.ts",
     "routing-core.ts",
