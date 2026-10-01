@@ -10,7 +10,7 @@ import {
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { buildModel } from "@oh-my-pi/pi-catalog/build";
+import { buildPifrostTransportModel } from "./transport-model.ts";
 
 import {
 	buildPifrostCatalog,
@@ -225,7 +225,7 @@ function streamDynamicPifrostRoute(
 	const outer = new AssistantMessageEventStream();
 
 	void runPifrostProtocolPlan(model, plan, outer, (attempt, attemptIndex) => {
-		const transportModel = buildModel(createPifrostAttemptModelSpec(model, attempt));
+		const transportModel = buildPifrostTransportModel(createPifrostAttemptModelSpec(model, attempt));
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
 		if (attempt.protocol === "openai-responses") {
@@ -322,7 +322,7 @@ function streamPifrostOpenAI(
 	// Non-dynamic aliases and physical models retain the long-standing Chat
 	// transport. The fetch wrapper is kept as a no-op-compatible guard for
 	// callers that install a route profile between model selection and dispatch.
-	const transportModel = buildModel({
+	const transportModel = buildPifrostTransportModel({
 		...model,
 		api: "openai-completions",
 		compat: model.compatConfig,
