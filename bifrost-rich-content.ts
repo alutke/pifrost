@@ -1,4 +1,4 @@
-import { completeSimple, type AssistantMessage, type ImageContent, type Model, type TextContent } from "@oh-my-pi/pi-ai";
+import type { AssistantMessage, ImageContent, Model, TextContent } from "@oh-my-pi/pi-ai";
 import { sendsImageInputOnWire } from "@oh-my-pi/pi-ai/providers/vision-guard";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
@@ -17,6 +17,7 @@ const ALLOWED_IMAGE_MIME = new Set([
 ]);
 
 type ToolContent = TextContent | ImageContent;
+type CompleteSimple = typeof import("@oh-my-pi/pi-ai").completeSimple;
 
 export interface RichContentRecovery {
 	content: ToolContent[];
@@ -35,7 +36,7 @@ export interface RichContentBridgeOptions {
 	maxImageBytes?: number;
 	visionTimeoutMs?: number;
 	visionMaxTokens?: number;
-	completeImpl?: typeof completeSimple;
+	completeImpl?: CompleteSimple;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
@@ -236,7 +237,8 @@ export async function analyzeRecoveredImages(
 	});
 
 	try {
-		const response = await (options.completeImpl ?? completeSimple)(
+		const completeImpl = options.completeImpl ?? (await import("@oh-my-pi/pi-ai")).completeSimple;
+		const response = await completeImpl(
 			visionModel,
 			{
 				systemPrompt: [
