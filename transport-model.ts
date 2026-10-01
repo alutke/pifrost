@@ -1,10 +1,57 @@
 import type { Api, Model, ModelSpec } from "@oh-my-pi/pi-ai";
-import {
-	cleanModelName,
-	MODEL_KINDS,
-	resolveModelTokenizer,
-} from "@oh-my-pi/pi-catalog";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
+
+const AUTHOR_PREFIX = /^[A-Za-z][A-Za-z0-9 .+&'-]{0,23}: /;
+const NOISE_TAGS = /\s*\((?:latest|Antigravity|\$+|>?\d+% off|retires [^)]*)\)/g;
+
+function cleanTransportModelName(name: string): string {
+	const cleaned = name.replace(AUTHOR_PREFIX, "").replace(NOISE_TAGS, "").replace(/ {2,}/g, " ").trim();
+	return cleaned.length > 0 ? cleaned : name;
+}
+
+function parseRevision(value: string | undefined): readonly [number, number, number] | undefined {
+	if (!value) return undefined;
+	const out: [number, number, number] = [0, 0, 0];
+	let count = 0;
+	for (const part of value.split(/[.-]/u)) {
+		if (count === 3 || !/^\d+$/u.test(part)) return undefined;
+		const parsed = Number(part);
+		if (!Number.isInteger(parsed) || parsed < 0 || parsed > 255) return undefined;
+		out[count] = parsed;
+		count += 1;
+	}
+	return count > 0 ? out : undefined;
+}
+
+function revisionAtLeast(value: string | undefined, floor: string): boolean {
+	const revision = parseRevision(value);
+	const minimum = parseRevision(floor);
+	if (!revision || !minimum) return false;
+	return (
+		revision[0] > minimum[0] ||
+		(revision[0] === minimum[0] && revision[1] > minimum[1]) ||
+		(revision[0] === minimum[0] && revision[1] === minimum[1] && revision[2] >= minimum[2])
+	);
+}
+
+function resolveTransportTokenizer(identity: { class: string; family?: string; revision?: string }): Model["tokenizer"] {
+	if (identity.class === "anthropic") {
+		if (identity.family === "opus") {
+			if (revisionAtLeast(identity.revision, "5")) return "claude-v5";
+			if (revisionAtLeast(identity.revision, "4.7")) return "claude-v47";
+			return "claude-v3";
+		}
+		if (identity.family === "sonnet" || identity.family === "fable" || identity.family === "mythos") {
+			return revisionAtLeast(identity.revision, "5") ? "claude-v5-sonnet" : "claude-v3";
+		}
+		return "claude-v3";
+	}
+	if (identity.class === "qwen" && revisionAtLeast(identity.revision, "3.5")) return "qwen3";
+	if (identity.class === "deepseek") return "deepseek-v3";
+	if (identity.class === "kimi") return "kimi-k2";
+	if (identity.class === "glm" && revisionAtLeast(identity.revision, "5")) return "glm5";
+	return undefined;
+}
 
 function numberField(source: object, key: string): number | undefined {
 	const value: unknown = Reflect.get(source, key);
@@ -25,10 +72,11 @@ function explicitComputerUseConfig<TApi extends Api>(spec: ModelSpec<TApi>): boo
 	return typeof value === "boolean" ? value : undefined;
 }
 
-function revisionAtLeast(identity: { revision?: string }, major: number, minor: number): boolean {
+function numericRevisionAtLeast(identity: { revision?: string }, major: number, minor: number): boolean {
 	if (identity.revision === undefined) return false;
-	const [revMajor = 0, revMinor = 0] = identity.revision.split(".").map(Number);
-	return revMajor > major || (revMajor === major && revMinor >= minor);
+	const revision = parseRevision(identity.revision);
+	if (!revision) return false;
+	return revision[0] > major || (revision[0] === major && revision[1] >= minor);
 }
 
 function isDirectOpenAIResponsesEndpoint<TApi extends Api>(spec: ModelSpec<TApi>): boolean {
@@ -64,79 +112,22 @@ function supportsOpenAIGAComputerUse<TApi extends Api>(
 ): boolean {
 	if (explicitSupport !== undefined) return explicitSupport;
 	if (!isDirectOpenAIResponsesEndpoint(spec)) return false;
-	return identity.class === "openai" && revisionAtLeast(identity, 5, 4);
+	return identity.class === "openai" && numericRevisionAtLeast(identity, 5, 4);
 }
 
 /**
- * Apply the request-relevant catalog axes that OMP's buildModel normally
- * materializes. Pifrost does not need pricing mutations for these ephemeral
- * transport models: billing/routing metadata remains owned by the logical
- * Pifrost model and Bifrost.
+ * Apply only catalog axes that can change the shape or safety of the immediate
+ * provider request. Pricing, display and selection metadata stay on Pifrost's
+ * logical model and in Bifrost, where routing/billing authority belongs.
  */
 function applyTransportCatalogAssignments<TApi extends Api>(
 	model: Model<TApi>,
 	catalog: Record<string, unknown>,
 ): void {
-	const kind = MODEL_KINDS.find((value) => value === catalog.kind);
-	if (kind !== undefined) model.kind = kind;
-
 	if (catalog.contextWindowAuthoritative === true) {
 		model.contextWindowAuthoritative = true;
 	} else {
 		delete model.contextWindowAuthoritative;
-	}
-
-	const webSearch = catalog.webSearch;
-	if (
-		webSearch === "gemini" ||
-		webSearch === "anthropic" ||
-		webSearch === "codex" ||
-		webSearch === "xai" ||
-		webSearch === "openrouter" ||
-		webSearch === "openai"
-	) {
-		model.webSearch = webSearch;
-	}
-	if (typeof catalog.webSearchModel === "string") model.webSearchModel = catalog.webSearchModel;
-	if (catalog.hostedImage === true) model.hostedImage = true;
-	else if (catalog.hostedImage === false) delete model.hostedImage;
-	if (typeof catalog.imageModel === "string") model.imageModel = catalog.imageModel;
-	else if (catalog.imageModel === false) delete model.imageModel;
-
-	const serviceTierCost = objectPayload(catalog.serviceTierCost);
-	if (serviceTierCost !== undefined) {
-		const flex = numberField(serviceTierCost, "flex");
-		const priority = numberField(serviceTierCost, "priority");
-		model.serviceTierCost = {
-			...(flex !== undefined && { flex }),
-			...(priority !== undefined && { priority }),
-		};
-	}
-	if (typeof catalog.priority === "number") model.priority = catalog.priority;
-
-	const promptCache = objectPayload(catalog.promptCache);
-	if (promptCache !== undefined) {
-		const short = numberField(promptCache, "short");
-		const long = numberField(promptCache, "long");
-		model.promptCache = {
-			...(short !== undefined && { short }),
-			...(long !== undefined && { long }),
-		};
-	}
-
-	if (catalog.applyPatchToolType === "freeform" || catalog.applyPatchToolType === "function") {
-		model.applyPatchToolType = catalog.applyPatchToolType;
-	}
-	if (catalog.editPromptVariant === "full" || catalog.editPromptVariant === "compact") {
-		model.editPromptVariant = catalog.editPromptVariant;
-	}
-	if (
-		catalog.pricingStatus === "free" ||
-		catalog.pricingStatus === "included" ||
-		catalog.pricingStatus === "variable" ||
-		catalog.pricingStatus === "unknown"
-	) {
-		model.pricingStatus = catalog.pricingStatus;
 	}
 
 	if (catalog.requiresCursorToolSchemaProjection === true) {
@@ -156,9 +147,6 @@ function applyTransportCatalogAssignments<TApi extends Api>(
 	}
 	if (typeof catalog.omitMaxOutputTokens === "boolean" && model.omitMaxOutputTokens === undefined) {
 		model.omitMaxOutputTokens = catalog.omitMaxOutputTokens;
-	}
-	if (typeof catalog.contextPromotionTarget === "string" && model.contextPromotionTarget === undefined) {
-		model.contextPromotionTarget = catalog.contextPromotionTarget;
 	}
 
 	const limitsPatch = objectPayload(catalog.limitsPatch);
@@ -180,14 +168,14 @@ function applyTransportCatalogAssignments<TApi extends Api>(
  * Materialize the temporary physical transport model used by Pifrost without
  * importing @oh-my-pi/pi-catalog/build.
  *
- * Compiled OMP 18.4.x currently cannot load pi-catalog's root-level /build
- * subpath (upstream #13940). The public package root and compat/resolve path
- * are bundled by OMP, so this keeps the same request-policy resolution while
- * avoiding the broken compiled-extension import edge.
+ * Compiled OMP 18.4.x cannot currently load pi-catalog's root-level /build
+ * subpath (upstream #13940). OMP does bundle compat/resolve, which is the
+ * authoritative request-policy resolver. Pifrost uses that narrow public
+ * surface and locally mirrors the small request-boundary normalization needed
+ * by its ephemeral transport models.
  *
  * This is intentionally transport-only, not a replacement for OMP's complete
- * catalog builder: price-card mutation is irrelevant to a single outbound
- * request and remains on Pifrost's logical/Bifrost catalog.
+ * catalog builder. Pricing and selection metadata are not recomputed here.
  */
 export function buildPifrostTransportModel<TApi extends Api>(spec: ModelSpec<TApi>): Model<TApi> {
 	const policy = resolveModelPolicy(spec);
@@ -195,10 +183,10 @@ export function buildPifrostTransportModel<TApi extends Api>(spec: ModelSpec<TAp
 	const model = {
 		...spec,
 		reasoning: spec.reasoning || policy.thinking !== undefined,
-		name: cleanModelName(spec.name),
+		name: cleanTransportModelName(spec.name),
 		identity: policy.identity,
 		requiresGlyphTokenization: policy.identity.class === "anthropic",
-		tokenizer: spec.tokenizer ?? resolveModelTokenizer(spec.requestModelId ?? spec.id, spec.provider),
+		tokenizer: spec.tokenizer ?? resolveTransportTokenizer(policy.identity),
 		thinking: policy.thinking,
 		supportsComputerUse: supportsOpenAIGAComputerUse(spec, policy.identity, supportsComputerUseConfig),
 		supportsComputerUseConfig,
