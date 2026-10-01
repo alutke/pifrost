@@ -1,11 +1,25 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
+import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { buildRichRouteCatalog, type BifrostDatasheets } from "../datasheet.ts";
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
 import { augmentLiveInventoryForRoutes } from "../route-inventory.ts";
-import { findCatalogProtocolCapability } from "../catalog-fallback.ts";
+import {
+	findCatalogProtocolCapability,
+	installOmpCatalogRuntime,
+	type CatalogModelLike,
+} from "../catalog-fallback.ts";
 import { applyDynamicRouteProfiles, extractDynamicRouteProfiles, planDynamicRouteAttempts } from "../dynamic-routing.ts";
+
+installOmpCatalogRuntime({
+	getBundledProviders: () => getBundledProviders(),
+	getBundledModels: (provider) =>
+		getBundledModels(provider as Parameters<typeof getBundledModels>[0]) as unknown as CatalogModelLike[],
+	apiRouteFor: (provider, modelId) =>
+		apiRouteFor(provider as Parameters<typeof apiRouteFor>[0], modelId),
+});
 
 function sparseLive(id: string): BifrostProviderModel {
 	return {

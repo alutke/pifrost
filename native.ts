@@ -8,9 +8,19 @@ import {
 	type OpenAIResponsesOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-responses";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
+import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
+import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
+import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import { buildPifrostTransportModel } from "./transport-model.ts";
+import {
+	buildPifrostTransportModel,
+	installPifrostModelPolicyResolver,
+} from "./transport-model.ts";
+import {
+	installOmpCatalogRuntime,
+	type CatalogModelLike,
+} from "./catalog-fallback.ts";
 
 import {
 	buildPifrostCatalog,
@@ -77,6 +87,19 @@ import {
 	recordAgentRequest,
 	releaseAgentSession,
 } from "./agent-attribution.ts";
+
+installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
+
+installOmpCatalogRuntime({
+	getBundledProviders: () => getBundledProviders(),
+	getBundledModels: (provider) =>
+		getBundledModels(provider as Parameters<typeof getBundledModels>[0]) as unknown as CatalogModelLike[],
+	apiRouteFor: (provider, modelId) =>
+		apiRouteFor(
+			provider as Parameters<typeof apiRouteFor>[0],
+			modelId,
+		),
+});
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 
