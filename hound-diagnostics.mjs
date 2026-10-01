@@ -27,7 +27,7 @@ export const BIFROST_CODE_MODE_TOOLS = Object.freeze([
 ]);
 
 const BIFROST_IMAGE_TRANSPORT_WARNING =
-  "Bifrost currently flattens MCP ImageContent to text. Pifrost runtime rich-content recovery restores recognized Bifrost image markers before OMP model dispatch; Code Mode remains conditional on executeToolCode returning the flattened image marker.";
+  "Bifrost currently flattens MCP ImageContent to text. Pifrost restores validated markers only for directly exposed Hound screenshot tools; Code Mode screenshot output remains conditional because executeToolCode does not preserve trustworthy nested-tool provenance.";
 
 export const PIFROST_RICH_CONTENT_RECOVERY = true;
 
@@ -296,8 +296,12 @@ function fileServerName(path) {
 }
 
 function houndToolsInText(text) {
-  const value = String(text ?? "");
-  return HOUND_TOOLS.filter((name) => value.includes(name));
+  const signatures = new Set();
+  for (const line of String(text ?? "").split(/\r?\n/u)) {
+    const match = line.match(/^\s*(?:async\s+)?def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(/u);
+    if (match?.[1]) signatures.add(match[1]);
+  }
+  return HOUND_TOOLS.filter((name) => signatures.has(name));
 }
 
 function houndToolsInToolLevelFiles(files, serverName) {
@@ -435,8 +439,19 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
   const screenshotCallable = capabilities.screenshot.available;
   const imageContentPreserved = options.imageContentPreserved === true;
   const pifrostImageRecovery = options.pifrostImageRecovery !== false;
-  const visualWebRecoverable = screenshotCallable && (imageContentPreserved || pifrostImageRecovery);
-  const visualWebReady = screenshotCallable && (imageContentPreserved || (pifrostImageRecovery && mode === "classic"));
+  const screenshotGatewayName = String(capabilities.screenshot.gatewayName ?? "");
+  const screenshotViaCodeMode = screenshotGatewayName.startsWith("Code Mode:");
+  const classicRecoveryReady = pifrostImageRecovery && !screenshotViaCodeMode && mode !== "code";
+  const visualWebRecoverable = screenshotCallable && (imageContentPreserved || classicRecoveryReady);
+  const visualWebConditional = screenshotCallable && !imageContentPreserved && pifrostImageRecovery && screenshotViaCodeMode;
+  const visualWebReady = visualWebRecoverable;
+  const visualWebStatus = imageContentPreserved
+    ? "native"
+    : visualWebRecoverable
+      ? "recovered"
+      : visualWebConditional
+        ? "conditional-code-mode"
+        : "unavailable";
   const administrativeComplete = capabilities.cache.available && capabilities.version.available;
   const contractComplete = HOUND_TOOLS.every((name) =>
     liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true
@@ -454,7 +469,7 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
   const codeModeLiveVerified = codeMode.configured
     ? codeMode.gatewayMetaComplete === true && codeMode.probe?.ok === true
     : false;
-  const liveVerified = liveKnown && (classicLive || codeModeLiveVerified || !codeMode.configured);
+  const liveVerified = liveKnown && (classicLive || codeModeLiveVerified);
 
   const searchPath = capabilities.search.available
     ? mode === "code" || String(capabilities.search.gatewayName ?? "").startsWith("Code Mode:")
@@ -479,6 +494,8 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
       screenshotCallable,
       visualWebReady,
       visualWebRecoverable,
+      visualWebConditional,
+      visualWebStatus,
       imageContentPreserved,
       pifrostImageRecovery,
       configuredCount,
