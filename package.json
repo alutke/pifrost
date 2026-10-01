@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -24,6 +24,7 @@
   "files": [
     "index.ts",
     "native.ts",
+    "transport-model.ts",
     "cache.ts",
     "config-store.ts",
     "datasheet.ts",
@@ -79,7 +80,7 @@
   },
   "scripts": {
     "check": "npm run build:runtime && tsc --noEmit && node --check cli.mjs && node --check cli-preconditions.mjs && node --check diagnostic-result.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check mcp-rpc.mjs && node --check hound-diagnostics.mjs && node --check doctor-probes.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-shape.mjs && node --check mcp-client-normalization.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check route-cli.mjs && node --check dist/config-store.js && node --check dist/routing-core.js && node --check dist/route-eligibility.js && node --check dist/cache-schema.js && node --check scripts/build-runtime.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs",
-    "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs",
+    "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs && bun test ./test/transport-model.bun.ts",
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
     "cli": "node cli.mjs",

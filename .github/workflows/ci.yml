@@ -38,6 +38,18 @@ jobs:
           ./node_modules/.bin/omp --version
           ./node_modules/.bin/omp install . --force
           ./node_modules/.bin/omp plugin list
+      - name: Validate with compiled OMP 18.4.8 release binary
+        run: |
+          OMP_BIN="$RUNNER_TEMP/omp-18.4.8"
+          curl --fail --location --silent --show-error \
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.4.8/omp-linux-x64" \
+            --output "$OMP_BIN"
+          chmod +x "$OMP_BIN"
+          export HOME="$RUNNER_TEMP/omp-home-compiled"
+          mkdir -p "$HOME"
+          "$OMP_BIN" --version
+          "$OMP_BIN" install . --force
+          "$OMP_BIN" plugin list
       - name: Validate clean GitHub plugin install
         if: github.event_name == 'push'
         run: |
