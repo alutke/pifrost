@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.4
+0.8.5
 ```
 
 Bun also works:
@@ -312,9 +312,10 @@ Readiness is reported separately:
 - **web research ready** — search + fetch
 - **deep research ready** — search + fetch + crawl
 - **screenshot callable** — Hound exposes `mcp_screenshot`
-- **visual web ready** — screenshot content is preserved as actual multimodal image content end-to-end
+- **visual web ready** — screenshot content is either preserved natively or safely rehydrated from a directly exposed Hound screenshot result
+- **visual web conditional** — Code Mode can call `mcp_screenshot`, but nested image provenance is no longer trustworthy enough for safe rehydration
 
-Current supported Bifrost MCP releases flatten upstream MCP `ImageContent` into text while relaying tool results. Pifrost therefore reports Hound screenshot as callable but **not multimodal-ready through Bifrost** and emits a warning rather than overstating the capability. Search, fetch, crawl, PDF/OCR extraction and other text/structured Hound functions remain compatible with Bifrost Code Mode.
+Current supported Bifrost MCP releases flatten upstream MCP `ImageContent` into text while relaying tool results. For classic/direct Hound `mcp_screenshot`, Pifrost validates and rehydrates that framing at the OMP tool-result boundary; for Bifrost Code Mode it deliberately leaves image-looking text unchanged and reports visual web as conditional. Search, fetch, crawl, PDF/OCR extraction and other text/structured Hound functions remain compatible with Bifrost Code Mode.
 
 OMP's native `modelRoles.web` / `retry.fallbackChains.web` remain a separate mechanism. Pifrost reports the Hound MCP path and native web path independently; it does not choose between them for the model.
 
