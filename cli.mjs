@@ -996,7 +996,14 @@ async function commandRepoStatus(snapshot) {
       console.log(`    web research:   ${hound.hound.webResearchReady ? "ready" : "incomplete"}`);
       console.log(`    deep research:  ${hound.hound.deepResearchReady ? "ready" : "incomplete"}`);
       console.log(`    screenshot:     ${hound.hound.screenshotCallable ? "callable" : "unavailable"}`);
-      console.log(`    visual web:     ${hound.hound.visualWebReady ? "ready" : "not multimodal-ready"}`);
+      const visualWebState = hound.hound.visualWebStatus === "native"
+        ? "ready (native image transport)"
+        : hound.hound.visualWebStatus === "recovered"
+          ? "ready (Pifrost screenshot recovery)"
+          : hound.hound.visualWebStatus === "conditional-code-mode"
+            ? "conditional (Code Mode provenance unavailable)"
+            : "not multimodal-ready";
+      console.log(`    visual web:     ${visualWebState}`);
       console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.visibleCount ?? hound.hound.configuredCount}/6 tools available`}`);
       if (hound.hound.codeMode.configured) {
         const metaCount = Object.values(hound.hound.codeMode.metaTools)
