@@ -1,3 +1,10 @@
+## 0.8.7 — 2026-10-01
+
+- Fixed clean OMP GitHub-plugin installation by declaring `@oh-my-pi/pi-utils@18.4.5` as a direct Pifrost runtime dependency. This prevents compiled OMP extension validation from loading `@oh-my-pi/pi-catalog/compat/resolve` and then failing when `pi-catalog/src/compat/cascade.ts` imports `pi-utils` from an install layout where that transitive dependency is not materialized.
+- Added release validation that requires `pi-ai`, `pi-catalog`, and `pi-utils` to remain explicit direct runtime dependencies, keeps the lockfile root dependency set aligned, and pins `pi-utils` to the same OMP release as `pi-catalog`.
+- Added a clean GitHub-SHA installation test using the compiled OMP 18.4.8 release binary, matching the production installation path that exposed the defect rather than relying only on an npm-populated development tree.
+- No routing, model-selection, Bifrost, MCP, or provider behavior changed.
+
 ## 0.8.6 — 2026-10-01
 
 - Fixed compiled OMP 18.4.x extension loading by removing Pifrost's runtime import of `@oh-my-pi/pi-catalog/build`, the root-level catalog subpath affected by upstream OMP issue #13940.
