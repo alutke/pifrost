@@ -1,9 +1,9 @@
 ## 0.8.6 — 2026-10-01
 
 - Fixed compiled OMP 18.4.x extension loading by removing Pifrost's runtime import of `@oh-my-pi/pi-catalog/build`, the root-level catalog subpath affected by upstream OMP issue #13940.
-- Added a Pifrost transport-only model materializer built on OMP's bundled-safe catalog root plus `@oh-my-pi/pi-catalog/compat/resolve`, preserving request-policy resolution for Chat Completions and Responses without depending on the broken compiled-loader path.
+- Added a Pifrost transport-only model materializer built only on OMP's bundled-safe `@oh-my-pi/pi-catalog/compat/resolve` surface, preserving request-policy resolution for Chat Completions and Responses without depending on broken catalog root-level subpaths.
 - Kept Bifrost as the routing/billing authority: the local materializer applies request-relevant OMP catalog policy and capability corrections but deliberately does not mutate price cards for ephemeral transport models.
-- Added parity tests against OMP's source-mode `buildModel` for OpenAI Responses and OpenAI-compatible chat, plus a regression guard preventing the broken catalog-build import from returning to Pifrost runtime code.
+- Added request-policy regression tests for OpenAI Responses and OpenAI-compatible chat, plus guards preventing the broken catalog-build path or broad catalog-root import from returning to Pifrost runtime code.
 - Release packaging now includes and validates the new transport materializer. Model-catalog schema remains v14.
 
 ## 0.8.5 — 2026-10-01
