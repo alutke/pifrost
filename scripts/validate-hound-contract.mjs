@@ -16,6 +16,13 @@ const requiredServerTokens = [
   "@server.call_tool(validate_input=False)",
 ];
 
+const requiredScreenshotTokens = [
+  "async def screenshot(",
+  "-> List[ImageContent | TextContent]",
+  'Image(data=captured["bytes"], format=image_type).to_image_content()',
+  'return [image, TextContent(type="text", text=captured["url"])]',
+];
+
 async function fetchSource(ref) {
   const url = `https://raw.githubusercontent.com/dondai1234/master-fetch/${ref}/src/master_fetch/server.py`;
   const response = await fetch(url, {
@@ -39,7 +46,13 @@ function validateSource(label, source) {
       throw new Error(`${label} is missing Hound Streamable HTTP contract: ${token}`);
     }
   }
-  console.log(`Validated ${label}: ${expectedTools.join(", ")}`);
+  for (const token of requiredScreenshotTokens) {
+    if (!source.includes(token)) {
+      throw new Error(`${label} is missing Hound screenshot ImageContent contract: ${token}`);
+    }
+  }
+  const instructions = source.includes('HOUND_INSTRUCTIONS = ""') ? "empty" : "present-or-changed";
+  console.log(`Validated ${label}: ${expectedTools.join(", ")}; screenshot=ImageContent; initialize-instructions=${instructions}`);
 }
 
 validateSource(

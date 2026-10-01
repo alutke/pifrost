@@ -4,6 +4,8 @@ import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 const BIFROST_IMAGE_PREFIX = "[Image Response:";
 const BIFROST_IMAGE_MIME_SEPARATOR = ", MIME:";
 const DEFAULT_MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+const DEFAULT_MAX_TOTAL_IMAGE_BYTES = 24 * 1024 * 1024;
+const DEFAULT_MAX_IMAGES = 4;
 const DEFAULT_VISION_TIMEOUT_MS = 20_000;
 const DEFAULT_VISION_MAX_TOKENS = 1_200;
 const MAX_VISION_IMAGES = 4;
@@ -33,6 +35,8 @@ export interface VisionAnalysis {
 
 export interface RichContentBridgeOptions {
 	maxImageBytes?: number;
+	maxTotalImageBytes?: number;
+	maxImages?: number;
 	visionTimeoutMs?: number;
 	visionMaxTokens?: number;
 	completeImpl?: CompleteSimple;
@@ -66,9 +70,35 @@ function appendText(blocks: ToolContent[], text: string): void {
 	blocks.push({ type: "text", text });
 }
 
-function decodeBase64Image(value: string, mimeType: string, maxBytes: number): ImageContent | undefined {
+function hasExpectedImageMagic(bytes: Buffer, mime: string): boolean {
+	if (mime === "image/png") {
+		return bytes.length >= 8 &&
+			bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47 &&
+			bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+	}
+	if (mime === "image/jpeg") {
+		return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+	}
+	if (mime === "image/gif") {
+		if (bytes.length < 6) return false;
+		const signature = bytes.subarray(0, 6).toString("ascii");
+		return signature === "GIF87a" || signature === "GIF89a";
+	}
+	if (mime === "image/webp") {
+		return bytes.length >= 12 &&
+			bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+			bytes.subarray(8, 12).toString("ascii") === "WEBP";
+	}
+	return false;
+}
+
+function decodeBase64Image(
+	value: string,
+	mimeType: string,
+	maxBytes: number,
+): { image: ImageContent; decodedBytes: number } | undefined {
 	const mime = mimeType.trim().toLowerCase();
-	if (!ALLOWED_IMAGE_MIME.has(mime)) return undefined;
+	if (!ALLOWED_IMAGE_MIME.has(mime) || maxBytes <= 0) return undefined;
 
 	const compact = value.replace(/\s+/gu, "");
 	if (!compact || !/^[A-Za-z0-9+/]*={0,2}$/u.test(compact)) return undefined;
@@ -84,13 +114,23 @@ function decodeBase64Image(value: string, mimeType: string, maxBytes: number): I
 	}
 	if (bytes.length === 0 || bytes.length > maxBytes) return undefined;
 	if (bytes.toString("base64").replace(/=+$/u, "") !== unpadded) return undefined;
+	if (!hasExpectedImageMagic(bytes, mime)) return undefined;
 
-	return { type: "image", data: bytes.toString("base64"), mimeType: mime };
+	return {
+		image: { type: "image", data: bytes.toString("base64"), mimeType: mime },
+		decodedBytes: bytes.length,
+	};
 }
 
-function recoverTextBlock(text: string, maxBytes: number): RichContentRecovery {
+function recoverTextBlock(
+	text: string,
+	maxImageBytes: number,
+	remainingImages: number,
+	remainingTotalBytes: number,
+): RichContentRecovery & { recoveredBytes: number } {
 	const content: ToolContent[] = [];
 	const recoveredImages: ImageContent[] = [];
+	let recoveredBytes = 0;
 	let rejectedMarkers = 0;
 	let cursor = 0;
 
@@ -100,7 +140,6 @@ function recoverTextBlock(text: string, maxBytes: number): RichContentRecovery {
 			appendText(content, text.slice(cursor));
 			break;
 		}
-
 		appendText(content, text.slice(cursor, start));
 		const payloadStart = start + BIFROST_IMAGE_PREFIX.length;
 		const separator = text.indexOf(BIFROST_IMAGE_MIME_SEPARATOR, payloadStart);
@@ -117,10 +156,14 @@ function recoverTextBlock(text: string, maxBytes: number): RichContentRecovery {
 		const rawMarker = text.slice(start, close + 1);
 		const encoded = text.slice(payloadStart, separator).trim();
 		const mime = text.slice(separator + BIFROST_IMAGE_MIME_SEPARATOR.length, close).trim();
-		const image = decodeBase64Image(encoded, mime, maxBytes);
-		if (image) {
-			content.push(image);
-			recoveredImages.push(image);
+		const capacity = Math.min(maxImageBytes, remainingTotalBytes - recoveredBytes);
+		const decoded = recoveredImages.length < remainingImages
+			? decodeBase64Image(encoded, mime, capacity)
+			: undefined;
+		if (decoded) {
+			content.push(decoded.image);
+			recoveredImages.push(decoded.image);
+			recoveredBytes += decoded.decodedBytes;
 		} else {
 			rejectedMarkers++;
 			appendText(content, rawMarker);
@@ -133,6 +176,7 @@ function recoverTextBlock(text: string, maxBytes: number): RichContentRecovery {
 		recoveredImages,
 		changed: recoveredImages.length > 0,
 		rejectedMarkers,
+		recoveredBytes,
 	};
 }
 
@@ -145,11 +189,14 @@ function recoverTextBlock(text: string, maxBytes: number): RichContentRecovery {
  */
 export function recoverBifrostRichContent(
 	content: readonly ToolContent[],
-	options: Pick<RichContentBridgeOptions, "maxImageBytes"> = {},
+	options: Pick<RichContentBridgeOptions, "maxImageBytes" | "maxTotalImageBytes" | "maxImages"> = {},
 ): RichContentRecovery {
-	const maxBytes = positiveInteger(options.maxImageBytes, DEFAULT_MAX_IMAGE_BYTES);
+	const maxImageBytes = positiveInteger(options.maxImageBytes, DEFAULT_MAX_IMAGE_BYTES);
+	const maxTotalImageBytes = positiveInteger(options.maxTotalImageBytes, DEFAULT_MAX_TOTAL_IMAGE_BYTES);
+	const maxImages = positiveInteger(options.maxImages, DEFAULT_MAX_IMAGES);
 	const output: ToolContent[] = [];
 	const recoveredImages: ImageContent[] = [];
+	let recoveredBytes = 0;
 	let rejectedMarkers = 0;
 
 	for (const block of content) {
@@ -157,9 +204,15 @@ export function recoverBifrostRichContent(
 			output.push(block);
 			continue;
 		}
-		const recovered = recoverTextBlock(block.text, maxBytes);
+		const recovered = recoverTextBlock(
+			block.text,
+			maxImageBytes,
+			Math.max(0, maxImages - recoveredImages.length),
+			Math.max(0, maxTotalImageBytes - recoveredBytes),
+		);
 		output.push(...recovered.content);
 		recoveredImages.push(...recovered.recoveredImages);
+		recoveredBytes += recovered.recoveredBytes;
 		rejectedMarkers += recovered.rejectedMarkers;
 	}
 
@@ -176,21 +229,21 @@ export function isPifrostBifrostMcpTool(toolName: string): boolean {
 	return toolName.toLowerCase().startsWith("mcp__bifrost_");
 }
 
+/**
+ * Recover transport framing only for a directly exposed Hound screenshot tool.
+ * executeToolCode is intentionally excluded: once Code Mode has flattened nested
+ * results, the outer tool result cannot prove which nested tool produced a marker.
+ */
+export function isPifrostBifrostScreenshotTool(toolName: string): boolean {
+	const lower = toolName.toLowerCase();
+	if (!isPifrostBifrostMcpTool(lower)) return false;
+	const inner = lower.slice("mcp__bifrost_".length);
+	return inner === "mcp_screenshot" || /(?:^|[-_.:\/])mcp_screenshot$/u.test(inner);
+}
+
 function visionModelFor(ctx: ExtensionContext): Model | undefined {
-	const candidates = [
-		ctx.models.resolve("@vision"),
-		ctx.models.resolve("@default"),
-		...ctx.models.list(),
-	];
-	const seen = new Set<string>();
-	for (const model of candidates) {
-		if (!model) continue;
-		const key = `${model.provider}/${model.id}`;
-		if (seen.has(key)) continue;
-		seen.add(key);
-		if (sendsImageInputOnWire(model)) return model;
-	}
-	return undefined;
+	const model = ctx.models.resolve("@vision");
+	return model && sendsImageInputOnWire(model) ? model : undefined;
 }
 
 function assistantText(message: AssistantMessage): string {
@@ -221,7 +274,7 @@ export async function analyzeRecoveredImages(
 
 	const visionModel = visionModelFor(ctx);
 	if (!visionModel) {
-		return { error: "No image-capable OMP @vision/default model is available." };
+		return { error: "No image-capable OMP @vision model is available." };
 	}
 
 	const timeoutMs = positiveInteger(options.visionTimeoutMs, DEFAULT_VISION_TIMEOUT_MS);
@@ -290,16 +343,18 @@ export async function analyzeRecoveredImages(
 /**
  * Runtime compatibility layer for Bifrost MCP rich content.
  *
- * It never calls Hound directly and never alters native image blocks. When the
- * current agent is text-only, recovered screenshots are retained in the tool
- * result while a bounded one-shot @vision analysis is appended as text.
+ * It never calls Hound directly and never alters native image blocks. Recovery
+ * is restricted to directly exposed Hound screenshot tools; Code Mode is not
+ * rehydrated because executeToolCode loses trustworthy nested-tool provenance.
+ * When the current agent is text-only, recovered screenshots are retained in the
+ * tool result while a bounded one-shot @vision analysis is appended as text.
  */
 export function registerBifrostRichContentBridge(
 	pi: ExtensionAPI,
 	options: RichContentBridgeOptions = {},
 ): void {
 	pi.on("tool_result", async (event, ctx) => {
-		if (!isPifrostBifrostMcpTool(event.toolName)) return undefined;
+		if (event.isError || !isPifrostBifrostScreenshotTool(event.toolName)) return undefined;
 		const recovered = recoverBifrostRichContent(event.content, options);
 		if (!recovered.changed) return undefined;
 

@@ -186,6 +186,16 @@ const SOURCES = [
     ],
   },
   {
+    name: "Bifrost 2.2.4 classic MCP image marker contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_4_COMMIT}/core/mcp/utils.go`,
+    required: ['[Image Response: %s, MIME: %s]\\n'],
+  },
+  {
+    name: "Bifrost 2.2.4 Code Mode image marker contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_4_COMMIT}/core/mcp/codemode/starlark/utils.go`,
+    required: ['[Image Response: %s, MIME: %s]\\n'],
+  },
+  {
     name: "current Bifrost dev routing canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/routingRules.ts",
     required: ["chain_rule", "virtual_key", "priority", "fallbacks", "weight"],
