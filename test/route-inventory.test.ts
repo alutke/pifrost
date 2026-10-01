@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
+import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { buildRichRouteCatalog, type BifrostDatasheets } from "../datasheet.ts";
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
