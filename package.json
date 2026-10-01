@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -24,6 +24,7 @@
   "files": [
     "index.ts",
     "native.ts",
+    "transport-model.ts",
     "cache.ts",
     "config-store.ts",
     "datasheet.ts",
