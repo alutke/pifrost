@@ -1,5 +1,4 @@
 import type { AssistantMessage, ImageContent, Model, TextContent } from "@oh-my-pi/pi-ai";
-import { sendsImageInputOnWire } from "@oh-my-pi/pi-ai/providers/vision-guard";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 
 const BIFROST_IMAGE_PREFIX = "[Image Response:";
@@ -37,6 +36,20 @@ export interface RichContentBridgeOptions {
 	visionTimeoutMs?: number;
 	visionMaxTokens?: number;
 	completeImpl?: CompleteSimple;
+}
+
+
+function sendsImageInputOnWire(model: Model): boolean {
+	if (!model.input.includes("image")) return false;
+	if (model.transport === "pi-native") return true;
+	const compat = (model as Model & {
+		compat?: { stripImageInput?: boolean };
+		compatConfig?: { stripImageInput?: boolean };
+	}).compat ?? (model as Model & { compatConfig?: { stripImageInput?: boolean } }).compatConfig;
+	const guardedCompletions =
+		model.api === "openai-completions" ||
+		(model.api === "openrouter" && process.env.PI_OPENROUTER_RESPONSES === "0");
+	return !guardedCompletions || compat?.stripImageInput !== true;
 }
 
 function positiveInteger(value: number | undefined, fallback: number): number {
