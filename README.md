@@ -473,6 +473,6 @@ Pifrost is derived from <code>lxdlam/pi-bifrost-provider</code> under the MIT li
 
 ### Bifrost rich-content recovery
 
-Pifrost repairs the current Bifrost MCP image-flattening behavior at the OMP tool-result boundary. Recognized Bifrost image markers are validated and restored as native OMP image blocks. If the active model is text-only, Pifrost uses the configured OMP `@vision` role for a bounded one-shot interpretation and appends that analysis while retaining the recovered image in session history.
+Pifrost repairs the current Bifrost MCP image-flattening behavior at the OMP tool-result boundary only for directly exposed Hound `mcp_screenshot` tools. Markers must pass MIME, canonical Base64, decoded-size, aggregate-count/size and image-signature validation before they become native OMP image blocks. If the active model is text-only, Pifrost uses only the configured OMP `@vision` role for a bounded one-shot interpretation and appends that analysis while retaining the recovered image in session history.
 
-This remains a compatibility layer: Pifrost never connects directly to Hound. In Bifrost Code Mode, visual recovery is conditional on `executeToolCode` returning the flattened image marker; an image discarded inside Code Mode cannot be reconstructed downstream.
+This remains a compatibility layer: Pifrost never connects directly to Hound. Bifrost Code Mode is intentionally not rehydrated because `executeToolCode` does not preserve trustworthy provenance for nested textual image markers; diagnostics report that path as conditional rather than multimodal-ready.
