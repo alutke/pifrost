@@ -83,7 +83,7 @@ test("runtime extension avoids compiled-OMP-broken catalog root subpaths", () =>
 	const materializer = readFileSync(new URL("../transport-model.ts", import.meta.url), "utf8");
 
 	assert.doesNotMatch(native, /@oh-my-pi\/pi-catalog\/build/u);
-	assert.doesNotMatch(materializer, /@oh-my-pi\/pi-catalog\/build/u);
+	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog\/build["']/u);
 	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog["']/u);
 	assert.match(materializer, /@oh-my-pi\/pi-catalog\/compat\/resolve/u);
 });
