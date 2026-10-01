@@ -72,9 +72,6 @@ test("transport materializer matches OMP buildModel request policy for OpenAI-co
 		cost,
 		contextWindow: 128_000,
 		maxTokens: 8_192,
-		compat: {
-			supportsBetweenToolsThinking: false,
-		},
 	} satisfies ModelSpec<"openai-completions">;
 
 	assert.deepEqual(
