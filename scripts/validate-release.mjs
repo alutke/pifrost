@@ -28,6 +28,7 @@ if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.versi
 const requiredDirectRuntimeDependencies = [
   "@oh-my-pi/pi-ai",
   "@oh-my-pi/pi-catalog",
+  "@oh-my-pi/pi-utils",
 ];
 for (const dependency of requiredDirectRuntimeDependencies) {
   const declared = pkg.dependencies?.[dependency];
@@ -37,9 +38,6 @@ for (const dependency of requiredDirectRuntimeDependencies) {
   if (lock?.packages?.[""]?.dependencies?.[dependency] !== declared) {
     fail(`package-lock.json root dependency for ${dependency} must match package.json`);
   }
-}
-if (pkg.dependencies?.["@oh-my-pi/pi-utils"] !== undefined) {
-  fail("@oh-my-pi/pi-utils must not be a direct dependency; compiled OMP owns the host runtime graph");
 }
 if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "mu"))) {
   fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
@@ -226,6 +224,11 @@ try {
   const installedPackage = JSON.parse(readFileSync(join(installedPackageRoot, "package.json"), "utf8"));
   if (installedPackage.version !== pkg.version) {
     fail(`installed package version ${installedPackage.version ?? "missing"} does not match ${pkg.version}`);
+  }
+
+  const installedPiUtils = join(installRoot, "node_modules", "@oh-my-pi", "pi-utils", "package.json");
+  if (!existsSync(installedPiUtils)) {
+    fail("installed package is missing direct runtime dependency @oh-my-pi/pi-utils");
   }
 
   const installedEntry = installedPackage.bin?.pifrost;

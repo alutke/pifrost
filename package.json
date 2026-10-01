@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.8.7",
+  "version": "0.8.8",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -88,7 +88,8 @@
   },
   "dependencies": {
     "@oh-my-pi/pi-ai": "18.4.5",
-    "@oh-my-pi/pi-catalog": "18.4.5"
+    "@oh-my-pi/pi-catalog": "18.4.5",
+    "@oh-my-pi/pi-utils": "18.4.5"
   },
   "devDependencies": {
     "@oh-my-pi/pi-coding-agent": "18.4.5",
