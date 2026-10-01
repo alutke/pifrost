@@ -4,7 +4,13 @@ import { readFileSync } from "node:fs";
 import { test } from "bun:test";
 import type { Model, ModelSpec } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
-import { buildPifrostTransportModel } from "../transport-model.ts";
+import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
+import {
+	buildPifrostTransportModel,
+	installPifrostModelPolicyResolver,
+} from "../transport-model.ts";
+
+installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
 
 function requestProjection(model: Model) {
 	return {
@@ -78,12 +84,15 @@ test("transport materializer matches OMP buildModel request policy for OpenAI-co
 	);
 });
 
-test("runtime extension avoids compiled-OMP-broken catalog root subpaths", () => {
+test("runtime host imports stay at the extension entry boundary", () => {
 	const native = readFileSync(new URL("../native.ts", import.meta.url), "utf8");
 	const materializer = readFileSync(new URL("../transport-model.ts", import.meta.url), "utf8");
+	const fallback = readFileSync(new URL("../catalog-fallback.ts", import.meta.url), "utf8");
 
 	assert.doesNotMatch(native, /@oh-my-pi\/pi-catalog\/build/u);
-	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog\/build["']/u);
-	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog["']/u);
-	assert.match(materializer, /@oh-my-pi\/pi-catalog\/compat\/resolve/u);
+	assert.match(native, /from\s+["']@oh-my-pi\/pi-catalog["']/u);
+	assert.match(native, /@oh-my-pi\/pi-catalog\/compat\/resolve/u);
+	assert.match(native, /@oh-my-pi\/pi-catalog\/compat\/behavior/u);
+	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u);
+	assert.doesNotMatch(fallback, /from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u);
 });
