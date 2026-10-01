@@ -229,7 +229,8 @@ Capability reporting is derived rather than binary:
 - `webResearchReady`: search + fetch are available.
 - `deepResearchReady`: search + fetch + crawl are available.
 - `screenshotCallable`: the screenshot tool can be invoked.
-- `visualWebReady`: screenshot content is preserved as genuine multimodal image content end-to-end.
+- `visualWebReady`: screenshot content is either natively preserved or safely rehydrated from a directly exposed Hound screenshot result.
+- `visualWebConditional`: a Code Mode screenshot tool is callable, but nested image provenance is insufficient for safe rehydration.
 - `contractComplete`: all six Hound tools are repository-visible.
 - `administrativeComplete`: cache + version support are repository-visible.
 
@@ -237,7 +238,11 @@ This distinction prevents missing `cache_clear` or `version` from making a compl
 
 #### Screenshot transport limitation
 
-The current supported Bifrost MCP implementation converts upstream MCP `ImageContent` into text while handling MCP tool results and its MCP gateway returns text tool results. Consequently, Hound `mcp_screenshot` is callable through Bifrost but the screenshot is not preserved as a native image block for OMP's multimodal model path. Pifrost reports this explicitly and does **not** mark visual web as ready. Fixing image-block passthrough belongs in Bifrost, not in Pifrost; Pifrost does not add a direct-Hound bypass because that would weaken the single Bifrost governance boundary.
+The current supported Bifrost MCP implementation converts upstream MCP `ImageContent` into text shaped like `[Image Response: <base64>, MIME: image/png]`. Pifrost installs a compatibility bridge at OMP's `tool_result` boundary, but only for directly exposed Hound `mcp_screenshot` tools. The marker must pass MIME allowlisting, canonical Base64 validation, image magic-byte validation, per-image limits, aggregate decoded-byte limits and per-result image-count limits. Existing native image blocks are untouched, so a future Bifrost rich-content fix naturally bypasses the bridge.
+
+When the active OMP model genuinely sends image input on its wire transport, the recovered screenshot is passed through directly. For a text-only active model, Pifrost resolves only OMP's configured `@vision` role and runs a bounded no-tools one-shot analysis. Fallback routing belongs inside that role's Pifrost/Bifrost route; Pifrost does not scan unrelated models for an opportunistic image-capable fallback.
+
+Bifrost Code Mode remains **conditional**, not multimodal-ready: the outer `executeToolCode` result has already lost trustworthy nested-tool provenance, so Pifrost deliberately does not reinterpret image-looking text from Code Mode as an image. Fixing native image-block passthrough belongs in Bifrost; Pifrost does not add a direct-Hound bypass because that would weaken repository Virtual Key governance.
 
 OMP's native `modelRoles.web` and `retry.fallbackChains.web` remain independent from Hound. An unset OMP web role is still distinguished from OMP being unavailable or its config being unreadable. Pifrost reports availability and does not choose the tool/model route.
 
@@ -1467,13 +1472,3 @@ Management credentials and raw VK values must never be added to provider runtime
 ## Attribution
 
 Pifrost is derived from `lxdlam/pi-bifrost-provider` under the MIT license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
-
-## Bifrost rich-content compatibility bridge
-
-Current Bifrost releases flatten MCP `ImageContent` into text shaped like `[Image Response: <base64>, MIME: image/png]`. Pifrost's native OMP extension installs a tightly scoped `tool_result` compatibility bridge for the Pifrost-owned `mcp__bifrost_*` tool surface.
-
-The bridge validates MIME type, Base64 canonical form and decoded size, then restores recognized markers to native OMP `ImageContent`. Existing native image blocks are untouched, so a future Bifrost fix naturally makes the bridge a no-op.
-
-When the active OMP model already supports image input, the recovered image is passed through directly. For a text-only active model, Pifrost resolves OMP's configured `@vision` role (then OMP-compatible image-capable fallbacks), runs a bounded no-tools one-shot analysis, and appends the factual visual interpretation to the original tool result while retaining the image block.
-
-The bridge does not call Hound directly and does not bypass Bifrost Virtual Key governance. Code Mode has an unavoidable boundary: Pifrost can rehydrate only image markers that survive into the final `executeToolCode` result.
