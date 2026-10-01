@@ -1,6 +1,4 @@
 import type { Model as OmpModel } from "@oh-my-pi/pi-ai";
-import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog/models";
-import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import {
 	wireProtocolsFrom,
 	type PifrostWireProtocol,
@@ -52,6 +50,20 @@ export interface CatalogModelLike {
 		supportsBetweenToolsThinking?: boolean;
 		disableReasoningOnToolChoice?: boolean;
 	};
+}
+
+export interface OmpCatalogRuntime {
+	getBundledProviders(): readonly string[];
+	getBundledModels(provider: string): readonly CatalogModelLike[];
+	apiRouteFor(provider: string, modelId: string): { api: string } | undefined;
+}
+
+let ompCatalogRuntime: OmpCatalogRuntime | undefined;
+
+/** Install OMP catalog accessors from native.ts so nested modules never resolve host packages from disk. */
+export function installOmpCatalogRuntime(runtime: OmpCatalogRuntime): void {
+	ompCatalogRuntime = runtime;
+	catalogCache = undefined;
 }
 
 export interface CatalogCapabilityFallback {
@@ -129,7 +141,7 @@ export function findCatalogProtocolCapability(
 	const resolved: PifrostWireProtocol[] = [];
 	for (const provider of providers) {
 		for (const id of ids) {
-			const route = apiRouteFor(provider, id);
+			const route = ompCatalogRuntime?.apiRouteFor(provider, id);
 			const protocol = route ? wireProtocolsFrom([route.api])?.[0] : undefined;
 			if (protocol) resolved.push(protocol);
 		}
@@ -373,8 +385,8 @@ let catalogCache: CatalogModelLike[] | undefined;
 function bundledCatalog(): CatalogModelLike[] {
 	if (catalogCache) return catalogCache;
 	const models: CatalogModelLike[] = [];
-	for (const provider of getBundledProviders()) {
-		for (const model of getBundledModels(provider)) {
+	for (const provider of ompCatalogRuntime?.getBundledProviders() ?? []) {
+		for (const model of ompCatalogRuntime?.getBundledModels(provider) ?? []) {
 			if (!model?.id) continue;
 			models.push({ ...model, provider: model.provider ?? provider } as CatalogModelLike);
 		}
