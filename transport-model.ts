@@ -1,5 +1,27 @@
 import type { Api, Model, ModelSpec } from "@oh-my-pi/pi-ai";
-import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
+
+export type PifrostModelPolicy = {
+	thinking: Model["thinking"];
+	identity: Model["identity"];
+	compat: Model["compat"];
+	catalog: Record<string, unknown>;
+};
+
+export type PifrostModelPolicyResolver = <TApi extends Api>(spec: ModelSpec<TApi>) => PifrostModelPolicy;
+
+let resolveHostModelPolicy: PifrostModelPolicyResolver | undefined;
+
+/** Install OMP's host-owned policy resolver from the extension entry module. */
+export function installPifrostModelPolicyResolver(resolver: PifrostModelPolicyResolver): void {
+	resolveHostModelPolicy = resolver;
+}
+
+function resolveModelPolicyFromHost<TApi extends Api>(spec: ModelSpec<TApi>): PifrostModelPolicy {
+	if (!resolveHostModelPolicy) {
+		throw new Error("Pifrost host model-policy resolver is not installed");
+	}
+	return resolveHostModelPolicy(spec);
+}
 
 const AUTHOR_PREFIX = /^[A-Za-z][A-Za-z0-9 .+&'-]{0,23}: /;
 const NOISE_TAGS = /\s*\((?:latest|Antigravity|\$+|>?\d+% off|retires [^)]*)\)/g;
@@ -168,17 +190,17 @@ function applyTransportCatalogAssignments<TApi extends Api>(
  * Materialize the temporary physical transport model used by Pifrost without
  * importing @oh-my-pi/pi-catalog/build.
  *
- * Compiled OMP 18.4.x cannot currently load pi-catalog's root-level /build
- * subpath (upstream #13940). OMP does bundle compat/resolve, which is the
- * authoritative request-policy resolver. Pifrost uses that narrow public
- * surface and locally mirrors the small request-boundary normalization needed
- * by its ephemeral transport models.
+ * Compiled OMP 18.4.x has a known dependency-resolution failure when a
+ * nested extension module imports pi-catalog and the loader falls back to the
+ * plugin-local package graph (upstream #13731/#13940). native.ts imports the
+ * supported host surface directly and injects the resolver here, keeping every
+ * nested Pifrost module independent of pi-catalog at runtime.
  *
  * This is intentionally transport-only, not a replacement for OMP's complete
  * catalog builder. Pricing and selection metadata are not recomputed here.
  */
 export function buildPifrostTransportModel<TApi extends Api>(spec: ModelSpec<TApi>): Model<TApi> {
-	const policy = resolveModelPolicy(spec);
+	const policy = resolveModelPolicyFromHost(spec);
 	const supportsComputerUseConfig = explicitComputerUseConfig(spec);
 	const model = {
 		...spec,
