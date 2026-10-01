@@ -28,7 +28,7 @@ test("transport materializer uses OMP policy resolution for OpenAI Responses", (
 	assert.deepEqual(model.identity, policy.identity);
 	assert.deepEqual(model.compat, policy.compat);
 	assert.deepEqual(model.thinking, policy.thinking);
-	assert.equal(model.compatConfig, spec.compat);
+	assert.equal(model.compatConfig, undefined);
 	assert.equal(model.name, "GPT 5.4");
 	assert.equal(model.reasoning, spec.reasoning || policy.thinking !== undefined);
 	assert.equal(model.supportsComputerUse, true);
