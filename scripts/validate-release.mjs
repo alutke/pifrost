@@ -24,6 +24,24 @@ if (lock?.lockfileVersion !== 3) fail(`package-lock.json must use lockfileVersio
 if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.version) {
   fail(`package-lock.json version does not match package.json ${pkg.version}`);
 }
+
+const requiredDirectRuntimeDependencies = [
+  "@oh-my-pi/pi-ai",
+  "@oh-my-pi/pi-catalog",
+  "@oh-my-pi/pi-utils",
+];
+for (const dependency of requiredDirectRuntimeDependencies) {
+  const declared = pkg.dependencies?.[dependency];
+  if (typeof declared !== "string" || !declared.trim()) {
+    fail(`package.json must declare ${dependency} as a direct runtime dependency`);
+  }
+  if (lock?.packages?.[""]?.dependencies?.[dependency] !== declared) {
+    fail(`package-lock.json root dependency for ${dependency} must match package.json`);
+  }
+}
+if (pkg.dependencies["@oh-my-pi/pi-utils"] !== pkg.dependencies["@oh-my-pi/pi-catalog"]) {
+  fail("@oh-my-pi/pi-utils must stay version-aligned with @oh-my-pi/pi-catalog for OMP plugin loading");
+}
 if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "mu"))) {
   fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
 }
