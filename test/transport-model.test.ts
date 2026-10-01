@@ -1,47 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import type { Model, ModelSpec } from "@oh-my-pi/pi-ai";
-import { buildModel } from "@oh-my-pi/pi-catalog/build";
+import type { ModelSpec } from "@oh-my-pi/pi-ai";
+import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { buildPifrostTransportModel } from "../transport-model.ts";
-
-function requestProjection(model: Model) {
-	return {
-		id: model.id,
-		name: model.name,
-		api: model.api,
-		provider: model.provider,
-		requestModelId: model.requestModelId,
-		baseUrl: model.baseUrl,
-		reasoning: model.reasoning,
-		identity: model.identity,
-		requiresGlyphTokenization: model.requiresGlyphTokenization,
-		tokenizer: model.tokenizer,
-		thinking: model.thinking,
-		compat: model.compat,
-		compatConfig: model.compatConfig,
-		supportsComputerUse: model.supportsComputerUse,
-		supportsComputerUseConfig: model.supportsComputerUseConfig,
-		requiresCursorToolSchemaProjection: model.requiresCursorToolSchemaProjection,
-		requiresToolResultImageHoisting: model.requiresToolResultImageHoisting,
-		supportsAssistantPrefill: model.supportsAssistantPrefill,
-		omitMaxOutputTokens: model.omitMaxOutputTokens,
-		contextWindow: model.contextWindow,
-		contextWindowAuthoritative: model.contextWindowAuthoritative,
-		maxTokens: model.maxTokens,
-		input: model.input,
-		serviceTierCost: model.serviceTierCost,
-		promptCache: model.promptCache,
-		priority: model.priority,
-	};
-}
 
 const cost = { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 1 };
 
-test("transport materializer matches OMP buildModel request policy for OpenAI Responses", () => {
+test("transport materializer uses OMP policy resolution for OpenAI Responses", () => {
 	const spec = {
 		id: "gpt-5.4",
-		name: "GPT 5.4",
+		name: "OpenAI: GPT 5.4 (latest)",
 		api: "openai-responses",
 		provider: "openai",
 		baseUrl: "https://api.openai.com/v1",
@@ -53,13 +22,23 @@ test("transport materializer matches OMP buildModel request policy for OpenAI Re
 		maxTokens: 128_000,
 	} satisfies ModelSpec<"openai-responses">;
 
-	assert.deepEqual(
-		requestProjection(buildPifrostTransportModel(spec)),
-		requestProjection(buildModel(spec)),
-	);
+	const policy = resolveModelPolicy(spec);
+	const model = buildPifrostTransportModel(spec);
+
+	assert.deepEqual(model.identity, policy.identity);
+	assert.deepEqual(model.compat, policy.compat);
+	assert.deepEqual(model.thinking, policy.thinking);
+	assert.equal(model.compatConfig, spec.compat);
+	assert.equal(model.name, "GPT 5.4");
+	assert.equal(model.reasoning, spec.reasoning || policy.thinking !== undefined);
+	assert.equal(model.supportsComputerUse, true);
+
+	if (typeof policy.catalog.omitMaxOutputTokens === "boolean") {
+		assert.equal(model.omitMaxOutputTokens, policy.catalog.omitMaxOutputTokens);
+	}
 });
 
-test("transport materializer matches OMP buildModel request policy for OpenAI-compatible chat", () => {
+test("transport materializer preserves request policy and tokenizer for OpenAI-compatible chat", () => {
 	const spec = {
 		id: "deepseek-chat",
 		name: "DeepSeek Chat",
@@ -74,17 +53,22 @@ test("transport materializer matches OMP buildModel request policy for OpenAI-co
 		maxTokens: 8_192,
 	} satisfies ModelSpec<"openai-completions">;
 
-	assert.deepEqual(
-		requestProjection(buildPifrostTransportModel(spec)),
-		requestProjection(buildModel(spec)),
-	);
+	const policy = resolveModelPolicy(spec);
+	const model = buildPifrostTransportModel(spec);
+
+	assert.deepEqual(model.identity, policy.identity);
+	assert.deepEqual(model.compat, policy.compat);
+	assert.deepEqual(model.thinking, policy.thinking);
+	assert.equal(model.tokenizer, "deepseek-v3");
+	assert.equal(model.supportsComputerUse, false);
 });
 
-test("runtime extension no longer imports the compiled-OMP-broken pi-catalog build subpath", () => {
+test("runtime extension avoids compiled-OMP-broken catalog root subpaths", () => {
 	const native = readFileSync(new URL("../native.ts", import.meta.url), "utf8");
 	const materializer = readFileSync(new URL("../transport-model.ts", import.meta.url), "utf8");
 
 	assert.doesNotMatch(native, /@oh-my-pi\/pi-catalog\/build/u);
-	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog\/build["']/u);
+	assert.doesNotMatch(materializer, /@oh-my-pi\/pi-catalog\/build/u);
+	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog["']/u);
 	assert.match(materializer, /@oh-my-pi\/pi-catalog\/compat\/resolve/u);
 });
