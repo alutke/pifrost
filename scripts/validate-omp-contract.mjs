@@ -81,6 +81,17 @@ const SOURCES = [
       "await persistent.flush()",
     ],
   },
+  {
+    name: "OMP 18.4.5 image-on-wire capability contract",
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_18_4_5_COMMIT}/packages/ai/src/providers/vision-guard.ts`,
+    required: [
+      "export function sendsImageInputOnWire",
+      'if (model.transport === "pi-native") return model.input.includes("image");',
+      'if (model.api === "openai-completions") return true;',
+      'return model.api === "openrouter" && $env.PI_OPENROUTER_RESPONSES === "0";',
+      "if (model.compat.stripImageInput) return false;",
+    ],
+  },
 ];
 
 for (const source of SOURCES) {
