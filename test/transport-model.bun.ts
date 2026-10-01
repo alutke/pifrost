@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+// @ts-ignore -- bun:test is provided by the Bun CI/runtime, not Pifrost's Node type surface.
 import { test } from "bun:test";
 import type { Model, ModelSpec } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
