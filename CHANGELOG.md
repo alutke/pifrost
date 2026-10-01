@@ -1,3 +1,12 @@
+## 0.8.4 — 2026-10-01
+
+- Added a Pifrost-only rich-content compatibility bridge for current Bifrost MCP releases that flatten upstream `ImageContent` into `[Image Response: <base64>, MIME: ...]` text.
+- The bridge is scoped to the repository-owned Bifrost MCP server, validates supported image MIME types, Base64 canonical form and decoded size, preserves mixed text/image ordering, leaves malformed markers untouched, and never double-decodes native OMP image blocks.
+- Recovered screenshots are returned as native OMP `ImageContent`. Image-capable active models receive them directly; text-only active models use OMP's configured `@vision` model for a bounded no-tools visual analysis whose text is appended while the original image remains in session history.
+- Preserved the existing Bifrost/Hound topology and repository Virtual Key governance: Pifrost does not connect directly to Hound or add a second MCP execution path.
+- Updated Hound diagnostics to distinguish native Bifrost image preservation from Pifrost recovery and to keep Code Mode visual readiness conditional when an image may be discarded inside `executeToolCode`.
+- Added regressions for mixed-content recovery, native-image pass-through, malformed/unsupported/oversized markers, Bifrost tool scoping, `@vision` delegation and image-capable active-model bypass.
+
 # Changelog
 
 ## Unreleased

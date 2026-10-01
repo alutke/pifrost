@@ -1467,3 +1467,13 @@ Management credentials and raw VK values must never be added to provider runtime
 ## Attribution
 
 Pifrost is derived from `lxdlam/pi-bifrost-provider` under the MIT license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
+
+## Bifrost rich-content compatibility bridge
+
+Current Bifrost releases flatten MCP `ImageContent` into text shaped like `[Image Response: <base64>, MIME: image/png]`. Pifrost's native OMP extension installs a tightly scoped `tool_result` compatibility bridge for the Pifrost-owned `mcp__bifrost_*` tool surface.
+
+The bridge validates MIME type, Base64 canonical form and decoded size, then restores recognized markers to native OMP `ImageContent`. Existing native image blocks are untouched, so a future Bifrost fix naturally makes the bridge a no-op.
+
+When the active OMP model already supports image input, the recovered image is passed through directly. For a text-only active model, Pifrost resolves OMP's configured `@vision` role (then OMP-compatible image-capable fallbacks), runs a bounded no-tools one-shot analysis, and appends the factual visual interpretation to the original tool result while retaining the image block.
+
+The bridge does not call Hound directly and does not bypass Bifrost Virtual Key governance. Code Mode has an unavoidable boundary: Pifrost can rehydrate only image markers that survive into the final `executeToolCode` result.

@@ -27,7 +27,9 @@ export const BIFROST_CODE_MODE_TOOLS = Object.freeze([
 ]);
 
 const BIFROST_IMAGE_TRANSPORT_WARNING =
-  "Hound screenshot is callable, but the current supported Bifrost MCP gateway flattens MCP ImageContent to text; multimodal screenshot delivery is not verified end-to-end.";
+  "Bifrost currently flattens MCP ImageContent to text. Pifrost runtime rich-content recovery restores recognized Bifrost image markers before OMP model dispatch; Code Mode remains conditional on executeToolCode returning the flattened image marker.";
+
+export const PIFROST_RICH_CONTENT_RECOVERY = true;
 
 function nonEmpty(value) {
   const text = typeof value === "string" ? value.trim() : "";
@@ -432,7 +434,9 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
   const deepResearchReady = webResearchReady && capabilities.crawl.available;
   const screenshotCallable = capabilities.screenshot.available;
   const imageContentPreserved = options.imageContentPreserved === true;
-  const visualWebReady = screenshotCallable && imageContentPreserved;
+  const pifrostImageRecovery = options.pifrostImageRecovery !== false;
+  const visualWebRecoverable = screenshotCallable && (imageContentPreserved || pifrostImageRecovery);
+  const visualWebReady = screenshotCallable && (imageContentPreserved || (pifrostImageRecovery && mode === "classic"));
   const administrativeComplete = capabilities.cache.available && capabilities.version.available;
   const contractComplete = HOUND_TOOLS.every((name) =>
     liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true
@@ -474,7 +478,9 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
       deepResearchReady,
       screenshotCallable,
       visualWebReady,
+      visualWebRecoverable,
       imageContentPreserved,
+      pifrostImageRecovery,
       configuredCount,
       visibleCount: liveKnown ? visibleCount : undefined,
       liveVerified,

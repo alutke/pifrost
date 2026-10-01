@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -51,6 +51,7 @@
     "cli.mjs",
     "route-cli.mjs",
     "mcp-rpc.mjs",
+    "bifrost-rich-content.ts",
     "hound-diagnostics.mjs",
     "cli-lib.mjs",
     "routing-discovery.mjs",

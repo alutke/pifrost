@@ -8,6 +8,7 @@ import {
 	type OpenAIResponsesOptions,
 } from "@oh-my-pi/pi-ai/providers/openai-responses";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
+import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 
@@ -436,6 +437,7 @@ async function fetchFreshCatalog(
  * configuration written by `pifrost global setup`.
  */
 export default function pifrostProvider(pi: ExtensionAPI): void {
+	registerBifrostRichContentBridge(pi);
 	pi.registerFlag("bifrost-url", {
 		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL; fallback: Pifrost config)",
 		type: "string",

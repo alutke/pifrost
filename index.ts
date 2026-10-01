@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { formatRoutePricing, type RoutePricingDiagnostic } from "./pricing-time.ts";
+import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 
 import {
 	resolveModelReference,
@@ -907,6 +908,7 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 
 /** Native OMP 18 extension entry point. No legacy Pi compatibility imports are used at runtime. */
 export default function pifrostProvider(pi: ExtensionAPI): void {
+	registerBifrostRichContentBridge(pi);
 	pi.registerFlag("bifrost-url", {
 		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL)",
 		type: "string",

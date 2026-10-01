@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.3
+0.8.4
 ```
 
 Bun also works:
@@ -470,3 +470,9 @@ Additional release and compatibility validation is documented in the [technical 
 ## Attribution
 
 Pifrost is derived from <code>lxdlam/pi-bifrost-provider</code> under the MIT license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
+
+### Bifrost rich-content recovery
+
+Pifrost repairs the current Bifrost MCP image-flattening behavior at the OMP tool-result boundary. Recognized Bifrost image markers are validated and restored as native OMP image blocks. If the active model is text-only, Pifrost uses the configured OMP `@vision` role for a bounded one-shot interpretation and appends that analysis while retaining the recovered image in session history.
+
+This remains a compatibility layer: Pifrost never connects directly to Hound. In Bifrost Code Mode, visual recovery is conditional on `executeToolCode` returning the flattened image marker; an image discarded inside Code Mode cannot be reconstructed downstream.
