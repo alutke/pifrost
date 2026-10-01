@@ -40,6 +40,9 @@ if (expectedRelease !== pkg.version) {
 if (/@oh-my-pi\/pi-catalog\/build/u.test(native) || /from\s+["']@oh-my-pi\/pi-catalog\/build["']/u.test(transportModel)) {
   fail("runtime package must not import @oh-my-pi/pi-catalog/build; compiled OMP 18.4.x cannot resolve that subpath");
 }
+if (/from\s+["']@oh-my-pi\/pi-catalog["']/u.test(transportModel)) {
+  fail("transport-model.ts must not import the broad pi-catalog root; use the bundled-safe compat/resolve surface only");
+}
 if (!/@oh-my-pi\/pi-catalog\/compat\/resolve/u.test(transportModel)) {
   fail("transport-model.ts must retain OMP compat/resolve policy materialization");
 }
