@@ -57,3 +57,11 @@ jobs:
           mkdir -p "$HOME"
           ./node_modules/.bin/omp install "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" --force
           ./node_modules/.bin/omp plugin list
+      - name: Validate clean GitHub plugin install with compiled OMP 18.4.8
+        if: github.event_name == 'push'
+        run: |
+          OMP_BIN="$RUNNER_TEMP/omp-18.4.8"
+          export HOME="$RUNNER_TEMP/omp-home-compiled-github"
+          mkdir -p "$HOME"
+          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" --force
+          "$OMP_BIN" plugin list
