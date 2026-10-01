@@ -1,3 +1,14 @@
+## 0.8.5 — 2026-10-01
+
+- Hardened Bifrost rich-content recovery so only directly exposed Hound `mcp_screenshot` results can be rehydrated; arbitrary Bifrost MCP text and `executeToolCode` output can no longer impersonate trusted image transport framing.
+- Added image magic-byte validation plus per-result image-count and aggregate decoded-byte limits on top of the existing MIME, Base64 and per-image size checks.
+- Made automatic visual analysis deterministic: Pifrost now resolves only OMP's configured `@vision` role; provider/model fallback remains inside the normal Pifrost/Bifrost vision route instead of scanning unrelated OMP models.
+- Fixed Hound `liveVerified` so a successful generic Bifrost `tools/list` no longer marks Hound live when no Hound tool is actually visible.
+- Added explicit native/recovered/conditional-Code-Mode visual status and hardened Code Mode signature detection to parse actual virtual `.pyi` function definitions rather than substring matches.
+- Strengthened release contracts for Hound screenshot `ImageContent`, Bifrost's exact classic/Code-Mode image marker format, and OMP 18.4.5 image-on-wire semantics.
+- Added security/regression coverage for marker spoofing, aggregate limits, deterministic `@vision` selection, classic screenshot scoping, Code Mode exclusion, false-positive `.pyi` signatures and negative Hound live verification.
+- Consolidated Hound screenshot documentation around the current compatibility boundary; Pifrost still does not connect to or manage Hound directly.
+
 ## 0.8.4 — 2026-10-01
 
 - Added a Pifrost-only rich-content compatibility bridge for current Bifrost MCP releases that flatten upstream `ImageContent` into `[Image Response: <base64>, MIME: ...]` text.
