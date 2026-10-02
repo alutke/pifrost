@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.9
+0.8.10
 ```
 
 Bun also works:

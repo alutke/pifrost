@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import {
 	canonicalModelFamily,
 	findCatalogCapabilityFallback,
@@ -14,6 +15,10 @@ import {
 	type BifrostDatasheets,
 } from "../datasheet.ts";
 import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig } from "../index.ts";
+
+import { installPifrostModelPolicyResolver } from "../transport-model.ts";
+
+installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
 
 function liveModel(id: string): BifrostProviderModel {
 	return {

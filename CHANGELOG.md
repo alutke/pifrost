@@ -1,3 +1,12 @@
+## 0.8.10 — 2026-10-02
+
+- Corrected the incomplete 0.8.9 reasoning-with-tools fix. The live `openai/gpt-6.1-sol` route could still resolve to `reasoningWithTools=false` because Pifrost inferred provider policy by combining multiple bundled OMP catalogue families; that ambiguity allowed the stale Bifrost model-parameters value to win.
+- Pifrost now queries OMP's host-owned `resolveModelPolicy()` engine directly for the actual physical provider/model/protocol identity. Prewalk therefore uses the same compatibility engine as the eventual transport model instead of approximating transport behavior from bundled catalogue rows.
+- Added route-provider normalization for OpenAI, OpenAI Codex, Azure, DeepSeek, OpenRouter, OpenCode Go/Zen, Xiaomi and CommandCode. Unmapped identities remain unknown and continue to fall back to Bifrost metadata rather than being guessed.
+- Added live OMP-policy regressions proving `openai/gpt-6.1-sol` permits reasoning plus tools on both Chat Completions and Responses, while Azure `gpt-6-astra` retains its explicit reasoning-with-tools restriction.
+- Advanced the model-catalog cache schema to v16 so the failed v15 compatibility decision cannot survive an upgrade.
+- No physical route reordering, provider selection, quota policy, pricing policy, or Bifrost same-protocol fallback behavior changed.
+
 ## 0.8.9 — 2026-10-02
 
 - Fixed Pifrost prewalk incorrectly excluding OpenAI/Codex route members such as `openai/gpt-6.1-sol` from normal OMP coding turns with both reasoning and tools. The failure happened before inference, so Bifrost and CLI Proxy showed no attempted OpenAI request and Pifrost silently advanced to the next eligible route member.

@@ -1,5 +1,6 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { PeakHoursSchedule, RoutePricingDiagnostic } from "./pricing-time.ts";
+import { resolvePifrostReasoningWithToolsPolicy } from "./transport-model.ts";
 import {
 	wireProtocolsFrom,
 	type PifrostWireProtocol,
@@ -145,6 +146,70 @@ interface Selected<T> {
 
 function normalized(value: string): string {
 	return value.trim().toLowerCase();
+}
+
+function routeProvider(reference: string): string | undefined {
+	const slash = reference.indexOf("/");
+	return slash > 0 ? normalized(reference.slice(0, slash)) : undefined;
+}
+
+function routeModelId(reference: string): string {
+	const slash = reference.indexOf("/");
+	return slash >= 0 ? reference.slice(slash + 1) : reference;
+}
+
+function ompPolicyProvider(reference: string): string | undefined {
+	switch (routeProvider(reference)) {
+		case "openai": return "openai";
+		case "openai-codex": return "openai-codex";
+		case "azure": return "azure";
+		case "azure-openai": return "azure-openai";
+		case "deepseek": return "deepseek";
+		case "openrouter": return "openrouter";
+		case "opencode-go": return "opencode-go";
+		case "opencode-zen": return "opencode-zen";
+		case "xiaomi mimo":
+		case "xiaomi": return "xiaomi";
+		case "commandcode goat":
+		case "commandcode": return "commandcode";
+		default: return undefined;
+	}
+}
+
+/**
+ * Resolve the actual OMP runtime policy for the physical provider/model route.
+ * This deliberately does not infer policy by intersecting bundled catalogue
+ * rows: one Bifrost provider may map to several OMP catalogue families.
+ */
+export function resolveRouteReasoningWithToolsPolicy(
+	reference: string,
+	liveModelId: string | undefined,
+	protocols: readonly PifrostWireProtocol[] | undefined,
+): boolean | undefined {
+	const provider = ompPolicyProvider(reference);
+	if (!provider) return undefined;
+
+	const modelIds = unique([
+		routeModelId(reference),
+		...(liveModelId ? [routeModelId(liveModelId)] : []),
+	].filter(Boolean));
+	const candidateProtocols = (protocols?.length ? protocols : ["openai-completions"])
+		.filter((protocol): protocol is "openai-completions" | "openai-responses" =>
+			protocol === "openai-completions" || protocol === "openai-responses",
+		);
+	if (!candidateProtocols.length) return undefined;
+
+	const resolved: boolean[] = [];
+	for (const protocol of candidateProtocols) {
+		let value: boolean | undefined;
+		for (const modelId of modelIds) {
+			value = resolvePifrostReasoningWithToolsPolicy(provider, modelId, protocol);
+			if (value !== undefined) break;
+		}
+		if (value === undefined) return undefined;
+		resolved.push(value);
+	}
+	return resolved.some((value) => value === false) ? false : true;
 }
 
 function unique<T>(values: readonly T[]): T[] {
@@ -475,7 +540,9 @@ function selectBooleanCapability(
  * provider restrictions such as Azure models that disable reasoning with tools.
  */
 function selectReasoningWithToolsCapability(
+	reference: string,
 	liveModel: BifrostProviderModel,
+	protocols: readonly PifrostWireProtocol[] | undefined,
 	parameters: MatchedEntry<ModelParameterEntry> | undefined,
 	vendor: CatalogCapabilityFallback | undefined,
 	catalog: CatalogCapabilityFallback | undefined,
@@ -486,8 +553,9 @@ function selectReasoningWithToolsCapability(
 	) {
 		return { value: liveModel.compat.supportsReasoningWithTools, source: "live" };
 	}
-	if (catalog?.source === "omp-catalog-provider" && catalog.supportsReasoningWithTools !== undefined) {
-		return { value: catalog.supportsReasoningWithTools, source: "omp-provider-policy" };
+	const providerPolicy = resolveRouteReasoningWithToolsPolicy(reference, liveModel.id, protocols);
+	if (providerPolicy !== undefined) {
+		return { value: providerPolicy, source: "omp-provider-policy" };
 	}
 	const sheetValue = reasoningWithToolsFromParameters(parameters?.value);
 	if (sheetValue !== undefined) {
@@ -657,7 +725,9 @@ export function buildRichRouteCatalog(
 			catalogCapabilitySource,
 		);
 		const reasoningWithTools = selectReasoningWithToolsCapability(
+			reference,
 			liveModel,
+			protocols.value,
 			parameters,
 			vendor,
 			catalog,

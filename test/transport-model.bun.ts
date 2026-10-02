@@ -8,7 +8,9 @@ import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import {
 	buildPifrostTransportModel,
 	installPifrostModelPolicyResolver,
+	resolvePifrostReasoningWithToolsPolicy,
 } from "../transport-model.ts";
+import { resolveRouteReasoningWithToolsPolicy } from "../datasheet.ts";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
 
@@ -81,6 +83,40 @@ test("transport materializer matches OMP buildModel request policy for OpenAI-co
 	assert.deepEqual(
 		requestProjection(buildPifrostTransportModel(spec)),
 		requestProjection(buildModel(spec)),
+	);
+});
+
+test("runtime policy resolver keeps OpenAI GPT-6.1 Sol eligible for reasoning plus tools", () => {
+	assert.equal(
+		resolvePifrostReasoningWithToolsPolicy("openai", "gpt-6.1-sol", "openai-completions"),
+		true,
+	);
+	assert.equal(
+		resolvePifrostReasoningWithToolsPolicy("openai", "gpt-6.1-sol", "openai-responses"),
+		true,
+	);
+	assert.equal(
+		resolveRouteReasoningWithToolsPolicy(
+			"openai/gpt-6.1-sol",
+			"openai/gpt-6.1-sol",
+			["openai-responses", "openai-completions"],
+		),
+		true,
+	);
+});
+
+test("runtime policy resolver preserves Azure GPT-6 Astra reasoning-with-tools restriction", () => {
+	assert.equal(
+		resolvePifrostReasoningWithToolsPolicy("azure", "gpt-6-astra", "openai-responses"),
+		false,
+	);
+	assert.equal(
+		resolveRouteReasoningWithToolsPolicy(
+			"azure/gpt-6-astra",
+			"azure/gpt-6-astra",
+			["openai-responses"],
+		),
+		false,
 	);
 });
 

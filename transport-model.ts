@@ -23,6 +23,46 @@ function resolveModelPolicyFromHost<TApi extends Api>(spec: ModelSpec<TApi>): Pi
 	return resolveHostModelPolicy(spec);
 }
 
+export type PifrostReasoningWithToolsApi = "openai-completions" | "openai-responses";
+
+const POLICY_PROBE_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
+
+/**
+ * Resolve OMP's host-authored reasoning+tools policy for a physical upstream
+ * identity without materializing a complete model. This uses the exact same
+ * resolveModelPolicy() engine as the eventual Pifrost transport model.
+ *
+ * Unknown/unsupported identities fail open to "unknown" here so callers can
+ * fall back to Bifrost metadata instead of fabricating compatibility.
+ */
+export function resolvePifrostReasoningWithToolsPolicy(
+	provider: string,
+	modelId: string,
+	api: PifrostReasoningWithToolsApi,
+): boolean | undefined {
+	if (!resolveHostModelPolicy) return undefined;
+	try {
+		const policy = resolveHostModelPolicy({
+			id: modelId,
+			name: modelId,
+			provider,
+			api,
+			reasoning: true,
+			input: ["text"],
+			supportsTools: true,
+			cost: POLICY_PROBE_COST,
+			contextWindow: 128_000,
+			maxTokens: 8_192,
+		} as ModelSpec<PifrostReasoningWithToolsApi>);
+		const compat = policy.compat;
+		if (!compat || typeof compat !== "object") return undefined;
+		const disabled = Reflect.get(compat, "disableReasoningWithTools");
+		return typeof disabled === "boolean" ? !disabled : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 const AUTHOR_PREFIX = /^[A-Za-z][A-Za-z0-9 .+&'-]{0,23}: /;
 const NOISE_TAGS = /\s*\((?:latest|Antigravity|\$+|>?\d+% off|retires [^)]*)\)/g;
 
