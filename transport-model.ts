@@ -24,13 +24,26 @@ function resolveModelPolicyFromHost<TApi extends Api>(spec: ModelSpec<TApi>): Pi
 }
 
 export type PifrostReasoningWithToolsApi = "openai-completions" | "openai-responses";
+type OmpPolicyProbeApi =
+	| PifrostReasoningWithToolsApi
+	| "openai-codex-responses"
+	| "azure-openai-responses";
 
 const POLICY_PROBE_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } as const;
 
+function ompPolicyProbeApi(provider: string, api: PifrostReasoningWithToolsApi): OmpPolicyProbeApi {
+	if (api !== "openai-responses") return api;
+	const normalizedProvider = provider.trim().toLowerCase();
+	if (normalizedProvider === "openai-codex") return "openai-codex-responses";
+	if (normalizedProvider === "azure" || normalizedProvider === "azure-openai") return "azure-openai-responses";
+	return "openai-responses";
+}
+
 /**
  * Resolve OMP's host-authored reasoning+tools policy for a physical upstream
- * identity without materializing a complete model. This uses the exact same
- * resolveModelPolicy() engine as the eventual Pifrost transport model.
+ * identity without materializing a complete model. Pifrost's generic wire
+ * protocol is translated to OMP's provider-specific Responses API first, so
+ * provider rules such as Azure and Codex are evaluated on their authored axis.
  *
  * Unknown/unsupported identities fail open to "unknown" here so callers can
  * fall back to Bifrost metadata instead of fabricating compatibility.
@@ -42,18 +55,19 @@ export function resolvePifrostReasoningWithToolsPolicy(
 ): boolean | undefined {
 	if (!resolveHostModelPolicy) return undefined;
 	try {
+		const policyApi = ompPolicyProbeApi(provider, api);
 		const policy = resolveHostModelPolicy({
 			id: modelId,
 			name: modelId,
 			provider,
-			api,
+			api: policyApi,
 			reasoning: true,
 			input: ["text"],
 			supportsTools: true,
 			cost: POLICY_PROBE_COST,
 			contextWindow: 128_000,
 			maxTokens: 8_192,
-		} as ModelSpec<PifrostReasoningWithToolsApi>);
+		} as ModelSpec<OmpPolicyProbeApi>);
 		const compat = policy.compat;
 		if (!compat || typeof compat !== "object") return undefined;
 		const disabled = Reflect.get(compat, "disableReasoningWithTools");
