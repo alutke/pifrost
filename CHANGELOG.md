@@ -1,3 +1,12 @@
+## 0.8.9 — 2026-10-02
+
+- Fixed Pifrost prewalk incorrectly excluding OpenAI/Codex route members such as `openai/gpt-6.1-sol` from normal OMP coding turns with both reasoning and tools. The failure happened before inference, so Bifrost and CLI Proxy showed no attempted OpenAI request and Pifrost silently advanced to the next eligible route member.
+- Added semantic translation for OMP's provider-authored `compat.disableReasoningWithTools` axis into Pifrost's positive `supportsReasoningWithTools` capability. An explicit OMP provider policy now outranks a conflicting generic Bifrost model-parameters row for this transport-compatibility decision, while explicit live capability data remains highest priority.
+- Preserved genuine provider restrictions: an OMP provider policy that disables reasoning with tools still excludes that member. Routes without an exact provider-policy match continue to use Bifrost datasheet metadata, so this is not a blanket permissive override.
+- Added Azure/OpenAI provider-policy recognition and regression coverage for stale OpenAI negative metadata, explicit provider restrictions, and unmatched-provider fallback behavior.
+- Advanced the model-catalog cache schema to v15 so installations cannot retain a stale v14 `reasoningWithTools=false` decision after upgrading.
+- No Bifrost route order, provider preference, quota policy, pricing policy, or same-protocol fallback ownership changed.
+
 ## 0.8.8 — 2026-10-01
 
 - Fixed clean OMP GitHub-plugin installation by declaring `@oh-my-pi/pi-utils@18.4.5` as an explicit Pifrost runtime dependency. OMP's compiled extension validator can install/load `pi-catalog` without materializing its transitive `pi-utils` dependency in the plugin's resolvable runtime graph, which caused `native.ts` validation to fail from `pi-catalog/src/compat/cascade.ts`.

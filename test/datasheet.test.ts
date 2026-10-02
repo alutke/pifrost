@@ -406,6 +406,126 @@ test("rich route diagnostics retain Bifrost time-of-day pricing without changing
 });
 
 
+test("OMP provider policy overrides stale Bifrost reasoning-with-tools negative for GPT-6.1 Sol", () => {
+	const planAliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-plan": ["openai/gpt-6.1-sol"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("openai/gpt-6.1-sol")],
+		planAliases,
+		{
+			pricing: {},
+			parameters: {
+				"openai/gpt-6.1-sol": {
+					provider: "openai",
+					supports_function_calling: true,
+					supports_reasoning: true,
+					supports_reasoning_with_tool_calls: false,
+				},
+			},
+		},
+		[{
+			id: "gpt-6.1-sol",
+			provider: "openai-codex",
+			api: "openai-responses",
+			contextWindow: 1_050_000,
+			maxTokens: 128_000,
+			input: ["text"],
+			reasoning: true,
+			supportsTools: true,
+			compat: {
+				disableReasoningWithTools: false,
+				supportsUsageInStreaming: true,
+				supportsToolChoice: true,
+			},
+		}],
+	);
+	const model = rich.models[0];
+	assert.ok(model);
+	assert.equal(model.compat.supportsReasoningWithTools, true);
+	assert.equal(model.capabilitySources?.reasoningWithTools, "omp-provider-policy");
+	assert.equal(rich.diagnostics[0]?.sources?.reasoningWithTools, "omp-provider-policy");
+});
+
+test("OMP provider policy preserves an explicit reasoning-with-tools restriction", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-azure": ["azure/gpt-6-astra"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("azure/gpt-6-astra")],
+		aliases,
+		{
+			pricing: {},
+			parameters: {
+				"azure/gpt-6-astra": {
+					provider: "azure",
+					supports_function_calling: true,
+					supports_reasoning: true,
+					supports_reasoning_with_tool_calls: true,
+				},
+			},
+		},
+		[{
+			id: "gpt-6-astra",
+			provider: "azure",
+			api: "openai-responses",
+			contextWindow: 1_050_000,
+			maxTokens: 128_000,
+			input: ["text"],
+			reasoning: true,
+			supportsTools: true,
+			compat: {
+				disableReasoningWithTools: true,
+				supportsUsageInStreaming: true,
+				supportsToolChoice: true,
+			},
+		}],
+	);
+	assert.equal(rich.models[0]?.compat.supportsReasoningWithTools, false);
+	assert.equal(rich.models[0]?.capabilitySources?.reasoningWithTools, "omp-provider-policy");
+});
+
+test("Bifrost reasoning-with-tools metadata still governs when no exact OMP provider policy matches", () => {
+	const aliases: PifrostAliasConfig = {
+		includePhysicalModels: false,
+		aliases: { "omp-custom": ["custom/gpt-6.1-sol"] },
+	};
+	const rich = buildRichRouteCatalog(
+		[liveModel("custom/gpt-6.1-sol")],
+		aliases,
+		{
+			pricing: {},
+			parameters: {
+				"custom/gpt-6.1-sol": {
+					provider: "custom",
+					supports_function_calling: true,
+					supports_reasoning: true,
+					supports_reasoning_with_tool_calls: false,
+				},
+			},
+		},
+		[{
+			id: "gpt-6.1-sol",
+			provider: "openai-codex",
+			api: "openai-responses",
+			contextWindow: 1_050_000,
+			maxTokens: 128_000,
+			input: ["text"],
+			reasoning: true,
+			supportsTools: true,
+			compat: {
+				disableReasoningWithTools: false,
+				supportsUsageInStreaming: true,
+				supportsToolChoice: true,
+			},
+		}],
+	);
+	assert.equal(rich.models[0]?.compat.supportsReasoningWithTools, false);
+	assert.equal(rich.models[0]?.capabilitySources?.reasoningWithTools, "bifrost-datasheet");
+});
+
 test("Bifrost 2.2.4 datasheet metadata enriches Tool Search, between-tools thinking and service tiers", () => {
 	const modernAliases: PifrostAliasConfig = {
 		includePhysicalModels: false,

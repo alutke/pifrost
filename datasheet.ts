@@ -466,6 +466,45 @@ function selectBooleanCapability(
 	return {};
 }
 
+/**
+ * Reasoning-with-tools is a transport compatibility policy, not just a generic
+ * model-family feature. OMP's provider-authored policy therefore outranks the
+ * public Bifrost model-parameters sheet when both describe the same provider
+ * route. This prevents stale negative datasheet rows from deleting a capable
+ * physical member before Bifrost can attempt it, while preserving explicit
+ * provider restrictions such as Azure models that disable reasoning with tools.
+ */
+function selectReasoningWithToolsCapability(
+	liveModel: BifrostProviderModel,
+	parameters: MatchedEntry<ModelParameterEntry> | undefined,
+	vendor: CatalogCapabilityFallback | undefined,
+	catalog: CatalogCapabilityFallback | undefined,
+): Selected<boolean> {
+	if (
+		liveModel.capabilitySources?.reasoningWithTools === "live" &&
+		liveModel.compat.supportsReasoningWithTools !== undefined
+	) {
+		return { value: liveModel.compat.supportsReasoningWithTools, source: "live" };
+	}
+	if (catalog?.source === "omp-catalog-provider" && catalog.supportsReasoningWithTools !== undefined) {
+		return { value: catalog.supportsReasoningWithTools, source: "omp-provider-policy" };
+	}
+	const sheetValue = reasoningWithToolsFromParameters(parameters?.value);
+	if (sheetValue !== undefined) {
+		return {
+			value: sheetValue,
+			source: sheetSource(parameters, "reasoningWithTools") ?? "bifrost-datasheet",
+		};
+	}
+	if (vendor?.supportsReasoningWithTools !== undefined) {
+		return { value: vendor.supportsReasoningWithTools, source: "vendor-override" };
+	}
+	if (catalog?.supportsReasoningWithTools !== undefined) {
+		return { value: catalog.supportsReasoningWithTools, source: fallbackSource(catalog) };
+	}
+	return {};
+}
+
 function selectTools(
 	liveModel: BifrostProviderModel,
 	parameters: MatchedEntry<ModelParameterEntry> | undefined,
@@ -617,14 +656,11 @@ export function buildRichRouteCatalog(
 			catalog?.supportsNamedToolChoice,
 			catalogCapabilitySource,
 		);
-		const reasoningWithTools = selectBooleanCapability(
-			liveModel.compat.supportsReasoningWithTools,
-			liveModel.capabilitySources?.reasoningWithTools,
-			reasoningWithToolsFromParameters(parameters?.value),
-			sheetSource(parameters, "reasoningWithTools"),
-			vendor?.supportsReasoningWithTools,
-			catalog?.supportsReasoningWithTools,
-			catalogCapabilitySource,
+		const reasoningWithTools = selectReasoningWithToolsCapability(
+			liveModel,
+			parameters,
+			vendor,
+			catalog,
 		);
 		const toolSearch = selectBooleanCapability(
 			liveModel.supportsToolSearch,

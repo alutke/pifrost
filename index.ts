@@ -40,7 +40,7 @@ type EffortName = (typeof THINKING_EFFORTS)[number];
 type OmpThinkingConfig = NonNullable<OmpModel["thinking"]>;
 type ProviderHeaders = Record<string, string | null>;
 
-export type CapabilitySource = "live" | "bifrost-datasheet" | "canonical-family" | "vendor-override" | "fallback";
+export type CapabilitySource = "live" | "omp-provider-policy" | "bifrost-datasheet" | "canonical-family" | "vendor-override" | "fallback";
 export type CapabilityKey =
 	| "contextWindow"
 	| "maxTokens"

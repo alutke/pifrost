@@ -47,6 +47,8 @@ export interface CatalogModelLike {
 		supportsForcedToolChoice?: boolean;
 		supportsNamedToolChoice?: boolean;
 		supportsReasoningWithTools?: boolean;
+		/** OMP models express this axis as a disable flag; false means reasoning+tools are allowed. */
+		disableReasoningWithTools?: boolean;
 		supportsBetweenToolsThinking?: boolean;
 		disableReasoningOnToolChoice?: boolean;
 	};
@@ -110,6 +112,8 @@ export function preferredCatalogProviders(reference: string): string[] {
 		case "xiaomi mimo":
 		case "xiaomi": return ["xiaomi"];
 		case "openai": return ["openai-codex", "openai"];
+		case "azure":
+		case "azure-openai": return ["azure"];
 		case "commandcode goat":
 		case "commandcode": return ["commandcode"];
 		default: return [];
@@ -452,9 +456,14 @@ function toFallback(models: CatalogModelLike[], source: CatalogCapabilityFallbac
 		protocolKeys.every((value) => Boolean(value)) && new Set(protocolKeys).size === 1
 			? protocolRows[0]
 			: undefined;
-	const reasoningWithTools = complete.some((model) => model.compat?.supportsReasoningWithTools === false)
+	const reasoningWithToolsValues = complete.map((model): boolean | undefined => {
+		const disabled = model.compat?.disableReasoningWithTools;
+		if (disabled !== undefined) return !disabled;
+		return model.compat?.supportsReasoningWithTools;
+	});
+	const reasoningWithTools = reasoningWithToolsValues.some((value) => value === false)
 		? false
-		: complete.every((model) => model.compat?.supportsReasoningWithTools === true)
+		: reasoningWithToolsValues.length > 0 && reasoningWithToolsValues.every((value) => value === true)
 			? true
 			: undefined;
 	const betweenToolsThinking = complete.some((model) => model.compat?.supportsBetweenToolsThinking === false)

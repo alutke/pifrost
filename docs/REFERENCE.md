@@ -163,7 +163,7 @@ If a route member cannot be resolved safely, Pifrost withholds the alias instead
 Pifrost includes one narrowly scoped free-entitlement exception for `CommandCode GOAT/meituan/LongCat-2.0:free`. The live Bifrost inventory currently exposes that route without authoritative limits, while the upstream LongCat-2.0 contract publishes a 1M context window, 131,072 maximum output tokens, text input, reasoning and native tool calling. Pifrost uses those verified limits only for that exact CommandCode GOAT SKU. It does not generalize them to OpenRouter or other `:free` model identifiers.
 
 
-Pifrost resolves capability facts per field rather than assuming one source is complete. The trust order is:
+Pifrost resolves capability facts per field rather than assuming one source is complete. The normal trust order is:
 
 1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
 2. the Bifrost public pricing/model-parameter datasheets;
@@ -171,7 +171,9 @@ Pifrost resolves capability facts per field rather than assuming one source is c
 4. a narrowly scoped vendor-backed capability override for a known upstream omission; and
 5. conservative catalog fallback when the model identity and capability are safe to establish.
 
-Diagnostics preserve that origin as `live`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback` for each route member and capability.
+Transport-compatibility axes are handled more carefully. When OMP has an exact provider-authored policy for the same provider/model route, that policy outranks the generic Bifrost datasheet for semantic compatibility such as whether reasoning and tools may coexist. OMP expresses this particular axis as `disableReasoningWithTools`; Pifrost translates it to its positive `supportsReasoningWithTools` capability before prewalk. Explicit live Bifrost capability metadata still outranks both. This prevents stale generic metadata from silently removing a valid physical route before Bifrost receives a request while preserving provider-specific restrictions.
+
+Diagnostics preserve origin as `live`, `omp-provider-policy`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback` for each route member and capability.
 
 The generic compatibility defaults used for a sparse physical `/v1/models` entry (`128K` context / `8K` output) are **not** accepted as authoritative route limits. A configured route member that is temporarily absent from `/v1/models` may receive a metadata-only identity anchor, but that anchor carries no trusted capabilities. Pifrost still withholds the logical alias unless safe context and output limits can be established from a stronger source.
 
