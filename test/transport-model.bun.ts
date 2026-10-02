@@ -105,16 +105,20 @@ test("runtime policy resolver keeps OpenAI GPT-6.1 Sol eligible for reasoning pl
 	);
 });
 
-test("runtime policy resolver preserves Azure GPT-6 Astra reasoning-with-tools restriction", () => {
+test("runtime policy resolver preserves Azure GPT-6 Astra protocol-specific reasoning-with-tools policy", () => {
+	assert.equal(
+		resolvePifrostReasoningWithToolsPolicy("azure", "gpt-6-astra", "openai-completions"),
+		false,
+	);
 	assert.equal(
 		resolvePifrostReasoningWithToolsPolicy("azure", "gpt-6-astra", "openai-responses"),
-		false,
+		true,
 	);
 	assert.equal(
 		resolveRouteReasoningWithToolsPolicy(
 			"azure/gpt-6-astra",
 			"azure/gpt-6-astra",
-			["openai-responses"],
+			["openai-responses", "openai-completions"],
 		),
 		false,
 	);
