@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import {
 	canonicalModelFamily,
 	findCatalogCapabilityFallback,
@@ -18,7 +17,25 @@ import { buildPifrostCatalog, type BifrostProviderModel, type PifrostAliasConfig
 
 import { installPifrostModelPolicyResolver } from "../transport-model.ts";
 
-installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
+installPifrostModelPolicyResolver((spec) => {
+	if (spec.provider === "openai" && spec.id === "gpt-6.1-sol") {
+		return {
+			thinking: undefined,
+			identity: { class: "openai", family: "gpt", revision: "6.1" } as never,
+			compat: { disableReasoningWithTools: false } as never,
+			catalog: {},
+		};
+	}
+	if ((spec.provider === "azure" || spec.provider === "azure-openai") && spec.id === "gpt-6-astra") {
+		return {
+			thinking: undefined,
+			identity: { class: "openai", family: "gpt", revision: "6" } as never,
+			compat: { disableReasoningWithTools: true } as never,
+			catalog: {},
+		};
+	}
+	throw new Error("No synthetic host policy for this test route");
+});
 
 function liveModel(id: string): BifrostProviderModel {
 	return {
