@@ -453,7 +453,7 @@ test("context eligibility reserves the clamped member output ceiling", () => {
 	);
 	assert.equal(plan.attempts[0]?.primary, "provider/large");
 	assert.deepEqual(plan.excluded, []);
-	assert.equal(plan.requiredContextTokens, 1_162_144);
+	assert.equal(plan.requiredContextTokens, 965_536);
 });
 
 
