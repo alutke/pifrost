@@ -1,6 +1,6 @@
 ## Unreleased
 
-- Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Image blocks now use dependency-free OMP-aligned, model/dimension-aware token accounting; trustworthy usage anchors are reused only for the physical upstream model that produced them.
+- Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Text now uses OMP's native tokenizer family when the candidate exposes one, image blocks use OMP-aligned model/dimension-aware accounting, and trustworthy usage anchors are reused only for the physical upstream model that produced them.
 - Added an OMP compatibility envelope with release CI against the minimum loader and the current validated OMP 18.8.4 binary, plus a scheduled contract canary against OMP `main`. `pifrost doctor` now reports both the minimum and the current validated OMP boundary.
 - Added a streaming-safe Bifrost cost bridge. When Bifrost returns its nested authoritative `usage.cost.total_cost` shape, Pifrost exposes that total to OMP as provider-reported cost while retaining the original Bifrost breakdown for diagnostics; JSON and SSE responses are both supported.
 - Kept routing ownership unchanged: Pifrost still performs compatibility/context prewalk only, while Bifrost remains authoritative for provider/model ordering, same-protocol fallback, governance and billing.
