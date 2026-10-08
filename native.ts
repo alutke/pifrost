@@ -12,6 +12,7 @@ import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
+import { createBifrostCostBridgeFetch } from "./bifrost-cost-bridge.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import {
 	buildPifrostTransportModel,
@@ -60,6 +61,8 @@ import {
 	createDynamicRoutingFetch,
 	extractDynamicRouteProfiles,
 	planDynamicRouteAttempts,
+	resolveDynamicMemberProtocolForRequest,
+	PIFROST_NATIVE_PROTOCOLS,
 	type DynamicRouteAttempt,
 	type DynamicRoutePlan,
 	type DynamicRouteProfile,
@@ -67,6 +70,7 @@ import {
 import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
+	createPifrostMemberModelSpec,
 	pifrostAttemptMaxTokens,
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
@@ -235,15 +239,45 @@ function streamDynamicPifrostRoute(
 	const deferredTools = deferredToolNames(context.tools);
 	const betweenToolsThinking = options?.disableReasoning === true && profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true);
 	const planningBody = dynamicRoutePlanningBody(model, context, options, { deferredTools, betweenToolsThinking });
+	const estimatedInputTokensByMember = new Map<string, number>();
+	for (const member of profile.members) {
+		const protocol = resolveDynamicMemberProtocolForRequest(member, planningBody, PIFROST_NATIVE_PROTOCOLS);
+		if (!protocol) continue;
+		try {
+			const candidate = buildPifrostTransportModel(
+				createPifrostMemberModelSpec(model, member, protocol),
+			);
+			const estimate = estimateOmpContextInputTokens(
+				context,
+				createApproximateContextTokenizer({
+					id: candidate.id,
+					api: candidate.api,
+					identity: candidate.identity,
+				}),
+				{
+					anchorModelIds: [
+						member.reference,
+						member.resolvedModelId,
+						candidate.id,
+					],
+				},
+			);
+			estimatedInputTokensByMember.set(member.reference, estimate);
+		} catch {
+			// Unknown policy must not make a route unusable. The dependency-free
+			// semantic fallback below remains conservative for the candidate.
+		}
+	}
 	const estimatedInputTokens = estimateOmpContextInputTokens(
 		context,
-		createApproximateContextTokenizer(),
+		createApproximateContextTokenizer({ api: model.api, identity: model.identity, id: model.id }),
 	);
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
 		estimatedInputTokens,
+		estimatedInputTokensByMember,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
-	const baseFetch = options?.fetch ?? globalThis.fetch;
+	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch);
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
 
@@ -350,7 +384,7 @@ function streamPifrostOpenAI(
 		api: "openai-completions",
 		compat: model.compatConfig,
 	} as ModelSpec<"openai-completions">);
-	const baseFetch = options?.fetch ?? globalThis.fetch;
+	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch);
 	const upstreamOnPayload = options?.onPayload;
 	const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
 	const streamOptions: OpenAICompletionsOptions = {
