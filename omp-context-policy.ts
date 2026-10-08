@@ -3,6 +3,7 @@ export type PifrostImageDetail = "auto" | "low" | "high" | "original";
 export interface PifrostImageTokenTarget {
 	id?: string;
 	api?: string;
+	tokenizer?: string;
 	identity?: {
 		class: string;
 		family?: string;
@@ -46,6 +47,40 @@ const WEBP_MAGIC = new TextEncoder().encode("WEBP");
 const WEBP_VP8X = new TextEncoder().encode("VP8X");
 const WEBP_VP8L = new TextEncoder().encode("VP8L");
 const WEBP_VP8 = new TextEncoder().encode("VP8 ");
+
+export type PifrostTextTokenCounter = (value: string | string[], tokenizer: string) => number;
+
+let hostTextTokenCounter: PifrostTextTokenCounter | undefined;
+
+/** Install OMP/Bun-owned native text tokenisation without importing native addons in Node-testable modules. */
+export function installPifrostTextTokenCounter(counter: PifrostTextTokenCounter | undefined): void {
+	hostTextTokenCounter = counter;
+}
+
+function byteEstimate(value: string): number {
+	return Math.ceil(new TextEncoder().encode(value).byteLength / 4);
+}
+
+/**
+ * Use the OMP-hosted native tokenizer when the candidate exposes a tokenizer
+ * family. Unknown families or unavailable host-native support retain the
+ * historical byte estimate so Node diagnostics and minimum OMP remain safe.
+ */
+export function estimatePifrostTextTokens(
+	value: string | string[],
+	target: Pick<PifrostImageTokenTarget, "tokenizer">,
+): number {
+	if (target.tokenizer && hostTextTokenCounter) {
+		try {
+			const counted = hostTextTokenCounter(value, target.tokenizer);
+			if (Number.isFinite(counted) && counted >= 0) return counted;
+		} catch {
+			// Host-native mismatch falls back to the portable estimate below.
+		}
+	}
+	const values = Array.isArray(value) ? value : [value];
+	return values.reduce((sum, item) => sum + byteEstimate(item), 0);
+}
 
 function magicEquals(header: Uint8Array, offset: number, magic: Uint8Array): boolean {
 	if (header.length < offset + magic.length) return false;

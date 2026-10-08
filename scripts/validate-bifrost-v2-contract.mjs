@@ -3,6 +3,7 @@ const BIFROST_2_2_0_COMMIT = "fa3d4f2b97a25f5a0d5a233998777811b2bc05a8";
 const BIFROST_2_2_2_COMMIT = "9f0d71dba7274d8673de1e69529991035dae49e4";
 const BIFROST_2_2_3_COMMIT = "b840c82caed6919d84c21bd7be5bf7fa27a7ba17";
 const BIFROST_2_2_4_COMMIT = "ed8371a9779bfbc8aa689d4d77964cf8ce9308bf";
+const BIFROST_2_2_6_COMMIT = "8b4fce4f1709d66f9208d02f50552da522535f9e";
 
 const SOURCES = [
   {
@@ -196,6 +197,24 @@ const SOURCES = [
     required: ['[Image Response: %s, MIME: %s]\\n'],
   },
   {
+    name: "Bifrost 2.2.6 authoritative usage-cost contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/core/schemas/chatcompletions.go`,
+    required: [
+      "type BifrostCost struct",
+      'json:"total_cost,omitempty"',
+      'json:"mcp_cost,omitempty"',
+      'json:"routing_cost,omitempty"',
+    ],
+  },
+  {
+    name: "Bifrost 2.2.6 Responses usage-cost contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/core/schemas/responses.go`,
+    required: [
+      "*BifrostCost",
+      'json:"cost,omitempty"',
+    ],
+  },
+  {
     name: "current Bifrost dev routing canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/routingRules.ts",
     required: ["chain_rule", "virtual_key", "priority", "fallbacks", "weight"],
@@ -211,6 +230,16 @@ const SOURCES = [
       "token_exchange",
       "needs_session_stickiness",
       "endpoint_slug",
+    ],
+  },
+  {
+    name: "current Bifrost dev authoritative usage-cost canary",
+    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/core/schemas/chatcompletions.go",
+    required: [
+      "type BifrostCost struct",
+      'json:"total_cost,omitempty"',
+      'json:"mcp_cost,omitempty"',
+      'json:"routing_cost,omitempty"',
     ],
   },
   {

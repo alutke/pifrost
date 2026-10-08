@@ -28,6 +28,7 @@ if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.versi
 const requiredDirectRuntimeDependencies = [
   "@oh-my-pi/pi-ai",
   "@oh-my-pi/pi-catalog",
+  "@oh-my-pi/pi-natives",
   "@oh-my-pi/pi-utils",
 ];
 for (const dependency of requiredDirectRuntimeDependencies) {
@@ -229,6 +230,10 @@ try {
   const installedPiUtils = join(installRoot, "node_modules", "@oh-my-pi", "pi-utils", "package.json");
   if (!existsSync(installedPiUtils)) {
     fail("installed package is missing direct runtime dependency @oh-my-pi/pi-utils");
+  }
+  const installedPiNatives = join(installRoot, "node_modules", "@oh-my-pi", "pi-natives", "package.json");
+  if (!existsSync(installedPiNatives)) {
+    fail("installed package is missing direct runtime dependency @oh-my-pi/pi-natives");
   }
 
   const installedEntry = installedPackage.bin?.pifrost;

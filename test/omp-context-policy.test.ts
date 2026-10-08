@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-
 import {
 	estimatePifrostImageTokens,
+	estimatePifrostTextTokens,
+	installPifrostTextTokenCounter,
 	resolvePifrostImageTokenization,
 } from "../omp-context-policy.ts";
 
@@ -72,4 +73,29 @@ test("unknown image dimensions use OMP's bounded OpenAI wire fallback", () => {
 		},
 	);
 	assert.equal(tokens, 12_000);
+});
+
+
+test("candidate tokenizer family delegates to the OMP host counter when available", () => {
+	const seen: Array<{ value: string | string[]; tokenizer: string }> = [];
+	installPifrostTextTokenCounter((value, tokenizer) => {
+		seen.push({ value, tokenizer });
+		return 37;
+	});
+	try {
+		const text = "function_name(arg: 'value') — こんにちは世界";
+		assert.equal(estimatePifrostTextTokens(text, { tokenizer: "deepseek-v3" }), 37);
+		assert.deepEqual(seen, [{ value: text, tokenizer: "deepseek-v3" }]);
+	} finally {
+		installPifrostTextTokenCounter(undefined);
+	}
+});
+
+test("text accounting remains portable when host-native tokenization is unavailable", () => {
+	installPifrostTextTokenCounter(undefined);
+	const text = "plain ASCII text";
+	assert.equal(
+		estimatePifrostTextTokens(text, { tokenizer: "deepseek-v3" }),
+		Math.ceil(new TextEncoder().encode(text).byteLength / 4),
+	);
 });

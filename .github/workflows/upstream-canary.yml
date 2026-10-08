@@ -32,3 +32,13 @@ jobs:
         env:
           PIFROST_OMP_UPSTREAM_CANARY: "1"
         run: node scripts/validate-omp-contract.mjs
+
+  bifrost-dev:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check current Bifrost dev contracts
+        run: node scripts/validate-bifrost-v2-contract.mjs
