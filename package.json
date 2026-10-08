@@ -35,6 +35,8 @@
     "dynamic-routing.ts",
     "capability-bridge.ts",
     "context-estimator.ts",
+    "omp-context-policy.ts",
+    "bifrost-cost-bridge.ts",
     "multi-protocol-routing.ts",
     "compact-before-skip.ts",
     "omp-cfg.ts",
