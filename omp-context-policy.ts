@@ -410,10 +410,18 @@ export function estimatePifrostImageTokens(
 			? block.detail
 			: undefined;
 	const size = imageBlockSize(block);
-	// Unknown dimensions should charge the selected candidate's worst-case rule,
-	// not an unrelated OpenAI fallback. That keeps Gemini fixed-price and
-	// Anthropic capped image accounting candidate-specific while remaining
-	// conservative for undecodable/remote images.
 	const rule = resolvePifrostImageTokenization(target);
-	return imageTokens(rule, size ?? UNKNOWN_IMAGE_SIZE, detail);
+	if (size) return imageTokens(rule, size, detail);
+
+	// Unknown dimensions can still use candidate-specific bounded rules. Fixed
+	// Gemini and capped Anthropic accounting have a deterministic ceiling, and
+	// OpenAI detail levels with an explicit patch budget do too. For an
+	// unbounded OpenAI level (for example GPT-5.6 original), retain OMP's
+	// bounded wire fallback rather than manufacturing a multi-million-token
+	// estimate from the UNKNOWN_IMAGE_SIZE sentinel.
+	if (rule.regime !== "openai-patch") return imageTokens(rule, UNKNOWN_IMAGE_SIZE, detail);
+	const level = detail === "low" || detail === "high" || detail === "original" ? detail : rule.auto;
+	return rule[level].patchBudget !== undefined
+		? imageTokens(rule, UNKNOWN_IMAGE_SIZE, detail)
+		: imageTokens(OPENAI_WIRE_FALLBACK, UNKNOWN_IMAGE_SIZE, detail);
 }
