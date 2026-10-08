@@ -1,5 +1,3 @@
-import { parseImageMetadata } from "@oh-my-pi/pi-utils/mime";
-
 export type PifrostImageDetail = "auto" | "low" | "high" | "original";
 
 export interface PifrostImageTokenTarget {
@@ -38,6 +36,105 @@ const UNKNOWN_IMAGE_SIZE: ImageSize = { width: 65_535, height: 65_535 };
 const HEADER_BASE64_CHARS = 4 * Math.ceil((64 * 1024) / 3);
 const OPENAI_PATCH_PX = 32;
 const ANTHROPIC_PATCH_PX = 28;
+
+const PNG_MAGIC = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_MAGIC = Uint8Array.from([0xff, 0xd8, 0xff]);
+const GIF87A = new TextEncoder().encode("GIF87a");
+const GIF89A = new TextEncoder().encode("GIF89a");
+const WEBP_RIFF_MAGIC = new TextEncoder().encode("RIFF");
+const WEBP_MAGIC = new TextEncoder().encode("WEBP");
+const WEBP_VP8X = new TextEncoder().encode("VP8X");
+const WEBP_VP8L = new TextEncoder().encode("VP8L");
+const WEBP_VP8 = new TextEncoder().encode("VP8 ");
+
+function magicEquals(header: Uint8Array, offset: number, magic: Uint8Array): boolean {
+	if (header.length < offset + magic.length) return false;
+	for (let index = 0; index < magic.length; index++) {
+		if (header[offset + index] !== magic[index]) return false;
+	}
+	return true;
+}
+
+function parsePngSize(header: Uint8Array): ImageSize | undefined {
+	if (!magicEquals(header, 0, PNG_MAGIC) || header.length < 24) return undefined;
+	const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+	const width = view.getUint32(16, false);
+	const height = view.getUint32(20, false);
+	return width > 0 && height > 0 ? { width, height } : undefined;
+}
+
+function parseGifSize(header: Uint8Array): ImageSize | undefined {
+	if ((!magicEquals(header, 0, GIF87A) && !magicEquals(header, 0, GIF89A)) || header.length < 10) {
+		return undefined;
+	}
+	const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+	const width = view.getUint16(6, true);
+	const height = view.getUint16(8, true);
+	return width > 0 && height > 0 ? { width, height } : undefined;
+}
+
+function parseJpegSize(header: Uint8Array): ImageSize | undefined {
+	if (!magicEquals(header, 0, JPEG_MAGIC) || header.length < 4) return undefined;
+	const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+	let offset = 2;
+	while (offset + 9 < header.length) {
+		if (header[offset] !== 0xff) {
+			offset += 1;
+			continue;
+		}
+		let markerOffset = offset + 1;
+		while (markerOffset < header.length && header[markerOffset] === 0xff) markerOffset += 1;
+		if (markerOffset >= header.length) break;
+		const marker = header[markerOffset]!;
+		const segmentOffset = markerOffset + 1;
+		if (marker === 0xd8 || marker === 0xd9 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) {
+			offset = segmentOffset;
+			continue;
+		}
+		if (segmentOffset + 1 >= header.length) break;
+		const segmentLength = view.getUint16(segmentOffset, false);
+		if (segmentLength < 2) break;
+		const isStartOfFrame = marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc;
+		if (isStartOfFrame) {
+			if (segmentOffset + 7 >= header.length) break;
+			const height = view.getUint16(segmentOffset + 3, false);
+			const width = view.getUint16(segmentOffset + 5, false);
+			return width > 0 && height > 0 ? { width, height } : undefined;
+		}
+		offset = segmentOffset + segmentLength;
+	}
+	return undefined;
+}
+
+function parseWebpSize(header: Uint8Array): ImageSize | undefined {
+	if (!magicEquals(header, 0, WEBP_RIFF_MAGIC) || !magicEquals(header, 8, WEBP_MAGIC) || header.length < 25) {
+		return undefined;
+	}
+	const view = new DataView(header.buffer, header.byteOffset, header.byteLength);
+	if (magicEquals(header, 12, WEBP_VP8X) && header.length >= 30) {
+		return {
+			width: (header[24]! | (header[25]! << 8) | (header[26]! << 16)) + 1,
+			height: (header[27]! | (header[28]! << 8) | (header[29]! << 16)) + 1,
+		};
+	}
+	if (magicEquals(header, 12, WEBP_VP8L)) {
+		const bits = view.getUint32(21, true);
+		return {
+			width: (bits & 0x3fff) + 1,
+			height: ((bits >> 14) & 0x3fff) + 1,
+		};
+	}
+	if (magicEquals(header, 12, WEBP_VP8) && header.length >= 30) {
+		const width = view.getUint16(26, true) & 0x3fff;
+		const height = view.getUint16(28, true) & 0x3fff;
+		return width > 0 && height > 0 ? { width, height } : undefined;
+	}
+	return undefined;
+}
+
+function parseImageSize(header: Uint8Array): ImageSize | undefined {
+	return parsePngSize(header) ?? parseJpegSize(header) ?? parseGifSize(header) ?? parseWebpSize(header);
+}
 
 const OPENAI_WIRE_FALLBACK: ImageTokenization = {
 	regime: "openai-patch",
@@ -255,9 +352,7 @@ function base64ImageSize(base64: string): ImageSize | undefined {
 	if (!base64) return undefined;
 	try {
 		const header = Buffer.from(base64.slice(0, HEADER_BASE64_CHARS), "base64");
-		const metadata = parseImageMetadata(header);
-		if (!metadata?.width || !metadata.height) return undefined;
-		return { width: metadata.width, height: metadata.height };
+		return parseImageSize(header);
 	} catch {
 		return undefined;
 	}
