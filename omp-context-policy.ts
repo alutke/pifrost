@@ -1,5 +1,3 @@
-import * as natives from "@oh-my-pi/pi-natives";
-
 export type PifrostImageDetail = "auto" | "low" | "high" | "original";
 
 export interface PifrostImageTokenTarget {
@@ -40,51 +38,39 @@ const HEADER_BASE64_CHARS = 4 * Math.ceil((64 * 1024) / 3);
 const OPENAI_PATCH_PX = 32;
 const ANTHROPIC_PATCH_PX = 28;
 
-const TOKENIZER_ENCODINGS: Readonly<Record<string, natives.Encoding>> = Object.freeze({
-	"claude-v3": natives.Encoding.ClaudeV3,
-	"claude-v47": natives.Encoding.ClaudeV47,
-	"claude-v5": natives.Encoding.ClaudeV5,
-	"claude-v5-sonnet": natives.Encoding.ClaudeV5Sonnet,
-	qwen3: natives.Encoding.Qwen3,
-	"deepseek-v3": natives.Encoding.DeepSeekV3,
-	"kimi-k2": natives.Encoding.KimiK2,
-	glm5: natives.Encoding.Glm5,
-});
+export type PifrostTextTokenCounter = (value: string | string[], tokenizer: string) => number;
+
+let hostTextTokenCounter: PifrostTextTokenCounter | undefined;
+
+/** Install OMP/Bun-owned native text tokenisation without importing native addons in Node-testable modules. */
+export function installPifrostTextTokenCounter(counter: PifrostTextTokenCounter | undefined): void {
+	hostTextTokenCounter = counter;
+}
 
 function byteEstimate(value: string): number {
 	return Math.ceil(new TextEncoder().encode(value).byteLength / 4);
 }
 
 /**
- * Use OMP's catalog-resolved tokenizer family when it is available on the
- * candidate model. Unknown tokenizers retain the historical byte estimate so
- * minimum-supported OMP releases remain compatible.
+ * Use the OMP-hosted native tokenizer when the candidate exposes a tokenizer
+ * family. Unknown families or unavailable host-native support retain the
+ * historical byte estimate so Node diagnostics and minimum OMP remain safe.
  */
 export function estimatePifrostTextTokens(
 	value: string | string[],
 	target: Pick<PifrostImageTokenTarget, "tokenizer">,
 ): number {
-	const values = Array.isArray(value) ? value : [value];
-	const encoding = target.tokenizer ? TOKENIZER_ENCODINGS[target.tokenizer] : undefined;
-	if (encoding !== undefined) {
+	if (target.tokenizer && hostTextTokenCounter) {
 		try {
-			return natives.countTokens(values, encoding);
+			const counted = hostTextTokenCounter(value, target.tokenizer);
+			if (Number.isFinite(counted) && counted >= 0) return counted;
 		} catch {
-			// A native addon/model mismatch must not make route planning unusable.
+			// Host-native mismatch falls back to the portable estimate below.
 		}
 	}
+	const values = Array.isArray(value) ? value : [value];
 	return values.reduce((sum, item) => sum + byteEstimate(item), 0);
 }
-
-const PNG_MAGIC = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-const JPEG_MAGIC = Uint8Array.from([0xff, 0xd8, 0xff]);
-const GIF87A = new TextEncoder().encode("GIF87a");
-const GIF89A = new TextEncoder().encode("GIF89a");
-const WEBP_RIFF_MAGIC = new TextEncoder().encode("RIFF");
-const WEBP_MAGIC = new TextEncoder().encode("WEBP");
-const WEBP_VP8X = new TextEncoder().encode("VP8X");
-const WEBP_VP8L = new TextEncoder().encode("VP8L");
-const WEBP_VP8 = new TextEncoder().encode("VP8 ");
 
 function magicEquals(header: Uint8Array, offset: number, magic: Uint8Array): boolean {
 	if (header.length < offset + magic.length) return false;
