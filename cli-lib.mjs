@@ -26,9 +26,13 @@ import {
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
 import { postMcpJsonRpc } from "./mcp-rpc.mjs";
-import { normalizeMcpClientShape } from "./mcp-client-shape.mjs";
+import {
+  mcpClientExecutionDiagnostics,
+  normalizeMcpClientShape,
+} from "./mcp-client-shape.mjs";
 
 export { PifrostHttpError, requestJson };
+export { mcpClientExecutionDiagnostics };
 export { aliasIdFromRule, deriveAliasesFromRules, routingFeatureSummary, targetReference };
 
 export const VERSION = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
