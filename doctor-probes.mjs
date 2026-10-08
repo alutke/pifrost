@@ -2,6 +2,7 @@ import {
   getBifrostConfig,
   getBifrostHealth,
   getBifrostVersion,
+  getBifrostAuthStatus,
   getComplexityAnalyzerConfig,
   getRoutingRules,
   getVirtualKeyQuota,
@@ -32,6 +33,7 @@ export async function collectDoctorSnapshot({ runtime, managementAuth }) {
   const [
     version,
     health,
+    authStatus,
     inference,
     quota,
     management,
@@ -44,6 +46,7 @@ export async function collectDoctorSnapshot({ runtime, managementAuth }) {
   ] = await Promise.all([
     hasUrl ? probe(() => getBifrostVersion(runtime.url)) : Promise.resolve(skipped("Bifrost URL is not configured")),
     hasUrl ? probe(() => getBifrostHealth(runtime.url)) : Promise.resolve(skipped("Bifrost URL is not configured")),
+    hasUrl ? probe(() => getBifrostAuthStatus(runtime.url)) : Promise.resolve(skipped("Bifrost URL is not configured")),
     hasInference ? probe(() => testInference(runtime)) : Promise.resolve(skipped("Inference Virtual Key is not configured")),
     hasInference ? probe(() => getVirtualKeyQuota(runtime.url, runtime.virtualKey)) : Promise.resolve(skipped("Inference Virtual Key is not configured")),
     hasManagement ? probe(() => testManagement(runtime.url, managementAuth)) : Promise.resolve(skipped("Management authentication is not configured")),
@@ -58,6 +61,7 @@ export async function collectDoctorSnapshot({ runtime, managementAuth }) {
   return {
     version,
     health,
+    authStatus,
     inference,
     quota,
     management,
