@@ -1684,6 +1684,20 @@ function mergeToolGrant(entry, tools, source) {
   }
 }
 
+function toolPolicyIntersection(client, grantedTools, field, knownField) {
+  const available = Array.isArray(client?.tools) ? client.tools.map(String) : [];
+  const granted = grantedTools.includes("*")
+    ? available
+    : grantedTools.filter((tool) => available.length === 0 || available.includes(tool));
+  if (client?.[knownField] !== true) {
+    return { known: false, tools: granted };
+  }
+  const configured = Array.isArray(client?.[field]) ? client[field].map(String) : [];
+  if (configured.includes("*")) return { known: true, tools: granted };
+  const allowed = new Set(configured);
+  return { known: true, tools: granted.filter((tool) => allowed.has(tool)) };
+}
+
 export function effectiveRepoMcpPolicy(vk, virtualMcps, clients) {
   const direct = virtualKeyMcpConfigs(vk);
   const attached = virtualMcpsForVirtualKey(virtualMcps, String(vk?.id ?? ""));
@@ -1757,7 +1771,32 @@ export function effectiveRepoMcpPolicy(vk, virtualMcps, clients) {
       continue;
     }
     if (!tools.length) continue;
-    effective.push({ client: entry.name, tools, sources: [...entry.sources] });
+    const executable = toolPolicyIntersection(entry.client, tools, "toolsToExecute", "toolsToExecuteKnown");
+    const autoExecutableBase = toolPolicyIntersection(entry.client, tools, "toolsToAutoExecute", "toolsToAutoExecuteKnown");
+    const executableSet = new Set(executable.tools);
+    const autoExecutable = {
+      known: autoExecutableBase.known,
+      tools: autoExecutableBase.tools.filter((tool) => executableSet.has(tool)),
+    };
+    effective.push({
+      client: entry.name,
+      tools,
+      sources: [...entry.sources],
+      executableTools: executable.tools,
+      autoExecutableTools: autoExecutable.tools,
+      executionPolicyKnown: executable.known,
+      autoExecutionPolicyKnown: autoExecutable.known,
+      isCodeModeClient: entry.client.isCodeModeClient === true,
+    });
+  }
+
+  const warnings = [];
+  for (const grant of effective) {
+    const client = clientsByName.get(String(grant.client).toLowerCase()) ??
+      [...clientsById.values()].find((item) => item?.name === grant.client);
+    if (client?.toolsToAutoExecuteKnown === true && client.toolsToAutoExecute?.includes("*")) {
+      warnings.push(`${grant.client}: tools_to_auto_execute=* permits every executable tool to run without approval`);
+    }
   }
 
   return {
@@ -1770,6 +1809,7 @@ export function effectiveRepoMcpPolicy(vk, virtualMcps, clients) {
     })),
     effective,
     unresolved,
+    warnings,
   };
 }
 
