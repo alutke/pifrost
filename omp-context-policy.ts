@@ -410,6 +410,10 @@ export function estimatePifrostImageTokens(
 			? block.detail
 			: undefined;
 	const size = imageBlockSize(block);
-	const rule = size ? resolvePifrostImageTokenization(target) : OPENAI_WIRE_FALLBACK;
+	// Unknown dimensions should charge the selected candidate's worst-case rule,
+	// not an unrelated OpenAI fallback. That keeps Gemini fixed-price and
+	// Anthropic capped image accounting candidate-specific while remaining
+	// conservative for undecodable/remote images.
+	const rule = resolvePifrostImageTokenization(target);
 	return imageTokens(rule, size ?? UNKNOWN_IMAGE_SIZE, detail);
 }
