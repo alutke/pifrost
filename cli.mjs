@@ -1044,7 +1044,9 @@ async function commandRepoStatus(snapshot) {
           : status.gatewayVisible
             ? `yes (${status.gatewayName ?? status.tool})`
             : "no";
-        console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
+        const executable = status.executionPolicyKnown ? (status.executable ? "yes" : "no") : "unknown";
+        const auto = status.autoExecutionPolicyKnown ? (status.autoExecutable ? "yes" : "no") : "unknown";
+        console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} executable=${executable} auto=${auto} gateway-visible=${gateway}`);
       }
       console.log(`    search ready:   ${hound.hound.searchReady ? "yes" : "no"}`);
       console.log(`    web research:   ${hound.hound.webResearchReady ? "ready" : "incomplete"}`);
