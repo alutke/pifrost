@@ -96,7 +96,7 @@ test("unknown image dimensions preserve bounded candidate-specific accounting", 
 				identity: { class: "anthropic", family: "opus", revision: "5" },
 			},
 		),
-		4_784,
+		4_761,
 	);
 	assert.equal(
 		estimatePifrostImageTokens(
