@@ -165,8 +165,8 @@ const CURRENT_SOURCES = [
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/tokenizer.ts`,
     required: [
       "thinkingSignature",
-      'block.type === "redactedThinking"',
-      'block.type === "anthropicServerTool"',
+      'case "redactedThinking"',
+      'case "anthropicServerTool"',
       "stringifyJson(block.arguments)",
     ],
   },
