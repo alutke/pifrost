@@ -710,7 +710,9 @@ resolved deepseek/deepseek-v4-flash -> deepseek/deepseek-v4-flash
 
 The evaluator mirrors Bifrost's semantics: Go weekday numbering (Sunday=0), IANA timezones, half-open `[start,end)` windows, midnight wrapping, `24:00` as an end-of-day marker, and fail-closed peak pricing for malformed schedules. The displayed band is evaluated when the doctor report is rendered, so a cached catalog does not freeze an old peak/off-peak state.
 
-The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate; Pifrost does not claim an override-aware effective bill unless Bifrost exposes that provenance on the diagnostic surface.
+The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate.
+
+At inference time, Bifrost 2.2.x may return its authoritative nested request-cost breakdown in `usage.cost`, including `total_cost`. Pifrost translates that total into the scalar provider-reported cost shape OMP's OpenAI-compatible transports consume, while retaining the original nested breakdown as `pifrost_bifrost_cost`. This translation is opportunistic: when Bifrost does not emit a nested cost object, OMP's normal catalogue estimate remains unchanged. Pifrost does not recalculate Bifrost's service-tier, long-context, cache, custom-price or ancillary-cost rules itself.
 
 ---
 
