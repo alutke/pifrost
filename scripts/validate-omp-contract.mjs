@@ -1,5 +1,5 @@
 const OMP_MIN_COMMIT = "79808c3bf8f8cd9826decc63e3e18b13035f64f8";
-const OMP_VALIDATED_COMMIT = "40e9368ef0458fd9073329cdff4174895f91bc6b";
+const OMP_VALIDATED_COMMIT = "4bf0d9d3e9f910ef4af25dec9733fbb4d6912d4c";
 const OMP_CURRENT_REF = process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : OMP_VALIDATED_COMMIT;
 
 const SOURCES = [
@@ -98,7 +98,7 @@ const SOURCES = [
 
 const CURRENT_SOURCES = [
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} image-tokenization contract`,
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.5"} image-tokenization contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/image-tokenization.ts`,
     required: [
       "export function resolveImageTokenization",
@@ -109,7 +109,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} dimension-aware image accounting`,
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.5"} dimension-aware image accounting`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/image-tokens.ts`,
     required: [
       "estimateImageContentTokens",
@@ -119,7 +119,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} provider-cost contract`,
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.5"} provider-cost contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/ai/src/providers/openai-shared.ts`,
     required: [
       "export function applyProviderReportedCost",
@@ -130,7 +130,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} model-preset contract`,
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.5"} model-preset contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/config/model-presets.ts`,
     required: [
       "findActiveModelPreset",
