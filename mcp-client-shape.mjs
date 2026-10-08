@@ -121,3 +121,50 @@ export function normalizeMcpClientShape(client) {
     raw: client,
   };
 }
+
+
+function policyAllows(tools, name) {
+  const normalized = Array.isArray(tools) ? tools.map(String) : [];
+  return normalized.includes("*") || normalized.includes(name);
+}
+
+/**
+ * Resolve Bifrost's effective MCP execution boundary for one repository grant.
+ * Bifrost 2.2.5+ treats tools_to_execute as the hard invocation allow-list and
+ * tools_to_auto_execute as its approval-free subset. Repository grants can only
+ * narrow that surface further; they never widen the client policy.
+ */
+export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
+  const available = Array.isArray(client?.tools) ? client.tools.map(String) : [];
+  const grantAll = Array.isArray(grantedTools) && grantedTools.map(String).includes("*");
+  const granted = grantAll
+    ? available
+    : available.filter((name) => (grantedTools ?? []).map(String).includes(name));
+  const rows = granted.map((tool) => ({
+    tool,
+    granted: true,
+    executable: policyAllows(client?.toolsToExecute, tool),
+    autoExecutable:
+      policyAllows(client?.toolsToExecute, tool) &&
+      policyAllows(client?.toolsToAutoExecute, tool),
+  }));
+  const warnings = [];
+  if (Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
+    warnings.push("auto-execute wildcard grants every executable tool approval-free execution");
+  }
+  for (const name of Array.isArray(client?.toolsToAutoExecute) ? client.toolsToAutoExecute : []) {
+    if (name === "*") continue;
+    if (!policyAllows(client?.toolsToExecute, name)) {
+      warnings.push(`auto-execute tool ${name} is not executable and will be ignored by Bifrost`);
+    }
+  }
+  return {
+    rows,
+    grantedCount: rows.length,
+    executableCount: rows.filter((row) => row.executable).length,
+    autoExecutableCount: rows.filter((row) => row.autoExecutable).length,
+    executePolicy: Array.isArray(client?.toolsToExecute) ? [...client.toolsToExecute] : [],
+    autoPolicy: Array.isArray(client?.toolsToAutoExecute) ? [...client.toolsToAutoExecute] : [],
+    warnings,
+  };
+}
