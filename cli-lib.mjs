@@ -39,6 +39,7 @@ export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
 export const PIFROST_OMP_MIN_VERSION = "18.4.5";
 export const PIFROST_OMP_VALIDATED_VERSION = "18.8.4";
 export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
+export const PIFROST_BIFROST_VALIDATED_VERSION = "2.2.6";
 
 export const ROLE_MAP = Object.freeze({
   default: "bifrost/omp-default",
@@ -210,7 +211,11 @@ export function managementAuthFromState(state, env = process.env) {
   const envApiKey = nonEmpty(env.BIFROST_MANAGEMENT_API_KEY);
   const envUsername = nonEmpty(env.BIFROST_ADMIN_USERNAME);
   const envPassword = nonEmptySecret(env.BIFROST_ADMIN_PASSWORD);
+  const envSetupToken = nonEmptySecret(env.BIFROST_SETUP_TOKEN);
 
+  if (requestedMode === "setup") {
+    return envSetupToken ? { mode: "setup", setupToken: envSetupToken } : undefined;
+  }
   if (requestedMode === "basic") {
     return envUsername && envPassword ? { mode: "basic", username: envUsername, password: envPassword } : undefined;
   }
@@ -219,6 +224,9 @@ export function managementAuthFromState(state, env = process.env) {
   }
   if (envApiKey) return { mode: "bearer", apiKey: envApiKey };
   if (envUsername && envPassword) return { mode: "basic", username: envUsername, password: envPassword };
+  // Setup tokens are intentionally environment-only: Pifrost may use one to
+  // bootstrap/diagnose a fresh Bifrost 2.2.6 instance but never persists it.
+  if (envSetupToken) return { mode: "setup", setupToken: envSetupToken };
 
   const storedMode = nonEmpty(state.config?.bifrost?.managementAuthMode)?.toLowerCase();
   const storedApiKey = nonEmpty(state.secrets?.managementApiKey);
@@ -250,6 +258,7 @@ export function managementKeyFromState(state, env = process.env) {
 export function managementAuthLabel(auth) {
   if (auth?.mode === "basic") return "basic (OSS admin credentials)";
   if (auth?.mode === "bearer") return "bearer (Enterprise scoped API key)";
+  if (auth?.mode === "setup") return "setup token (ephemeral)";
   if (typeof auth === "string" && nonEmpty(auth)) return "bearer (legacy API key)";
   return "missing";
 }
@@ -273,6 +282,18 @@ export async function getBifrostVersion(url) {
 export async function getBifrostHealth(url) {
   const base = bifrostManagementBase(url);
   return requestJson(`${base}/health`, { timeoutMs: 8_000 });
+}
+
+export async function getBifrostSetupState(url) {
+  const base = bifrostManagementBase(url);
+  const body = await requestJson(`${base}/api/session/is-auth-enabled`, { timeoutMs: 8_000 });
+  return {
+    authEnabled: body?.is_auth_enabled === true,
+    inferenceAuthEnforced: body?.inference_auth_enforced === true,
+    setupRequired: body?.setup_required === true,
+    setupTokenConfigured: body?.setup_token_configured === true,
+    authType: nonEmpty(body?.auth_type) ?? "unknown",
+  };
 }
 
 export async function getVirtualKeyQuota(url, virtualKey) {
@@ -406,6 +427,11 @@ export function managementHeaders(auth) {
     const key = nonEmpty(auth.apiKey);
     if (!key) throw new Error("Bifrost Enterprise management auth requires a scoped API key");
     return { Authorization: `Bearer ${key}` };
+  }
+  if (auth?.mode === "setup") {
+    const token = nonEmptySecret(auth.setupToken);
+    if (!token) throw new Error("Bifrost setup-token auth requires BIFROST_SETUP_TOKEN or --setup-token");
+    return { "X-Bifrost-Setup-Token": token };
   }
   throw new Error("Bifrost management authentication is required; run `pifrost global setup`");
 }
@@ -659,6 +685,46 @@ export async function bifrostCompatibilityMatrix({
 }) {
   const installedVersion = parseSemver(version)?.version;
   const results = [];
+
+  const setupBase = featureUnavailable(
+    "bifrost-setup-lock",
+    "First-time setup lock",
+    "2.2.6",
+    installedVersion,
+    "Fresh Bifrost instances do not expose the setup-token lock state",
+  );
+  if (setupBase) {
+    results.push(setupBase);
+  } else {
+    const endpoint = "/api/session/is-auth-enabled";
+    try {
+      const setup = await compatibilityProbeValue(
+        probes,
+        "setup",
+        () => getBifrostSetupState(url),
+      );
+      results.push({
+        id: "bifrost-setup-lock",
+        label: "First-time setup lock",
+        minimum: "2.2.6",
+        status: setup.setupRequired ? "inaccessible" : "supported",
+        detail: setup.setupRequired
+          ? `first-time setup is incomplete (setup token configured=${setup.setupTokenConfigured ? "yes" : "no"})`
+          : `setup complete; dashboard auth=${setup.authEnabled ? "enabled" : "disabled"}, inference auth=${setup.inferenceAuthEnforced ? "enforced" : "not enforced"}`,
+        impact: setup.setupRequired
+          ? "Complete Bifrost first-time setup before relying on management automation; Pifrost never stores the setup token"
+          : undefined,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-setup-lock",
+        label: "First-time setup lock",
+        minimum: "2.2.6",
+        ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
+        impact: "Bifrost setup/auth state cannot be verified",
+      });
+    }
+  }
 
   const virtualMcpBase = featureUnavailable(
     "bifrost-virtual-mcp",
