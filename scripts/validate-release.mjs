@@ -84,6 +84,8 @@ for (const path of [
   "mcp-rpc.mjs",
   "hound-diagnostics.mjs",
   "bifrost-rich-content.ts",
+  "bifrost-cost-bridge.ts",
+  "request-provenance.ts",
   "mcp-client-shape.mjs",
   "route-cli.mjs",
   "doctor-probes.mjs",
