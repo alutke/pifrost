@@ -1,3 +1,10 @@
+## 0.9.2 — 2026-10-08
+
+- Advanced the current validated OMP host from 18.8.4 to **18.8.6**, including the compiled-binary compatibility gate and exact tokenizer/image-policy contracts. OMP 18.8.5/18.8.6 introduce account/compaction, warm-cache pruning and prompt-cache-lookback behavior but no Pifrost transport contract change requiring duplicated runtime policy.
+- Confirmed compaction ownership after OMP 18.8.5/18.8.6: OMP continues to own normal automatic compaction, per-model thresholds and cache-aware pruning. Pifrost's optional compact-before-skip coordinator remains narrowly scoped to preserving smaller physical fallbacks and invokes OMP's own `compact()` implementation.
+- Corrected the technical reference's remaining legacy wording that described Pifrost's pinned policy resolver as host-owned. The runtime boundary is now consistently documented as an 18.4.5 policy snapshot plus explicit compatibility patches, independently validated against the current OMP host.
+- No physical route ordering, provider selection, fallback ownership, quota policy, MCP policy or billing behavior changed.
+
 ## 0.9.1 — 2026-10-08
 
 - Corrected candidate-specific context prewalk for locally recounted assistant history. Pifrost now includes opaque reasoning signatures, redacted thinking and Anthropic server-tool payloads that OMP replays to providers, preventing cross-model fallback estimates from understating context usage when a prior provider-usage anchor cannot be reused.
