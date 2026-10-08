@@ -123,6 +123,7 @@ const CURRENT_SOURCES = [
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/ai/src/providers/openai-shared.ts`,
     required: [
       "export function applyProviderReportedCost",
+      'model.provider !== "openrouter"',
       'Reflect.get(rawUsage, "cost")',
       "upstream_inference_cost",
       "usage.cost.total = reportedCost",
