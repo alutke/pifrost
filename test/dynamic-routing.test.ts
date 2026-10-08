@@ -589,3 +589,35 @@ test("capability prefilter never reorders surviving Bifrost members", () => {
 	assert.equal(plan.attempts[0]?.primary, "provider/small");
 	assert.deepEqual(plan.attempts[0]?.fallbacks, ["provider/large-two"]);
 });
+
+
+test("candidate-specific prompt estimates gate each physical fallback independently", () => {
+	const route = profile();
+	const plan = planDynamicRouteAttempts(
+		route,
+		{
+			model: "omp-default",
+			messages: [{ role: "user", content: "image-heavy request" }],
+			max_completion_tokens: 32_000,
+		},
+		{
+			estimatedInputTokens: 10_000,
+			estimatedInputTokensByMember: new Map([
+				["provider/large", 900_000],
+				["provider/small", 240_000],
+				["provider/large-two", 850_000],
+			]),
+			outputCapExplicit: false,
+		},
+	);
+	assert.equal(plan.estimatedInputTokens, 900_000);
+	assert.equal(plan.requiredContextTokens, 932_000);
+	assert.deepEqual(plan.excluded, [{
+		reference: "provider/small",
+		reasons: ["context 256000 < required 272000"],
+	}]);
+	assert.deepEqual(plan.attempts[0]?.members.map((member) => member.reference), [
+		"provider/large",
+		"provider/large-two",
+	]);
+});
