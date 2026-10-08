@@ -84,3 +84,47 @@ test("Code Mode probe requires real pyi function signatures rather than tool-nam
   }, ["hound"]);
   assert.equal(probe.ok, false);
 });
+
+
+test("Hound capability readiness respects Bifrost executable allow-list enforcement", () => {
+  const clients = [{
+    id: "hound-id",
+    name: "hound",
+    state: "connected",
+    isCodeModeClient: true,
+    tools: HOUND_TOOLS,
+  }];
+  const diagnostics = houndMcpDiagnostics(
+    {
+      effective: [{
+        client: "hound",
+        tools: ["*"],
+        executableTools: ["mcp_smart_fetch", "mcp_smart_crawl"],
+        autoExecutableTools: [],
+        executionPolicyKnown: true,
+        autoExecutionPolicyKnown: true,
+        sources: ["direct"],
+      }],
+      virtualMcps: [],
+    },
+    clients,
+    [],
+    {
+      liveTools: BIFROST_CODE_MODE_TOOLS.map((name) => ({ name })),
+      codeModeProbe: {
+        ok: true,
+        bindingLevel: "server",
+        serverName: "hound",
+        fileName: "servers/hound.pyi",
+        tools: HOUND_TOOLS,
+        files: ["servers/hound.pyi"],
+      },
+    },
+  );
+  assert.equal(diagnostics.hound.capabilities.search.configured, true);
+  assert.equal(diagnostics.hound.capabilities.search.executionPolicyKnown, true);
+  assert.equal(diagnostics.hound.capabilities.search.executable, false);
+  assert.equal(diagnostics.hound.capabilities.search.available, false);
+  assert.equal(diagnostics.hound.capabilities.fetch.executable, true);
+  assert.equal(diagnostics.hound.capabilities.fetch.available, true);
+});
