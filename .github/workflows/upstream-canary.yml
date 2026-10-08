@@ -20,3 +20,15 @@ jobs:
         env:
           PIFROST_HOUND_UPSTREAM_CANARY: "1"
         run: node scripts/validate-hound-contract.mjs
+
+  omp-main:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check current OMP main contracts
+        env:
+          PIFROST_OMP_UPSTREAM_CANARY: "1"
+        run: node scripts/validate-omp-contract.mjs
