@@ -370,6 +370,10 @@ function streamDynamicPifrostRoute(
 				openrouterVariant: options?.openrouterVariant,
 				maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 				promptCache: options?.promptCache,
+				// OMP intentionally defaults stateful Responses off for third-party
+				// proxies. Keep full-context replay through Bifrost: even a one-member
+				// Pifrost route cannot prove immutable provider/key affinity plus a
+				// shared server-side response store across future turns.
 				statefulResponses: false,
 				onPayload: async (payload, requestModel, signal) => {
 					const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
