@@ -12,7 +12,11 @@ import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
-import { createBifrostCostBridgeFetch } from "./bifrost-cost-bridge.ts";
+import {
+	bridgeBifrostUsageCostStream,
+	createBifrostCostBridgeFetch,
+	type BifrostCostCapture,
+} from "./bifrost-cost-bridge.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import {
 	buildPifrostTransportModel,
@@ -277,11 +281,13 @@ function streamDynamicPifrostRoute(
 		estimatedInputTokensByMember,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
-	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch);
+	const underlyingFetch = options?.fetch ?? globalThis.fetch;
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
 
 	void runPifrostProtocolPlan(model, plan, outer, (attempt, attemptIndex) => {
+		const costCapture: BifrostCostCapture = {};
+		const baseFetch = createBifrostCostBridgeFetch(underlyingFetch, costCapture);
 		const transportModel = buildPifrostTransportModel(createPifrostAttemptModelSpec(model, attempt));
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
@@ -311,10 +317,13 @@ function streamDynamicPifrostRoute(
 				extraBody: bifrostAttemptExtraBody(attempt),
 				fetch: baseFetch,
 			};
-			return streamOpenAIResponses(
-				transportModel as Model<"openai-responses">,
-				context,
-				responseOptions,
+			return bridgeBifrostUsageCostStream(
+				streamOpenAIResponses(
+					transportModel as Model<"openai-responses">,
+					context,
+					responseOptions,
+				),
+				costCapture,
 			);
 		}
 
@@ -339,10 +348,13 @@ function streamDynamicPifrostRoute(
 				: upstreamOnPayload,
 			fetch: baseFetch,
 		};
-		return streamOpenAICompletions(
-			transportModel as Model<"openai-completions">,
-			context,
-			chatOptions,
+		return bridgeBifrostUsageCostStream(
+			streamOpenAICompletions(
+				transportModel as Model<"openai-completions">,
+				context,
+				chatOptions,
+			),
+			costCapture,
 		);
 	}).catch((error) => outer.fail(error));
 
@@ -384,7 +396,8 @@ function streamPifrostOpenAI(
 		api: "openai-completions",
 		compat: model.compatConfig,
 	} as ModelSpec<"openai-completions">);
-	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch);
+	const costCapture: BifrostCostCapture = {};
+	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
 	const upstreamOnPayload = options?.onPayload;
 	const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
 	const streamOptions: OpenAICompletionsOptions = {
@@ -409,7 +422,10 @@ function streamPifrostOpenAI(
 			outputCapExplicit: rawOptions?.maxTokens !== undefined,
 		}),
 	};
-	return streamOpenAICompletions(transportModel, context, streamOptions);
+	return bridgeBifrostUsageCostStream(
+		streamOpenAICompletions(transportModel, context, streamOptions),
+		costCapture,
+	);
 }
 
 function positiveEnvMilliseconds(name: string, fallback: number): number {
