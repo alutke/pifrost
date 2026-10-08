@@ -544,6 +544,16 @@ async function commandGlobalStatus(snapshot) {
         ? "Bifrost health:         OK"
         : `Bifrost health:         FAIL (${errorText("health")})`,
     );
+    if (probes.setup?.ok) {
+      const setup = value("setup");
+      const setupState = setup.setupRequired
+        ? `REQUIRED (token=${setup.setupTokenConfigured ? "configured" : "missing"})`
+        : "complete";
+      console.log(`Bifrost bootstrap:      ${setupState}`);
+      console.log(`Bifrost inference auth: ${setup.inferenceAuthEnforced ? "enforced" : "not enforced"}`);
+    } else if (probes.setup) {
+      console.log(`Bifrost bootstrap:      unavailable (${errorText("setup")})`);
+    }
   }
 
   if (runtime.url && runtime.virtualKey) {
@@ -591,7 +601,18 @@ async function commandGlobalStatus(snapshot) {
       const mcpAuthMode = client?.mcp_server_auth_mode ?? "headers";
       const chainDepth = client?.routing_chain_max_depth ?? "default";
       const requiredHeaders = Array.isArray(client?.required_headers) ? client.required_headers : [];
+      const compat = client?.compat && typeof client.compat === "object" ? client.compat : {};
+      const chatToResponses = typeof compat.convert_chat_to_responses === "boolean"
+        ? compat.convert_chat_to_responses
+        : undefined;
+      const reasoningToResponses = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? compat.force_reasoning_only_models_to_responses
+        : undefined;
       console.log(`Gateway config 2.x:     MCP-auth=${mcpAuthMode}, chain-depth=${chainDepth}, required-headers=${requiredHeaders.length}`);
+      console.log(`  Chat→Responses:       ${chatToResponses === undefined ? "not reported" : chatToResponses ? "enabled" : "disabled"}`);
+      if (reasoningToResponses !== undefined) {
+        console.log(`  Reasoning→Responses:  ${reasoningToResponses ? "enabled" : "disabled"} (newer Bifrost compatibility contract)`);
+      }
       if (mcpAuthMode === "oauth") {
         console.log("  WARN repo MCP configs use x-bf-vk; OAuth-only MCP gateway mode requires OMP OAuth instead of VK/header auth.");
       }
