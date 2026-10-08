@@ -72,6 +72,17 @@ export function normalizeMcpClientShape(client) {
   const instructionLimit = config?.max_instructions_length ?? client?.max_instructions_length;
   const numericInstructionLimit = Number(instructionLimit);
 
+  const rawToolsToExecute = Array.isArray(config?.tools_to_execute)
+    ? config.tools_to_execute
+    : Array.isArray(client?.tools_to_execute)
+      ? client.tools_to_execute
+      : undefined;
+  const rawToolsToAutoExecute = Array.isArray(config?.tools_to_auto_execute)
+    ? config.tools_to_auto_execute
+    : Array.isArray(client?.tools_to_auto_execute)
+      ? client.tools_to_auto_execute
+      : undefined;
+
   return {
     id,
     name,
@@ -87,16 +98,10 @@ export function normalizeMcpClientShape(client) {
     connectionType: nonEmpty(config?.connection_type) ?? nonEmpty(client?.connection_type),
     authType: nonEmpty(config?.auth_type) ?? nonEmpty(client?.auth_type),
     isCodeModeClient: Boolean(config?.is_code_mode_client ?? client?.is_code_mode_client),
-    toolsToExecute: Array.isArray(config?.tools_to_execute)
-      ? config.tools_to_execute.map(String)
-      : Array.isArray(client?.tools_to_execute)
-        ? client.tools_to_execute.map(String)
-        : [],
-    toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute)
-      ? config.tools_to_auto_execute.map(String)
-      : Array.isArray(client?.tools_to_auto_execute)
-        ? client.tools_to_auto_execute.map(String)
-        : [],
+    toolsToExecute: rawToolsToExecute?.map(String) ?? [],
+    toolsToExecuteKnown: rawToolsToExecute !== undefined,
+    toolsToAutoExecute: rawToolsToAutoExecute?.map(String) ?? [],
+    toolsToAutoExecuteKnown: rawToolsToAutoExecute !== undefined,
     needsSessionStickiness:
       typeof (config?.needs_session_stickiness ?? client?.needs_session_stickiness) === "boolean"
         ? Boolean(config?.needs_session_stickiness ?? client?.needs_session_stickiness)
