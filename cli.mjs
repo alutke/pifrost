@@ -43,6 +43,7 @@ import {
 import {
   VERSION,
   PIFROST_OMP_MIN_VERSION,
+  PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
   PIFROST_OMP_VALIDATED_VERSION,
   PIFROST_BIFROST_MIN_VERSION,
   PIFROST_BIFROST_VALIDATED_VERSION,
@@ -259,6 +260,7 @@ async function commandCompatibilityDoctor(snapshot) {
 
   printHeader("Upstream compatibility");
   console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (minimum ${PIFROST_OMP_MIN_VERSION}; validated through ${PIFROST_OMP_VALIDATED_VERSION})`);
+  console.log(`OMP policy snapshot:     ${PIFROST_OMP_POLICY_SNAPSHOT_VERSION} + Pifrost compatibility patches`);
   console.log(`  [${validationMark(matrix.ompValidation.status)}] ${matrix.ompValidation.detail}`);
   for (const item of matrix.omp) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
