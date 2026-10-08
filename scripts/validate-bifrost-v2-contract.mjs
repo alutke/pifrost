@@ -200,18 +200,17 @@ const SOURCES = [
     name: "Bifrost 2.2.6 authoritative usage-cost contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/core/schemas/chatcompletions.go`,
     required: [
-      'Cost        *BifrostCost `json:"cost,omitempty"`',
-      'TotalCost             float64',
+      "type BifrostCost struct",
       'json:"total_cost,omitempty"',
-      'MCPCost           float64',
-      'RoutingCost float64',
+      'json:"mcp_cost,omitempty"',
+      'json:"routing_cost,omitempty"',
     ],
   },
   {
     name: "Bifrost 2.2.6 Responses usage-cost contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/core/schemas/responses.go`,
     required: [
-      'Cost                *BifrostCost',
+      "*BifrostCost",
       'json:"cost,omitempty"',
     ],
   },
@@ -237,10 +236,10 @@ const SOURCES = [
     name: "current Bifrost dev authoritative usage-cost canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/core/schemas/chatcompletions.go",
     required: [
-      'Cost        *BifrostCost `json:"cost,omitempty"`',
+      "type BifrostCost struct",
       'json:"total_cost,omitempty"',
-      'MCPCost           float64',
-      'RoutingCost float64',
+      'json:"mcp_cost,omitempty"',
+      'json:"routing_cost,omitempty"',
     ],
   },
   {
