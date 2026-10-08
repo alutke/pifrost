@@ -1,6 +1,7 @@
 import type { Context, Message, Tool, Usage } from "@oh-my-pi/pi-ai";
 import {
 	estimatePifrostImageTokens,
+	estimatePifrostTextTokens,
 	type PifrostImageTokenTarget,
 } from "./omp-context-policy.ts";
 
@@ -160,13 +161,15 @@ export function estimateOmpContextInputTokens(
 }
 
 /**
- * Lightweight semantic tokenizer for unit tests and non-OMP diagnostics.
- * OMP runtime uses its model-aware Tokenizer instead.
+ * Candidate-aware semantic tokenizer used by runtime prewalk. When OMP's model
+ * policy resolves a tokenizer family, text is counted through the matching
+ * native tokenizer; unknown families fall back to the historical byte estimate.
+ * Image blocks use the candidate's OMP-compatible lineage/wire policy.
  */
-export function createApproximateContextTokenizer(
+export function createModelAwareContextTokenizer(
 	imageTarget: PifrostImageTokenTarget = { api: "openai-responses" },
 ): PifrostContextTokenizer {
-	const countText = (value: string): number => Math.ceil(new TextEncoder().encode(value).byteLength / 4);
+	const countText = (value: string): number => estimatePifrostTextTokens(value, imageTarget);
 	const countContent = (content: unknown): number => {
 		if (typeof content === "string") return countText(content);
 		if (!Array.isArray(content)) return 0;
@@ -190,7 +193,7 @@ export function createApproximateContextTokenizer(
 	};
 	return {
 		countTokens(text) {
-			return (Array.isArray(text) ? text : [text]).reduce((sum, item) => sum + countText(item), 0);
+			return estimatePifrostTextTokens(text, imageTarget);
 		},
 		countMessage(message) {
 			if (message.role === "assistant") return countContent(message.content);
@@ -199,3 +202,6 @@ export function createApproximateContextTokenizer(
 		},
 	};
 }
+
+/** Backward-compatible alias retained for tests and non-runtime callers. */
+export const createApproximateContextTokenizer = createModelAwareContextTokenizer;
