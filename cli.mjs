@@ -398,15 +398,21 @@ async function commandGlobalSetup(flags) {
     (existingManagement?.mode === "setup" ? existingManagement.setupToken : undefined);
 
   if (!explicitMode) {
-    if (flagString(flags, "management-key") || process.env.BIFROST_MANAGEMENT_API_KEY) managementMode = "bearer";
-    if (flagString(flags, "setup-token") || process.env.BIFROST_SETUP_TOKEN) managementMode = "setup";
-    if (
+    const explicitSetupToken = flagString(flags, "setup-token");
+    const explicitManagementKey = flagString(flags, "management-key");
+    const explicitBasic =
       flagString(flags, "management-username") ||
-      flagString(flags, "management-password") ||
-      process.env.BIFROST_ADMIN_USERNAME ||
-      process.env.BIFROST_ADMIN_PASSWORD
-    ) {
+      flagString(flags, "management-password");
+    if (explicitSetupToken) {
+      managementMode = "setup";
+    } else if (explicitManagementKey || process.env.BIFROST_MANAGEMENT_API_KEY) {
+      managementMode = "bearer";
+    } else if (explicitBasic || process.env.BIFROST_ADMIN_USERNAME || process.env.BIFROST_ADMIN_PASSWORD) {
       managementMode = "basic";
+    } else if (!existingManagement && process.env.BIFROST_SETUP_TOKEN) {
+      // An ambient setup token is bootstrap-only. Never let a stale token
+      // displace management credentials already saved by a completed setup.
+      managementMode = "setup";
     }
   }
 
@@ -424,7 +430,7 @@ async function commandGlobalSetup(flags) {
       if (wantManagement) {
         const selected = await ask(
           rl,
-          "Management auth mode (basic=OSS admin credentials, bearer=Enterprise API key)",
+          "Management auth mode (basic=OSS admin credentials, bearer=Enterprise API key, setup=ephemeral first-time setup token)",
           managementMode ?? "basic",
         );
         managementMode = normalizeManagementMode(selected);
