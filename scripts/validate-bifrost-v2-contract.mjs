@@ -3,6 +3,7 @@ const BIFROST_2_2_0_COMMIT = "fa3d4f2b97a25f5a0d5a233998777811b2bc05a8";
 const BIFROST_2_2_2_COMMIT = "9f0d71dba7274d8673de1e69529991035dae49e4";
 const BIFROST_2_2_3_COMMIT = "b840c82caed6919d84c21bd7be5bf7fa27a7ba17";
 const BIFROST_2_2_4_COMMIT = "ed8371a9779bfbc8aa689d4d77964cf8ce9308bf";
+const BIFROST_2_2_5_COMMIT = "77d08f241cfa10d09ea37d6b00ef9f2c363a3ede";
 const BIFROST_2_2_6_COMMIT = "8b4fce4f1709d66f9208d02f50552da522535f9e";
 
 const SOURCES = [
@@ -197,6 +198,56 @@ const SOURCES = [
     required: ['[Image Response: %s, MIME: %s]\\n'],
   },
   {
+    name: "Bifrost 2.2.5 MCP execution-policy contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_5_COMMIT}/ui/lib/types/mcp.ts`,
+    required: [
+      "tools_to_execute",
+      "tools_to_auto_execute",
+      "is_code_mode_client",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.5 Code Mode invocation enforcement contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_5_COMMIT}/core/mcp/codemode/starlark/executecode.go`,
+    required: [
+      "AuthorizeCodeModeToolCall",
+      "ToolsToAutoExecute",
+      "ToolsToExecute",
+      "actual invocation chokepoint",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.6 setup-lock status contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/transports/bifrost-http/handlers/session.go`,
+    required: [
+      "/api/session/is-auth-enabled",
+      "setup_required",
+      "setup_token_configured",
+      "inference_auth_enforced",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.6 Chat-to-Responses compatibility contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/framework/configstore/clientconfig.go`,
+    required: [
+      "ConvertChatToResponses",
+      'json:"convert_chat_to_responses"',
+      "ShouldConvertParams",
+    ],
+  },
+  {
+    name: "Bifrost 2.2.6 routed-identity response-header contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/transports/bifrost-http/lib/responseheaders.go`,
+    required: [
+      "x-bifrost-provider",
+      "x-bifrost-resolved-model",
+      "x-bifrost-fallback-index",
+      "x-bifrost-routing-info-provider",
+      "x-bifrost-routing-info-primary-provider",
+      "x-bifrost-upstream-latency-ms",
+    ],
+  },
+  {
     name: "Bifrost 2.2.6 authoritative usage-cost contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/core/schemas/chatcompletions.go`,
     required: [
@@ -240,6 +291,22 @@ const SOURCES = [
       'json:"total_cost,omitempty"',
       'json:"mcp_cost,omitempty"',
       'json:"routing_cost,omitempty"',
+    ],
+  },
+  {
+    name: "current Bifrost dev reasoning-to-Responses compatibility canary",
+    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/framework/configstore/clientconfig.go",
+    required: [
+      "ForceReasoningOnlyModelsToResponses",
+      "force_reasoning_only_models_to_responses",
+    ],
+  },
+  {
+    name: "current Bifrost dev correlation-header canary",
+    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/transports/bifrost-http/lib/responseheaders.go",
+    required: [
+      "x-bifrost-request-id",
+      "x-bifrost-trace-id",
     ],
   },
   {
