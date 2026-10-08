@@ -28,6 +28,7 @@ if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.versi
 const requiredDirectRuntimeDependencies = [
   "@oh-my-pi/pi-ai",
   "@oh-my-pi/pi-catalog",
+  "@oh-my-pi/pi-natives",
   "@oh-my-pi/pi-utils",
 ];
 for (const dependency of requiredDirectRuntimeDependencies) {
