@@ -1009,12 +1009,16 @@ async function commandRepoStatus(snapshot) {
             continue;
           }
           const execution = mcpClientExecutionDiagnostics(client, grant.tools);
+          const executableCount = execution.executePolicyKnown ? execution.executableCount : "unknown";
+          const autoCount = execution.autoPolicyKnown ? execution.autoExecutableCount : "unknown";
           console.log(
-            `  ${client.name}: granted=${execution.grantedCount} executable=${execution.executableCount} auto=${execution.autoExecutableCount}`,
+            `  ${client.name}: granted=${execution.grantedCount} executable=${executableCount} auto=${autoCount}`,
           );
           for (const row of execution.rows) {
+            const executable = row.executable === undefined ? "unknown" : row.executable ? "yes" : "no";
+            const auto = row.autoExecutable === undefined ? "unknown" : row.autoExecutable ? "yes" : "no";
             console.log(
-              `    ${row.tool}: granted=yes executable=${row.executable ? "yes" : "no"} auto=${row.autoExecutable ? "yes" : "no"}`,
+              `    ${row.tool}: granted=yes executable=${executable} auto=${auto}`,
             );
           }
           for (const warning of execution.warnings) console.log(`    WARN ${warning}`);
@@ -1048,7 +1052,9 @@ async function commandRepoStatus(snapshot) {
           : status.gatewayVisible
             ? `yes (${status.gatewayName ?? status.tool})`
             : "no";
-        console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
+        const executable = status.executePolicyKnown ? (status.executable ? "yes" : "no") : "unknown";
+        const auto = status.autoPolicyKnown ? (status.autoExecutable ? "yes" : "no") : "unknown";
+        console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} executable=${executable} auto=${auto} gateway-visible=${gateway}`);
       }
       console.log(`    search ready:   ${hound.hound.searchReady ? "yes" : "no"}`);
       console.log(`    web research:   ${hound.hound.webResearchReady ? "ready" : "incomplete"}`);
