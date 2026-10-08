@@ -152,3 +152,40 @@ test("pure-output usage is not trusted as a provider prompt anchor", () => {
 	const estimate = estimateOmpContextInputTokens(context, createApproximateContextTokenizer());
 	assert.ok(estimate < 100, `pure-output usage was incorrectly trusted as context: ${estimate}`);
 });
+
+
+test("physical-model anchor filter does not reuse usage from a different fallback member", () => {
+	const context = {
+		messages: [
+			{
+				role: "assistant",
+				content: [{ type: "text", text: "prior physical response" }],
+				api: "openai-completions",
+				provider: "bifrost",
+				model: "omp-default",
+				upstreamModel: "provider/model-a",
+				usage: {
+					input: 900_000,
+					output: 10_000,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 910_000,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: 1,
+			},
+			{ role: "user", content: "small tail", timestamp: 2 },
+		],
+	} as unknown as Context;
+
+	const tokenizer = createApproximateContextTokenizer();
+	const sameModel = estimateOmpContextInputTokens(context, tokenizer, {
+		anchorModelIds: ["provider/model-a"],
+	});
+	const differentModel = estimateOmpContextInputTokens(context, tokenizer, {
+		anchorModelIds: ["provider/model-b"],
+	});
+	assert.ok(sameModel >= 910_000);
+	assert.ok(differentModel < 100, `different physical member reused stale usage: ${differentModel}`);
+});
