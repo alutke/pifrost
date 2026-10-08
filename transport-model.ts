@@ -46,7 +46,7 @@ function ompPolicyProbeApi(provider: string, api: PifrostReasoningWithToolsApi):
 }
 
 /**
- * Resolve OMP's host-authored reasoning+tools policy for a physical upstream
+ * Resolve Pifrost's validated OMP-snapshot reasoning+tools policy for a physical upstream
  * identity without materializing a complete model. Pifrost's generic wire
  * protocol is translated to OMP's provider-specific Responses API first, so
  * provider rules such as Azure and Codex are evaluated on their authored axis.
@@ -251,10 +251,10 @@ function applyTransportCatalogAssignments<TApi extends Api>(
  * importing @oh-my-pi/pi-catalog/build.
  *
  * Compiled OMP 18.4.x has a known dependency-resolution failure when a
- * nested extension module imports pi-catalog and the loader falls back to the
- * plugin-local package graph (upstream #13731/#13940). native.ts imports the
- * supported host surface directly and injects the resolver here, keeping every
- * nested Pifrost module independent of pi-catalog at runtime.
+ * nested extension module imports pi-catalog. native.ts is the single package
+ * boundary that imports Pifrost's pinned, validated pi-catalog snapshot and
+ * injects the resolver here, keeping every nested Pifrost module independent
+ * of pi-catalog at runtime.
  *
  * This is intentionally transport-only, not a replacement for OMP's complete
  * catalog builder. Pricing and selection metadata are not recomputed here.
