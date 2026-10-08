@@ -582,6 +582,36 @@ export function versionAtLeast(version, minimum) {
   return comparison === undefined ? undefined : comparison >= 0;
 }
 
+export function compatibilityValidationStatus(version, minimum, validated) {
+  const parsed = parseSemver(version);
+  if (!parsed) {
+    return { status: "unknown", detail: "installed version is unavailable or unparseable" };
+  }
+  if (versionAtLeast(parsed, minimum) === false) {
+    return {
+      status: "unsupported",
+      detail: `installed ${parsed.version} is below minimum supported ${minimum}`,
+    };
+  }
+  const vsValidated = compareSemver(parsed, validated);
+  if (vsValidated === 0) {
+    return {
+      status: "tested-current",
+      detail: `installed ${parsed.version} matches the current validated release`,
+    };
+  }
+  if (vsValidated !== undefined && vsValidated > 0) {
+    return {
+      status: "newer",
+      detail: `installed ${parsed.version} is newer than Pifrost's validated ${validated} boundary`,
+    };
+  }
+  return {
+    status: "supported",
+    detail: `installed ${parsed.version} is within the supported ${minimum}..${validated} envelope`,
+  };
+}
+
 export function commandVersion(command) {
   const result = spawnSync(command, ["--version"], { encoding: "utf8", stdio: "pipe" });
   if (result.error || result.status !== 0) return undefined;
@@ -700,7 +730,7 @@ export async function bifrostCompatibilityMatrix({
     "Fresh Bifrost instances do not expose the setup-token lock state",
   );
   if (setupBase) {
-    results.push(setupBase);
+    results.push({ ...setupBase, optional: true });
   } else {
     const endpoint = "/api/session/is-auth-enabled";
     try {
@@ -1163,6 +1193,16 @@ export async function buildCompatibilityMatrix({
   return {
     ompVersion: ompVersion ?? undefined,
     bifrostVersion: resolvedBifrostVersion,
+    ompValidation: compatibilityValidationStatus(
+      ompVersion,
+      PIFROST_OMP_MIN_VERSION,
+      PIFROST_OMP_VALIDATED_VERSION,
+    ),
+    bifrostValidation: compatibilityValidationStatus(
+      resolvedBifrostVersion,
+      PIFROST_BIFROST_MIN_VERSION,
+      PIFROST_BIFROST_VALIDATED_VERSION,
+    ),
     omp: ompFeatures,
     bifrost: bifrostFeatures,
   };
