@@ -998,15 +998,26 @@ async function commandRepoStatus(snapshot) {
       const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
       console.log(`Live Virtual MCPs:${liveVirtual.length ? ` ${liveVirtual.join(", ")}` : " none"}`);
       if (policy.effective.length) {
-        console.log("Effective MCP tools:");
+        console.log("Effective MCP policy:");
         for (const grant of policy.effective) {
-          console.log(`  ${grant.client}[${grant.tools.join(",")}] via ${grant.sources.join("+")}`);
+          const executable = grant.executionPolicyKnown
+            ? grant.executableTools.join(",") || "none"
+            : "unknown (pre-2.2.5/field absent)";
+          const auto = grant.autoExecutionPolicyKnown
+            ? grant.autoExecutableTools.join(",") || "none"
+            : "unknown";
+          console.log(
+            `  ${grant.client} grant=[${grant.tools.join(",")}] execute=[${executable}] auto=[${auto}] via ${grant.sources.join("+")}`,
+          );
         }
       } else {
-        console.log("Effective MCP tools: none");
+        console.log("Effective MCP policy: none");
       }
       for (const item of policy.unresolved) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
+      }
+      for (const warning of policy.warnings ?? []) {
+        console.log(`  WARN ${warning}`);
       }
       console.log("Web research backends:");
       const houndState = !hound.hound.configured
