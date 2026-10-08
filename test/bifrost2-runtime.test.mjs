@@ -7,12 +7,23 @@ import {
   getBifrostVersion,
   attachVirtualMcpToVirtualKey,
   bifrostCompatibilityMatrix,
+  compatibilityValidationStatus,
   detachVirtualMcpFromVirtualKey,
   getVirtualKeyQuota,
   listVirtualMcps,
   testInference,
 } from "../cli-lib.mjs";
 import { houndMcpDiagnostics } from "../hound-diagnostics.mjs";
+
+test("compatibility validation distinguishes tested, supported and newer releases", () => {
+  assert.deepEqual(
+    compatibilityValidationStatus("2.2.6", "2.2.4", "2.2.6"),
+    { status: "tested-current", detail: "installed 2.2.6 matches the current validated release" },
+  );
+  assert.equal(compatibilityValidationStatus("2.2.5", "2.2.4", "2.2.6").status, "supported");
+  assert.equal(compatibilityValidationStatus("2.2.7", "2.2.4", "2.2.6").status, "newer");
+  assert.equal(compatibilityValidationStatus("2.2.3", "2.2.4", "2.2.6").status, "unsupported");
+});
 
 test("Bifrost 2.x control-plane probes and VK-only inference use canonical endpoints", async () => {
   const requests = [];
