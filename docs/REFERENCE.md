@@ -230,6 +230,8 @@ There are two live verification paths:
 
 The Code Mode probe is deliberately non-destructive. It never invokes Hound search/fetch/crawl/screenshot, never launches Hound's browser and never makes an Internet research request. Nested Hound calls remain governed by Bifrost's repository Virtual Key and its `tools_to_execute` policy.
 
+On Bifrost 2.2.5+, Pifrost distinguishes three authorization states: repository-granted, client-executable (`tools_to_execute`), and approval-free (`tools_to_auto_execute`). The execute list is the hard invocation boundary and the auto-execute list is a subset. A tool that is granted/discoverable but explicitly absent from `tools_to_execute` is reported as unavailable. If an older or legacy management response omits these policy fields entirely, Pifrost reports execution state as **unknown** rather than incorrectly treating the omission as an explicit deny-all. Wildcard auto-execution is reported as a warning; Pifrost never rewrites the client policy.
+
 Capability reporting is derived rather than binary:
 
 - `searchReady`: search is available.
@@ -315,7 +317,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.2
+0.9.1
 ```
 
 Bun can also install the package globally:
@@ -797,25 +799,33 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ```text
 Upstream compatibility
-OMP version:             18.8.4 (minimum 18.4.5; validated through 18.8.4)
-  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.4
-  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.4
-  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.4
-  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.4
-  [OK] OMP model presets >=18.4.5 — available in OMP 18.8.4
-Bifrost version:         2.2.4 (Pifrost baseline 2.2.4)
+OMP version:             18.8.5 (minimum 18.4.5; validated through 18.8.5)
+  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.5
+  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.5
+  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.5
+  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.5
+  [OK] OMP model presets >=18.4.5 — available in OMP 18.8.5
+Bifrost version:         2.2.6 (minimum 2.2.4; validated through 2.2.6)
+  [OK] First-time setup lock >=2.2.6 — setup complete; dashboard auth=enabled, inference auth=enforced
+  [OK] Chat→Responses compatibility adapter >=2.2.6 — convert_chat_to_responses=enabled; reasoning-with-tools adapter=not released by Bifrost 2.2.6
   [OK] Virtual MCPs >=2.2.0 — live API contract verified
   [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
   [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable
   [OK] Pinned routing fallbacks >=2.2.3 — version contract satisfied; routing API verified
   [OK] Quota SourceRef provenance >=2.2.3 — live quota contract verified
-  [OK] Deferred Tool Search >=2.2.4 — available in Bifrost 2.2.4
-  [OK] Between-tools thinking >=2.2.4 — available in Bifrost 2.2.4
-  [OK] Service-tier capability metadata >=2.2.4 — available in Bifrost 2.2.4
+  [OK] Code Mode execution allow-list enforcement >=2.2.5 — available in Bifrost 2.2.6
+  [OK] Routed-identity response headers >=2.2.6 — available in Bifrost 2.2.6
+  [OK] Deferred Tool Search >=2.2.4 — available in Bifrost 2.2.6
+  [OK] Between-tools thinking >=2.2.4 — available in Bifrost 2.2.6
+  [OK] Service-tier capability metadata >=2.2.4 — available in Bifrost 2.2.6
 Compatibility summary:  OK
 ```
 
 The four states are **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible).
+
+Bifrost 2.2.6 exposes first-run state on `/api/session/is-auth-enabled`. Pifrost reports whether setup is complete and whether inference authentication is enforced. Setup-token credentials may be supplied only ephemerally for first-run diagnostics/bootstrap and are never persisted.
+
+The released protocol-conversion check reads `client_config.compat.convert_chat_to_responses`. Bifrost 2.2.6 can convert a Chat request to Responses when Chat is unsupported and Responses is supported. The separate `force_reasoning_only_models_to_responses` behavior is still treated as an upstream-dev canary until Bifrost publishes it; Pifrost does not assume unreleased conversion behavior.
 
 Release CI validates both the minimum supported OMP loader and the current validated OMP release. A separate scheduled canary checks the same current-contract surfaces against OMP `main`, so upstream image-tokenisation, provider-cost, preset or related compatibility drift is detected without making unreleased upstream code a release dependency.
 
@@ -1335,6 +1345,10 @@ At request time Pifrost estimates prompt demand with a conservative safety allow
 Pifrost natively executes two OpenAI-family wire transports: `openai-responses` and `openai-completions`. Each group is dispatched through OMP's own native transport for that protocol. Adjacent members that share a protocol stay together and are supplied to Bifrost using its native top-level `fallbacks` array, so Bifrost remains responsible for credentials, governance, accounting, provider retries and same-protocol failover. If an entire group fails before producing model output, Pifrost advances to the next protocol group. The initial stream-start envelope is buffered during this decision. Once any real text, thinking or tool output is emitted, cross-protocol replay is forbidden to avoid duplicate or contradictory assistant output.
 
 The original logical role remains the OMP-facing model identity. Pifrost records the selected physical member as the upstream model and sends route diagnostics such as `x-pifrost-logical-model`, `x-pifrost-route-protocol`, `x-pifrost-route-attempt` and `x-pifrost-route-primary` to Bifrost.
+
+Each inference attempt also captures Bifrost's routed-identity response headers. `/pifrost trace` shows recent per-session provenance including requested logical/physical route, actual provider/model, Bifrost fallback index, upstream latency, request cost and—when the connected Bifrost build exposes it—`x-bifrost-request-id`. `/pifrost doctor` includes the same process-local trace view.
+
+Pifrost intentionally keeps OMP stateful Responses chaining disabled through Bifrost. `previous_response_id` assumes the next request reaches a compatible server-side response store; even a currently single-member Pifrost route cannot prove that future Bifrost routing, provider-key affinity or provider state will remain immutable. Full-context replay therefore remains the safe proxy behavior.
 
 Protocol is provider-qualified. Pifrost can therefore treat `opencode-go/muse-spark-1.3-contributor` as OpenAI Responses-only while independently treating a similarly named model on another provider according to that provider's transport contract. Protocol provenance is resolved in this order: authoritative live Bifrost `supported_methods`; OMP's compiled provider `api-routes` policy (`apiRouteFor`), which is provider-qualified and covers gateway-only ids absent from the static bundle; Bifrost model-parameter `supported_endpoints`; provider-qualified bundled catalog metadata; then narrowly scoped verified hints. Provider-specific route policy intentionally outranks generic family datasheet matches so a Chat-capable sibling provider cannot make a Responses-only OpenCode Go route appear Chat-compatible. Unknown protocol metadata retains the historical Chat-compatible default unless another established capability excludes it.
 
