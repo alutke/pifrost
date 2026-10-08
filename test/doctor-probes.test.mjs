@@ -13,6 +13,16 @@ test("doctor snapshot fans out read-only Bifrost probes once", async () => {
 
     if (url.pathname === "/api/version") return response.end(JSON.stringify({ version: "2.2.3" }));
     if (url.pathname === "/health") return response.end(JSON.stringify({ status: "ok" }));
+    if (url.pathname === "/api/session/is-auth-enabled") {
+      return response.end(JSON.stringify({
+        is_auth_enabled: true,
+        has_valid_token: false,
+        auth_type: "session",
+        inference_auth_enforced: true,
+        setup_required: false,
+        setup_token_configured: true,
+      }));
+    }
     if (url.pathname === "/v1/models") return response.end(JSON.stringify({ data: [{ id: "demo" }] }));
     if (url.pathname === "/api/governance/virtual-keys/quota") {
       return response.end(JSON.stringify({ budgets: [], rate_limits: [], provider_configs: [], model_configs: [] }));
@@ -44,10 +54,11 @@ test("doctor snapshot fans out read-only Bifrost probes once", async () => {
       managementAuth: { mode: "basic", username: "admin", password: "secret" },
     });
 
-    for (const key of ["version", "health", "inference", "quota", "management", "routing", "gateway", "complexity", "mcpClients", "virtualMcps", "skills"]) {
+    for (const key of ["version", "health", "setup", "inference", "quota", "management", "routing", "gateway", "complexity", "mcpClients", "virtualMcps", "skills"]) {
       assert.equal(snapshot[key].ok, true, `${key} should be successful`);
     }
     assert.equal(hits.get("/api/version"), 1);
+    assert.equal(hits.get("/api/session/is-auth-enabled"), 1);
     assert.equal(hits.get("/v1/models"), 1);
     assert.equal(hits.get("/api/governance/virtual-keys/quota"), 1);
     assert.equal(hits.get("/api/mcp/virtual-mcps"), 1);
