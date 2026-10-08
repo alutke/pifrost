@@ -1,3 +1,13 @@
+## 0.9.1 — 2026-10-08
+
+- Completed the Bifrost 2.2.6 protocol-compatibility diagnostics by reading the released `client_config.compat.convert_chat_to_responses` setting. The newer reasoning-with-tools-to-Responses flag remains advisory until Bifrost releases it.
+- Corrected MCP execution diagnostics so an absent legacy `tools_to_execute` / `tools_to_auto_execute` field is reported as **unknown**, not as an explicit deny-all. A present empty execute list still means deny-all.
+- Made Hound readiness respect Bifrost's actual execution boundary: a tool can be granted/discoverable yet unavailable when `tools_to_execute` denies it; legacy/unknown policy does not create a false negative.
+- Added release-contract validation for Bifrost 2.2.5 Code Mode invocation enforcement and the stable Bifrost 2.2.6 Chat→Responses compatibility setting.
+- Advanced the validated OMP current-release lane from 18.8.4 to 18.8.5 while retaining 18.4.5 as the minimum supported OMP baseline.
+- Kept OMP stateful Responses disabled through Bifrost. Pifrost cannot prove immutable provider/key routing plus a common server-side response store across future turns, so full-context replay remains the safe proxy mode.
+- No physical route ordering, provider preference, quota policy, pricing policy, Bifrost same-protocol fallback ownership, or MCP configuration is changed by this release.
+
 ## 0.9.0 — 2026-10-08
 
 - Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Text now uses OMP's native tokenizer family when the candidate exposes one, image blocks use OMP-aligned model/dimension-aware accounting, and trustworthy usage anchors are reused only for the physical upstream model that produced them.
