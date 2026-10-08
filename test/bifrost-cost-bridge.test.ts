@@ -104,3 +104,36 @@ test("applies captured Bifrost total to OMP-shaped parsed usage", () => {
 	assert.equal(usage.cost.input, 0.03);
 	assert.equal(usage.cost.output, 0.03);
 });
+
+
+test("captures Bifrost routed identity and request provenance headers", async () => {
+	const capture: import("../bifrost-cost-bridge.ts").BifrostCostCapture = {};
+	const response = new Response(JSON.stringify({ usage: { prompt_tokens: 1, completion_tokens: 1 } }), {
+		headers: {
+			"content-type": "application/json",
+			"x-bifrost-request-id": "req-123",
+			"x-bifrost-provider": "deepseek",
+			"x-bifrost-resolved-model": "deepseek-v4.1-flash",
+			"x-bifrost-original-model": "omp-default",
+			"x-bifrost-fallback-index": "1",
+			"x-bifrost-routing-info-is-fallback": "true",
+			"x-bifrost-routing-info-primary-provider": "commandcode-goat",
+			"x-bifrost-routing-info-primary-model": "deepseek-v4.1-flash",
+			"x-bifrost-request-type": "chat_completion",
+			"x-bifrost-upstream-latency-ms": "123.45",
+		},
+	});
+	await bridgeBifrostUsageCostResponse(response, capture);
+	assert.deepEqual(capture, {
+		requestId: "req-123",
+		provider: "deepseek",
+		originalModel: "omp-default",
+		resolvedModel: "deepseek-v4.1-flash",
+		fallbackIndex: 1,
+		isFallback: true,
+		primaryProvider: "commandcode-goat",
+		primaryModel: "deepseek-v4.1-flash",
+		requestType: "chat_completion",
+		upstreamLatencyMs: 123.45,
+	});
+});
