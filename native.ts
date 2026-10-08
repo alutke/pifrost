@@ -64,7 +64,7 @@ import {
 import { augmentLiveInventoryForRoutes } from "./route-inventory.ts";
 import { createBifrostUsageProvider } from "./bifrost-usage.ts";
 import {
-	createApproximateContextTokenizer,
+	createModelAwareContextTokenizer,
 	estimateOmpContextInputTokens,
 } from "./context-estimator.ts";
 import {
@@ -305,9 +305,10 @@ function streamDynamicPifrostRoute(
 			);
 			const estimate = estimateOmpContextInputTokens(
 				context,
-				createApproximateContextTokenizer({
+				createModelAwareContextTokenizer({
 					id: candidate.id,
 					api: candidate.api,
+					tokenizer: candidate.tokenizer,
 					identity: candidate.identity,
 				}),
 				{
@@ -326,7 +327,7 @@ function streamDynamicPifrostRoute(
 	}
 	const estimatedInputTokens = estimateOmpContextInputTokens(
 		context,
-		createApproximateContextTokenizer({ api: model.api, identity: model.identity, id: model.id }),
+		createModelAwareContextTokenizer({ api: model.api, identity: model.identity, id: model.id, tokenizer: model.tokenizer }),
 	);
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
 		estimatedInputTokens,
