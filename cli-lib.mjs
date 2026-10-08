@@ -37,8 +37,9 @@ export const MCP_SCHEMA_URL =
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
 export const PIFROST_OMP_MIN_VERSION = "18.4.5";
-export const PIFROST_OMP_VALIDATED_VERSION = "18.8.4";
+export const PIFROST_OMP_VALIDATED_VERSION = "18.8.5";
 export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
+export const PIFROST_BIFROST_VALIDATED_VERSION = "2.2.6";
 
 export const ROLE_MAP = Object.freeze({
   default: "bifrost/omp-default",
@@ -273,6 +274,20 @@ export async function getBifrostVersion(url) {
 export async function getBifrostHealth(url) {
   const base = bifrostManagementBase(url);
   return requestJson(`${base}/health`, { timeoutMs: 8_000 });
+}
+
+export async function getBifrostAuthStatus(url) {
+  const base = bifrostManagementBase(url);
+  const body = await requestJson(`${base}/api/session/is-auth-enabled`, { timeoutMs: 8_000 });
+  const booleanField = (name) => typeof body?.[name] === "boolean" ? body[name] : undefined;
+  return {
+    dashboardAuthEnabled: booleanField("is_auth_enabled"),
+    inferenceAuthEnforced: booleanField("inference_auth_enforced"),
+    setupRequired: booleanField("setup_required"),
+    setupTokenConfigured: booleanField("setup_token_configured"),
+    authType: nonEmpty(body?.auth_type),
+    raw: body,
+  };
 }
 
 export async function getVirtualKeyQuota(url, virtualKey) {
