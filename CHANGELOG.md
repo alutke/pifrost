@@ -1,3 +1,10 @@
+## Unreleased
+
+- Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Image blocks now use dependency-free OMP-aligned, model/dimension-aware token accounting; trustworthy usage anchors are reused only for the physical upstream model that produced them.
+- Added an OMP compatibility envelope with release CI against the minimum loader and the current validated OMP 18.8.4 binary, plus a scheduled contract canary against OMP `main`. `pifrost doctor` now reports both the minimum and the current validated OMP boundary.
+- Added a streaming-safe Bifrost cost bridge. When Bifrost returns its nested authoritative `usage.cost.total_cost` shape, Pifrost exposes that total to OMP as provider-reported cost while retaining the original Bifrost breakdown for diagnostics; JSON and SSE responses are both supported.
+- Kept routing ownership unchanged: Pifrost still performs compatibility/context prewalk only, while Bifrost remains authoritative for provider/model ordering, same-protocol fallback, governance and billing.
+
 ## 0.8.10 — 2026-10-02
 
 - Corrected the incomplete 0.8.9 reasoning-with-tools fix. The live `openai/gpt-6.1-sol` route could still resolve to `reasoningWithTools=false` because Pifrost inferred provider policy by combining multiple bundled OMP catalogue families; that ambiguity allowed the stale Bifrost model-parameters value to win.
@@ -60,8 +67,6 @@
 - Added regressions for mixed-content recovery, native-image pass-through, malformed/unsupported/oversized markers, Bifrost tool scoping, `@vision` delegation and image-capable active-model bypass.
 
 # Changelog
-
-## Unreleased
 
 ## 0.8.3 — 2026-09-30
 
