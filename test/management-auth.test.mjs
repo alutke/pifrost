@@ -26,6 +26,18 @@ test("builds Bearer auth for Bifrost Enterprise scoped API keys", () => {
   assert.equal(managementAuthLabel({ mode: "bearer", apiKey: "ent-key" }), "bearer (Enterprise scoped API key)");
 });
 
+test("uses Bifrost setup token ephemerally from environment", () => {
+  const state = { config: { bifrost: {} }, secrets: {} };
+  assert.deepEqual(managementAuthFromState(state, { BIFROST_SETUP_TOKEN: "setup-secret" }), {
+    mode: "setup",
+    setupToken: "setup-secret",
+  });
+  assert.deepEqual(managementHeaders({ mode: "setup", setupToken: "setup-secret" }), {
+    "X-Bifrost-Setup-Token": "setup-secret",
+  });
+  assert.equal(managementAuthLabel({ mode: "setup", setupToken: "setup-secret" }), "setup token (ephemeral)");
+});
+
 test("retains 0.2.0 managementApiKey stores as backward-compatible bearer auth", () => {
   const state = {
     config: { bifrost: {} },
