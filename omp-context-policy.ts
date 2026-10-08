@@ -1,4 +1,4 @@
-import { parseImageMetadata } from "@oh-my-pi/pi-utils";
+import { parseImageMetadata } from "@oh-my-pi/pi-utils/mime";
 
 export type PifrostImageDetail = "auto" | "low" | "high" | "original";
 
