@@ -38,6 +38,16 @@ const HEADER_BASE64_CHARS = 4 * Math.ceil((64 * 1024) / 3);
 const OPENAI_PATCH_PX = 32;
 const ANTHROPIC_PATCH_PX = 28;
 
+const PNG_MAGIC = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const JPEG_MAGIC = Uint8Array.from([0xff, 0xd8, 0xff]);
+const GIF87A = new TextEncoder().encode("GIF87a");
+const GIF89A = new TextEncoder().encode("GIF89a");
+const WEBP_RIFF_MAGIC = new TextEncoder().encode("RIFF");
+const WEBP_MAGIC = new TextEncoder().encode("WEBP");
+const WEBP_VP8X = new TextEncoder().encode("VP8X");
+const WEBP_VP8L = new TextEncoder().encode("VP8L");
+const WEBP_VP8 = new TextEncoder().encode("VP8 ");
+
 export type PifrostTextTokenCounter = (value: string | string[], tokenizer: string) => number;
 
 let hostTextTokenCounter: PifrostTextTokenCounter | undefined;
