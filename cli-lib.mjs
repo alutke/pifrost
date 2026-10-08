@@ -41,6 +41,7 @@ export const MCP_SCHEMA_URL =
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
 export const PIFROST_OMP_MIN_VERSION = "18.4.5";
+export const PIFROST_OMP_POLICY_SNAPSHOT_VERSION = "18.4.5";
 export const PIFROST_OMP_VALIDATED_VERSION = "18.8.4";
 export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
 export const PIFROST_BIFROST_VALIDATED_VERSION = "2.2.6";
@@ -207,8 +208,11 @@ export function runtimeConfigFromState(state, env = process.env) {
  *
  * OSS uses the dashboard/admin username and password over HTTP Basic auth.
  * Enterprise can instead use a scoped management API key over Bearer auth.
- * Environment variables override the stored configuration. A pre-0.2.1
- * `managementApiKey` is retained as a backward-compatible bearer credential.
+ * Normal management environment variables override stored configuration.
+ * BIFROST_SETUP_TOKEN is intentionally weaker: unless setup mode is requested
+ * explicitly, stored Basic/Bearer credentials outrank it so a stale bootstrap
+ * token cannot break a completed installation. A pre-0.2.1 `managementApiKey`
+ * is retained as a backward-compatible bearer credential.
  */
 export function managementAuthFromState(state, env = process.env) {
   const requestedMode = nonEmpty(env.BIFROST_MANAGEMENT_AUTH_MODE)?.toLowerCase();
