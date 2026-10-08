@@ -45,6 +45,7 @@ import {
   PIFROST_OMP_MIN_VERSION,
   PIFROST_OMP_VALIDATED_VERSION,
   PIFROST_BIFROST_MIN_VERSION,
+  PIFROST_BIFROST_VALIDATED_VERSION,
   PifrostHttpError,
   aliasManifestPath,
   attachVirtualMcpToVirtualKey,
@@ -59,6 +60,7 @@ import {
   getRepoRoot,
   getBifrostVersion,
   getBifrostHealth,
+  getBifrostSetupState,
   getOmpVersion,
   getBifrostConfig,
   getVirtualKeyQuota,
@@ -252,7 +254,7 @@ async function commandCompatibilityDoctor(snapshot) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
-  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (Pifrost baseline ${PIFROST_BIFROST_MIN_VERSION})`);
+  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (minimum ${PIFROST_BIFROST_MIN_VERSION}; validated through ${PIFROST_BIFROST_VALIDATED_VERSION})`);
   for (const item of matrix.bifrost) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
@@ -335,7 +337,7 @@ function normalizeManagementMode(value) {
   const mode = String(value).trim().toLowerCase();
   if (["basic", "oss", "admin"].includes(mode)) return "basic";
   if (["bearer", "enterprise", "api-key", "apikey"].includes(mode)) return "bearer";
-  throw new Error("Management auth mode must be `basic` (Bifrost OSS) or `bearer` (Bifrost Enterprise)");
+  throw new Error("Management auth mode must be `basic` (Bifrost OSS), `bearer` (Bifrost Enterprise), or `setup` (ephemeral first-time setup token)");
 }
 
 function buildManagementAuth(mode, username, password, apiKey) {
@@ -345,6 +347,10 @@ function buildManagementAuth(mode, username, password, apiKey) {
       throw new Error("Bifrost OSS management auth requires both --management-username and --management-password");
     }
     return { mode: "basic", username, password };
+  }
+  if (mode === "setup") {
+    if (!apiKey) throw new Error("Bifrost setup-token auth requires --setup-token or BIFROST_SETUP_TOKEN");
+    return { mode: "setup", setupToken: apiKey };
   }
   if (!apiKey) throw new Error("Bifrost Enterprise management auth requires --management-key");
   return { mode: "bearer", apiKey };
@@ -372,9 +378,14 @@ async function commandGlobalSetup(flags) {
     flagString(flags, "management-key") ??
     process.env.BIFROST_MANAGEMENT_API_KEY ??
     (existingManagement?.mode === "bearer" ? existingManagement.apiKey : undefined);
+  let setupToken =
+    flagString(flags, "setup-token") ??
+    process.env.BIFROST_SETUP_TOKEN ??
+    (existingManagement?.mode === "setup" ? existingManagement.setupToken : undefined);
 
   if (!explicitMode) {
     if (flagString(flags, "management-key") || process.env.BIFROST_MANAGEMENT_API_KEY) managementMode = "bearer";
+    if (flagString(flags, "setup-token") || process.env.BIFROST_SETUP_TOKEN) managementMode = "setup";
     if (
       flagString(flags, "management-username") ||
       flagString(flags, "management-password") ||
@@ -407,16 +418,24 @@ async function commandGlobalSetup(flags) {
           managementUsername = await ask(rl, "Bifrost admin username", managementUsername);
           managementPassword = await askSecret(rl, "Bifrost admin password", managementPassword);
           managementApiKey = undefined;
+          setupToken = undefined;
+        } else if (managementMode === "setup") {
+          setupToken = await askSecret(rl, "Bifrost first-time setup token (ephemeral; never stored by Pifrost)", setupToken);
+          managementUsername = undefined;
+          managementPassword = undefined;
+          managementApiKey = undefined;
         } else {
           managementApiKey = await askSecret(rl, "Enterprise scoped management API key", managementApiKey);
           managementUsername = undefined;
           managementPassword = undefined;
+          setupToken = undefined;
         }
       } else {
         managementMode = undefined;
         managementUsername = undefined;
         managementPassword = undefined;
         managementApiKey = undefined;
+        setupToken = undefined;
       }
     });
   }
@@ -425,11 +444,23 @@ async function commandGlobalSetup(flags) {
     throw new Error("Bifrost URL and global inference Virtual Key are required");
   }
   url = normalizeBifrostUrl(url);
+  let setupState;
+  try {
+    setupState = await getBifrostSetupState(url);
+  } catch {
+    setupState = undefined;
+  }
+  if (setupState?.setupRequired && !setupToken && managementMode !== "setup" && !flags["skip-test"]) {
+    throw new Error(
+      "Bifrost first-time setup is incomplete. Complete the Bifrost setup-token flow first, or rerun with --setup-token / BIFROST_SETUP_TOKEN for an ephemeral bootstrap check. Pifrost will not store the setup token.",
+    );
+  }
+  if (setupToken && !managementMode) managementMode = "setup";
   const managementAuth = buildManagementAuth(
     managementMode,
     managementUsername,
     managementPassword,
-    managementApiKey,
+    managementMode === "setup" ? setupToken : managementApiKey,
   );
 
   if (!flags["skip-test"]) {
@@ -459,6 +490,7 @@ async function commandGlobalSetup(flags) {
     state.config.bifrost.managementAuthMode = "bearer";
     state.secrets.managementApiKey = managementAuth.apiKey;
   } else {
+    // Setup-token auth is intentionally ephemeral and is never persisted.
     delete state.config.bifrost.managementAuthMode;
   }
 
