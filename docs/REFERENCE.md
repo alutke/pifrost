@@ -712,7 +712,7 @@ The evaluator mirrors Bifrost's semantics: Go weekday numbering (Sunday=0), IANA
 
 The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate.
 
-At inference time, Bifrost 2.2.x may return its authoritative nested request-cost breakdown in `usage.cost`, including `total_cost`. Pifrost translates that total into the scalar provider-reported cost shape OMP's OpenAI-compatible transports consume, while retaining the original nested breakdown as `pifrost_bifrost_cost`. This translation is opportunistic: when Bifrost does not emit a nested cost object, OMP's normal catalogue estimate remains unchanged. Pifrost does not recalculate Bifrost's service-tier, long-context, cache, custom-price or ancillary-cost rules itself.
+At inference time, Bifrost 2.2.x may return its authoritative nested request-cost breakdown in `usage.cost`, including `total_cost`. Pifrost captures that total while streaming the response, preserves the original nested breakdown on the compatibility payload as `pifrost_bifrost_cost`, and applies the authoritative total to OMP's parsed usage event. This post-parse step is required because OMP only trusts scalar provider-reported cost automatically for selected native gateway providers, not the logical `bifrost` provider. The translation is opportunistic: when Bifrost does not emit a nested cost object, OMP's normal catalogue estimate remains unchanged. Pifrost does not recalculate Bifrost's service-tier, long-context, cache, custom-price or ancillary-cost rules itself.
 
 ---
 
