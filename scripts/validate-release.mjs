@@ -231,6 +231,10 @@ try {
   if (!existsSync(installedPiUtils)) {
     fail("installed package is missing direct runtime dependency @oh-my-pi/pi-utils");
   }
+  const installedPiNatives = join(installRoot, "node_modules", "@oh-my-pi", "pi-natives", "package.json");
+  if (!existsSync(installedPiNatives)) {
+    fail("installed package is missing direct runtime dependency @oh-my-pi/pi-natives");
+  }
 
   const installedEntry = installedPackage.bin?.pifrost;
   if (typeof installedEntry !== "string" || !installedEntry.trim()) {
