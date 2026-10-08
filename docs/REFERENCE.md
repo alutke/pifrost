@@ -710,7 +710,9 @@ resolved deepseek/deepseek-v4-flash -> deepseek/deepseek-v4-flash
 
 The evaluator mirrors Bifrost's semantics: Go weekday numbering (Sunday=0), IANA timezones, half-open `[start,end)` windows, midnight wrapping, `24:00` as an end-of-day marker, and fail-closed peak pricing for malformed schedules. The displayed band is evaluated when the doctor report is rendered, so a cached catalog does not freeze an old peak/off-peak state.
 
-The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate; Pifrost does not claim an override-aware effective bill unless Bifrost exposes that provenance on the diagnostic surface.
+The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate.
+
+At inference time, Bifrost 2.2.x may return its authoritative nested request-cost breakdown in `usage.cost`, including `total_cost`. Pifrost captures that total while streaming the response, preserves the original nested breakdown on the compatibility payload as `pifrost_bifrost_cost`, and applies the authoritative total to OMP's parsed usage event. This post-parse step is required because OMP only trusts scalar provider-reported cost automatically for selected native gateway providers, not the logical `bifrost` provider. The translation is opportunistic: when Bifrost does not emit a nested cost object, OMP's normal catalogue estimate remains unchanged. Pifrost does not recalculate Bifrost's service-tier, long-context, cache, custom-price or ancillary-cost rules itself.
 
 ---
 
@@ -790,12 +792,12 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ```text
 Upstream compatibility
-OMP version:             18.4.5 (Pifrost minimum 18.4.5)
-  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.4.5
-  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.4.5
-  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.4.5
-  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.4.5
-  [OK] OMP model presets >=18.4.5 — available in OMP 18.4.5
+OMP version:             18.8.4 (minimum 18.4.5; validated through 18.8.4)
+  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.4
+  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.4
+  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.4
+  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.4
+  [OK] OMP model presets >=18.4.5 — available in OMP 18.8.4
 Bifrost version:         2.2.4 (Pifrost baseline 2.2.4)
   [OK] Virtual MCPs >=2.2.0 — live API contract verified
   [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
@@ -809,6 +811,8 @@ Compatibility summary:  OK
 ```
 
 The four states are **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible).
+
+Release CI validates both the minimum supported OMP loader and the current validated OMP release. A separate scheduled canary checks the same current-contract surfaces against OMP `main`, so upstream image-tokenisation, provider-cost, preset or related compatibility drift is detected without making unreleased upstream code a release dependency.
 
 Session affinity has no read-only discovery endpoint, so its check combines the Bifrost >=2.2.2 contract with a live inference-path probe. Pinned fallbacks similarly combine the >=2.2.3 contract with the routing API and validate object fallback shape when such fallbacks are present. The doctor never creates, edits or deletes Bifrost configuration.
 
@@ -1327,7 +1331,7 @@ Protocol is provider-qualified. Pifrost can therefore treat `opencode-go/muse-sp
 
 For example, `Responses Muse 1M -> Chat CommandCode 1M -> Chat DeepSeek 1.048M` becomes two attempts: Muse first through Bifrost `/v1/responses`, followed only on a pre-output failure by one Chat attempt whose Bifrost fallback chain is CommandCode then DeepSeek. For OpenCode Go, Pifrost presents the bare upstream model identity to OMP's provider-policy resolver while retaining the full `opencode-go/...` reference as `requestModelId` for Bifrost. This preserves OMP's OpenCode-specific Responses replay/tool/reasoning semantics without bypassing Bifrost. Prewalk remains active for eligible `context-aware` routes even when all members have equal context windows, because protocol/tool/image compatibility can still differ.
 
-Request-time context sizing on the native OMP path follows OMP's semantic token-accounting model rather than `JSON.stringify()` size. Pifrost uses OMP's model-aware `Tokenizer`; the newest trustworthy provider usage report can anchor the established prefix, after which only the locally-added tail is estimated. Without an anchor, Pifrost counts system prompt text, active/inactive tool schemas and semantic message content. OMP-internal metadata such as timestamps, usage objects, routing/provider payloads and tool-result `details` is deliberately excluded because it is not model prompt content. A 10% margin is applied to locally counted tokens, matching OMP's output-budget tolerance for tokenizer disagreement. The older serialized-body estimator remains only as a fallback when the native OMP semantic estimate is unavailable.
+Request-time context sizing on the native OMP path follows OMP's semantic token-accounting model rather than `JSON.stringify()` size, while deliberately remaining free of `pi-agent-core` / `pi-natives` so clean GitHub plugin installs remain portable. Pifrost applies OMP-aligned model/dimension-aware image-token rules and computes a separate semantic prompt estimate for each physical route candidate. Text fragments use the dependency-free local estimator with a 10% disagreement margin. A trustworthy provider usage report can anchor the established prefix only when its recorded physical upstream model matches the candidate being evaluated; cross-provider/fallback usage is not reused. Without a valid anchor, Pifrost counts system prompt text, active/inactive tool schemas and semantic message content. OMP-internal metadata such as timestamps, usage objects, routing/provider payloads and tool-result `details` is deliberately excluded because it is not model prompt content. The older serialized-body estimator remains only as a fallback for non-native/final-wire paths.
 
 Reasoning-with-tools and reasoning-with-`tool_choice` are distinct compatibility dimensions. Bifrost's `supports_reasoning_with_tool_calls` controls whether reasoning can coexist with an offered tool set. OMP's `disableReasoningOnToolChoice` controls a narrower wire-policy case: reasoning must be suppressed when a `tool_choice` selector is actually serialized. Tool definitions alone do not trigger that selector rule. Pifrost carries both properties independently through enrichment, alias synthesis and runtime prewalk.
 

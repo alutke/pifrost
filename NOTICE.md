@@ -7,3 +7,5 @@ The upstream project is MIT licensed. Its MIT license text is retained in `LICEN
 Pifrost adds routing-alias capability synthesis, conservative capability-envelope calculation, alias diagnostics, and OhMyPi-oriented configuration.
 
 The `/pifrost doctor` concept was inspired by the diagnostics approach in [`the-matt-moo/pi-bifrost`](https://github.com/the-matt-moo/pi-bifrost); no prompt-routing implementation from that project is incorporated here.
+
+Pifrost's dependency-free image-token accounting mirrors the public compatibility rules and sizing formulas used by OhMyPi for OpenAI-, Anthropic-, and Gemini-family image inputs. OhMyPi is MIT licensed; Pifrost keeps this logic isolated as a compatibility policy so it can be contract-tested against current OMP releases without importing OMP's native tokenizer runtime.

@@ -29,7 +29,7 @@ jobs:
         run: node scripts/validate-bifrost-v2-contract.mjs
       - name: Validate Hound MCP contract
         run: node scripts/validate-hound-contract.mjs
-      - name: Validate released OMP 18.4.5 contracts
+      - name: Validate minimum and current OMP contracts
         run: node scripts/validate-omp-contract.mjs
       - name: Validate with released OMP 18.4.5 CLI/plugin loader
         run: |
@@ -46,6 +46,18 @@ jobs:
             --output "$OMP_BIN"
           chmod +x "$OMP_BIN"
           export HOME="$RUNNER_TEMP/omp-home-compiled"
+          mkdir -p "$HOME"
+          "$OMP_BIN" --version
+          "$OMP_BIN" install . --force
+          "$OMP_BIN" plugin list
+      - name: Validate with current OMP 18.8.4 release binary
+        run: |
+          OMP_BIN="$RUNNER_TEMP/omp-18.8.4"
+          curl --fail --location --silent --show-error \
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.8.4/omp-linux-x64" \
+            --output "$OMP_BIN"
+          chmod +x "$OMP_BIN"
+          export HOME="$RUNNER_TEMP/omp-home-current"
           mkdir -p "$HOME"
           "$OMP_BIN" --version
           "$OMP_BIN" install . --force

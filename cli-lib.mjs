@@ -37,6 +37,7 @@ export const MCP_SCHEMA_URL =
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
 export const PIFROST_OMP_MIN_VERSION = "18.4.5";
+export const PIFROST_OMP_VALIDATED_VERSION = "18.8.4";
 export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
 
 export const ROLE_MAP = Object.freeze({

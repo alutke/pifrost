@@ -1,11 +1,24 @@
 import type { Context, Message, Tool, Usage } from "@oh-my-pi/pi-ai";
+import {
+	estimatePifrostImageTokens,
+	type PifrostImageTokenTarget,
+} from "./omp-context-policy.ts";
 
 const PROMPT_ESTIMATE_MARGIN_DIVISOR = 10;
-const IMAGE_TOKEN_ESTIMATE = 1_200;
 
 export interface PifrostContextTokenizer {
 	countTokens(text: string | string[]): number;
 	countMessage(message: Message): number;
+}
+
+export interface OmpContextEstimateOptions {
+	/**
+	 * When supplied, provider usage is trusted as a prefix anchor only when the
+	 * assistant turn records one of these physical upstream model identities.
+	 * This prevents usage from one Bifrost fallback member being reused to size
+	 * a different member with different token/image semantics.
+	 */
+	anchorModelIds?: readonly string[];
 }
 
 function calculateContextTokens(usage: Usage): number {
@@ -62,9 +75,22 @@ function hasContextTokenUsage(usage: Usage): boolean {
 	);
 }
 
-function validUsageAnchor(message: Message): message is Extract<Message, { role: "assistant" }> {
+function normalizedModelId(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim() ? value.trim().toLowerCase() : undefined;
+}
+
+function validUsageAnchor(
+	message: Message,
+	anchorModelIds: readonly string[] | undefined,
+): message is Extract<Message, { role: "assistant" }> {
 	if (message.role !== "assistant") return false;
 	if (message.stopReason === "aborted" || message.stopReason === "error") return false;
+	if (anchorModelIds?.length) {
+		const record = message as unknown as Record<string, unknown>;
+		const actual = normalizedModelId(record.upstreamModel) ?? normalizedModelId(record.model);
+		const allowed = new Set(anchorModelIds.map(normalizedModelId).filter((value): value is string => Boolean(value)));
+		if (!actual || !allowed.has(actual)) return false;
+	}
 	return hasContextTokenUsage(message.usage);
 }
 
@@ -74,7 +100,10 @@ function validUsageAnchor(message: Message): message is Extract<Message, { role:
  * complete prefix through that turn; local counting is needed only for the
  * unreported tail after it.
  */
-function findRequestUsageAnchor(messages: readonly Message[]): UsageAnchor | undefined {
+function findRequestUsageAnchor(
+	messages: readonly Message[],
+	options: OmpContextEstimateOptions,
+): UsageAnchor | undefined {
 	let rewriteAt = Number.NEGATIVE_INFINITY;
 	let anchor: UsageAnchor | undefined;
 	for (let index = 0; index < messages.length; index++) {
@@ -87,7 +116,7 @@ function findRequestUsageAnchor(messages: readonly Message[]): UsageAnchor | und
 			rewriteAt = Math.max(rewriteAt, message.prunedAt);
 			continue;
 		}
-		if (validUsageAnchor(message) && message.timestamp > rewriteAt) {
+		if (validUsageAnchor(message, options.anchorModelIds) && message.timestamp > rewriteAt) {
 			anchor = { index, tokens: calculateContextTokens(message.usage) };
 		}
 	}
@@ -111,8 +140,9 @@ function findRequestUsageAnchor(messages: readonly Message[]): UsageAnchor | und
 export function estimateOmpContextInputTokens(
 	context: Context,
 	tokenizer: PifrostContextTokenizer,
+	options: OmpContextEstimateOptions = {},
 ): number {
-	const anchor = findRequestUsageAnchor(context.messages);
+	const anchor = findRequestUsageAnchor(context.messages, options);
 	if (anchor) {
 		let tail = 0;
 		for (let index = anchor.index + 1; index < context.messages.length; index++) {
@@ -133,7 +163,9 @@ export function estimateOmpContextInputTokens(
  * Lightweight semantic tokenizer for unit tests and non-OMP diagnostics.
  * OMP runtime uses its model-aware Tokenizer instead.
  */
-export function createApproximateContextTokenizer(): PifrostContextTokenizer {
+export function createApproximateContextTokenizer(
+	imageTarget: PifrostImageTokenTarget = { api: "openai-responses" },
+): PifrostContextTokenizer {
 	const countText = (value: string): number => Math.ceil(new TextEncoder().encode(value).byteLength / 4);
 	const countContent = (content: unknown): number => {
 		if (typeof content === "string") return countText(content);
@@ -142,7 +174,7 @@ export function createApproximateContextTokenizer(): PifrostContextTokenizer {
 		for (const block of content) {
 			if (!block || typeof block !== "object") continue;
 			const record = block as Record<string, unknown>;
-			if (record.type === "image") total += IMAGE_TOKEN_ESTIMATE;
+			if (record.type === "image") total += estimatePifrostImageTokens(record, imageTarget);
 			else if (typeof record.text === "string") total += countText(record.text);
 			else if (typeof record.thinking === "string") total += countText(record.thinking);
 			else if (record.type === "toolCall") {
