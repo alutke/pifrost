@@ -284,6 +284,7 @@ thinking=high,max source=explicit
 
 - Node.js **22.19 or later**
 - OhMyPi **18.4.5 or later** in the 18.x line
+- Pifrost's packaged OMP policy/catalog snapshot is **18.4.5**; Pifrost layers explicit compatibility patches over that portable baseline and validates host integration through **18.8.4**. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host.
 - Maxim Bifrost **2.2.4 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
@@ -315,7 +316,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.2
+0.9.1
 ```
 
 Bun can also install the package globally:
@@ -798,26 +799,30 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 ```text
 Upstream compatibility
 OMP version:             18.8.4 (minimum 18.4.5; validated through 18.8.4)
+OMP policy snapshot:     18.4.5 + Pifrost compatibility patches
+  [TESTED CURRENT] installed 18.8.4 matches the current validated release
   [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.4
   [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.4
   [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.4
   [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.4
   [OK] OMP model presets >=18.4.5 — available in OMP 18.8.4
-Bifrost version:         2.2.4 (Pifrost baseline 2.2.4)
+Bifrost version:         2.2.6 (minimum 2.2.4; validated through 2.2.6)
+  [TESTED CURRENT] installed 2.2.6 matches the current validated release
+  [OK] First-time setup lock >=2.2.6 — setup complete; dashboard auth=enabled, inference auth=enforced
   [OK] Virtual MCPs >=2.2.0 — live API contract verified
   [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
   [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable
   [OK] Pinned routing fallbacks >=2.2.3 — version contract satisfied; routing API verified
   [OK] Quota SourceRef provenance >=2.2.3 — live quota contract verified
-  [OK] Deferred Tool Search >=2.2.4 — available in Bifrost 2.2.4
-  [OK] Between-tools thinking >=2.2.4 — available in Bifrost 2.2.4
-  [OK] Service-tier capability metadata >=2.2.4 — available in Bifrost 2.2.4
+  [OK] Deferred Tool Search >=2.2.4 — available in Bifrost 2.2.6
+  [OK] Between-tools thinking >=2.2.4 — available in Bifrost 2.2.6
+  [OK] Service-tier capability metadata >=2.2.4 — available in Bifrost 2.2.6
 Compatibility summary:  OK
 ```
 
-The four states are **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible).
+Feature probes use **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible). The version envelope is reported separately as **TESTED CURRENT**, **SUPPORTED**, **NEWER THAN VALIDATED**, or **UNSUPPORTED**. A newer-than-validated installation is advisory rather than an automatic failure.
 
-Release CI validates both the minimum supported OMP loader and the current validated OMP release. A separate scheduled canary checks the same current-contract surfaces against OMP `main`, so upstream image-tokenisation, provider-cost, preset or related compatibility drift is detected without making unreleased upstream code a release dependency.
+Release CI validates pinned OMP and Bifrost release contracts only. Scheduled upstream canaries separately check OMP `main` and Bifrost `dev`, including the image-tokenization constants mirrored by Pifrost, opaque replay-token accounting, Bifrost request-id provenance, reasoning-only Chat→Responses conversion and bounded Code Mode. Unreleased upstream code therefore cannot randomly break an otherwise reproducible Pifrost release.
 
 Session affinity has no read-only discovery endpoint, so its check combines the Bifrost >=2.2.2 contract with a live inference-path probe. Pinned fallbacks similarly combine the >=2.2.3 contract with the routing API and validate object fallback shape when such fallbacks are present. The doctor never creates, edits or deletes Bifrost configuration.
 
