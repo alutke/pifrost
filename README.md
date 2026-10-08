@@ -55,7 +55,7 @@ Bifrost
 Physical model providers and MCP servers
 ~~~
 
-That gives you five useful properties:
+That gives you six useful properties:
 
 - **Stable OMP roles.** OMP uses logical aliases while Bifrost owns the real model chain.
 - **Safer capabilities.** Pifrost advertises only capabilities it can establish safely for the route.
@@ -70,6 +70,7 @@ That gives you five useful properties:
 | --- | --- |
 | Node.js | **22.19+** |
 | OhMyPi | **18.4.5+** in the 18.x line |
+| Pifrost OMP policy snapshot | **18.4.5**, with explicit compatibility patches; host integration validated through **18.8.4** |
 | Maxim Bifrost | **2.2.4+** |
 | Recommended Bifrost | **2.2.6+** for setup-lock awareness, routed-response provenance and current cost semantics |
 
@@ -105,7 +106,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.9.0
+0.9.1
 ```
 
 Bun also works:
@@ -208,7 +209,7 @@ A logical route can contain models with different context windows, output limits
 
 For straightforward global fallback routes, Pifrost also uses **context-aware prewalk**. Before each request reaches Bifrost it removes members that are known to be incompatible with the final request: context/output limits, image/tool/reasoning constraints and supported wire protocols are all considered.
 
-On the native OMP path, context sizing uses a semantic estimate of the actual provider Context rather than serializing OMP's internal objects. When a candidate exposes an OMP tokenizer family, text is counted through the matching OMP native tokenizer; unknown families retain the conservative local byte estimate. Image blocks use OMP-aligned, model/dimension-aware token rules. Prewalk computes the estimate separately for each physical candidate, and provider usage is reused as a prefix anchor only when it came from the same physical upstream model. Internal metadata such as tool-result `details`, timestamps and routing records is not treated as model prompt content.
+On the native OMP path, context sizing uses a semantic estimate of the actual provider Context rather than serializing OMP's internal objects. When a candidate exposes an OMP tokenizer family, text is counted through the matching OMP native tokenizer; unknown families retain the conservative local byte estimate. Image blocks use OMP-aligned, model/dimension-aware token rules. Prewalk computes the estimate separately for each physical candidate, and provider usage is reused as a prefix anchor only when it came from the same physical upstream model. Internal metadata such as tool-result `details`, timestamps and routing records is not treated as model prompt content. Opaque replay content that OMP sends back to providers—reasoning signatures, redacted thinking and native Anthropic server-tool payloads—is counted too when a local recount is required. The image-policy compatibility layer is a monitored snapshot of the validated OMP contract; scheduled upstream canaries detect policy drift.
 
 Pifrost natively executes both **OpenAI Responses** and **OpenAI Chat Completions** route members. Eligible members stay in their original Bifrost order and are grouped only when adjacent members use the same protocol. Each protocol group is dispatched through OMP's native transport for that wire API; same-protocol fallbacks remain inside Bifrost's native `fallbacks` chain. If a protocol group fails before producing model output, Pifrost may advance to the next protocol group. Once any real output has been emitted, Pifrost never replays that turn on another model or protocol. This is protocol compatibility/failover, not policy routing: Pifrost never promotes a later member because of quality, price, quota or provider preference.
 
