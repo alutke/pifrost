@@ -144,11 +144,26 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
 
     if (!canonicalGranted.size) continue;
 
+    const canonicalExecutable = new Set(
+      (grant.executionPolicyKnown ? grant.executableTools ?? [] : [...canonicalGranted])
+        .map((tool) => canonicalHoundToolName(tool, [client?.name]))
+        .filter(Boolean),
+    );
+    const canonicalAutoExecutable = new Set(
+      (grant.autoExecutionPolicyKnown ? grant.autoExecutableTools ?? [] : [])
+        .map((tool) => canonicalHoundToolName(tool, [client?.name]))
+        .filter(Boolean),
+    );
+
     clientRows.push({
       name: grant.client,
       state: client?.state,
       sources: grant.sources ?? [],
       granted: [...canonicalGranted],
+      executable: [...canonicalExecutable],
+      autoExecutable: [...canonicalAutoExecutable],
+      executionPolicyKnown: grant.executionPolicyKnown === true,
+      autoExecutionPolicyKnown: grant.autoExecutionPolicyKnown === true,
       isCodeModeClient: client?.isCodeModeClient === true,
       serverInstructions: Boolean(client?.serverInstructions),
       maxInstructionsLength: client?.maxInstructionsLength,
@@ -160,6 +175,10 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
         client: grant.client,
         sources: grant.sources ?? [],
         isCodeModeClient: client?.isCodeModeClient === true,
+        executionPolicyKnown: grant.executionPolicyKnown === true,
+        autoExecutionPolicyKnown: grant.autoExecutionPolicyKnown === true,
+        executable: grant.executionPolicyKnown === true ? canonicalExecutable.has(canonical) : undefined,
+        autoExecutable: grant.autoExecutionPolicyKnown === true ? canonicalAutoExecutable.has(canonical) : undefined,
       });
       granted.set(canonical, rows);
     }
@@ -197,8 +216,18 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
   const codeModeTools = new Set(codeModeProbe?.ok ? codeModeProbe.tools ?? [] : []);
 
   const tools = Object.fromEntries(HOUND_TOOLS.map((name) => {
-    const classicVisible = liveCanonical.has(name);
-    const codeModeVisible = codeModeProbe?.ok === true && codeModeTools.has(name) && granted.has(name);
+    const grantRows = granted.get(name) ?? [];
+    const executionPolicyKnown = grantRows.some((row) => row.executionPolicyKnown === true);
+    const executable = executionPolicyKnown
+      ? grantRows.some((row) => row.executable === true)
+      : undefined;
+    const autoExecutionPolicyKnown = grantRows.some((row) => row.autoExecutionPolicyKnown === true);
+    const autoExecutable = autoExecutionPolicyKnown
+      ? grantRows.some((row) => row.autoExecutable === true)
+      : undefined;
+    const executionAllowed = executable !== false;
+    const classicVisible = liveCanonical.has(name) && executionAllowed;
+    const codeModeVisible = codeModeProbe?.ok === true && codeModeTools.has(name) && granted.has(name) && executionAllowed;
     let gatewayVisible;
     let gatewayName = liveCanonical.get(name);
 
@@ -217,9 +246,13 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
 
     return [name, {
       configured: granted.has(name),
+      executable,
+      autoExecutable,
+      executionPolicyKnown,
+      autoExecutionPolicyKnown,
       gatewayVisible,
       gatewayName,
-      grants: granted.get(name) ?? [],
+      grants: grantRows,
     }];
   }));
 
@@ -244,13 +277,18 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
 
 function capabilityStatus(tools, liveKnown, name) {
   const row = tools[name];
-  const available = liveKnown
+  const executionAllowed = row?.executable !== false;
+  const available = (liveKnown
     ? row?.gatewayVisible === true
-    : row?.configured === true;
+    : row?.configured === true) && executionAllowed;
   return {
     tool: name,
     available,
     configured: row?.configured === true,
+    executable: row?.executable,
+    autoExecutable: row?.autoExecutable,
+    executionPolicyKnown: row?.executionPolicyKnown === true,
+    autoExecutionPolicyKnown: row?.autoExecutionPolicyKnown === true,
     gatewayVisible: row?.gatewayVisible,
     gatewayName: row?.gatewayName,
   };
