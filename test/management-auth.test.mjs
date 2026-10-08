@@ -38,6 +38,40 @@ test("uses Bifrost setup token ephemerally from environment", () => {
   assert.equal(managementAuthLabel({ mode: "setup", setupToken: "setup-secret" }), "setup token (ephemeral)");
 });
 
+test("stored management credentials outrank a stale ambient setup token", () => {
+  const basicState = {
+    config: { bifrost: { managementAuthMode: "basic" } },
+    secrets: { managementAdminUsername: "admin", managementAdminPassword: "password" },
+  };
+  assert.deepEqual(
+    managementAuthFromState(basicState, { BIFROST_SETUP_TOKEN: "stale-setup-token" }),
+    { mode: "basic", username: "admin", password: "password" },
+  );
+
+  const bearerState = {
+    config: { bifrost: { managementAuthMode: "bearer" } },
+    secrets: { managementApiKey: "management-key" },
+  };
+  assert.deepEqual(
+    managementAuthFromState(bearerState, { BIFROST_SETUP_TOKEN: "stale-setup-token" }),
+    { mode: "bearer", apiKey: "management-key" },
+  );
+});
+
+test("explicit setup auth mode still selects the ephemeral setup token", () => {
+  const state = {
+    config: { bifrost: { managementAuthMode: "basic" } },
+    secrets: { managementAdminUsername: "admin", managementAdminPassword: "password" },
+  };
+  assert.deepEqual(
+    managementAuthFromState(state, {
+      BIFROST_MANAGEMENT_AUTH_MODE: "setup",
+      BIFROST_SETUP_TOKEN: "setup-secret",
+    }),
+    { mode: "setup", setupToken: "setup-secret" },
+  );
+});
+
 test("retains 0.2.0 managementApiKey stores as backward-compatible bearer auth", () => {
   const state = {
     config: { bifrost: {} },
