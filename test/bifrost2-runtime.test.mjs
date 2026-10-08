@@ -179,6 +179,7 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
       virtualKey: "sk-bf-test",
     });
     assert.deepEqual(matrix.map((item) => [item.id, item.status]), [
+      ["bifrost-setup-lock", "unavailable"],
       ["bifrost-virtual-mcp", "supported"],
       ["bifrost-skills", "supported"],
       ["bifrost-session-affinity", "supported"],
