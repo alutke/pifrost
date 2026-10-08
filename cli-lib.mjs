@@ -656,6 +656,19 @@ async function compatibilityProbeValue(probes, key, fallback) {
   return fallback();
 }
 
+function bifrostClientConfigShape(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const candidates = [
+    value.client_config,
+    value.clientConfig,
+    value.data?.client_config,
+    value.data?.clientConfig,
+    value.config?.client_config,
+    value.config?.clientConfig,
+  ];
+  return candidates.find((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate)) ?? {};
+}
+
 function validateSourceRefShape(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return true;
   for (const key of ["source_type", "source_id", "source_name"]) {
@@ -963,7 +976,117 @@ export async function bifrostCompatibilityMatrix({
     }
   }
 
+  const setupBase = featureUnavailable(
+    "bifrost-setup-lock",
+    "First-run setup/auth posture",
+    "2.2.6",
+    installedVersion,
+    "Pifrost cannot distinguish an uninitialized Bifrost instance from ordinary management-auth failure",
+  );
+  if (setupBase) {
+    results.push(setupBase);
+  } else {
+    const endpoint = "/api/session/is-auth-enabled";
+    try {
+      const auth = await compatibilityProbeValue(
+        probes,
+        "authStatus",
+        () => getBifrostAuthStatus(url),
+      );
+      if (typeof auth?.setupRequired !== "boolean" || typeof auth?.setupTokenConfigured !== "boolean") {
+        throw new CompatibilityContractError(`${endpoint} did not expose setup_required/setup_token_configured booleans`);
+      }
+      results.push({
+        id: "bifrost-setup-lock",
+        label: "First-run setup/auth posture",
+        minimum: "2.2.6",
+        status: auth.setupRequired ? "inaccessible" : "supported",
+        detail: auth.setupRequired
+          ? `Bifrost first-time setup is incomplete (setup token ${auth.setupTokenConfigured ? "configured" : "missing"})`
+          : `setup complete; inference auth ${auth.inferenceAuthEnforced ? "enforced" : "disabled"}`,
+        impact: auth.setupRequired
+          ? "Complete Bifrost's setup-token/dashboard flow before Pifrost management automation"
+          : undefined,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-setup-lock",
+        label: "First-run setup/auth posture",
+        minimum: "2.2.6",
+        ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
+        impact: "Bifrost bootstrap/auth state cannot be verified",
+      });
+    }
+  }
+
+  const conversionBase = featureUnavailable(
+    "bifrost-chat-responses-conversion",
+    "Chat→Responses compatibility adapter",
+    "2.2.6",
+    installedVersion,
+    "Gateway request-type conversion cannot be inspected",
+  );
+  if (conversionBase) {
+    results.push(conversionBase);
+  } else if (!managementAuth) {
+    results.push({
+      id: "bifrost-chat-responses-conversion",
+      label: "Chat→Responses compatibility adapter",
+      minimum: "2.2.6",
+      status: "inaccessible",
+      detail: "management authentication is not configured for /api/config",
+      impact: "Gateway conversion policy cannot be inspected",
+    });
+  } else {
+    const endpoint = "/api/config";
+    try {
+      const gateway = await compatibilityProbeValue(
+        probes,
+        "gateway",
+        () => getBifrostConfig(url, managementAuth),
+      );
+      const client = bifrostClientConfigShape(gateway);
+      const compat = client?.compat && typeof client.compat === "object" && !Array.isArray(client.compat)
+        ? client.compat
+        : undefined;
+      if (!compat || typeof compat.convert_chat_to_responses !== "boolean") {
+        throw new CompatibilityContractError(`${endpoint} did not expose client_config.compat.convert_chat_to_responses`);
+      }
+      const reasoningAdapter = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? `; reasoning-with-tools adapter=${compat.force_reasoning_only_models_to_responses ? "enabled" : "disabled"}`
+        : "; reasoning-with-tools adapter=not released by Bifrost 2.2.6";
+      results.push({
+        id: "bifrost-chat-responses-conversion",
+        label: "Chat→Responses compatibility adapter",
+        minimum: "2.2.6",
+        status: "supported",
+        detail: `convert_chat_to_responses=${compat.convert_chat_to_responses ? "enabled" : "disabled"}${reasoningAdapter}`,
+        impact: undefined,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-chat-responses-conversion",
+        label: "Chat→Responses compatibility adapter",
+        minimum: "2.2.6",
+        ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
+        impact: "Gateway conversion policy cannot be inspected",
+      });
+    }
+  }
+
   for (const feature of [
+    {
+      id: "bifrost-code-mode-execution-policy",
+      label: "Code Mode execution allow-list enforcement",
+      minimum: "2.2.5",
+      impact: "Code Mode executable/auto-executable diagnostics cannot be treated as an enforced runtime boundary",
+    },
+    {
+      id: "bifrost-routed-identity-headers",
+      label: "Routed-identity response headers",
+      minimum: "2.2.6",
+      impact: "Request-level provider/model/fallback provenance is unavailable",
+    },
     {
       id: "bifrost-tool-search",
       label: "Deferred Tool Search",
