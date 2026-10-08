@@ -1,6 +1,9 @@
 const OMP_MIN_COMMIT = "79808c3bf8f8cd9826decc63e3e18b13035f64f8";
-const OMP_VALIDATED_COMMIT = "40e9368ef0458fd9073329cdff4174895f91bc6b";
-const OMP_CURRENT_REF = process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : OMP_VALIDATED_COMMIT;
+const OMP_VALIDATED_VERSION = "18.8.6";
+const OMP_VALIDATED_COMMIT = "f068751e2f1dbdbc195977776d47a26db8697495";
+const OMP_UPSTREAM_CANARY = process.env.PIFROST_OMP_UPSTREAM_CANARY === "1";
+const OMP_CURRENT_REF = OMP_UPSTREAM_CANARY ? "main" : OMP_VALIDATED_COMMIT;
+const OMP_CURRENT_LABEL = OMP_UPSTREAM_CANARY ? "main" : OMP_VALIDATED_VERSION;
 
 const SOURCES = [
   {
@@ -98,7 +101,7 @@ const SOURCES = [
 
 const CURRENT_SOURCES = [
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} image-tokenization contract`,
+    name: `OMP ${OMP_CURRENT_LABEL} image-tokenization contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/image-tokenization.ts`,
     required: [
       "export function resolveImageTokenization",
@@ -109,7 +112,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} dimension-aware image accounting`,
+    name: `OMP ${OMP_CURRENT_LABEL} dimension-aware image accounting`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/image-tokens.ts`,
     required: [
       "estimateImageContentTokens",
@@ -119,7 +122,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} OpenAI image-policy parity`,
+    name: `OMP ${OMP_CURRENT_LABEL} OpenAI image-policy parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/openai.kdl`,
     required: [
       'revision ">=5.6 <10"',
@@ -132,7 +135,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} Anthropic/Gemini image-policy parity`,
+    name: `OMP ${OMP_CURRENT_LABEL} Anthropic/Gemini image-policy parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/anthropic.kdl`,
     required: [
       'max-edge 2576',
@@ -142,7 +145,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} Gemini image-policy parity`,
+    name: `OMP ${OMP_CURRENT_LABEL} Gemini image-policy parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/gemini.kdl`,
     required: [
       'regime "fixed"',
@@ -150,7 +153,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} provider image fallback parity`,
+    name: `OMP ${OMP_CURRENT_LABEL} provider image fallback parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/providers/image-tokenization.kdl`,
     required: [
       'multiplier 1.2',
@@ -161,7 +164,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} replay-token accounting parity`,
+    name: `OMP ${OMP_CURRENT_LABEL} replay-token accounting parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/tokenizer.ts`,
     required: [
       "thinkingSignature",
@@ -171,7 +174,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} provider-cost contract`,
+    name: `OMP ${OMP_CURRENT_LABEL} provider-cost contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/ai/src/providers/openai-shared.ts`,
     required: [
       "export function applyProviderReportedCost",
@@ -182,7 +185,7 @@ const CURRENT_SOURCES = [
     ],
   },
   {
-    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} model-preset contract`,
+    name: `OMP ${OMP_CURRENT_LABEL} model-preset contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/config/model-presets.ts`,
     required: [
       "findActiveModelPreset",
