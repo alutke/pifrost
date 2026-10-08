@@ -102,7 +102,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.10
+0.9.0
 ```
 
 Bun also works:
@@ -224,6 +224,7 @@ The detailed rules, metadata provenance and compatibility behaviour are in the [
 | Command | Use it when... |
 | --- | --- |
 | <code>pifrost doctor</code> | You want the quickest overall health check |
+| <code>/pifrost trace</code> | You want the actual provider/model/fallback provenance for recent requests in the active OMP session |
 | <code>pifrost global status</code> | You are checking Bifrost connectivity or credentials |
 | <code>pifrost routes list</code> | You want to see the live <code>omp-*</code> routes |
 | <code>pifrost routes diff</code> | You changed routing and want to see local drift |
@@ -319,7 +320,7 @@ Current supported Bifrost MCP releases flatten upstream MCP `ImageContent` into 
 
 OMP's native `modelRoles.web` / `retry.fallbackChains.web` remain a separate mechanism. Pifrost reports the Hound MCP path and native web path independently; it does not choose between them for the model.
 
-Pifrost also reports the live Bifrost MCP tool count, OMP's default `discoverable` presentation, approximate eager schema footprint, Bifrost client instruction metadata where exposed, and attached Virtual MCP instruction provenance. Discoverable presentation, Bifrost Code Mode and provider-side `defer_loading`/Tool Search are separate mechanisms.
+Pifrost also reports the live Bifrost MCP tool count, OMP's default `discoverable` presentation, approximate eager schema footprint, Bifrost client instruction metadata where exposed, and attached Virtual MCP instruction provenance. On Bifrost 2.2.5+, repository status distinguishes tools that are granted to the Virtual Key from those actually permitted by the client's `tools_to_execute` policy and those allowed to auto-execute; a known execution denial is not reported as available. Discoverable presentation, Bifrost Code Mode, execution policy and provider-side `defer_loading`/Tool Search are separate mechanisms.
 
 ### MCP server instructions
 
