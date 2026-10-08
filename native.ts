@@ -25,6 +25,10 @@ import {
 	createBifrostCostBridgeFetch,
 	type BifrostCostCapture,
 } from "./bifrost-cost-bridge.ts";
+import {
+	createBifrostProvenanceFetch,
+	formatBifrostRoutingProvenanceReport,
+} from "./bifrost-provenance.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import {
 	buildPifrostTransportModel,
@@ -341,7 +345,14 @@ function streamDynamicPifrostRoute(
 
 	void runPifrostProtocolPlan(model, plan, outer, (attempt, attemptIndex) => {
 		const costCapture: BifrostCostCapture = {};
-		const baseFetch = createBifrostCostBridgeFetch(underlyingFetch, costCapture);
+		const provenanceFetch = createBifrostProvenanceFetch(underlyingFetch, {
+			sessionId,
+			logicalModel: plan.logicalModel,
+			protocol: attempt.protocol,
+			attemptIndex: attemptIndex + 1,
+			routePrimary: attempt.primary,
+		});
+		const baseFetch = createBifrostCostBridgeFetch(provenanceFetch, costCapture);
 		const transportModel = buildPifrostTransportModel(createPifrostAttemptModelSpec(model, attempt));
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
@@ -451,7 +462,14 @@ function streamPifrostOpenAI(
 		compat: model.compatConfig,
 	} as ModelSpec<"openai-completions">);
 	const costCapture: BifrostCostCapture = {};
-	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
+	const provenanceFetch = createBifrostProvenanceFetch(options?.fetch ?? globalThis.fetch, {
+		sessionId,
+		logicalModel: model.id,
+		protocol: "openai-completions",
+		attemptIndex: 1,
+		routePrimary: transportModel.id,
+	});
+	const baseFetch = createBifrostCostBridgeFetch(provenanceFetch, costCapture);
 	const upstreamOnPayload = options?.onPayload;
 	const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
 	const streamOptions: OpenAICompletionsOptions = {
@@ -734,6 +752,14 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				});
 			};
 
+			if (command === "trace") {
+				ctx.ui.notify(
+					formatBifrostRoutingProvenanceReport(ctx.sessionManager.getSessionId()),
+					"info",
+				);
+				return;
+			}
+
 			if (command === "config") {
 				try {
 					const session = await cfgSession();
@@ -800,7 +826,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost doctor | /pifrost trace | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
@@ -831,7 +857,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					diagnostics = catalog.diagnostics;
 				}
 				bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
-				let report = `${formatDoctorReport(diagnostics, aliasSource.path)}\n\n${formatAgentAttributionReport(ctx.sessionManager.getSessionId())}`;
+				let report = `${formatDoctorReport(diagnostics, aliasSource.path)}\n\n${formatAgentAttributionReport(ctx.sessionManager.getSessionId())}\n\n${formatBifrostRoutingProvenanceReport(ctx.sessionManager.getSessionId(), 5)}`;
 				const storedWarnings = storedRuntimeConfigDiagnostics();
 				if (storedWarnings.length) {
 					report += `\n\nStored configuration warnings:\n${storedWarnings.map((warning) => `  WARN ${warning}`).join("\n")}`;
