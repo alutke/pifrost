@@ -5,6 +5,16 @@ function finiteNonNegative(value: unknown): number | undefined {
 export interface BifrostCostCapture {
 	total?: number;
 	breakdown?: Record<string, unknown>;
+	requestId?: string;
+	provider?: string;
+	originalModel?: string;
+	resolvedModel?: string;
+	fallbackIndex?: number;
+	isFallback?: boolean;
+	primaryProvider?: string;
+	primaryModel?: string;
+	requestType?: string;
+	upstreamLatencyMs?: number;
 }
 
 function bridgeUsageObject(
@@ -123,6 +133,42 @@ function bridgeEventStream(
 	});
 }
 
+function nonEmptyHeader(headers: Headers, name: string): string | undefined {
+	const value = headers.get(name)?.trim();
+	return value || undefined;
+}
+
+function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture): void {
+	if (!capture) return;
+	capture.requestId = nonEmptyHeader(headers, "x-bifrost-request-id") ?? capture.requestId;
+	capture.provider =
+		nonEmptyHeader(headers, "x-bifrost-routing-info-provider") ??
+		nonEmptyHeader(headers, "x-bifrost-provider") ??
+		capture.provider;
+	capture.originalModel =
+		nonEmptyHeader(headers, "x-bifrost-original-model") ??
+		capture.originalModel;
+	capture.resolvedModel =
+		nonEmptyHeader(headers, "x-bifrost-routing-info-model") ??
+		nonEmptyHeader(headers, "x-bifrost-resolved-model") ??
+		capture.resolvedModel;
+	capture.primaryProvider =
+		nonEmptyHeader(headers, "x-bifrost-routing-info-primary-provider") ??
+		capture.primaryProvider;
+	capture.primaryModel =
+		nonEmptyHeader(headers, "x-bifrost-routing-info-primary-model") ??
+		capture.primaryModel;
+	capture.requestType =
+		nonEmptyHeader(headers, "x-bifrost-request-type") ??
+		capture.requestType;
+	const fallbackIndex = Number(nonEmptyHeader(headers, "x-bifrost-fallback-index"));
+	if (Number.isInteger(fallbackIndex) && fallbackIndex > 0) capture.fallbackIndex = fallbackIndex;
+	if (nonEmptyHeader(headers, "x-bifrost-routing-info-is-fallback") === "true") capture.isFallback = true;
+	else if (capture.fallbackIndex !== undefined) capture.isFallback = true;
+	const latency = Number(nonEmptyHeader(headers, "x-bifrost-upstream-latency-ms"));
+	if (Number.isFinite(latency) && latency >= 0) capture.upstreamLatencyMs = latency;
+}
+
 function bridgedHeaders(headers: Headers): Headers {
 	const result = new Headers(headers);
 	result.delete("content-length");
@@ -133,6 +179,7 @@ export async function bridgeBifrostUsageCostResponse(
 	response: Response,
 	capture?: BifrostCostCapture,
 ): Promise<Response> {
+	captureBifrostHeaders(response.headers, capture);
 	if (!response.body) return response;
 	const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
 
