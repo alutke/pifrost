@@ -41,6 +41,7 @@ export const MCP_SCHEMA_URL =
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
 export const PIFROST_OMP_MIN_VERSION = "18.4.5";
+export const PIFROST_OMP_POLICY_SNAPSHOT_VERSION = "18.4.5";
 export const PIFROST_OMP_VALIDATED_VERSION = "18.8.4";
 export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
 export const PIFROST_BIFROST_VALIDATED_VERSION = "2.2.6";
@@ -207,8 +208,11 @@ export function runtimeConfigFromState(state, env = process.env) {
  *
  * OSS uses the dashboard/admin username and password over HTTP Basic auth.
  * Enterprise can instead use a scoped management API key over Bearer auth.
- * Environment variables override the stored configuration. A pre-0.2.1
- * `managementApiKey` is retained as a backward-compatible bearer credential.
+ * Normal management environment variables override stored configuration.
+ * BIFROST_SETUP_TOKEN is intentionally weaker: unless setup mode is requested
+ * explicitly, stored Basic/Bearer credentials outrank it so a stale bootstrap
+ * token cannot break a completed installation. A pre-0.2.1 `managementApiKey`
+ * is retained as a backward-compatible bearer credential.
  */
 export function managementAuthFromState(state, env = process.env) {
   const requestedMode = nonEmpty(env.BIFROST_MANAGEMENT_AUTH_MODE)?.toLowerCase();
@@ -228,9 +232,6 @@ export function managementAuthFromState(state, env = process.env) {
   }
   if (envApiKey) return { mode: "bearer", apiKey: envApiKey };
   if (envUsername && envPassword) return { mode: "basic", username: envUsername, password: envPassword };
-  // Setup tokens are intentionally environment-only: Pifrost may use one to
-  // bootstrap/diagnose a fresh Bifrost 2.2.6 instance but never persists it.
-  if (envSetupToken) return { mode: "setup", setupToken: envSetupToken };
 
   const storedMode = nonEmpty(state.config?.bifrost?.managementAuthMode)?.toLowerCase();
   const storedApiKey = nonEmpty(state.secrets?.managementApiKey);
@@ -251,6 +252,11 @@ export function managementAuthFromState(state, env = process.env) {
   if (storedUsername && storedPassword) {
     return { mode: "basic", username: storedUsername, password: storedPassword };
   }
+
+  // An ambient setup token is a last-resort bootstrap credential only. Once
+  // normal management credentials exist they must win, otherwise a stale
+  // BIFROST_SETUP_TOKEN can break every post-setup management operation.
+  if (envSetupToken) return { mode: "setup", setupToken: envSetupToken };
   return undefined;
 }
 
@@ -580,6 +586,36 @@ export function versionAtLeast(version, minimum) {
   return comparison === undefined ? undefined : comparison >= 0;
 }
 
+export function compatibilityValidationStatus(version, minimum, validated) {
+  const parsed = parseSemver(version);
+  if (!parsed) {
+    return { status: "unknown", detail: "installed version is unavailable or unparseable" };
+  }
+  if (versionAtLeast(parsed, minimum) === false) {
+    return {
+      status: "unsupported",
+      detail: `installed ${parsed.version} is below minimum supported ${minimum}`,
+    };
+  }
+  const vsValidated = compareSemver(parsed, validated);
+  if (vsValidated === 0) {
+    return {
+      status: "tested-current",
+      detail: `installed ${parsed.version} matches the current validated release`,
+    };
+  }
+  if (vsValidated !== undefined && vsValidated > 0) {
+    return {
+      status: "newer",
+      detail: `installed ${parsed.version} is newer than Pifrost's validated ${validated} boundary`,
+    };
+  }
+  return {
+    status: "supported",
+    detail: `installed ${parsed.version} is within the supported ${minimum}..${validated} envelope`,
+  };
+}
+
 export function commandVersion(command) {
   const result = spawnSync(command, ["--version"], { encoding: "utf8", stdio: "pipe" });
   if (result.error || result.status !== 0) return undefined;
@@ -698,7 +734,7 @@ export async function bifrostCompatibilityMatrix({
     "Fresh Bifrost instances do not expose the setup-token lock state",
   );
   if (setupBase) {
-    results.push(setupBase);
+    results.push({ ...setupBase, optional: true });
   } else {
     const endpoint = "/api/session/is-auth-enabled";
     try {
@@ -1161,6 +1197,16 @@ export async function buildCompatibilityMatrix({
   return {
     ompVersion: ompVersion ?? undefined,
     bifrostVersion: resolvedBifrostVersion,
+    ompValidation: compatibilityValidationStatus(
+      ompVersion,
+      PIFROST_OMP_MIN_VERSION,
+      PIFROST_OMP_VALIDATED_VERSION,
+    ),
+    bifrostValidation: compatibilityValidationStatus(
+      resolvedBifrostVersion,
+      PIFROST_BIFROST_MIN_VERSION,
+      PIFROST_BIFROST_VALIDATED_VERSION,
+    ),
     omp: ompFeatures,
     bifrost: bifrostFeatures,
   };

@@ -22,6 +22,7 @@ import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import { installPifrostTextTokenCounter } from "./omp-context-policy.ts";
 import {
 	applyBifrostAuthoritativeCost,
+	applyBifrostResolvedModel,
 	createBifrostCostBridgeFetch,
 	type BifrostCostCapture,
 } from "./bifrost-cost-bridge.ts";
@@ -141,9 +142,10 @@ function messageWithBifrostCost(
 	message: AssistantMessage,
 	capture: BifrostCostCapture,
 ): AssistantMessage {
+	const withIdentity = applyBifrostResolvedModel(message, capture);
 	return {
-		...message,
-		usage: applyBifrostAuthoritativeCost(message.usage, capture),
+		...withIdentity,
+		usage: applyBifrostAuthoritativeCost(withIdentity.usage, capture),
 	};
 }
 

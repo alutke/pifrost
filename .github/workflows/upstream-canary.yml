@@ -41,4 +41,6 @@ jobs:
         with:
           node-version: 22
       - name: Check current Bifrost dev contracts
+        env:
+          PIFROST_BIFROST_UPSTREAM_CANARY: "1"
         run: node scripts/validate-bifrost-v2-contract.mjs

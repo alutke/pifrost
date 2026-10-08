@@ -9,18 +9,24 @@ export type PifrostModelPolicy = {
 
 export type PifrostModelPolicyResolver = <TApi extends Api>(spec: ModelSpec<TApi>) => PifrostModelPolicy;
 
-let resolveHostModelPolicy: PifrostModelPolicyResolver | undefined;
+let resolvePolicySnapshot: PifrostModelPolicyResolver | undefined;
 
-/** Install OMP's host-owned policy resolver from the extension entry module. */
+/**
+ * Install Pifrost's validated OMP policy snapshot resolver at the extension
+ * boundary. The resolver comes from Pifrost's pinned pi-catalog dependency,
+ * not an undocumented host module lookup; newer host semantics are covered by
+ * explicit compatibility patches and upstream canaries until OMP exposes a
+ * public policy-resolver API.
+ */
 export function installPifrostModelPolicyResolver(resolver: PifrostModelPolicyResolver): void {
-	resolveHostModelPolicy = resolver;
+	resolvePolicySnapshot = resolver;
 }
 
-function resolveModelPolicyFromHost<TApi extends Api>(spec: ModelSpec<TApi>): PifrostModelPolicy {
-	if (!resolveHostModelPolicy) {
-		throw new Error("Pifrost host model-policy resolver is not installed");
+function resolveModelPolicyFromSnapshot<TApi extends Api>(spec: ModelSpec<TApi>): PifrostModelPolicy {
+	if (!resolvePolicySnapshot) {
+		throw new Error("Pifrost OMP policy snapshot resolver is not installed");
 	}
-	return resolveHostModelPolicy(spec);
+	return resolvePolicySnapshot(spec);
 }
 
 export type PifrostReasoningWithToolsApi = "openai-completions" | "openai-responses";
@@ -40,7 +46,7 @@ function ompPolicyProbeApi(provider: string, api: PifrostReasoningWithToolsApi):
 }
 
 /**
- * Resolve OMP's host-authored reasoning+tools policy for a physical upstream
+ * Resolve Pifrost's validated OMP-snapshot reasoning+tools policy for a physical upstream
  * identity without materializing a complete model. Pifrost's generic wire
  * protocol is translated to OMP's provider-specific Responses API first, so
  * provider rules such as Azure and Codex are evaluated on their authored axis.
@@ -53,10 +59,10 @@ export function resolvePifrostReasoningWithToolsPolicy(
 	modelId: string,
 	api: PifrostReasoningWithToolsApi,
 ): boolean | undefined {
-	if (!resolveHostModelPolicy) return undefined;
+	if (!resolvePolicySnapshot) return undefined;
 	try {
 		const policyApi = ompPolicyProbeApi(provider, api);
-		const policy = resolveHostModelPolicy({
+		const policy = resolvePolicySnapshot({
 			id: modelId,
 			name: modelId,
 			provider,
@@ -245,16 +251,16 @@ function applyTransportCatalogAssignments<TApi extends Api>(
  * importing @oh-my-pi/pi-catalog/build.
  *
  * Compiled OMP 18.4.x has a known dependency-resolution failure when a
- * nested extension module imports pi-catalog and the loader falls back to the
- * plugin-local package graph (upstream #13731/#13940). native.ts imports the
- * supported host surface directly and injects the resolver here, keeping every
- * nested Pifrost module independent of pi-catalog at runtime.
+ * nested extension module imports pi-catalog. native.ts is the single package
+ * boundary that imports Pifrost's pinned, validated pi-catalog snapshot and
+ * injects the resolver here, keeping every nested Pifrost module independent
+ * of pi-catalog at runtime.
  *
  * This is intentionally transport-only, not a replacement for OMP's complete
  * catalog builder. Pricing and selection metadata are not recomputed here.
  */
 export function buildPifrostTransportModel<TApi extends Api>(spec: ModelSpec<TApi>): Model<TApi> {
-	const policy = resolveModelPolicyFromHost(spec);
+	const policy = resolveModelPolicyFromSnapshot(spec);
 	const supportsComputerUseConfig = explicitComputerUseConfig(spec);
 	const model = {
 		...spec,

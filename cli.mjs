@@ -43,6 +43,7 @@ import {
 import {
   VERSION,
   PIFROST_OMP_MIN_VERSION,
+  PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
   PIFROST_OMP_VALIDATED_VERSION,
   PIFROST_BIFROST_MIN_VERSION,
   PIFROST_BIFROST_VALIDATED_VERSION,
@@ -231,6 +232,14 @@ function compatibilityMark(status) {
   return String(status ?? "UNKNOWN").toUpperCase();
 }
 
+function validationMark(status) {
+  if (status === "tested-current") return "TESTED CURRENT";
+  if (status === "supported") return "SUPPORTED";
+  if (status === "newer") return "NEWER THAN VALIDATED";
+  if (status === "unsupported") return "UNSUPPORTED";
+  return "UNKNOWN";
+}
+
 function compatibilityNeedsAttention(item) {
   return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
 }
@@ -251,17 +260,22 @@ async function commandCompatibilityDoctor(snapshot) {
 
   printHeader("Upstream compatibility");
   console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (minimum ${PIFROST_OMP_MIN_VERSION}; validated through ${PIFROST_OMP_VALIDATED_VERSION})`);
+  console.log(`OMP policy snapshot:     ${PIFROST_OMP_POLICY_SNAPSHOT_VERSION} + Pifrost compatibility patches`);
+  console.log(`  [${validationMark(matrix.ompValidation.status)}] ${matrix.ompValidation.detail}`);
   for (const item of matrix.omp) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
   console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (minimum ${PIFROST_BIFROST_MIN_VERSION}; validated through ${PIFROST_BIFROST_VALIDATED_VERSION})`);
+  console.log(`  [${validationMark(matrix.bifrostValidation.status)}] ${matrix.bifrostValidation.detail}`);
   for (const item of matrix.bifrost) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
 
-  const issues = [...matrix.omp, ...matrix.bifrost].filter((item) => item.status !== "supported");
+  const issues = [...matrix.omp, ...matrix.bifrost].filter(
+    (item) => item.status !== "supported" && item.optional !== true,
+  );
   const drift = issues.filter((item) => item.status === "drifted").length;
   const inaccessible = issues.filter((item) => item.status === "inaccessible").length;
   const unavailable = issues.filter((item) => item.status === "unavailable").length;
@@ -386,15 +400,21 @@ async function commandGlobalSetup(flags) {
     (existingManagement?.mode === "setup" ? existingManagement.setupToken : undefined);
 
   if (!explicitMode) {
-    if (flagString(flags, "management-key") || process.env.BIFROST_MANAGEMENT_API_KEY) managementMode = "bearer";
-    if (flagString(flags, "setup-token") || process.env.BIFROST_SETUP_TOKEN) managementMode = "setup";
-    if (
+    const explicitSetupToken = flagString(flags, "setup-token");
+    const explicitManagementKey = flagString(flags, "management-key");
+    const explicitBasic =
       flagString(flags, "management-username") ||
-      flagString(flags, "management-password") ||
-      process.env.BIFROST_ADMIN_USERNAME ||
-      process.env.BIFROST_ADMIN_PASSWORD
-    ) {
+      flagString(flags, "management-password");
+    if (explicitSetupToken) {
+      managementMode = "setup";
+    } else if (explicitManagementKey || process.env.BIFROST_MANAGEMENT_API_KEY) {
+      managementMode = "bearer";
+    } else if (explicitBasic || process.env.BIFROST_ADMIN_USERNAME || process.env.BIFROST_ADMIN_PASSWORD) {
       managementMode = "basic";
+    } else if (!existingManagement && process.env.BIFROST_SETUP_TOKEN) {
+      // An ambient setup token is bootstrap-only. Never let a stale token
+      // displace management credentials already saved by a completed setup.
+      managementMode = "setup";
     }
   }
 
@@ -412,7 +432,7 @@ async function commandGlobalSetup(flags) {
       if (wantManagement) {
         const selected = await ask(
           rl,
-          "Management auth mode (basic=OSS admin credentials, bearer=Enterprise API key)",
+          "Management auth mode (basic=OSS admin credentials, bearer=Enterprise API key, setup=ephemeral first-time setup token)",
           managementMode ?? "basic",
         );
         managementMode = normalizeManagementMode(selected);

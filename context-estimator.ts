@@ -177,16 +177,30 @@ export function createModelAwareContextTokenizer(
 		for (const block of content) {
 			if (!block || typeof block !== "object") continue;
 			const record = block as Record<string, unknown>;
-			if (record.type === "image") total += estimatePifrostImageTokens(record, imageTarget);
-			else if (typeof record.text === "string") total += countText(record.text);
-			else if (typeof record.thinking === "string") total += countText(record.thinking);
-			else if (record.type === "toolCall") {
+			if (record.type === "image") {
+				total += estimatePifrostImageTokens(record, imageTarget);
+			} else if (record.type === "thinking") {
+				if (typeof record.thinking === "string") total += countText(record.thinking);
+				// OMP replays opaque provider reasoning/signature payloads and counts
+				// them when no trustworthy provider-usage anchor can be used.
+				if (typeof record.thinkingSignature === "string") total += countText(record.thinkingSignature);
+			} else if (record.type === "redactedThinking") {
+				if (typeof record.data === "string") total += countText(record.data);
+			} else if (record.type === "anthropicServerTool") {
+				try {
+					total += countText(JSON.stringify(record.block) ?? "null");
+				} catch {
+					total += countText("[unserializable-anthropic-server-tool]");
+				}
+			} else if (record.type === "toolCall") {
 				if (typeof record.name === "string") total += countText(record.name);
 				try {
-					total += countText(JSON.stringify(record.arguments) ?? "");
+					total += countText(JSON.stringify(record.arguments) ?? "null");
 				} catch {
 					total += countText("[unserializable-tool-arguments]");
 				}
+			} else if (typeof record.text === "string") {
+				total += countText(record.text);
 			}
 		}
 		return total;

@@ -25,7 +25,7 @@ jobs:
         run: node scripts/validate-public-datasheets.mjs
       - name: Validate current OMP route envelopes
         run: npx tsx scripts/validate-current-routing.ts
-      - name: Validate Bifrost 2.2.4 and current 2.x contracts
+      - name: Validate pinned Bifrost release contracts
         run: node scripts/validate-bifrost-v2-contract.mjs
       - name: Validate Hound MCP contract
         run: node scripts/validate-hound-contract.mjs

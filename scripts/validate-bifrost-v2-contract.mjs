@@ -235,6 +235,9 @@ const SOURCES = [
       '"x-bifrost-upstream-latency-ms"',
     ],
   },
+];
+
+const DEV_SOURCES = [
   {
     name: "current Bifrost dev routing canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/routingRules.ts",
@@ -303,7 +306,11 @@ const SOURCES = [
   },
 ];
 
-for (const source of SOURCES) {
+const sources = process.env.PIFROST_BIFROST_UPSTREAM_CANARY === "1"
+  ? [...SOURCES, ...DEV_SOURCES]
+  : SOURCES;
+
+for (const source of sources) {
   const response = await fetch(source.url, { headers: { Accept: "text/plain" } });
   if (!response.ok) throw new Error(`${source.name}: HTTP ${response.status}`);
   const body = await response.text();

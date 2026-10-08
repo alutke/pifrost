@@ -75,6 +75,42 @@ test("unknown image dimensions use OMP's bounded OpenAI wire fallback", () => {
 	assert.equal(tokens, 12_000);
 });
 
+test("unknown image dimensions preserve bounded candidate-specific accounting", () => {
+	assert.equal(
+		estimatePifrostImageTokens(
+			{ type: "image", data: "not-an-image" },
+			{
+				id: "gemini-3-pro",
+				api: "google-generative-ai",
+				identity: { class: "gemini", family: "pro", revision: "3" },
+			},
+		),
+		1_120,
+	);
+	assert.equal(
+		estimatePifrostImageTokens(
+			{ type: "image", data: "not-an-image" },
+			{
+				id: "claude-opus-5",
+				api: "anthropic-messages",
+				identity: { class: "anthropic", family: "opus", revision: "5" },
+			},
+		),
+		4_761,
+	);
+	assert.equal(
+		estimatePifrostImageTokens(
+			{ type: "image", data: "not-an-image", detail: "high" },
+			{
+				id: "gpt-5.6-sol",
+				api: "openai-responses",
+				identity: { class: "openai", family: "gpt", revision: "5.6" },
+			},
+		),
+		3_000,
+	);
+});
+
 
 test("candidate tokenizer family delegates to the OMP host counter when available", () => {
 	const seen: Array<{ value: string | string[]; tokenizer: string }> = [];

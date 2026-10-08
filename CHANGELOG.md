@@ -1,3 +1,14 @@
+## 0.9.1 — 2026-10-08
+
+- Corrected candidate-specific context prewalk for locally recounted assistant history. Pifrost now includes opaque reasoning signatures, redacted thinking and Anthropic server-tool payloads that OMP replays to providers, preventing cross-model fallback estimates from understating context usage when a prior provider-usage anchor cannot be reused.
+- Propagated Bifrost's authoritative resolved-model response header back into the assistant message's `upstreamModel`. Subsequent candidate-specific prewalk therefore anchors provider usage to the model that actually served a same-protocol fallback, not merely the Pifrost attempt primary.
+- Tightened unknown-image accounting: bounded candidate-specific Gemini, Anthropic and OpenAI detail rules are used when dimensions cannot be decoded, while unbounded OpenAI original-detail rules retain OMP's safe 12K wire fallback instead of manufacturing a multi-million-token sentinel estimate.
+- Fixed first-time setup-token precedence. A stale ambient `BIFROST_SETUP_TOKEN` can no longer displace already configured OSS Basic or Enterprise Bearer management credentials; explicit setup mode remains available and setup tokens remain non-persistent.
+- Separated reproducible release gates from moving upstream canaries. Release CI now validates only pinned Bifrost release contracts; Bifrost `dev` checks run only in the scheduled upstream-canary workflow, matching the existing OMP/Hound pattern.
+- Made the OMP compatibility boundary explicit. Doctor now distinguishes TESTED CURRENT, SUPPORTED, NEWER THAN VALIDATED and UNSUPPORTED host versions and reports the pinned 18.4.5 policy snapshot separately from the 18.8.4 host-validation boundary. Exact image-policy and opaque replay-accounting parity are covered by OMP upstream canaries.
+- Corrected the technical reference's stale release version and extended release validation so README, reference, package/lock versions and the pinned OMP dependency snapshot must agree.
+- Preserved the architecture: Bifrost still owns physical ordering, same-protocol fallback, credentials, governance and billing; Pifrost still owns only request compatibility/context prewalk, cross-protocol pre-output advance and observability.
+
 ## 0.9.0 — 2026-10-08
 
 - Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Text now uses OMP's native tokenizer family when the candidate exposes one, image blocks use OMP-aligned model/dimension-aware accounting, and trustworthy usage anchors are reused only for the physical upstream model that produced them.
