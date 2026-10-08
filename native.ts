@@ -103,6 +103,11 @@ import {
 	recordAgentRequest,
 	releaseAgentSession,
 } from "./agent-attribution.ts";
+import {
+	formatPifrostRouteTraces,
+	recordBifrostCaptureTrace,
+	releasePifrostRouteTraces,
+} from "./request-provenance.ts";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
 
@@ -162,13 +167,24 @@ function eventWithBifrostCost(
 function bridgeBifrostUsageCostStream(
 	source: AssistantMessageEventStream,
 	capture: BifrostCostCapture,
+	onTerminal?: (outcome: "done" | "error" | "thrown") => void,
 ): AssistantMessageEventStream {
 	const output = new AssistantMessageEventStream();
 	output.forwardLocalWorkFrom(source);
 	void (async () => {
+		let recorded = false;
+		const terminal = (outcome: "done" | "error" | "thrown") => {
+			if (recorded) return;
+			recorded = true;
+			onTerminal?.(outcome);
+		};
 		try {
-			for await (const event of source) output.push(eventWithBifrostCost(event, capture));
+			for await (const event of source) {
+				output.push(eventWithBifrostCost(event, capture));
+				if (event.type === "done" || event.type === "error") terminal(event.type);
+			}
 		} catch (error) {
+			terminal("thrown");
 			output.fail(error);
 		} finally {
 			output.forwardLocalWorkFrom(undefined);
@@ -378,6 +394,13 @@ function streamDynamicPifrostRoute(
 					responseOptions,
 				),
 				costCapture,
+				(outcome) => recordBifrostCaptureTrace(sessionId, {
+					logicalModel: plan.logicalModel,
+					protocol: attempt.protocol,
+					attempt: attemptIndex + 1,
+					requestedPrimary: attempt.primary,
+					outcome,
+				}, costCapture),
 			);
 		}
 
@@ -409,6 +432,13 @@ function streamDynamicPifrostRoute(
 				chatOptions,
 			),
 			costCapture,
+			(outcome) => recordBifrostCaptureTrace(sessionId, {
+				logicalModel: plan.logicalModel,
+				protocol: attempt.protocol,
+				attempt: attemptIndex + 1,
+				requestedPrimary: attempt.primary,
+				outcome,
+			}, costCapture),
 		);
 	}).catch((error) => outer.fail(error));
 
@@ -479,6 +509,13 @@ function streamPifrostOpenAI(
 	return bridgeBifrostUsageCostStream(
 		streamOpenAICompletions(transportModel, context, streamOptions),
 		costCapture,
+		(outcome) => recordBifrostCaptureTrace(sessionId, {
+			logicalModel: model.id,
+			protocol: "openai-completions",
+			attempt: 1,
+			requestedPrimary: model.id,
+			outcome,
+		}, costCapture),
 	);
 }
 
@@ -712,7 +749,9 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_shutdown", (_event, ctx) => {
-		releaseAgentSession(ctx.sessionManager.getSessionId());
+		const sessionId = ctx.sessionManager.getSessionId();
+		releaseAgentSession(sessionId);
+		releasePifrostRouteTraces(sessionId);
 	});
 
 	pi.registerCommand("pifrost", {
@@ -733,6 +772,11 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					agentKind: ctx.agent.kind,
 				});
 			};
+
+			if (command === "trace") {
+				ctx.ui.notify(formatPifrostRouteTraces(ctx.sessionManager.getSessionId()), "info");
+				return;
+			}
 
 			if (command === "config") {
 				try {
@@ -800,7 +844,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost doctor | /pifrost trace | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
