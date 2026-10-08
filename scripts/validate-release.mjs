@@ -8,6 +8,8 @@ const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
 const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8"));
 const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
+const reference = readFileSync(new URL("docs/REFERENCE.md", root), "utf8");
+const cliLib = readFileSync(new URL("cli-lib.mjs", root), "utf8");
 const native = readFileSync(new URL("native.ts", root), "utf8");
 const transportModel = readFileSync(new URL("transport-model.ts", root), "utf8");
 
@@ -53,13 +55,33 @@ if (expectedRelease !== pkg.version) {
   fail(`README expected release is ${expectedRelease ?? "missing"}, package.json is ${pkg.version}`);
 }
 
+const referenceReleaseOffset = reference.indexOf(releaseMarker);
+const referenceExpectedRelease = referenceReleaseOffset >= 0
+  ? reference.slice(referenceReleaseOffset + releaseMarker.length).split("\n", 1)[0]?.trim()
+  : undefined;
+if (referenceExpectedRelease !== pkg.version) {
+  fail(`docs/REFERENCE.md expected release is ${referenceExpectedRelease ?? "missing"}, package.json is ${pkg.version}`);
+}
+
+const snapshotMatch = cliLib.match(/PIFROST_OMP_POLICY_SNAPSHOT_VERSION\s*=\s*"([^"]+)"/u);
+const ompPolicySnapshot = snapshotMatch?.[1];
+if (!ompPolicySnapshot) fail("cli-lib.mjs must declare PIFROST_OMP_POLICY_SNAPSHOT_VERSION");
+for (const dependency of requiredDirectRuntimeDependencies) {
+  if (pkg.dependencies?.[dependency] !== ompPolicySnapshot) {
+    fail(`${dependency} must match OMP policy snapshot ${ompPolicySnapshot}; got ${pkg.dependencies?.[dependency] ?? "missing"}`);
+  }
+}
+if (pkg.devDependencies?.["@oh-my-pi/pi-coding-agent"] !== ompPolicySnapshot) {
+  fail(`@oh-my-pi/pi-coding-agent must match OMP policy snapshot ${ompPolicySnapshot}`);
+}
+
 const catalogFallback = readFileSync(new URL("catalog-fallback.ts", root), "utf8");
 if (/@oh-my-pi\/pi-catalog\/build/u.test(native)) {
   fail("runtime package must not import @oh-my-pi/pi-catalog/build; compiled OMP 18.4.x cannot resolve that subpath");
 }
 for (const [name, source] of [["transport-model.ts", transportModel], ["catalog-fallback.ts", catalogFallback]]) {
   if (/from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u.test(source)) {
-    fail(`${name} must not import pi-catalog at runtime; host imports belong in native.ts`);
+    fail(`${name} must not import pi-catalog at runtime; Pifrost's pinned catalog-snapshot imports belong in native.ts`);
   }
 }
 if (!/from\s+["']@oh-my-pi\/pi-catalog["']/u.test(native) ||
