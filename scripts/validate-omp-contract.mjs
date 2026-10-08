@@ -119,6 +119,58 @@ const CURRENT_SOURCES = [
     ],
   },
   {
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} OpenAI image-policy parity`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/openai.kdl`,
+    required: [
+      'revision ">=5.6 <10"',
+      'models "*gpt-6-astra*"',
+      'multiplier 1.2',
+      'patch-budget 2500',
+      'patch-budget 6144',
+      'patch-budget 10000',
+      'max-edge 65535',
+    ],
+  },
+  {
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} Anthropic/Gemini image-policy parity`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/anthropic.kdl`,
+    required: [
+      'max-edge 2576',
+      'max-tokens 4784',
+      'max-edge 1568',
+      'max-tokens 1568',
+    ],
+  },
+  {
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} Gemini image-policy parity`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/gemini.kdl`,
+    required: [
+      'regime "fixed"',
+      'tokens 1120',
+    ],
+  },
+  {
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} provider image fallback parity`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/providers/image-tokenization.kdl`,
+    required: [
+      'multiplier 1.2',
+      'patch-budget 2500',
+      'patch-budget 10000',
+      'tokens 1120',
+      'max-tokens 4784',
+    ],
+  },
+  {
+    name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} replay-token accounting parity`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/tokenizer.ts`,
+    required: [
+      "thinkingSignature",
+      'block.type === "redactedThinking"',
+      'block.type === "anthropicServerTool"',
+      "stringifyJson(block.arguments)",
+    ],
+  },
+  {
     name: `OMP ${process.env.PIFROST_OMP_UPSTREAM_CANARY === "1" ? "main" : "18.8.4"} provider-cost contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/ai/src/providers/openai-shared.ts`,
     required: [
