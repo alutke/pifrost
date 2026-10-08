@@ -92,6 +92,12 @@ export interface DynamicRouteEstimateOptions {
 	 * When present, this outranks the legacy serialized-body estimator.
 	 */
 	estimatedInputTokens?: number;
+	/**
+	 * Candidate-specific semantic prompt estimates. Runtime prewalk populates
+	 * this from each physical member's OMP-compatible image/token policy so one
+	 * fallback member's accounting cannot be blindly applied to every member.
+	 */
+	estimatedInputTokensByMember?: ReadonlyMap<string, number>;
 	/** True only when the caller explicitly requested the serialized max-token cap. */
 	outputCapExplicit?: boolean;
 }
@@ -353,7 +359,7 @@ export function resolveDynamicMemberProtocol(
 	) as PifrostWireProtocol | undefined;
 }
 
-function resolveDynamicMemberProtocolForRequest(
+export function resolveDynamicMemberProtocolForRequest(
 	member: DynamicRouteMemberProfile,
 	body: Record<string, unknown>,
 	supportedProtocols: readonly PifrostWireProtocol[],
@@ -418,21 +424,37 @@ function evaluateDynamicRoute(
 	outputReserveTokens: number;
 	outputReserveExplicit: boolean;
 	requiredContextTokens: number;
-	eligible: Array<{ member: DynamicRouteMemberProfile; protocol: PifrostWireProtocol }>;
+	eligible: Array<{
+		member: DynamicRouteMemberProfile;
+		protocol: PifrostWireProtocol;
+		estimatedInputTokens: number;
+		requiredContextTokens: number;
+	}>;
 	excluded: Array<{ reference: string; reasons: string[] }>;
 } {
-	const estimatedInputTokens =
+	const fallbackEstimate =
 		finitePositive(options.estimatedInputTokens) ?? estimateOpenAIRequestInputTokens(body, options);
 	const outputBudget = requestedOutputBudget(body, profile, options);
 	const outputReserveTokens = outputBudget.tokens;
-	const requiredContextTokens = estimatedInputTokens + outputReserveTokens;
 	const excluded: Array<{ reference: string; reasons: string[] }> = [];
-	const eligible: Array<{ member: DynamicRouteMemberProfile; protocol: PifrostWireProtocol }> = [];
+	const eligible: Array<{
+		member: DynamicRouteMemberProfile;
+		protocol: PifrostWireProtocol;
+		estimatedInputTokens: number;
+		requiredContextTokens: number;
+	}> = [];
+	const observedEstimates: number[] = [];
+
 	for (const member of profile.members) {
+		const memberEstimate =
+			finitePositive(options.estimatedInputTokensByMember?.get(member.reference)) ??
+			finitePositive(options.estimatedInputTokensByMember?.get(member.reference.toLowerCase())) ??
+			fallbackEstimate;
+		observedEstimates.push(memberEstimate);
 		const reasons = memberExclusionReasons(
 			member,
 			body,
-			estimatedInputTokens,
+			memberEstimate,
 			outputReserveTokens,
 			supportedProtocols,
 		);
@@ -440,23 +462,30 @@ function evaluateDynamicRoute(
 		if (reasons.length || !protocol) {
 			excluded.push({ reference: member.reference, reasons });
 		} else {
-			eligible.push({ member, protocol });
+			eligible.push({
+				member,
+				protocol,
+				estimatedInputTokens: memberEstimate,
+				requiredContextTokens: memberEstimate + Math.min(outputReserveTokens, member.maxTokens),
+			});
 		}
 	}
 	if (!eligible.length) {
 		const outputLabel = outputBudget.explicit ? "requested output reserve" : "implicit OMP/model output cap";
+		const summaryEstimate = observedEstimates.length ? Math.max(...observedEstimates) : fallbackEstimate;
 		const details = excluded.map((item) => item.reference + " [" + item.reasons.join("; ") + "]").join(" | ");
 		throw new DynamicRouteCapacityError(
-			"Pifrost dynamic route " + profile.id + " has no eligible member for estimated input " +
-			estimatedInputTokens + " + " + outputLabel + " " + outputReserveTokens + " = " +
-			requiredContextTokens + " tokens" + (details ? "; exclusions: " + details : ""),
+			"Pifrost dynamic route " + profile.id + " has no eligible member for estimated input up to " +
+			summaryEstimate + " + " + outputLabel + " " + outputReserveTokens +
+			" tokens" + (details ? "; exclusions: " + details : ""),
 		);
 	}
+	const primary = eligible[0]!;
 	return {
-		estimatedInputTokens,
+		estimatedInputTokens: primary.estimatedInputTokens,
 		outputReserveTokens,
 		outputReserveExplicit: outputBudget.explicit,
-		requiredContextTokens,
+		requiredContextTokens: primary.requiredContextTokens,
 		eligible,
 		excluded,
 	};
