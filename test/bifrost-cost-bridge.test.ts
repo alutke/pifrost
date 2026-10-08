@@ -1,11 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import {
+	applyBifrostAuthoritativeCost,
 	bridgeBifrostUsageCostPayload,
 	bridgeBifrostUsageCostResponse,
-	bridgeBifrostUsageCostStream,
 	createBifrostCostBridgeFetch,
 } from "../bifrost-cost-bridge.ts";
 
@@ -93,36 +92,15 @@ test("bridges nested cost in streaming SSE without buffering the whole response"
 });
 
 
-test("applies captured Bifrost total after OMP parsing for the bifrost provider", async () => {
+test("applies captured Bifrost total to OMP-shaped parsed usage", () => {
 	const capture = {
 		total: 0.06,
 		breakdown: { input_cost: 0.01, output_cost: 0.05, total_cost: 0.06 },
 	};
-	const source = new AssistantMessageEventStream();
-	const bridged = bridgeBifrostUsageCostStream(source, capture);
-	source.push({
-		type: "done",
-		reason: "stop",
-		message: {
-			role: "assistant",
-			content: [{ type: "text", text: "done" }],
-			api: "openai-completions",
-			provider: "bifrost",
-			model: "omp-default",
-			usage: {
-				input: 100,
-				output: 20,
-				cacheRead: 0,
-				cacheWrite: 0,
-				totalTokens: 120,
-				cost: { input: 0.01, output: 0.01, cacheRead: 0, cacheWrite: 0, total: 0.02 },
-			},
-			stopReason: "stop",
-			timestamp: Date.now(),
-		},
-	} as never);
-	const message = await bridged.result();
-	assert.equal(message.usage.cost.total, 0.06);
-	assert.equal(message.usage.cost.input, 0.03);
-	assert.equal(message.usage.cost.output, 0.03);
+	const usage = applyBifrostAuthoritativeCost({
+		cost: { input: 0.01, output: 0.01, cacheRead: 0, cacheWrite: 0, total: 0.02 },
+	}, capture);
+	assert.equal(usage.cost.total, 0.06);
+	assert.equal(usage.cost.input, 0.03);
+	assert.equal(usage.cost.output, 0.03);
 });
