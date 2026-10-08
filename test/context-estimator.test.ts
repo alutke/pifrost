@@ -189,3 +189,43 @@ test("physical-model anchor filter does not reuse usage from a different fallbac
 	assert.ok(sameModel >= 910_000);
 	assert.ok(differentModel < 100, `different physical member reused stale usage: ${differentModel}`);
 });
+
+
+test("full local recount includes opaque reasoning and server-tool replay payloads", () => {
+	const signature = "s".repeat(20_000);
+	const redacted = "r".repeat(12_000);
+	const serverPayload = { type: "web_search_result", opaque: "o".repeat(8_000) };
+	const context = {
+		messages: [
+			{
+				role: "assistant",
+				content: [
+					{ type: "thinking", thinking: "brief thought", thinkingSignature: signature },
+					{ type: "redactedThinking", data: redacted },
+					{ type: "anthropicServerTool", block: serverPayload },
+				],
+				api: "openai-completions",
+				provider: "bifrost",
+				model: "omp-default",
+				upstreamModel: "provider/model-a",
+				usage: {
+					input: 50_000,
+					output: 1_000,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 51_000,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: 1,
+			},
+			{ role: "user", content: "next turn", timestamp: 2 },
+		],
+	} as unknown as Context;
+
+	const estimate = estimateOmpContextInputTokens(context, createApproximateContextTokenizer(), {
+		// Force a full local recount: model-a usage cannot anchor model-b.
+		anchorModelIds: ["provider/model-b"],
+	});
+	assert.ok(estimate > 10_000, `opaque replay payloads were undercounted: ${estimate}`);
+});
