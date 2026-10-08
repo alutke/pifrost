@@ -231,7 +231,8 @@ function compatibilityMark(status) {
 }
 
 function compatibilityNeedsAttention(item) {
-  return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
+  return item.status === "drifted" ||
+    ((item.id === "omp-baseline" || item.id === "bifrost-setup-lock") && item.status !== "supported");
 }
 
 async function commandCompatibilityDoctor(snapshot) {
@@ -254,7 +255,7 @@ async function commandCompatibilityDoctor(snapshot) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
-  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (Pifrost baseline ${PIFROST_BIFROST_MIN_VERSION})`);
+  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (minimum ${PIFROST_BIFROST_MIN_VERSION}; validated through ${PIFROST_BIFROST_VALIDATED_VERSION})`);
   for (const item of matrix.bifrost) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
