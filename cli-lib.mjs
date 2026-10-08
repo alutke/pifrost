@@ -228,9 +228,6 @@ export function managementAuthFromState(state, env = process.env) {
   }
   if (envApiKey) return { mode: "bearer", apiKey: envApiKey };
   if (envUsername && envPassword) return { mode: "basic", username: envUsername, password: envPassword };
-  // Setup tokens are intentionally environment-only: Pifrost may use one to
-  // bootstrap/diagnose a fresh Bifrost 2.2.6 instance but never persists it.
-  if (envSetupToken) return { mode: "setup", setupToken: envSetupToken };
 
   const storedMode = nonEmpty(state.config?.bifrost?.managementAuthMode)?.toLowerCase();
   const storedApiKey = nonEmpty(state.secrets?.managementApiKey);
@@ -251,6 +248,11 @@ export function managementAuthFromState(state, env = process.env) {
   if (storedUsername && storedPassword) {
     return { mode: "basic", username: storedUsername, password: storedPassword };
   }
+
+  // An ambient setup token is a last-resort bootstrap credential only. Once
+  // normal management credentials exist they must win, otherwise a stale
+  // BIFROST_SETUP_TOKEN can break every post-setup management operation.
+  if (envSetupToken) return { mode: "setup", setupToken: envSetupToken };
   return undefined;
 }
 
