@@ -1,9 +1,15 @@
-## Unreleased
+## 0.9.0 — 2026-10-08
 
-- Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Text now uses OMP's native tokenizer family when the candidate exposes one, image blocks use OMP-aligned model/dimension-aware accounting, and trustworthy usage anchors are reused only for the physical upstream model that produced them.
-- Added an OMP compatibility envelope with release CI against the minimum loader and the current validated OMP 18.8.4 binary, plus a scheduled contract canary against OMP `main`. `pifrost doctor` now reports both the minimum and the current validated OMP boundary.
-- Added a streaming-safe Bifrost cost bridge. When Bifrost returns its nested authoritative `usage.cost.total_cost` shape, Pifrost exposes that total to OMP as provider-reported cost while retaining the original Bifrost breakdown for diagnostics; JSON and SSE responses are both supported.
-- Kept routing ownership unchanged: Pifrost still performs compatibility/context prewalk only, while Bifrost remains authoritative for provider/model ordering, same-protocol fallback, governance and billing.
+- Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Text uses OMP's native tokenizer family when available, image blocks use OMP-aligned model/dimension-aware accounting, and trustworthy usage anchors are reused only for the physical upstream model that produced them.
+- Expanded upstream compatibility assurance: release CI now validates the minimum OMP loader and current OMP 18.8.5, scheduled canaries track OMP main and Bifrost dev, and doctor reports the minimum and latest validated OMP/Bifrost boundaries.
+- Added a streaming-safe Bifrost cost bridge. When Bifrost returns authoritative nested `usage.cost.total_cost`, Pifrost feeds that total into OMP accounting while retaining the original Bifrost breakdown; Pifrost does not duplicate Bifrost's service-tier, long-context, cache or custom-pricing engine.
+- Added Bifrost 2.2.6 first-run/setup and inference-auth awareness. Fresh instances are identified explicitly through the public auth-status endpoint instead of surfacing a generic management 401/403; Pifrost never accepts, generates or persists Bifrost setup tokens.
+- Added request-level routing provenance for stable Bifrost routed-identity headers, including actual provider/model, fallback state/index, request type and upstream latency. `/pifrost trace` shows recent requests for the active OMP session and `/pifrost doctor` includes the latest five. Future `x-bifrost-request-id` / trace-id headers are consumed automatically when Bifrost releases them.
+- Added Bifrost gateway conversion diagnostics for the released `convert_chat_to_responses` contract. The unreleased reasoning-with-tools-to-Responses flag remains advisory through the Bifrost dev canary and is not a release dependency.
+- Made repository MCP diagnostics reflect Bifrost's enforced execution boundary. Pifrost now distinguishes granted, executable and auto-executable tools, treats a known `tools_to_execute` denial as unavailable, preserves backward compatibility when older schemas omit the fields, and warns on wildcard auto-execution without mutating MCP configuration.
+- Pinned Bifrost 2.2.5 Code Mode invocation enforcement and Bifrost 2.2.6 setup, Chat-to-Responses, routed-identity and cost contracts in release validation.
+- Kept stateful Responses disabled through the Bifrost proxy. Even a one-member Pifrost route cannot prove server-side response storage plus immutable provider/key routing across future turns, so `previous_response_id` chaining remains deliberately off rather than risking a silent cross-provider state mismatch.
+- Routing ownership is unchanged: Pifrost performs compatibility/context prewalk and diagnostics only; Bifrost remains authoritative for physical ordering, same-protocol fallback, keys, governance and billing.
 
 ## 0.8.10 — 2026-10-02
 
