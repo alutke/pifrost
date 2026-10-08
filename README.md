@@ -70,7 +70,7 @@ That gives you six useful properties:
 | --- | --- |
 | Node.js | **22.19+** |
 | OhMyPi | **18.4.5+** in the 18.x line |
-| Pifrost OMP policy snapshot | **18.4.5**, with explicit compatibility patches; host integration validated through **18.8.4** |
+| Pifrost OMP policy snapshot | **18.4.5**, with explicit compatibility patches; host integration validated through **18.8.6** |
 | Maxim Bifrost | **2.2.4+** |
 | Recommended Bifrost | **2.2.6+** for setup-lock awareness, routed-response provenance and current cost semantics |
 
@@ -106,7 +106,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.9.1
+0.9.2
 ```
 
 Bun also works:

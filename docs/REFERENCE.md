@@ -176,7 +176,7 @@ Pifrost resolves capability facts per field rather than assuming one source is c
 4. a narrowly scoped vendor-backed capability override for a known upstream omission; and
 5. conservative catalog fallback when the model identity and capability are safe to establish.
 
-Transport-compatibility axes are handled more carefully. Pifrost asks OMP's host-owned `resolveModelPolicy()` engine for the actual provider/model/protocol route rather than inferring transport policy by intersecting bundled catalogue rows. That runtime policy outranks the generic Bifrost datasheet for semantic compatibility such as whether reasoning and tools may coexist. OMP expresses this particular axis as `disableReasoningWithTools`; Pifrost translates it to its positive `supportsReasoningWithTools` capability before prewalk. Explicit live Bifrost capability metadata still outranks both. Unknown or unmapped provider identities fall back to Bifrost metadata rather than receiving a permissive guess.
+Transport-compatibility axes are handled more carefully. Pifrost resolves transport policy through its pinned, validated OMP policy snapshot injected at the extension boundary, plus explicit Pifrost compatibility patches, rather than inferring policy by intersecting generic catalogue rows. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host. That runtime policy outranks the generic Bifrost datasheet for semantic compatibility such as whether reasoning and tools may coexist. OMP expresses this particular axis as `disableReasoningWithTools`; Pifrost translates it to its positive `supportsReasoningWithTools` capability before prewalk. Explicit live Bifrost capability metadata still outranks both. Unknown or unmapped provider identities fall back to Bifrost metadata rather than receiving a permissive guess.
 
 Diagnostics preserve origin as `live`, `omp-provider-policy`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback` for each route member and capability.
 
@@ -201,6 +201,8 @@ Routing ownership is explicit:
 - **Bifrost** owns provider/model ordering, credentials, physical policy routing, same-protocol fallbacks and governance.
 
 Pifrost preserves the relative order of all surviving Bifrost members and never reorders them for quality, cost, quota, availability preference or provider preference.
+
+Pifrost's optional compact-before-skip coordinator is route preservation, not a replacement for OMP compaction policy. OMP owns normal automatic compaction, including 18.8.5+ per-model thresholds and 18.8.6+ cache-aware pruning. Pifrost calls OMP's own `compact()` only when a smaller physical fallback is about to become context-ineligible; set `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0` to disable that extra preservation step.
 
 ### Hound and MCP presentation diagnostics
 
@@ -284,7 +286,7 @@ thinking=high,max source=explicit
 
 - Node.js **22.19 or later**
 - OhMyPi **18.4.5 or later** in the 18.x line
-- Pifrost's packaged OMP policy/catalog snapshot is **18.4.5**; Pifrost layers explicit compatibility patches over that portable baseline and validates host integration through **18.8.4**. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host.
+- Pifrost's packaged OMP policy/catalog snapshot is **18.4.5**; Pifrost layers explicit compatibility patches over that portable baseline and validates host integration through **18.8.6**. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host.
 - Maxim Bifrost **2.2.4 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
@@ -316,7 +318,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.9.1
+0.9.2
 ```
 
 Bun can also install the package globally:
@@ -798,14 +800,14 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ```text
 Upstream compatibility
-OMP version:             18.8.4 (minimum 18.4.5; validated through 18.8.4)
+OMP version:             18.8.6 (minimum 18.4.5; validated through 18.8.6)
 OMP policy snapshot:     18.4.5 + Pifrost compatibility patches
-  [TESTED CURRENT] installed 18.8.4 matches the current validated release
-  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.4
-  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.4
-  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.4
-  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.4
-  [OK] OMP model presets >=18.4.5 — available in OMP 18.8.4
+  [TESTED CURRENT] installed 18.8.6 matches the current validated release
+  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.6
+  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.6
+  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.6
+  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.6
+  [OK] OMP model presets >=18.4.5 — available in OMP 18.8.6
 Bifrost version:         2.2.6 (minimum 2.2.4; validated through 2.2.6)
   [TESTED CURRENT] installed 2.2.6 matches the current validated release
   [OK] First-time setup lock >=2.2.6 — setup complete; dashboard auth=enabled, inference auth=enforced
