@@ -231,6 +231,14 @@ function compatibilityMark(status) {
   return String(status ?? "UNKNOWN").toUpperCase();
 }
 
+function validationMark(status) {
+  if (status === "tested-current") return "TESTED CURRENT";
+  if (status === "supported") return "SUPPORTED";
+  if (status === "newer") return "NEWER THAN VALIDATED";
+  if (status === "unsupported") return "UNSUPPORTED";
+  return "UNKNOWN";
+}
+
 function compatibilityNeedsAttention(item) {
   return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
 }
@@ -251,17 +259,21 @@ async function commandCompatibilityDoctor(snapshot) {
 
   printHeader("Upstream compatibility");
   console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (minimum ${PIFROST_OMP_MIN_VERSION}; validated through ${PIFROST_OMP_VALIDATED_VERSION})`);
+  console.log(`  [${validationMark(matrix.ompValidation.status)}] ${matrix.ompValidation.detail}`);
   for (const item of matrix.omp) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
   console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (minimum ${PIFROST_BIFROST_MIN_VERSION}; validated through ${PIFROST_BIFROST_VALIDATED_VERSION})`);
+  console.log(`  [${validationMark(matrix.bifrostValidation.status)}] ${matrix.bifrostValidation.detail}`);
   for (const item of matrix.bifrost) {
     console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
     if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
   }
 
-  const issues = [...matrix.omp, ...matrix.bifrost].filter((item) => item.status !== "supported");
+  const issues = [...matrix.omp, ...matrix.bifrost].filter(
+    (item) => item.status !== "supported" && item.optional !== true,
+  );
   const drift = issues.filter((item) => item.status === "drifted").length;
   const inaccessible = issues.filter((item) => item.status === "inaccessible").length;
   const unavailable = issues.filter((item) => item.status === "unavailable").length;
