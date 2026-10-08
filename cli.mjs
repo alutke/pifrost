@@ -72,6 +72,7 @@ import {
   callMcpGatewayTool,
   listMcpGatewayTools,
   mcpToolSurfaceDiagnostics,
+  mcpClientExecutionDiagnostics,
   listVirtualMcps,
   loadAliasManifest,
   loadState,
@@ -337,6 +338,7 @@ function normalizeManagementMode(value) {
   const mode = String(value).trim().toLowerCase();
   if (["basic", "oss", "admin"].includes(mode)) return "basic";
   if (["bearer", "enterprise", "api-key", "apikey"].includes(mode)) return "bearer";
+  if (["setup", "setup-token", "bootstrap"].includes(mode)) return "setup";
   throw new Error("Management auth mode must be `basic` (Bifrost OSS), `bearer` (Bifrost Enterprise), or `setup` (ephemeral first-time setup token)");
 }
 
@@ -995,6 +997,29 @@ async function commandRepoStatus(snapshot) {
       } else {
         console.log("Effective MCP tools: none");
       }
+      if (policy.effective.length) {
+        console.log("Effective MCP authorization:");
+        for (const grant of policy.effective) {
+          const client = clients.find((candidate) =>
+            candidate.name.toLowerCase() === grant.client.toLowerCase() ||
+            candidate.id?.toLowerCase() === grant.client.toLowerCase()
+          );
+          if (!client) {
+            console.log(`  ${grant.client}: policy unavailable (management client not resolved)`);
+            continue;
+          }
+          const execution = mcpClientExecutionDiagnostics(client, grant.tools);
+          console.log(
+            `  ${client.name}: granted=${execution.grantedCount} executable=${execution.executableCount} auto=${execution.autoExecutableCount}`,
+          );
+          for (const row of execution.rows) {
+            console.log(
+              `    ${row.tool}: granted=yes executable=${row.executable ? "yes" : "no"} auto=${row.autoExecutable ? "yes" : "no"}`,
+            );
+          }
+          for (const warning of execution.warnings) console.log(`    WARN ${warning}`);
+        }
+      }
       for (const item of policy.unresolved) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
       }
@@ -1218,7 +1243,9 @@ async function commandRepoMcpList() {
     ].filter(Boolean);
     console.log(`${client.name}  state=${client.state ?? "unknown"}  tools=${client.tools.length || "unknown"}${modes.length ? `  ${modes.join(" ")}` : ""}`);
     if (client.endpointSlug) console.log(`  endpoint=/mcp/${client.endpointSlug}`);
-    if (client.toolsToAutoExecute?.length) console.log(`  auto-execute: ${client.toolsToAutoExecute.join(", ")}`);
+    console.log(`  execute allow: ${client.toolsToExecute?.length ? client.toolsToExecute.join(", ") : "none"}`);
+    console.log(`  auto-execute: ${client.toolsToAutoExecute?.length ? client.toolsToAutoExecute.join(", ") : "none"}`);
+    if (client.toolsToAutoExecute?.includes("*")) console.log("  WARN auto-execute wildcard grants every executable tool approval-free execution");
     if (client.serverInstructions) console.log(`  upstream instructions: set (${Buffer.byteLength(client.serverInstructions, "utf8")}B)`);
     if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
   }
