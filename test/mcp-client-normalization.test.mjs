@@ -43,7 +43,9 @@ test("normalizes current Bifrost nested MCP client response", () => {
   assert.equal(client.authType, "per_user_oauth");
   assert.equal(client.isCodeModeClient, true);
   assert.deepEqual(client.toolsToExecute, ["*"]);
+  assert.equal(client.toolsToExecuteKnown, true);
   assert.deepEqual(client.toolsToAutoExecute, ["get-logs"]);
+  assert.equal(client.toolsToAutoExecuteKnown, true);
   assert.equal(client.needsSessionStickiness, false);
   assert.equal(client.isPingAvailable, true);
   assert.deepEqual(client.tools, ["create-deployment", "get-logs", "list-projects"]);
@@ -83,6 +85,8 @@ test("retains compatibility with flat MCP client response shapes", () => {
   assert.equal(client.allowOnAllVirtualKeys, true);
   assert.equal(client.state, "healthy");
   assert.deepEqual(client.tools, ["legacy-tool"]);
+  assert.equal(client.toolsToExecuteKnown, false);
+  assert.equal(client.toolsToAutoExecuteKnown, false);
 });
 
 test("rejects assignment when an MCP client has no usable identity", () => {
