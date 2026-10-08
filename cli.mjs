@@ -45,6 +45,7 @@ import {
   PIFROST_OMP_MIN_VERSION,
   PIFROST_OMP_VALIDATED_VERSION,
   PIFROST_BIFROST_MIN_VERSION,
+  PIFROST_BIFROST_VALIDATED_VERSION,
   PifrostHttpError,
   aliasManifestPath,
   attachVirtualMcpToVirtualKey,
@@ -59,6 +60,7 @@ import {
   getRepoRoot,
   getBifrostVersion,
   getBifrostHealth,
+  getBifrostAuthStatus,
   getOmpVersion,
   getBifrostConfig,
   getVirtualKeyQuota,
@@ -425,6 +427,17 @@ async function commandGlobalSetup(flags) {
     throw new Error("Bifrost URL and global inference Virtual Key are required");
   }
   url = normalizeBifrostUrl(url);
+  if (!flags["skip-test"]) {
+    const authStatus = await getBifrostAuthStatus(url);
+    if (authStatus.setupRequired === true) {
+      const tokenState = authStatus.setupTokenConfigured === true
+        ? "a setup token is configured"
+        : "no setup token is configured";
+      throw new Error(
+        `Bifrost first-time setup is incomplete (${tokenState}). Complete Bifrost's setup-token/dashboard flow, create the first admin, then rerun pifrost global setup. Pifrost deliberately does not accept, generate, or persist the Bifrost setup token.`,
+      );
+    }
+  }
   const managementAuth = buildManagementAuth(
     managementMode,
     managementUsername,
@@ -510,6 +523,23 @@ async function commandGlobalStatus(snapshot) {
         ? "Bifrost health:         OK"
         : `Bifrost health:         FAIL (${errorText("health")})`,
     );
+    if (probes.authStatus?.ok) {
+      const auth = value("authStatus");
+      const setup = auth.setupRequired === undefined
+        ? "not reported"
+        : auth.setupRequired
+          ? `REQUIRED (token=${auth.setupTokenConfigured ? "configured" : "missing"})`
+          : "complete";
+      const inferenceAuth = auth.inferenceAuthEnforced === undefined
+        ? "not reported"
+        : auth.inferenceAuthEnforced
+          ? "enforced"
+          : "disabled";
+      console.log(`Bifrost bootstrap:      ${setup}`);
+      console.log(`Bifrost inference auth: ${inferenceAuth}`);
+    } else if (probes.authStatus) {
+      console.log(`Bifrost auth posture:   unavailable (${errorText("authStatus")})`);
+    }
   }
 
   if (runtime.url && runtime.virtualKey) {
@@ -557,7 +587,18 @@ async function commandGlobalStatus(snapshot) {
       const mcpAuthMode = client?.mcp_server_auth_mode ?? "headers";
       const chainDepth = client?.routing_chain_max_depth ?? "default";
       const requiredHeaders = Array.isArray(client?.required_headers) ? client.required_headers : [];
+      const compat = client?.compat && typeof client.compat === "object" ? client.compat : {};
+      const chatToResponses = typeof compat.convert_chat_to_responses === "boolean"
+        ? compat.convert_chat_to_responses
+        : undefined;
+      const reasoningToResponses = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? compat.force_reasoning_only_models_to_responses
+        : undefined;
       console.log(`Gateway config 2.x:     MCP-auth=${mcpAuthMode}, chain-depth=${chainDepth}, required-headers=${requiredHeaders.length}`);
+      console.log(`  Chat→Responses:       ${chatToResponses === undefined ? "not reported" : chatToResponses ? "enabled" : "disabled"}`);
+      if (reasoningToResponses !== undefined) {
+        console.log(`  Reasoning→Responses:  ${reasoningToResponses ? "enabled" : "disabled"} (newer Bifrost compatibility contract)`);
+      }
       if (mcpAuthMode === "oauth") {
         console.log("  WARN repo MCP configs use x-bf-vk; OAuth-only MCP gateway mode requires OMP OAuth instead of VK/header auth.");
       }
