@@ -1,4 +1,11 @@
-import type { Context, Model, ModelSpec, SimpleStreamOptions } from "@oh-my-pi/pi-ai";
+import type {
+	AssistantMessage,
+	AssistantMessageEvent,
+	Context,
+	Model,
+	ModelSpec,
+	SimpleStreamOptions,
+} from "@oh-my-pi/pi-ai";
 import {
 	streamOpenAICompletions,
 	type OpenAICompletionsOptions,
@@ -13,7 +20,7 @@ import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import {
-	bridgeBifrostUsageCostStream,
+	applyBifrostAuthoritativeCost,
 	createBifrostCostBridgeFetch,
 	type BifrostCostCapture,
 } from "./bifrost-cost-bridge.ts";
@@ -122,6 +129,51 @@ const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
 	return trimmed ? trimmed : undefined;
+}
+
+function messageWithBifrostCost(
+	message: AssistantMessage,
+	capture: BifrostCostCapture,
+): AssistantMessage {
+	return {
+		...message,
+		usage: applyBifrostAuthoritativeCost(message.usage, capture),
+	};
+}
+
+function eventWithBifrostCost(
+	event: AssistantMessageEvent,
+	capture: BifrostCostCapture,
+): AssistantMessageEvent {
+	switch (event.type) {
+		case "done":
+			return { ...event, message: messageWithBifrostCost(event.message, capture) };
+		case "error":
+			return { ...event, error: messageWithBifrostCost(event.error, capture) };
+		default:
+			return {
+				...event,
+				partial: messageWithBifrostCost(event.partial, capture),
+			} as AssistantMessageEvent;
+	}
+}
+
+function bridgeBifrostUsageCostStream(
+	source: AssistantMessageEventStream,
+	capture: BifrostCostCapture,
+): AssistantMessageEventStream {
+	const output = new AssistantMessageEventStream();
+	output.forwardLocalWorkFrom(source);
+	void (async () => {
+		try {
+			for await (const event of source) output.push(eventWithBifrostCost(event, capture));
+		} catch (error) {
+			output.fail(error);
+		} finally {
+			output.forwardLocalWorkFrom(undefined);
+		}
+	})();
+	return output;
 }
 
 function pifrostSupportsBetweenToolsThinking(model: Model): boolean {
