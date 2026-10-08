@@ -218,6 +218,19 @@ export function createBifrostCostBridgeFetch(
 		bridgeBifrostUsageCostResponse(await baseFetch(input, init), capture)) as typeof globalThis.fetch;
 }
 
+export interface PifrostMessageWithUpstreamModel {
+	upstreamModel?: string;
+}
+
+export function applyBifrostResolvedModel<T extends PifrostMessageWithUpstreamModel>(
+	message: T,
+	capture: BifrostCostCapture,
+): T {
+	const resolvedModel = capture.resolvedModel?.trim();
+	if (!resolvedModel || message.upstreamModel === resolvedModel) return message;
+	return { ...message, upstreamModel: resolvedModel };
+}
+
 export interface PifrostUsageWithCost {
 	cost: {
 		input: number;
