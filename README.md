@@ -24,6 +24,8 @@ pifrost doctor
 
 If <code>pifrost doctor</code> is healthy, you are done.
 
+Inside OMP, use <code>/pifrost trace</code> to inspect the most recent request-level routing provenance for the current session, including the model Bifrost actually served and whether a fallback fired.
+
 For the full implementation and compatibility detail, see the [technical reference](docs/REFERENCE.md). For release-specific changes, see the [changelog](CHANGELOG.md).
 
 ## What Pifrost solves
@@ -69,7 +71,7 @@ That gives you five useful properties:
 | Node.js | **22.19+** |
 | OhMyPi | **18.4.5+** in the 18.x line |
 | Maxim Bifrost | **2.2.4+** |
-| Recommended Bifrost | **2.2.4+** for the complete current feature set |
+| Recommended Bifrost | **2.2.6+** for setup-lock awareness, routed-response provenance and current cost semantics |
 
 You also need:
 
@@ -83,6 +85,7 @@ Pifrost keeps inference and management authentication separate.
 
 - **Bifrost OSS:** use the Bifrost dashboard/admin username and password over HTTP Basic auth.
 - **Bifrost Enterprise:** you can use a scoped management Bearer/API key.
+- **Fresh Bifrost 2.2.6+ installs:** finish Bifrost's setup-token flow before normal management automation. Pifrost can use `--setup-token` or `BIFROST_SETUP_TOKEN` for an ephemeral bootstrap check, but never writes the setup token to its config or secrets store.
 
 HTTP Basic auth is only encoding. If Bifrost is not local, keep it on a trusted private network or put TLS/HTTPS in front of it.
 
@@ -102,7 +105,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.8.10
+0.9.0
 ```
 
 Bun also works:

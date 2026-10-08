@@ -11,7 +11,7 @@ It has two responsibilities:
 
 Pifrost is derived from [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam/pi-bifrost-provider), but uses the current OMP 18 native provider API.
 
-> **Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS management endpoints use the configured dashboard/admin username and password over HTTP Basic auth. Pifrost supports OSS Basic auth and Enterprise Bearer/scoped-key auth separately.
+> **Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS management endpoints use the configured dashboard/admin username and password over HTTP Basic auth. Pifrost supports OSS Basic auth and Enterprise Bearer/scoped-key auth separately. On fresh Bifrost 2.2.6+ instances, Pifrost also detects the first-time setup lock; `--setup-token` / `BIFROST_SETUP_TOKEN` is accepted only as ephemeral bootstrap authentication and is never persisted.
 
 ---
 
@@ -117,6 +117,11 @@ Repository MCP access -> one dedicated MCP VK per repository
 ```
 
 Do not reuse a repository MCP VK as the global inference VK.
+
+### Request routing provenance
+
+Bifrost 2.2.6 exposes routed identity on successful responses through `x-bifrost-*` headers. Pifrost captures the actual provider/model, fallback index, request type and upstream latency without changing routing. Newer Bifrost builds that emit `x-bifrost-request-id` are picked up automatically. Inside an OMP session, `/pifrost trace` displays the latest ten requests for that session together with Pifrost's logical alias/protocol attempt and the authoritative Bifrost cost when present. Trace state is in-memory only and is discarded when the OMP session shuts down.
+
 
 New Pifrost repository MCP keys on Bifrost 2.x are explicitly created with `allow_all_providers: false` and no provider configs, making the intended MCP-only posture explicit. Existing repository keys are not silently rewritten, because that could destroy operator-managed governance.
 
@@ -1130,6 +1135,10 @@ If Bifrost returns `404 Virtual key not found` during a stored-id reset, Pifrost
 For authentication, transport, server, or validation failures, Pifrost stops and leaves the local repo state/config untouched.
 
 ---
+
+### Effective MCP execution policy
+
+For Bifrost 2.2.5+, `tools_to_execute` is the hard invocation allow-list and `tools_to_auto_execute` is the approval-free subset. `pifrost repo status` reports the intersection of repository Virtual Key grants with those client policies per tool. A wildcard in `tools_to_auto_execute` is called out as a warning because every executable tool becomes approval-free. Pifrost reports this policy but never widens or mutates it.
 
 ## Credential and security model
 

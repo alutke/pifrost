@@ -1,9 +1,14 @@
-## Unreleased
+## 0.9.0 — 2026-10-08
 
 - Reworked context-aware prewalk to size each physical route member independently instead of applying one logical-model prompt estimate to the whole fallback chain. Text now uses OMP's native tokenizer family when the candidate exposes one, image blocks use OMP-aligned model/dimension-aware accounting, and trustworthy usage anchors are reused only for the physical upstream model that produced them.
 - Added an OMP compatibility envelope with release CI against the minimum loader and the current validated OMP 18.8.4 binary, plus a scheduled contract canary against OMP `main`. `pifrost doctor` now reports both the minimum and the current validated OMP boundary.
 - Added a streaming-safe Bifrost cost bridge. When Bifrost returns its nested authoritative `usage.cost.total_cost` shape, Pifrost exposes that total to OMP as provider-reported cost while retaining the original Bifrost breakdown for diagnostics; JSON and SSE responses are both supported.
 - Kept routing ownership unchanged: Pifrost still performs compatibility/context prewalk only, while Bifrost remains authoritative for provider/model ordering, same-protocol fallback, governance and billing.
+- Added Bifrost 2.2.6 first-time setup awareness. Pifrost reads the public setup state, reports incomplete setup distinctly in doctor/compatibility output, and can use a setup token ephemerally via `--setup-token` or `BIFROST_SETUP_TOKEN`; setup tokens are never persisted.
+- Added request-level routing provenance inside OMP. `/pifrost trace` shows the logical route, protocol attempt, requested primary, actual Bifrost provider/model, fallback index, upstream latency, authoritative request cost and `x-bifrost-request-id` when the connected Bifrost build emits it.
+- Added effective MCP execution-policy diagnostics. Repository status now intersects Virtual Key grants with each client's `tools_to_execute` hard allow-list and `tools_to_auto_execute` approval-free subset, with explicit warnings for wildcard auto-execution.
+- Extended Bifrost contract coverage for the 2.2.6 setup-lock and routed-response headers, plus advisory dev canaries for request IDs, reasoning-only Chat→Responses conversion and bounded Code Mode execution. Unreleased Bifrost features are not enabled or claimed as stable runtime capabilities.
+- Raised the recommended/validated Bifrost level to 2.2.6 while retaining 2.2.4 as the minimum supported baseline.
 
 ## 0.8.10 — 2026-10-02
 

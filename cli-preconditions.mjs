@@ -24,7 +24,7 @@ export function requireManagement(state, env = process.env) {
   const managementAuth = managementAuthFromState(state, env);
   if (!managementAuth) {
     throw new Error(
-      "Bifrost management authentication is missing; run `pifrost global setup`. Use OSS admin username/password (Basic auth), or an Enterprise scoped API key.",
+      "Bifrost management authentication is missing; run `pifrost global setup`. Use OSS admin username/password (Basic auth), an Enterprise scoped API key, or BIFROST_SETUP_TOKEN only while completing first-time Bifrost setup.",
     );
   }
   return { ...runtime, managementKey: managementAuth };

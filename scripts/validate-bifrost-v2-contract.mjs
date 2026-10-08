@@ -215,6 +215,27 @@ const SOURCES = [
     ],
   },
   {
+    name: "Bifrost 2.2.6 setup-lock state contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/transports/bifrost-http/handlers/session.go`,
+    required: [
+      '"/api/session/is-auth-enabled"',
+      '"setup_required"',
+      '"setup_token_configured"',
+      '"inference_auth_enforced"',
+    ],
+  },
+  {
+    name: "Bifrost 2.2.6 routed-response provenance headers",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_2_6_COMMIT}/transports/bifrost-http/lib/responseheaders.go`,
+    required: [
+      '"x-bifrost-provider"',
+      '"x-bifrost-resolved-model"',
+      '"x-bifrost-fallback-index"',
+      '"x-bifrost-request-type"',
+      '"x-bifrost-upstream-latency-ms"',
+    ],
+  },
+  {
     name: "current Bifrost dev routing canary",
     url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/ui/lib/types/routingRules.ts",
     required: ["chain_rule", "virtual_key", "priority", "fallbacks", "weight"],
@@ -230,6 +251,34 @@ const SOURCES = [
       "token_exchange",
       "needs_session_stickiness",
       "endpoint_slug",
+    ],
+  },
+  {
+    name: "current Bifrost dev request-id provenance canary",
+    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/transports/bifrost-http/lib/responseheaders.go",
+    required: [
+      "HeaderBifrostRequestID",
+      '"x-bifrost-request-id"',
+    ],
+  },
+  {
+    name: "current Bifrost dev Chat-to-Responses compatibility canary",
+    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/plugins/compat/main.go",
+    required: [
+      "ForceReasoningOnlyModelsToResponses",
+      "force_reasoning_only_models_to_responses",
+      "converting request to",
+    ],
+  },
+  {
+    name: "current Bifrost dev bounded Code Mode canary",
+    url: "https://raw.githubusercontent.com/maximhq/bifrost/dev/core/mcp/codemode/starlark/sandbox.go",
+    required: [
+      "SetMaxSteps",
+      "MaxSourceBytes",
+      "MaxLogBytes",
+      "MaxToolCalls",
+      "code mode resource limit",
     ],
   },
   {

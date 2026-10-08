@@ -6,6 +6,7 @@ import {
   mcpAssignment,
   normalizeMcpClient,
 } from "../mcp-client-normalization.mjs";
+import { mcpClientExecutionDiagnostics } from "../mcp-client-shape.mjs";
 
 test("normalizes current Bifrost nested MCP client response", () => {
   const raw = {
@@ -127,4 +128,41 @@ test("listMcpClients reads nested clients from the Bifrost management response",
   } finally {
     globalThis.fetch = previousFetch;
   }
+});
+
+
+test("effective MCP execution diagnostics intersect repo grants with execute and auto-execute policy", () => {
+  const client = normalizeMcpClient({
+    config: {
+      client_id: "hound-id",
+      name: "hound",
+      tools_to_execute: ["mcp_smart_search", "mcp_smart_fetch"],
+      tools_to_auto_execute: ["mcp_smart_search"],
+    },
+    tools: ["mcp_smart_search", "mcp_smart_fetch", "mcp_smart_crawl"],
+  });
+  const result = mcpClientExecutionDiagnostics(client, ["*"]);
+  assert.deepEqual(result.rows, [
+    { tool: "mcp_smart_search", granted: true, executable: true, autoExecutable: true },
+    { tool: "mcp_smart_fetch", granted: true, executable: true, autoExecutable: false },
+    { tool: "mcp_smart_crawl", granted: true, executable: false, autoExecutable: false },
+  ]);
+  assert.equal(result.grantedCount, 3);
+  assert.equal(result.executableCount, 2);
+  assert.equal(result.autoExecutableCount, 1);
+});
+
+test("effective MCP execution diagnostics warn on broad auto-execute wildcard", () => {
+  const client = normalizeMcpClient({
+    config: {
+      client_id: "danger-id",
+      name: "danger",
+      tools_to_execute: ["*"],
+      tools_to_auto_execute: ["*"],
+    },
+    tools: ["read", "delete"],
+  });
+  const result = mcpClientExecutionDiagnostics(client, ["*"]);
+  assert.equal(result.autoExecutableCount, 2);
+  assert.match(result.warnings[0] ?? "", /approval-free/u);
 });
