@@ -19,6 +19,7 @@ import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
+import { installPifrostTextTokenCounter } from "./omp-context-policy.ts";
 import {
 	applyBifrostAuthoritativeCost,
 	createBifrostCostBridgeFetch,
@@ -562,7 +563,37 @@ async function fetchFreshCatalog(
  * Runtime configuration precedence is: OMP CLI flag -> process environment -> the secure
  * configuration written by `pifrost global setup`.
  */
-export default function pifrostProvider(pi: ExtensionAPI): void {
+async function installOmpNativeTextTokenCounter(): Promise<void> {
+	try {
+		const natives = await import("@oh-my-pi/pi-natives");
+		const encodings: Record<string, (typeof natives.Encoding)[keyof typeof natives.Encoding]> = {
+			"claude-v3": natives.Encoding.ClaudeV3,
+			"claude-v47": natives.Encoding.ClaudeV47,
+			"claude-v5": natives.Encoding.ClaudeV5,
+			"claude-v5-sonnet": natives.Encoding.ClaudeV5Sonnet,
+			qwen3: natives.Encoding.Qwen3,
+			"deepseek-v3": natives.Encoding.DeepSeekV3,
+			"kimi-k2": natives.Encoding.KimiK2,
+			glm5: natives.Encoding.Glm5,
+		};
+		installPifrostTextTokenCounter((value, tokenizer) => {
+			const encoding = encodings[tokenizer];
+			if (encoding === undefined) throw new Error(`Unknown OMP tokenizer family ${tokenizer}`);
+			if (typeof value === "string") return natives.countTokens(value, encoding);
+			let total = 0;
+			for (const fragment of value) total += natives.countTokens(fragment, encoding);
+			return total;
+		});
+	} catch {
+		// Node-based diagnostics and older/partial OMP installs retain the portable
+		// byte estimator. Runtime routing remains safe and the compatibility canary
+		// reports host drift separately.
+		installPifrostTextTokenCounter(undefined);
+	}
+}
+
+export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
+	await installOmpNativeTextTokenCounter();
 	registerBifrostRichContentBridge(pi);
 	pi.registerFlag("bifrost-url", {
 		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL; fallback: Pifrost config)",
