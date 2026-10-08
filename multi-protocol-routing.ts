@@ -5,7 +5,11 @@ import type {
 	ModelSpec,
 } from "@oh-my-pi/pi-ai";
 
-import type { DynamicRouteAttempt, DynamicRoutePlan } from "./dynamic-routing.ts";
+import type {
+	DynamicRouteAttempt,
+	DynamicRouteMemberProfile,
+	DynamicRoutePlan,
+} from "./dynamic-routing.ts";
 
 function withBifrostFallbacks(
 	compat: Model["compatConfig"],
@@ -31,15 +35,51 @@ function openCodePolicyIdentity(reference: string): { id: string; provider: "ope
 }
 
 /**
+ * Build the sparse OMP model spec for one physical Bifrost member. Keeping
+ * this construction independent from dispatch lets prewalk ask OMP's model
+ * policy for the exact candidate before the route is filtered.
+ */
+export function createPifrostMemberModelSpec(
+	logicalModel: Model,
+	member: DynamicRouteMemberProfile,
+	protocol: DynamicRouteAttempt["protocol"],
+	fallbacks: readonly string[] = [],
+): ModelSpec<"openai-completions" | "openai-responses"> {
+	const policyIdentity = openCodePolicyIdentity(member.reference);
+	const base = {
+		...logicalModel,
+		id: policyIdentity?.id ?? member.reference,
+		name: member.reference,
+		provider: policyIdentity?.provider ?? logicalModel.provider,
+		...(policyIdentity ? { requestModelId: policyIdentity.requestModelId } : {}),
+		contextWindow: member.contextWindow,
+		maxTokens: member.maxTokens,
+		input: [...member.input],
+		reasoning: member.reasoning,
+		supportsTools: member.supportsTools,
+		...(member.serviceTiers?.length ? { serviceTiers: [...member.serviceTiers] } : {}),
+	};
+	if (protocol === "openai-responses") {
+		return {
+			...base,
+			api: "openai-responses",
+			compat: logicalModel.compatConfig,
+		} as ModelSpec<"openai-responses">;
+	}
+	if (protocol === "openai-completions") {
+		return {
+			...base,
+			api: "openai-completions",
+			compat: withBifrostFallbacks(logicalModel.compatConfig, fallbacks),
+		} as ModelSpec<"openai-completions">;
+	}
+	throw new Error(`Pifrost does not have a native transport for ${protocol}`);
+}
+
+/**
  * Build the sparse OMP model spec for one physical Bifrost attempt. Runtime
  * materialization deliberately stays in native.ts so this planning module has
  * no Bun-only OMP runtime imports and remains Node-testable.
- *
- * OpenCode Go is special here: OMP owns gateway-specific Responses replay,
- * reasoning and tool-choice policy under the opencode-go provider identity.
- * Keep Bifrost as the base URL/auth hop, but present the bare upstream id to
- * OMP policy resolution and retain the full provider-qualified Bifrost id as
- * requestModelId for the actual wire request.
  */
 export function createPifrostAttemptModelSpec(
 	logicalModel: Model,
@@ -47,35 +87,7 @@ export function createPifrostAttemptModelSpec(
 ): ModelSpec<"openai-completions" | "openai-responses"> {
 	const primary = attempt.members[0];
 	if (!primary) throw new Error(`Pifrost route attempt ${attempt.primary} has no member metadata`);
-	const policyIdentity = openCodePolicyIdentity(attempt.primary);
-	const base = {
-		...logicalModel,
-		id: policyIdentity?.id ?? attempt.primary,
-		name: attempt.primary,
-		provider: policyIdentity?.provider ?? logicalModel.provider,
-		...(policyIdentity ? { requestModelId: policyIdentity.requestModelId } : {}),
-		contextWindow: primary.contextWindow,
-		maxTokens: primary.maxTokens,
-		input: [...primary.input],
-		reasoning: primary.reasoning,
-		supportsTools: primary.supportsTools,
-		...(primary.serviceTiers?.length ? { serviceTiers: [...primary.serviceTiers] } : {}),
-	};
-	if (attempt.protocol === "openai-responses") {
-		return {
-			...base,
-			api: "openai-responses",
-			compat: logicalModel.compatConfig,
-		} as ModelSpec<"openai-responses">;
-	}
-	if (attempt.protocol === "openai-completions") {
-		return {
-			...base,
-			api: "openai-completions",
-			compat: withBifrostFallbacks(logicalModel.compatConfig, attempt.fallbacks),
-		} as ModelSpec<"openai-completions">;
-	}
-	throw new Error(`Pifrost does not have a native transport for ${attempt.protocol}`);
+	return createPifrostMemberModelSpec(logicalModel, primary, attempt.protocol, attempt.fallbacks);
 }
 
 export function bifrostAttemptExtraBody(attempt: DynamicRouteAttempt): Record<string, unknown> | undefined {
@@ -115,7 +127,10 @@ function logicalAssistantMessage(
 		api: "openai-completions",
 		provider: logicalModel.provider,
 		model: logicalModel.id,
-		upstreamModel: message.upstreamModel ?? physicalModel,
+		upstreamModel:
+			message.upstreamModel ??
+			(message.model && message.model !== logicalModel.id ? message.model : undefined) ??
+			physicalModel,
 	};
 }
 
