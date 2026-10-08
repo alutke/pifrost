@@ -1,6 +1,3 @@
-import type { AssistantMessage, AssistantMessageEvent } from "@oh-my-pi/pi-ai";
-import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
-
 function finiteNonNegative(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
@@ -174,14 +171,29 @@ export function createBifrostCostBridgeFetch(
 		bridgeBifrostUsageCostResponse(await baseFetch(input, init), capture)) as typeof globalThis.fetch;
 }
 
-function messageWithAuthoritativeCost(
-	message: AssistantMessage,
+export interface PifrostUsageWithCost {
+	cost: {
+		input: number;
+		output: number;
+		cacheRead: number;
+		cacheWrite: number;
+		total: number;
+	};
+}
+
+/**
+ * Apply Bifrost's authoritative total to an OMP-shaped usage cost after wire
+ * parsing. Kept dependency-free so this compatibility module remains safe in
+ * clean GitHub plugin installs and Node-based unit tests.
+ */
+export function applyBifrostAuthoritativeCost<T extends PifrostUsageWithCost>(
+	usage: T,
 	capture: BifrostCostCapture,
-): AssistantMessage {
+): T {
 	const total = capture.total;
-	if (total === undefined || !Number.isFinite(total) || total < 0) return message;
-	const estimated = message.usage.cost.total;
-	const nextCost = { ...message.usage.cost };
+	if (total === undefined || !Number.isFinite(total) || total < 0) return usage;
+	const estimated = usage.cost.total;
+	const nextCost = { ...usage.cost };
 	if (Number.isFinite(estimated) && estimated > 0) {
 		const scale = total / estimated;
 		nextCost.input *= scale;
@@ -195,52 +207,5 @@ function messageWithAuthoritativeCost(
 		nextCost.cacheWrite = 0;
 	}
 	nextCost.total = total;
-	return {
-		...message,
-		usage: {
-			...message.usage,
-			cost: nextCost,
-		},
-	};
-}
-
-function eventWithAuthoritativeCost(
-	event: AssistantMessageEvent,
-	capture: BifrostCostCapture,
-): AssistantMessageEvent {
-	switch (event.type) {
-		case "done":
-			return { ...event, message: messageWithAuthoritativeCost(event.message, capture) };
-		case "error":
-			return { ...event, error: messageWithAuthoritativeCost(event.error, capture) };
-		default:
-			return {
-				...event,
-				partial: messageWithAuthoritativeCost(event.partial, capture),
-			} as AssistantMessageEvent;
-	}
-}
-
-/**
- * Apply Bifrost's authoritative request total after OMP has parsed the OpenAI
- * wire response. OMP 18.8.x only consumes scalar provider-reported costs for
- * selected native gateway providers; Pifrost's provider id is intentionally
- * "bifrost", so the compatibility layer owns this final accounting step.
- */
-export function bridgeBifrostUsageCostStream(
-	source: AssistantMessageEventStream,
-	capture: BifrostCostCapture,
-): AssistantMessageEventStream {
-	const output = new AssistantMessageEventStream();
-	output.forwardLocalWorkFrom(source);
-	void (async () => {
-		try {
-			for await (const event of source) output.push(eventWithAuthoritativeCost(event, capture));
-		} catch (error) {
-			output.fail(error);
-		} finally {
-			output.forwardLocalWorkFrom(undefined);
-		}
-	})();
-	return output;
+	return { ...usage, cost: nextCost };
 }
