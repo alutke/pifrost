@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	applyBifrostAuthoritativeCost,
+	applyBifrostResolvedModel,
 	bridgeBifrostUsageCostPayload,
 	bridgeBifrostUsageCostResponse,
 	createBifrostCostBridgeFetch,
@@ -136,4 +137,12 @@ test("captures Bifrost routed identity and request provenance headers", async ()
 		requestType: "chat_completion",
 		upstreamLatencyMs: 123.45,
 	});
+});
+
+
+test("authoritative Bifrost resolved model overrides ambiguous response identity", () => {
+	const message = { upstreamModel: "route-primary", value: 1 };
+	const resolved = applyBifrostResolvedModel(message, { resolvedModel: "actual-fallback-model" });
+	assert.deepEqual(resolved, { upstreamModel: "actual-fallback-model", value: 1 });
+	assert.deepEqual(applyBifrostResolvedModel(message, {}), message);
 });
