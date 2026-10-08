@@ -41,7 +41,7 @@ export const MCP_SCHEMA_URL =
 export const DEFAULT_BIFROST_URL = "http://127.0.0.1:8180/v1";
 export const DEFAULT_MCP_TIMEOUT_MS = 120_000;
 export const PIFROST_OMP_MIN_VERSION = "18.4.5";
-export const PIFROST_OMP_VALIDATED_VERSION = "18.8.4";
+export const PIFROST_OMP_VALIDATED_VERSION = "18.8.5";
 export const PIFROST_BIFROST_MIN_VERSION = "2.2.4";
 export const PIFROST_BIFROST_VALIDATED_VERSION = "2.2.6";
 
@@ -671,6 +671,19 @@ async function compatibilityProbeValue(probes, key, fallback) {
   return fallback();
 }
 
+function bifrostClientConfigShape(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const candidates = [
+    value.client_config,
+    value.clientConfig,
+    value.data?.client_config,
+    value.data?.clientConfig,
+    value.config?.client_config,
+    value.config?.clientConfig,
+  ];
+  return candidates.find((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate)) ?? {};
+}
+
 function validateSourceRefShape(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return true;
   for (const key of ["source_type", "source_id", "source_name"]) {
@@ -726,6 +739,61 @@ export async function bifrostCompatibilityMatrix({
         minimum: "2.2.6",
         ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
         impact: "Bifrost setup/auth state cannot be verified",
+      });
+    }
+  }
+
+  const conversionBase = featureUnavailable(
+    "bifrost-chat-responses-conversion",
+    "Chat→Responses compatibility adapter",
+    "2.2.6",
+    installedVersion,
+    "Gateway request-type conversion cannot be inspected",
+  );
+  if (conversionBase) {
+    results.push(conversionBase);
+  } else if (!managementAuth) {
+    results.push({
+      id: "bifrost-chat-responses-conversion",
+      label: "Chat→Responses compatibility adapter",
+      minimum: "2.2.6",
+      status: "inaccessible",
+      detail: "management authentication is not configured for /api/config",
+      impact: "Gateway conversion policy cannot be inspected",
+    });
+  } else {
+    const endpoint = "/api/config";
+    try {
+      const gateway = await compatibilityProbeValue(
+        probes,
+        "gateway",
+        () => getBifrostConfig(url, managementAuth),
+      );
+      const client = bifrostClientConfigShape(gateway);
+      const compat = client?.compat && typeof client.compat === "object" && !Array.isArray(client.compat)
+        ? client.compat
+        : undefined;
+      if (!compat || typeof compat.convert_chat_to_responses !== "boolean") {
+        throw new CompatibilityContractError(`${endpoint} did not expose client_config.compat.convert_chat_to_responses`);
+      }
+      const reasoningAdapter = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? `; reasoning-with-tools adapter=${compat.force_reasoning_only_models_to_responses ? "enabled" : "disabled"}`
+        : "; reasoning-with-tools adapter=not released by Bifrost 2.2.6";
+      results.push({
+        id: "bifrost-chat-responses-conversion",
+        label: "Chat→Responses compatibility adapter",
+        minimum: "2.2.6",
+        status: "supported",
+        detail: `convert_chat_to_responses=${compat.convert_chat_to_responses ? "enabled" : "disabled"}${reasoningAdapter}`,
+        impact: undefined,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-chat-responses-conversion",
+        label: "Chat→Responses compatibility adapter",
+        minimum: "2.2.6",
+        ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
+        impact: "Gateway conversion policy cannot be inspected",
       });
     }
   }
@@ -1019,6 +1087,18 @@ export async function bifrostCompatibilityMatrix({
   }
 
   for (const feature of [
+    {
+      id: "bifrost-code-mode-execution-policy",
+      label: "Code Mode execution allow-list enforcement",
+      minimum: "2.2.5",
+      impact: "Granted versus executable MCP status cannot be treated as an enforced runtime boundary",
+    },
+    {
+      id: "bifrost-routed-identity-headers",
+      label: "Routed-identity response headers",
+      minimum: "2.2.6",
+      impact: "Request-level actual provider/model/fallback provenance is unavailable",
+    },
     {
       id: "bifrost-tool-search",
       label: "Deferred Tool Search",
