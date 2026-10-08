@@ -279,9 +279,7 @@ export function estimatePifrostImageTokens(
 		block.detail === "low" || block.detail === "high" || block.detail === "original" || block.detail === "auto"
 			? block.detail
 			: undefined;
-	return imageTokens(
-		resolvePifrostImageTokenization(target),
-		imageBlockSize(block) ?? UNKNOWN_IMAGE_SIZE,
-		detail,
-	);
+	const size = imageBlockSize(block);
+	const rule = size ? resolvePifrostImageTokenization(target) : OPENAI_WIRE_FALLBACK;
+	return imageTokens(rule, size ?? UNKNOWN_IMAGE_SIZE, detail);
 }
