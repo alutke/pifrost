@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as natives from "@oh-my-pi/pi-natives";
 
 import {
 	estimatePifrostImageTokens,
+	estimatePifrostTextTokens,
 	resolvePifrostImageTokenization,
 } from "../omp-context-policy.ts";
 
@@ -72,4 +74,12 @@ test("unknown image dimensions use OMP's bounded OpenAI wire fallback", () => {
 		},
 	);
 	assert.equal(tokens, 12_000);
+});
+
+
+test("candidate tokenizer family uses OMP native text accounting when available", () => {
+	const text = "function_name(arg: 'value') — こんにちは世界";
+	const expected = natives.countTokens(text, natives.Encoding.DeepSeekV3);
+	const actual = estimatePifrostTextTokens(text, { tokenizer: "deepseek-v3" });
+	assert.equal(actual, expected);
 });
