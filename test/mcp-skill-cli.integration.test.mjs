@@ -172,9 +172,47 @@ test("repo init offers once and preserves Skill discovery preferences on subsequ
     const second = await run("repo", "init", "--clients", "donsetch", "--install-matching-skills");
     assert.equal(second.code, 0, second.stderr + second.stdout);
     assert.equal(counters.installs, 1);
-    assert.equal(counters.skills, 1);
+    assert.equal(counters.skills, 2, "reselection checks current Skill state without reinstalling");
     const twice = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8"));
     assert.equal(twice.repos[id].mcpSkillDiscovery.links.length, 1);
     assert.equal(twice.repos[id].bifrostSkills[0].name, "donsetch");
+  });
+});
+
+test("repo init offers a missing Skill when reselecting a previously granted MCP", async () => {
+  await fixture(async ({ run, work, counters, vk }) => {
+    const initial = await run("repo", "init", "--clients", "donsetch", "--yes");
+    assert.equal(initial.code, 0, initial.stderr + initial.stdout);
+    assert.match(initial.stdout, /Skipped \(noninteractive/u);
+    assert.equal(counters.installs, 0);
+    assert.equal(vk.mcp_configs.length, 1);
+
+    const reselected = await run("repo", "init", "--clients", "donsetch", "--install-matching-skills");
+    assert.equal(reselected.code, 0, reselected.stderr + reselected.stdout);
+    assert.match(reselected.stdout, /Installed donsetch@1\.0\.0/u);
+    assert.equal(existsSync(join(work, ".agents/skills/donsetch/SKILL.md")), true);
+    assert.equal(counters.installs, 1);
+  });
+});
+test("repo init respects an existing Skill dismissal on re-selection", async () => {
+  await fixture(async ({ run, counters }) => {
+    const first = await run("repo", "init", "--clients", "donsetch", "--yes");
+    assert.equal(first.code, 0, first.stderr + first.stdout);
+    const dismissed = await run("repo", "skills", "dismiss", "donsetch");
+    assert.equal(dismissed.code, 0, dismissed.stderr + dismissed.stdout);
+    const again = await run("repo", "init", "--clients", "donsetch", "--install-matching-skills");
+    assert.equal(again.code, 0, again.stderr + again.stdout);
+    assert.equal(counters.installs, 0);
+  });
+});
+test("repo init recognizes a previously selected Virtual MCP after an earlier declined Skill", async () => {
+  await fixture(async ({ run, work, counters }) => {
+    const first = await run("repo", "init", "--virtual-mcps", "Research Tools", "--yes");
+    assert.equal(first.code, 0, first.stderr + first.stdout);
+    assert.equal(counters.installs, 0);
+    const again = await run("repo", "init", "--virtual-mcps", "Research Tools", "--install-matching-skills");
+    assert.equal(again.code, 0, again.stderr + again.stdout);
+    assert.equal(counters.installs, 1);
+    assert.equal(existsSync(join(work, ".agents/skills/donsetch/SKILL.md")), true);
   });
 });
