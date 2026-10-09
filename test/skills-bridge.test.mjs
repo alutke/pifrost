@@ -167,3 +167,17 @@ test("legacy v1 ownership marker remains readable but its integrity is unverifie
     assert.equal(repoBifrostSkillStatus(repo, [{ name: "release-notes" }])[0].state, "installed");
   });
 });
+
+test("Skill identity drift refuses replacement until user explicitly approves source rebind", async () => {
+  await withTemp(async ({ repo, home }) => {
+    await installBifrostSkillBundle(repo, bundle(), { home });
+    const renamed = bundle("2.0.0");
+    renamed.skill.id = "different-upstream-skill-id";
+    renamed.skill.raw.id = "different-upstream-skill-id";
+    await assert.rejects(() => installBifrostSkillBundle(repo, renamed, { home }), /upstream id changed/);
+    assert.equal(readBifrostSkillMarker(repo, "release-notes").bifrostSkillId, "skill-1");
+    await installBifrostSkillBundle(repo, renamed, { home, allowSourceRebind: true });
+    assert.equal(readBifrostSkillMarker(repo, "release-notes").bifrostSkillId,
+      "different-upstream-skill-id");
+  });
+});
