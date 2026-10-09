@@ -56,6 +56,10 @@ async function fixture(run) {
       res.writeHead(code, { "content-type": "application/json" });
       res.end(JSON.stringify(payload));
     };
+    if (u.pathname === "/mcp" && req.method === "POST" && body.method === "initialize") {
+      return send({ jsonrpc: "2.0", id: body.id,
+        result: { protocolVersion: "2025-03-26", capabilities: {}, serverInfo: { name: "bifrost-test", version: "1" } } });
+    }
     if (u.pathname === "/api/mcp/clients" && req.method === "GET") {
       return send({ clients: [client], total: 1 });
     }
@@ -153,5 +157,24 @@ test("new Virtual MCP assignment resolves client ID instead of matching the bund
     assert.match(result.stdout, /Installed donsetch@1\.0\.0/u);
     assert.equal(existsSync(join(work, ".agents/skills/donsetch/SKILL.md")), true);
     assert.equal(counters.installs, 1);
+  });
+});
+
+test("repo init offers once and preserves Skill discovery preferences on subsequent init", async () => {
+  await fixture(async ({ run, configDir, id, counters }) => {
+    const first = await run("repo", "init", "--clients", "donsetch", "--install-matching-skills");
+    assert.equal(first.code, 0, first.stderr + first.stdout);
+    assert.match(first.stdout, /Installed donsetch@1\\.0\\.0/u);
+    const once = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8"));
+    assert.equal(once.repos[id].mcpSkillDiscovery.links.length, 1);
+    assert.equal(counters.installs, 1);
+
+    const second = await run("repo", "init", "--clients", "donsetch", "--install-matching-skills");
+    assert.equal(second.code, 0, second.stderr + second.stdout);
+    assert.equal(counters.installs, 1);
+    assert.equal(counters.skills, 1);
+    const twice = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8"));
+    assert.equal(twice.repos[id].mcpSkillDiscovery.links.length, 1);
+    assert.equal(twice.repos[id].bifrostSkills[0].name, "donsetch");
   });
 });
