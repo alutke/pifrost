@@ -51,6 +51,7 @@
     "doctor-probes.mjs",
     "security-diagnostics.mjs",
     "skills-bridge.mjs",
+    "mcp-skill-discovery.mjs",
     "cli-preconditions.mjs",
     "diagnostic-result.mjs",
     "cli.mjs",
@@ -89,7 +90,7 @@
     ]
   },
   "scripts": {
-    "check": "npm run build:runtime && tsc --noEmit && node --check cli.mjs && node --check cli-preconditions.mjs && node --check diagnostic-result.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check mcp-rpc.mjs && node --check research-providers.mjs && node --check research-results.mjs && node --check scripts/validate-donsetch-contract.mjs && node --check hound-diagnostics.mjs && node --check doctor-probes.mjs && node --check security-diagnostics.mjs && node --check skills-bridge.mjs && node --check routing-discovery.mjs && node --check mcp-client-shape.mjs && node --check mcp-client-normalization.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check route-cli.mjs && node --check dist/config-store.js && node --check dist/routing-core.js && node --check dist/route-eligibility.js && node --check dist/cache-schema.js && node --check scripts/build-runtime.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs && node scripts/validate-architecture.mjs",
+    "check": "npm run build:runtime && tsc --noEmit && node --check cli.mjs && node --check cli-preconditions.mjs && node --check diagnostic-result.mjs && node --check cli-lib.mjs && node --check http-client.mjs && node --check mcp-rpc.mjs && node --check research-providers.mjs && node --check research-results.mjs && node --check scripts/validate-donsetch-contract.mjs && node --check hound-diagnostics.mjs && node --check doctor-probes.mjs && node --check security-diagnostics.mjs && node --check skills-bridge.mjs && node --check mcp-skill-discovery.mjs && node --check routing-discovery.mjs && node --check mcp-client-shape.mjs && node --check mcp-client-normalization.mjs && node --check repo-reset.mjs && node --check model-diagnostics.mjs && node --check route-cli.mjs && node --check dist/config-store.js && node --check dist/routing-core.js && node --check dist/route-eligibility.js && node --check dist/cache-schema.js && node --check scripts/build-runtime.mjs && node --check scripts/smoke-live.mjs && node --check scripts/validate-release.mjs && node scripts/validate-architecture.mjs",
     "test": "tsx --test test/*.test.ts && node --test test/*.test.mjs && bun test ./test/transport-model.bun.ts",
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
