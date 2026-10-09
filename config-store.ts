@@ -29,6 +29,17 @@ export interface PifrostStoredConfig {
 			virtualMcps?: string[];
 			mcpInstructions?: boolean;
 			bifrostSkills?: Array<{ name: string; version?: string; id?: string }>;
+			/** Research capability declarations only; MCP auth and execution remain in Bifrost. */
+			research?: {
+				preferred?: string;
+				providers?: Array<{
+					id: string;
+					clientId?: string;
+					mcpClient?: string;
+					profile?: string;
+					tools?: Partial<Record<"search" | "fetch" | "crawl" | "screenshot", string>>;
+				}>;
+			};
 		}
 	>;
 }

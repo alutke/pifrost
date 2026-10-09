@@ -25,10 +25,13 @@ import {
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 import {
-  houndCodeModeClientNames,
-  houndMcpDiagnostics,
-  probeHoundCodeMode,
-} from "./hound-diagnostics.mjs";
+  RESEARCH_PROFILES,
+  eligibleResearchCodeModeClients,
+  normalizeResearchPreference,
+  researchProviderDiagnostics,
+  probeResearchCodeMode,
+} from "./research-providers.mjs";
+import { classifyResearchResult } from "./research-results.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -124,6 +127,11 @@ Usage:
   pifrost models doctor
   pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions]
   pifrost repo status
+  pifrost repo research status
+  pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name] [--fetch-tool name] [--crawl-tool name] [--screenshot-tool name]
+  pifrost repo research unbind <id>
+  pifrost repo research prefer <id|none>
+  pifrost repo research probe [<id>]       Explicit, read-only live search test via Bifrost (Classic MCP only)
   pifrost repo rotate-key
   pifrost repo mcp list
   pifrost repo mcp add <client> [--tools '*|tool1,tool2']
@@ -1003,31 +1011,26 @@ async function commandRepoStatus(snapshot) {
           liveToolsError = formatError(error);
         }
       }
-      let codeModeProbe;
-      const codeModeClientNames = houndCodeModeClientNames(policy, clients);
-      if (codeModeClientNames.length && liveTools && repoState.secret?.mcpVirtualKey) {
+      const researchConfig = repoState.config?.research ?? {};
+      let codeModeProbes;
+      const codeClients = eligibleResearchCodeModeClients(policy, clients, researchConfig);
+      if (codeClients.length && liveTools && repoState.secret?.mcpVirtualKey) {
         try {
-          codeModeProbe = await probeHoundCodeMode(
-            (toolName, args) => callMcpGatewayTool(
-              runtime.url,
-              repoState.secret.mcpVirtualKey,
-              toolName,
-              args,
-            ),
-            codeModeClientNames,
+          codeModeProbes = await probeResearchCodeMode(
+            (toolName, args) => callMcpGatewayTool(runtime.url, repoState.secret.mcpVirtualKey, toolName, args),
+            codeClients,
           );
         } catch (error) {
-          codeModeProbe = {
-            ok: false,
-            error: formatError(error),
-            files: [],
-          };
+          codeModeProbes = Object.fromEntries(codeClients.map((client) => [
+            client.id ?? client.name, { ok: false, error: formatError(error), tools: [] },
+          ]));
         }
       }
       const ompSearch = ompWebSearchDiagnostics();
-      const hound = houndMcpDiagnostics(policy, clients, virtualMcps, {
+      const research = researchProviderDiagnostics(policy, clients, {
+        research: researchConfig,
         ...(liveTools ? { liveTools } : {}),
-        ...(codeModeProbe ? { codeModeProbe } : {}),
+        ...(codeModeProbes ? { codeModeProbes } : {}),
         ompSearch,
       });
       const liveVirtual = policy.virtualMcps.map((item) => `${item.name}${item.enabled ? "" : " (disabled)"}`);
@@ -1071,66 +1074,25 @@ async function commandRepoStatus(snapshot) {
         console.log(`  WARN ${item.client}[${item.tools.join(",")}] via ${item.sources.join("+")}: ${item.reason}`);
       }
       console.log("Web research backends:");
-      const houndState = !hound.hound.configured
-        ? "not configured"
-        : !hound.hound.liveVerified
-          ? hound.hound.mode === "code"
-            ? "configured; Code Mode binding unverified"
-            : "configured; gateway unverified"
-          : hound.hound.researchComplete
-            ? "research ready"
-            : hound.hound.available
-              ? "partial"
-              : "not visible";
-      console.log(`  MCP/Hound:        ${houndState} mode=${hound.hound.mode}`);
-      for (const client of hound.hound.clients) {
-        const upstream = client.serverInstructions ? "present" : "none";
-        const mode = client.isCodeModeClient ? "code" : "classic";
-        const cap = client.maxInstructionsLength === undefined ? "" : ` maxInstructions=${client.maxInstructionsLength}`;
-        console.log(`    client=${client.name} mode=${mode} state=${client.state ?? "unknown"} via=${client.sources.join("+") || "unknown"} upstream-instructions=${upstream}${cap}`);
-      }
-      for (const [capability, status] of Object.entries(hound.hound.capabilities)) {
-        const gateway = status.gatewayVisible === undefined
-          ? "unverified"
-          : status.gatewayVisible
-            ? `yes (${status.gatewayName ?? status.tool})`
-            : "no";
-        console.log(`    ${capability.padEnd(10)} tool=${status.tool} configured=${status.configured ? "yes" : "no"} gateway-visible=${gateway}`);
-      }
-      console.log(`    search ready:   ${hound.hound.searchReady ? "yes" : "no"}`);
-      console.log(`    web research:   ${hound.hound.webResearchReady ? "ready" : "incomplete"}`);
-      console.log(`    deep research:  ${hound.hound.deepResearchReady ? "ready" : "incomplete"}`);
-      console.log(`    screenshot:     ${hound.hound.screenshotCallable ? "callable" : "unavailable"}`);
-      const visualWebState = hound.hound.visualWebStatus === "native"
-        ? "ready (native image transport)"
-        : hound.hound.visualWebStatus === "recovered"
-          ? "ready (Pifrost screenshot recovery)"
-          : hound.hound.visualWebStatus === "conditional-code-mode"
-            ? "conditional (Code Mode provenance unavailable)"
-            : "not multimodal-ready";
-      console.log(`    visual web:     ${visualWebState}`);
-      console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.callableCount}/6 callable tools`}`);
-      if (hound.hound.codeMode.configured) {
-        const metaCount = Object.values(hound.hound.codeMode.metaTools)
-          .filter((item) => item.gatewayVisible === true).length;
-        const binding = hound.hound.codeMode.probe?.ok
-          ? `${hound.hound.codeMode.probe.bindingLevel} (${hound.hound.codeMode.probe.serverName})`
-          : "unverified";
-        console.log(`    Code Mode:      ${metaCount}/4 meta-tools binding=${binding}`);
-        if (hound.hound.codeMode.probe?.error) {
-          console.log(`      probe:         ${hound.hound.codeMode.probe.error}`);
+      console.log(`  Preferred:        ${research.preferred ?? "none"} (guidance only; OMP selects tools)`);
+      for (const provider of research.providers) {
+        console.log(`  MCP/${provider.client}: ${provider.status} mode=${provider.mode ?? "unknown"} profile=${provider.profile}`);
+        if (provider.capabilities) for (const [name, cap] of Object.entries(provider.capabilities)) {
+          if (!cap.tool) continue;
+          const visible = cap.visible === undefined ? "unverified" : cap.visible ? "yes" : "no";
+          console.log(`    ${name.padEnd(10)} tool=${cap.tool} grant=${cap.granted ? "yes" : "no"} executable=${cap.executable === undefined ? "unknown" : cap.executable ? "yes" : "no"} visible=${visible}`);
         }
+        if (provider.statefulHandles) console.log("    NOTE search handles require affinity to the same upstream MCP process; use full URLs across instances.");
+        if (provider.screenshotCallable) console.log(`    visual web:     ${provider.visualWebStatus}`);
+        if (provider.mode === "code" && codeModeProbes?.[provider.clientId ?? provider.client]?.error) {
+          console.log(`    WARN ${codeModeProbes[provider.clientId ?? provider.client].error}`);
+        }
+        for (const warning of provider.warnings ?? []) console.log(`    WARN ${warning}`);
       }
-      if (hound.hound.missingResearch.length) console.log(`    missing research: ${hound.hound.missingResearch.join(", ")}`);
-      if (hound.hound.missing.length) console.log(`    missing contract: ${hound.hound.missing.join(", ")}`);
-      for (const warning of hound.hound.transportWarnings) console.log(`    WARN ${warning}`);
+      console.log(`  OMP native web:   ${ompSearch.available ? ompSearch.source : `${ompSearch.status}: ${ompSearch.source}`}`);
+      console.log(`  Search path:      ${research.search.path}`);
       if (liveToolsError) console.log(`    gateway tools/list: unavailable (${liveToolsError})`);
-      console.log(`  OMP native web:   ${hound.search.omp.available ? hound.search.omp.source : `${hound.search.omp.status}: ${hound.search.omp.source}`}`);
-      if (hound.search.omp.error) console.log(`    error:          ${hound.search.omp.error}`);
-      if (hound.search.omp.primary) console.log(`    primary:        ${hound.search.omp.primary}`);
-      if (hound.search.omp.fallbacks.length) console.log(`    fallbacks:      ${hound.search.omp.fallbacks.join(" -> ")}`);
-      console.log(`  Search path:      ${hound.search.path}`);
-      console.log("    Hound remains a repository-scoped Bifrost MCP backend; OMP/model tool choice is unchanged.");
+      console.log("    MCP providers execute through Bifrost; preference does not rewrite runtime tool calls.");
       if (liveTools) {
         const surface = mcpToolSurfaceDiagnostics(liveTools);
         console.log("MCP tool presentation:");
@@ -1139,8 +1101,9 @@ async function commandRepoStatus(snapshot) {
         console.log(`  schema footprint: ~${surface.estimatedSchemaTokens} tokens if eagerly serialized (${surface.schemaBytes} bytes)`);
         console.log(`  wire deferral:    ${surface.providerDeferral}; discoverable is not the same as provider defer_loading`);
       }
-      for (const item of hound.instructions) {
-        console.log(`  VMCP instructions: ${item.name} mode=${item.mode} text=${item.instructions ? "set" : "none"}`);
+      const assignedNames = new Set(policy.virtualMcps.map((item) => item.name));
+      for (const item of virtualMcps.filter((entry) => assignedNames.has(entry.name))) {
+        console.log(`  VMCP instructions: ${item.name} mode=${item.instructionsMode ?? "append"} text=${item.instructions ? "set" : "none"}`);
       }
     } catch (error) {
       console.log(`Effective MCP policy: unavailable (${formatError(error)})`);
@@ -1504,6 +1467,103 @@ async function commandRepoReset(flags = {}) {
   }
 }
 
+
+async function researchSnapshot(includeLive = false) {
+  const state = loadState();
+  const { url, managementKey } = requireManagement(state);
+  const current = currentRepoState(state);
+  if (!current.config?.virtualKeyId) throw Error("Initialize the current repository first: pifrost repo init");
+  const [vk, clients, virtualMcps] = await Promise.all([
+    getVirtualKey(url, managementKey, current.config.virtualKeyId),
+    listMcpClients(url, managementKey),
+    listVirtualMcps(url, managementKey),
+  ]);
+  const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
+  let liveTools, codeModeProbes;
+  if (includeLive && current.secret?.mcpVirtualKey) {
+    liveTools = await listMcpGatewayTools(url, current.secret.mcpVirtualKey);
+    const code = eligibleResearchCodeModeClients(policy, clients, current.config?.research ?? {});
+    if (code.length) codeModeProbes = await probeResearchCodeMode(
+      (name, args) => callMcpGatewayTool(url, current.secret.mcpVirtualKey, name, args), code);
+  }
+  return { state, current, url, clients, policy, liveTools, diagnostics: researchProviderDiagnostics(policy, clients, {
+    research: current.config?.research ?? {}, liveTools, codeModeProbes, ompSearch: ompWebSearchDiagnostics(),
+  }) };
+}
+async function commandRepoResearchStatus() {
+  const { diagnostics } = await researchSnapshot(true);
+  printHeader("Bifrost MCP research providers");
+  console.log("Preferred (guidance): " + (diagnostics.preferred ?? "none"));
+  for (const provider of diagnostics.providers) {
+    console.log(provider.id + " [" + provider.client + "] profile=" + provider.profile + " mode=" + (provider.mode ?? "unknown") + " status=" + provider.status);
+    for (const [cap, entry] of Object.entries(provider.capabilities ?? {})) {
+      if (entry.tool) console.log("  " + cap + ": " + entry.tool + " granted=" + entry.granted + " executable=" + String(entry.executable) + " visible=" + String(entry.visible));
+    }
+  }
+  console.log("Search path: " + diagnostics.search.path);
+  console.log("No MCP requests are rerouted or automatically failed over by Pifrost.");
+}
+async function commandRepoResearchBind(id, name, flags) {
+  if (!id || !name) throw Error("Usage: pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name]");
+  const { state, current, clients } = await researchSnapshot();
+  const client = clients.find((c) => c.name.toLowerCase() === name.toLowerCase() || c.id?.toLowerCase() === name.toLowerCase());
+  if (!client) throw Error("No Bifrost MCP client named " + name + "; register it in Bifrost first");
+  const profile = flagString(flags, "profile") ?? (client.name.toLowerCase() === "donsetch" ? "donsetch" : client.name.toLowerCase() === "hound" ? "hound" : "generic");
+  const tools = {};
+  for (const cap of ["search","fetch","crawl","screenshot"]) {
+    const tool = flagString(flags, cap + "-tool");
+    if (tool) {
+      if (!client.tools.includes(tool)) throw Error("Bifrost client " + client.name + " does not expose tool " + tool);
+      tools[cap] = tool;
+    }
+  }
+  const entry = { id, clientId: client.id, mcpClient: client.name, profile, ...(Object.keys(tools).length || profile === "generic" ? { tools: Object.keys(tools).length ? tools : undefined } : {}) };
+  const previous = normalizeResearchPreference(current.config?.research ?? {});
+  const proposed = { preferred: previous.preferred, providers: [...previous.providers.filter((p) => p.id !== id),entry] };
+  normalizeResearchPreference(proposed);
+  updateRepoState(state, current.repo.id, { research: proposed });
+  console.log("Bound " + id + " to Bifrost MCP " + client.name + " (" + profile + "); no Virtual Key grants changed.");
+}
+async function commandRepoResearchUnbind(id) {
+  if (!id) throw Error("Usage: pifrost repo research unbind <id>");
+  const { state, current } = await researchSnapshot();
+  const previous = normalizeResearchPreference(current.config?.research ?? {});
+  const providers = previous.providers.filter(p => p.id !== id);
+  if (providers.length === previous.providers.length) throw Error("Unknown research binding: " + id);
+  updateRepoState(state, current.repo.id, { research: { preferred: previous.preferred === id ? undefined : previous.preferred, providers } });
+  console.log("Removed research binding " + id + "; Bifrost client and grants are unchanged.");
+}
+async function commandRepoResearchPrefer(id) {
+  if (!id) throw Error("Usage: pifrost repo research prefer <id|none>");
+  const { state, current } = await researchSnapshot();
+  const previous = normalizeResearchPreference(current.config?.research ?? {});
+  const preferred = id === "none" ? undefined : id;
+  normalizeResearchPreference({ ...previous, preferred });
+  updateRepoState(state, current.repo.id, { research: { ...previous, preferred } });
+  console.log("Preferred research provider: " + (preferred ?? "automatic") + " (guidance only).");
+}
+async function commandRepoResearchProbe(id) {
+  const { current, url, diagnostics } = await researchSnapshot(true);
+  const target = diagnostics.providers.find((p) => p.id === (id || diagnostics.preferred));
+  if (!target) throw Error("No matching research provider; bind a provider first");
+  if (target.mode !== "classic") throw Error("Read-only live probes require a Classic MCP provider; Code Mode requires execution and is not probed");
+  if (!target.searchReady) throw Error("Search tool not proven callable; inspect pifrost repo research status");
+  if (!current.secret?.mcpVirtualKey) throw Error("Repository MCP Virtual Key is missing");
+  const selected = target.capabilities.search;
+  if (!selected.gatewayName) throw Error("Bifrost tool identity could not be resolved");
+  const query = "IETF RFC 9110 HTTP semantics";
+  const args = target.profile === "donsetch"
+    ? { query, max_results: 3, deadline_ms: 15000 }
+    : target.profile === "hound"
+      ? { query }
+      : { query };
+  const result = await callMcpGatewayTool(url, current.secret.mcpVirtualKey, selected.gatewayName, args, { timeoutMs: 20000 });
+  const status = classifyResearchResult(result, target.profile);
+  console.log("Live research probe through Bifrost MCP " + target.client + ": " + (status.ok === false ? "FAIL" : status.ok === true ? "OK" : "INDETERMINATE"));
+  console.log("Result status: " + JSON.stringify({ ok: status.ok, code: status.code, errorKind: status.errorKind, nextAction: status.nextAction, source: status.source }));
+  if (status.ok !== true) process.exitCode = 2;
+}
+
 async function commandSecretRepoMcp(flags) {
   const id = flagString(flags, "id");
   if (!id) throw new Error("Usage: pifrost secret repo-mcp --id <repo-id>");
@@ -1570,6 +1630,11 @@ const COMMANDS = new Map([
   ["models doctor", () => commandModelsDoctor()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", () => commandRepoStatus()],
+  ["repo research status", () => commandRepoResearchStatus()],
+  ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
+  ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
+  ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
+  ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
   ["repo rotate-key", () => commandRepoRotateKey()],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
   ["repo mcp list", () => commandRepoMcpList()],

@@ -42,6 +42,8 @@ const controlOnly = new Set([
   "routing-discovery.mjs",
   "mcp-rpc.mjs",
   "hound-diagnostics.mjs",
+  "research-providers.mjs",
+  "research-results.mjs",
   "security-diagnostics.mjs",
 ]);
 

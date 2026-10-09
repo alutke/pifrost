@@ -238,7 +238,11 @@ export function isPifrostBifrostScreenshotTool(toolName: string): boolean {
 	const lower = toolName.toLowerCase();
 	if (!isPifrostBifrostMcpTool(lower)) return false;
 	const inner = lower.slice("mcp__bifrost_".length);
-	return inner === "mcp_screenshot" || /(?:^|[-_.:\/])mcp_screenshot$/u.test(inner);
+	return inner === "mcp_screenshot" ||
+		/(?:^|[-_.:\/])mcp_screenshot$/u.test(inner) ||
+		// DonSeTch identity must be encoded in the directly exposed tool name.
+		// A generic web_screenshot suffix could belong to an unrelated server.
+		/(?:^|[-_.:\/])donsetch[-_.:\/]web_screenshot$/u.test(inner);
 }
 
 function visionModelFor(ctx: ExtensionContext): Model | undefined {
@@ -355,6 +359,15 @@ export function registerBifrostRichContentBridge(
 ): void {
 	pi.on("tool_result", async (event, ctx) => {
 		if (event.isError || !isPifrostBifrostScreenshotTool(event.toolName)) return undefined;
+		// DonSeTch uses application-level failure envelopes with isError=false.
+		// Never decode any image-like marker on a failed tool result.
+		const metadata = event.content.find((block) => block.type === "text" && block.text.startsWith("[meta] "));
+		if (metadata?.type === "text") {
+			try {
+				const state = JSON.parse(metadata.text.slice(7).split(/\r?\n/u, 1)[0]);
+				if (state?.ok === false) return undefined;
+			} catch { /* Other screenshot formats may have ordinary text */ }
+		}
 		const recovered = recoverBifrostRichContent(event.content, options);
 		if (!recovered.changed) return undefined;
 
