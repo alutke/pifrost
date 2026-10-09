@@ -322,7 +322,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.12.0
+0.12.1
 ```
 
 Bun can also install the package globally:
@@ -884,9 +884,10 @@ Skills remain independent from MCP governance: adding a skill never grants an MC
 
 ## Automatic MCP-to-Skill discovery
 
-The repository CLI offers matching Bifrost Agent Skills when an MCP client is newly
-granted, including clients resolved from a newly assigned Virtual MCP. This is an
-**advisory control-plane integration**, not runtime tool invocation.
+The repository CLI offers matching Bifrost Agent Skills when an MCP client is
+explicitly selected during `repo init`, even if previously granted. Newly added
+direct MCP clients and the members of selected Virtual MCPs are also checked.
+This is an **advisory control-plane integration**, not runtime tool invocation.
 
 - `repo init`, `repo mcp add`, and `repo vmcp add` first complete their
   existing Bifrost MCP grants, then look for matching Skills. Failure to list
@@ -901,10 +902,11 @@ granted, including clients resolved from a newly assigned Virtual MCP. This is a
   The prompt also accepts `d` to persist a per-repository dismissal (undone
   through `repo skills undismiss`). `--no-skill-discovery` disables the
   post-grant advisory phase.
-- Only **newly assigned** clients trigger implicit prompts. Explicit
-  `repo skills suggestions` lists and offers all currently effective clients
-  including Virtual MCP members. Existing managed Skills are not automatically
-  updated, even with unattended installation consent.
+- `repo init` offers missing Skills for **explicitly selected** MCP clients,
+  even when they were previously granted; already installed or dismissed Skills
+  do not cause repeat prompts. `repo skills suggestions` lists all currently
+  effective clients including Virtual MCP members. Existing managed Skills are
+  never automatically updated, even with unattended installation consent.
 - All installations flow through the existing `fetchBifrostSkillBundle` and
   `installBifrostSkillBundle` APIs. Permission restrictions, file validation,
   collision rejection, staged writes and ownership markers remain authoritative.

@@ -1,3 +1,10 @@
+## 0.12.1 — 2026-10-09
+
+- Fixed Classic MCP research discovery for Bifrost's live `<client>-<tool>` gateway presentation (including `donsetch-web_search`), retaining qualified legacy formats, exact tool identity and ambiguity-safe matching across clients. Call probes use the returned wire name.
+- Research diagnostics now distinguish missing gateway publication, unsupported or conflicting gateway names, missing client declarations, and unverified Code Mode metadata. No changes to Bifrost grants, executable tool policy, or OMP's native search selection.
+- Changed `repo init` to offer matching, missing Bifrost Skills whenever a client or Virtual MCP is explicitly selected, including reselected existing grants; existing installations and dismissals remain respected. Unattended installs still require `--install-matching-skills`, never just `--yes`.
+- Added regression coverage for live DonSeTch Classic naming, generic client naming, overlapping clients, gateway ambiguity, Code Mode isolation, and reselected direct/Virtual MCP Skill consent.
+
 ## 0.12.0 — 2026-10-09
 
 - Added opt-in, provider-neutral MCP-to-Bifrost-Skill discovery when selecting direct MCP clients or underlying clients of a newly assigned Virtual MCP. Matching is exact and case-insensitive, with explicit aliases for different names; installs use the existing OMP Skills bridge.
