@@ -57,3 +57,5 @@ Existing Bifrost MCP versions can flatten upstream ImageContent into encoded tex
 Bifrost retains all client credentials and authorization state. Pifrost's non-loopback HTTP credential diagnosis remains **warning-only in doctor**; no opt-in, block or switch is introduced. DonSeTch is separately deployed and **AGPL-3.0**: review applicable network-use/redistribution obligations for its modified or hosted code. Hound was MIT and remains supported for migration continuity.
 
 Required CI pins DonSeTch's release MCP contract at v4.7.0. A separate scheduled advisory canary follows DonSeTch master; unstable unreleased changes do not gate ordinary releases. Hound's legacy compatibility tests remain. No automatic cross-provider failover or additional MCP proxy has been introduced.
+
+Restart OMP after changing screenshot mappings: the extension intentionally captures its trusted screenshot-tool allow-list when loaded. The preferred-provider guidance is refreshed before each new agent turn.

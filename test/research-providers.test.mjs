@@ -81,6 +81,8 @@ test("Code Mode stub probing reads metadata only and confirms real functions, no
   assert.equal(result.providers[0].status,"research-ready");
   assert.equal(result.providers[0].screenshotCallable,false);
   assert.equal(result.providers[0].mode,"code");
+  const spoof=live.map(x=>({name:"mcp__other_"+x.name.split("_").at(-1)}));
+  assert.equal(researchProviderDiagnostics(policy(),[c],{liveTools:spoof,codeModeProbes:probe}).providers[0].searchReady,false);
   assert.deepEqual(eligibleResearchCodeModeClients(policy(),[c]),[c]);
 });
 test("Code Mode metadata never claims screenshot visual readiness",()=>{

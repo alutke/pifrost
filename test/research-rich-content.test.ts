@@ -20,14 +20,14 @@ test("runtime screenshot allow-list comes only from active repo configuration, n
    const project=join(home,"project");mkdirSync(join(project,".omp"),{recursive:true});
    writeFileSync(join(project,".omp","mcp.json"),JSON.stringify({mcpServers:{bifrost:{headers:{"x-bf-vk":"!pifrost secret repo-mcp --id repo-A"}}}}));
    const repos = {
-     "repo-A": { research: { providers: [{ id: "g", mcpClient: "acme", profile: "generic", tools: { screenshot: "grabshot" } }] } },
+     "repo-A": { research: { preferred: "g", providers: [{ id: "g", mcpClient: "acme", profile: "generic", tools: { screenshot: "grabshot" } }] } },
      "repo-B": { research: { providers: [{ id: "other", mcpClient: "baddie", profile: "generic", tools: { screenshot: "grabshot" } }] } },
    };
    writeFileSync(join(home, "config.json"), JSON.stringify({ repos }));
    const tools=loadRepoResearchScreenshotTools({PIFROST_CONFIG_DIR:home},join(project,"src"));
    assert.ok(tools.includes("mcp__bifrost_acme_grabshot"));
    assert.ok(!tools.includes("mcp__bifrost_baddie_grabshot"));
-   assert.equal(preferredRepoResearchGuidance({PIFROST_CONFIG_DIR:home},join(project,"src")),undefined);
+   assert.match(preferredRepoResearchGuidance({PIFROST_CONFIG_DIR:home},join(project,"src")) ?? "",/prefer the acme MCP client/u);
  }finally{rmSync(home,{recursive:true,force:true});}
 });
 test("DonSeTch application-level screenshot failure is never converted to an image",async()=>{

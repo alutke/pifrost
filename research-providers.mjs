@@ -57,7 +57,10 @@ function capabilityStatus(client,cap,tool,policy,clients,liveTools,codeModeProbe
   if(Array.isArray(liveTools)) {
     if(client.isCodeModeClient) {
       const metas=["listToolFiles","readToolFile","executeToolCode"];
-      const metadata=metas.every(t=>liveTools.some(r=>String(r.name).toLowerCase().endsWith(t.toLowerCase())));
+      const metadata=metas.every(t=>liveTools.some(r=>{
+        const name=String(r.name).toLowerCase(),required=t.toLowerCase();
+        return name===required || name==="mcp__bifrost_"+required || name==="mcp__bifrost__"+required;
+      }));
       const probe=codeModeProbes?.[client.id]??codeModeProbes?.[client.name];
       visible=metadata&&probe?.ok===true&&probe.tools?.includes(tool)===true;
     } else {
