@@ -39,36 +39,64 @@ export function normalizeResearchPreference(raw={}) {
 function matchingClient(binding,clients) {
   return clients.find(c=>binding.clientId&&same(c.id,binding.clientId))??(!binding.clientId?clients.find(c=>same(c.name,binding.mcpClient)):undefined);
 }
-function displayedTool(name,client,tool,allClients) {
-  const lower=String(name??"").toLowerCase(),target=tool.toLowerCase();
-  const ids=[client?.name,client?.id].filter(Boolean).map(v=>String(v).toLowerCase());
-  for(const id of ids) for(const part of [id,id.replace(/[^a-z0-9]+/gu,"_"),id.replace(/[^a-z0-9]+/gu,"-")]) {
-    if (["mcp__bifrost_"+part+"_"+target,"mcp__bifrost_"+part+"-"+target,"mcp__bifrost__"+part+"__"+target,"mcp__"+part+"_"+target].includes(lower)) return true;
+// Bifrost Classic exposes `<client>-<tool>` on the live MCP gateway.
+// Accept previously supported qualified forms, but never infer a client from a
+// tool suffix alone when another registered client could own the same name.
+function qualifiedGatewayNames(client,tool) {
+  const target=tool.toLowerCase(),names=new Set();
+  for(const raw of [client?.name,client?.id]) {
+    if(!raw)continue;
+    const id=String(raw).toLowerCase();
+    for(const part of new Set([id,id.replace(/[^a-z0-9]+/gu,"_"),id.replace(/[^a-z0-9]+/gu,"-")])) {
+      names.add(part+"-"+target);
+      names.add("mcp__bifrost_"+part+"_"+target);
+      names.add("mcp__bifrost_"+part+"-"+target);
+      names.add("mcp__bifrost__"+part+"__"+target);
+      names.add("mcp__"+part+"_"+target);
+    }
   }
+  return names;
+}
+function displayedTool(name,client,tool,allClients) {
+  if(!toolNames(client).includes(tool))return false;
+  const lower=String(name??"").toLowerCase(),target=tool.toLowerCase();
+  const matching=allClients.filter(c=>toolNames(c).includes(tool)&&qualifiedGatewayNames(c,tool).has(lower));
+  if(matching.length)return matching.length===1&&matching[0]===client;
   const owners=allClients.filter(c=>toolNames(c).includes(tool));
   return owners.length===1&&owners[0]===client&&lower==="mcp__bifrost_"+target;
+}
+function gatewayVisibilityReason(client,tool,liveTools) {
+  const target=tool.toLowerCase(),id=String(client.name??"").toLowerCase();
+  const related=liveTools.some(t=>{
+    const name=String(t?.name??"").toLowerCase();
+    return name.includes(id)&&(name.endsWith("-"+target)||name.endsWith("_"+target));
+  });
+  return related?"gateway-name-or-owner-mismatch":"not-published";
 }
 function capabilityStatus(client,cap,tool,policy,clients,liveTools,codeModeProbes) {
   const exists=toolNames(client).includes(tool);
   const grant=policy?.effective?.find(g=>same(g.client,client.name)||same(g.client,client.id));
   const permission=grant?mcpClientExecutionDiagnostics(client,grant.tools):undefined;
   const row=permission?.rows.find(r=>r.tool===tool);
-  let visible, gatewayName, surface=client.isCodeModeClient?"code":"classic";
-  if(Array.isArray(liveTools)) {
-    if(client.isCodeModeClient) {
-      const metas=["listToolFiles","readToolFile","executeToolCode"];
-      const metadata=metas.every(t=>liveTools.some(r=>{
-        const name=String(r.name).toLowerCase(),required=t.toLowerCase();
-        return name===required || name==="mcp__bifrost_"+required || name==="mcp__bifrost__"+required;
-      }));
-      const probe=codeModeProbes?.[client.id]??codeModeProbes?.[client.name];
-      visible=metadata&&probe?.ok===true&&probe.tools?.includes(tool)===true;
-    } else {
-      const display=liveTools.find(t=>displayedTool(t.name,client,tool,clients));
-      gatewayName=display?.name;visible=Boolean(display);
-    }
+  let visible, gatewayName, visibilityReason, surface=client.isCodeModeClient?"code":"classic";
+  if(!exists)visibilityReason="not-declared-by-client";
+  else if(!Array.isArray(liveTools))visibilityReason="gateway-unverified";
+  else if(client.isCodeModeClient) {
+    const metas=["listToolFiles","readToolFile","executeToolCode"];
+    const metadata=metas.every(t=>liveTools.some(r=>{
+      const name=String(r.name).toLowerCase(),required=t.toLowerCase();
+      return name===required || name==="mcp__bifrost_"+required || name==="mcp__bifrost__"+required;
+    }));
+    const probe=codeModeProbes?.[client.id]??codeModeProbes?.[client.name];
+    visible=metadata&&probe?.ok===true&&probe.tools?.includes(tool)===true;
+    if(!visible)visibilityReason=metadata?"code-mode-signatures-unverified":"code-mode-tools-not-presented";
+  } else {
+    const candidates=liveTools.filter(t=>displayedTool(t.name,client,tool,clients));
+    visible=candidates.length===1;
+    if(visible)gatewayName=candidates[0].name;
+    else visibilityReason=candidates.length>1?"ambiguous-gateway-tool":gatewayVisibilityReason(client,tool,liveTools);
   }
-  return {tool,exists,granted:Boolean(row),executable:row?.executable??(row?undefined:false),autoExecutable:row?.autoExecutable,visible,gatewayName,surface,callable:exists&&Boolean(row)&&row.executable!==false&&visible===true};
+  return {tool,exists,granted:Boolean(row),executable:row?.executable??(row?undefined:false),autoExecutable:row?.autoExecutable,visible,gatewayName,visibilityReason,surface,callable:exists&&Boolean(row)&&row.executable!==false&&visible===true};
 }
 function evaluate(binding,client,policy,clients,options) {
   if(!client) return {id:binding.id,client:binding.mcpClient??binding.clientId,profile:binding.profile,status:"missing-client",configured:true,authorized:false,capabilities:{}};
