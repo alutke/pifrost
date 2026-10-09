@@ -1,18 +1,33 @@
 function normalizedHostname(value) {
   try {
     const url = new URL(value);
-    return url.hostname.replace(/^\\[|\\]$/gu, "").replace(/\\.$/u, "").toLowerCase();
+    let hostname = url.hostname.toLowerCase();
+    if (hostname.startsWith("[") && hostname.endsWith("]")) hostname = hostname.slice(1, -1);
+    if (hostname.endsWith(".")) hostname = hostname.slice(0, -1);
+    return hostname;
   } catch {
     return undefined;
   }
 }
 
+function loopbackIpv4(hostname) {
+  const parts = String(hostname ?? "").split(".");
+  if (parts.length !== 4) return false;
+  const octets = parts.map((part) => Number(part));
+  return octets.every((value, index) =>
+    Number.isInteger(value) &&
+    value >= 0 &&
+    value <= 255 &&
+    (index !== 0 || value === 127)
+  );
+}
+
 function isLoopbackHostname(hostname) {
   if (!hostname) return false;
   if (hostname === "localhost" || hostname === "::1") return true;
-  if (/^127(?:\\.\\d{1,3}){3}$/u.test(hostname)) return true;
-  if (/^::ffff:127(?:\\.\\d{1,3}){3}$/u.test(hostname)) return true;
-  return false;
+  if (loopbackIpv4(hostname)) return true;
+  const mappedPrefix = "::ffff:";
+  return hostname.startsWith(mappedPrefix) && loopbackIpv4(hostname.slice(mappedPrefix.length));
 }
 
 /**
