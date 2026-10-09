@@ -123,6 +123,10 @@ test("Hound readiness respects an explicit Bifrost execution denial", () => {
   assert.equal(diagnostics.hound.capabilities.search.available, false);
   assert.equal(diagnostics.hound.capabilities.fetch.executable, true);
   assert.equal(diagnostics.hound.capabilities.fetch.available, true);
+  assert.equal(diagnostics.hound.callableCount, 2);
+  assert.equal(diagnostics.hound.contractComplete, false);
+  assert.ok(diagnostics.hound.missing.includes("mcp_smart_search"));
+  assert.ok(diagnostics.hound.missingResearch.includes("mcp_smart_search"));
 });
 
 test("Hound readiness remains backward-compatible when execution policy is absent", () => {
