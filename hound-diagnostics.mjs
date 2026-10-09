@@ -490,9 +490,15 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
         ? "conditional-code-mode"
         : "unavailable";
   const administrativeComplete = capabilities.cache.available && capabilities.version.available;
-  const contractComplete = HOUND_TOOLS.every((name) =>
-    liveKnown ? tools[name].gatewayVisible === true : tools[name].configured === true
-  );
+  // Discoverability is not executability: an explicit Bifrost deny must also
+  // reduce the Hound contract/readiness count and missing-tool diagnostics.
+  const callableCount = Object.values(capabilities).filter((item) => item.available).length;
+  const contractComplete = callableCount === HOUND_TOOLS.length;
+  const missing = HOUND_TOOL_SPECS.filter((spec) => !capabilities[spec.capability].available)
+    .map((spec) => spec.name);
+  const missingResearch = HOUND_TOOL_SPECS.filter(
+    (spec) => spec.research && !capabilities[spec.capability].available
+  ).map((spec) => spec.name);
 
   const transportWarnings = [];
   if (screenshotCallable && !imageContentPreserved) {
@@ -536,18 +542,15 @@ export function houndMcpDiagnostics(policy, clients = [], virtualMcps = [], opti
       imageContentPreserved,
       pifrostImageRecovery,
       configuredCount,
+      callableCount,
       visibleCount: liveKnown ? visibleCount : undefined,
       liveVerified,
       mode,
       clients: clientRows,
       tools,
       capabilities,
-      missing: HOUND_TOOLS.filter((name) =>
-        liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured
-      ),
-      missingResearch: HOUND_RESEARCH_TOOLS.filter((name) =>
-        liveKnown ? tools[name].gatewayVisible !== true : !tools[name].configured
-      ),
+      missing,
+      missingResearch,
       codeMode,
       transportWarnings,
     },
