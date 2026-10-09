@@ -10,6 +10,7 @@ import {
   composeBifrostSkillMarkdown,
   findOmpSkillCollisions,
   installBifrostSkillBundle,
+  managedBifrostSkillIntegrity,
   normalizeBifrostSkill,
   readBifrostSkillMarker,
   removeManagedBifrostSkill,
@@ -79,6 +80,8 @@ test("installs atomically into .agents/skills and only removes Pifrost-owned ski
     const installed = await installBifrostSkillBundle(repo, bundle("1.2.3"), { home });
     assert.match(installed.path, /\.agents[/\\]skills[/\\]release-notes$/);
     assert.equal(readBifrostSkillMarker(repo, "release-notes")?.version, "1.2.3");
+    assert.equal(readBifrostSkillMarker(repo, "release-notes")?.schemaVersion, 2);
+    assert.equal(managedBifrostSkillIntegrity(repo, "release-notes").status, "clean");
     assert.equal(readFileSync(join(installed.path, "templates/note.md"), "utf8"), "template");
 
     await installBifrostSkillBundle(repo, bundle("1.2.4"), { home });
@@ -133,5 +136,34 @@ test("refuses symlinked project Skill roots before writing", async () => {
       /Refusing symlinked Skill path/,
     );
     assert.equal(existsSync(join(outside, "skills")), false);
+  });
+});
+
+test("modified Skill file and unexpected payload are detected; sync requires explicit force", async () => {
+  await withTemp(async ({ repo, home }) => {
+    const installed = await installBifrostSkillBundle(repo, bundle(), { home });
+    writeFileSync(join(installed.path, "SKILL.md"), "edited locally");
+    assert.equal(managedBifrostSkillIntegrity(repo, "release-notes").status, "modified");
+    await assert.rejects(() => installBifrostSkillBundle(repo, bundle("1.2.4"), { home }),
+      /locally modified/);
+    assert.throws(() => removeManagedBifrostSkill(repo, "release-notes"), /locally modified/);
+    await installBifrostSkillBundle(repo, bundle("1.2.4"), { home, allowModifiedReplace: true });
+    assert.equal(managedBifrostSkillIntegrity(repo, "release-notes").status, "clean");
+    writeFileSync(join(installed.path, "unexpected.txt"), "extra file");
+    assert.equal(managedBifrostSkillIntegrity(repo, "release-notes").status, "modified");
+    assert.equal(removeManagedBifrostSkill(repo, "release-notes", { force: true }).removed, true);
+  });
+});
+
+test("legacy v1 ownership marker remains readable but its integrity is unverified", async () => {
+  await withTemp(async ({ repo, home }) => {
+    const installed = await installBifrostSkillBundle(repo, bundle(), { home });
+    const markerFile = join(installed.path, BIFROST_SKILL_MARKER);
+    const marker = JSON.parse(readFileSync(markerFile, "utf8"));
+    delete marker.fileHashes;
+    marker.schemaVersion = 1;
+    writeFileSync(markerFile, JSON.stringify(marker));
+    assert.equal(managedBifrostSkillIntegrity(repo, "release-notes").status, "unverified");
+    assert.equal(repoBifrostSkillStatus(repo, [{ name: "release-notes" }])[0].state, "installed");
   });
 });
