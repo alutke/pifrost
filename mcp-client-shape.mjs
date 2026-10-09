@@ -71,6 +71,16 @@ export function normalizeMcpClientShape(client) {
 
   const instructionLimit = config?.max_instructions_length ?? client?.max_instructions_length;
   const numericInstructionLimit = Number(instructionLimit);
+  const rawToolsToExecute = Array.isArray(config?.tools_to_execute)
+    ? config.tools_to_execute
+    : Array.isArray(client?.tools_to_execute)
+      ? client.tools_to_execute
+      : undefined;
+  const rawToolsToAutoExecute = Array.isArray(config?.tools_to_auto_execute)
+    ? config.tools_to_auto_execute
+    : Array.isArray(client?.tools_to_auto_execute)
+      ? client.tools_to_auto_execute
+      : undefined;
 
   return {
     id,
@@ -87,16 +97,10 @@ export function normalizeMcpClientShape(client) {
     connectionType: nonEmpty(config?.connection_type) ?? nonEmpty(client?.connection_type),
     authType: nonEmpty(config?.auth_type) ?? nonEmpty(client?.auth_type),
     isCodeModeClient: Boolean(config?.is_code_mode_client ?? client?.is_code_mode_client),
-    toolsToExecute: Array.isArray(config?.tools_to_execute)
-      ? config.tools_to_execute.map(String)
-      : Array.isArray(client?.tools_to_execute)
-        ? client.tools_to_execute.map(String)
-        : [],
-    toolsToAutoExecute: Array.isArray(config?.tools_to_auto_execute)
-      ? config.tools_to_auto_execute.map(String)
-      : Array.isArray(client?.tools_to_auto_execute)
-        ? client.tools_to_auto_execute.map(String)
-        : [],
+    toolsToExecute: rawToolsToExecute?.map(String) ?? [],
+    toolsToExecuteKnown: rawToolsToExecute !== undefined,
+    toolsToAutoExecute: rawToolsToAutoExecute?.map(String) ?? [],
+    toolsToAutoExecuteKnown: rawToolsToAutoExecute !== undefined,
     needsSessionStickiness:
       typeof (config?.needs_session_stickiness ?? client?.needs_session_stickiness) === "boolean"
         ? Boolean(config?.needs_session_stickiness ?? client?.needs_session_stickiness)
@@ -140,29 +144,34 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
   const granted = grantAll
     ? available
     : available.filter((name) => (grantedTools ?? []).map(String).includes(name));
-  const rows = granted.map((tool) => ({
-    tool,
-    granted: true,
-    executable: policyAllows(client?.toolsToExecute, tool),
-    autoExecutable:
-      policyAllows(client?.toolsToExecute, tool) &&
-      policyAllows(client?.toolsToAutoExecute, tool),
-  }));
+  const executePolicyKnown = client?.toolsToExecuteKnown === true;
+  const autoPolicyKnown = client?.toolsToAutoExecuteKnown === true;
+  const rows = granted.map((tool) => {
+    const executable = executePolicyKnown ? policyAllows(client?.toolsToExecute, tool) : undefined;
+    const autoExecutable = autoPolicyKnown
+      ? (executable !== false && policyAllows(client?.toolsToAutoExecute, tool))
+      : undefined;
+    return { tool, granted: true, executable, autoExecutable };
+  });
   const warnings = [];
-  if (Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
+  if (autoPolicyKnown && Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
     warnings.push("auto-execute wildcard grants every executable tool approval-free execution");
   }
-  for (const name of Array.isArray(client?.toolsToAutoExecute) ? client.toolsToAutoExecute : []) {
-    if (name === "*") continue;
-    if (!policyAllows(client?.toolsToExecute, name)) {
-      warnings.push(`auto-execute tool ${name} is not executable and will be ignored by Bifrost`);
+  if (autoPolicyKnown && executePolicyKnown) {
+    for (const name of Array.isArray(client?.toolsToAutoExecute) ? client.toolsToAutoExecute : []) {
+      if (name === "*") continue;
+      if (!policyAllows(client?.toolsToExecute, name)) {
+        warnings.push(`auto-execute tool ${name} is not executable and will be ignored by Bifrost`);
+      }
     }
   }
   return {
     rows,
     grantedCount: rows.length,
-    executableCount: rows.filter((row) => row.executable).length,
-    autoExecutableCount: rows.filter((row) => row.autoExecutable).length,
+    executableCount: executePolicyKnown ? rows.filter((row) => row.executable === true).length : undefined,
+    autoExecutableCount: autoPolicyKnown ? rows.filter((row) => row.autoExecutable === true).length : undefined,
+    executePolicyKnown,
+    autoPolicyKnown,
     executePolicy: Array.isArray(client?.toolsToExecute) ? [...client.toolsToExecute] : [],
     autoPolicy: Array.isArray(client?.toolsToAutoExecute) ? [...client.toolsToAutoExecute] : [],
     warnings,
