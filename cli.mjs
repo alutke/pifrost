@@ -35,6 +35,7 @@ import { classifyResearchResult } from "./research-results.mjs";
 
 import {
   bifrostSkillCompatibility,
+  findOmpSkillCollisions,
   fetchBifrostSkillBundle,
   installBifrostSkillBundle,
   listBifrostSkills,
@@ -43,6 +44,17 @@ import {
   repoBifrostSkillStatus,
   resolveBifrostSkillNames,
 } from "./skills-bridge.mjs";
+
+import {
+  clientsForVirtualMcps,
+  discoverMcpSkillMatches,
+  mcpSkillDrift,
+  normalizeMcpSkillDiscovery,
+  recordMcpSkillLink,
+  setMcpSkillAlias,
+  setMcpSkillDismissal,
+  withoutMcpSkillLinks,
+} from "./mcp-skill-discovery.mjs";
 
 import {
   VERSION,
@@ -125,7 +137,7 @@ Usage:
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
-  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions]
+  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
   pifrost repo status
   pifrost repo research status
   pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name] [--fetch-tool name] [--crawl-tool name] [--screenshot-tool name]
@@ -134,16 +146,21 @@ Usage:
   pifrost repo research probe [<id>]       Explicit, read-only live search test via Bifrost (Classic MCP only)
   pifrost repo rotate-key
   pifrost repo mcp list
-  pifrost repo mcp add <client> [--tools '*|tool1,tool2']
+  pifrost repo mcp add <client> [--tools '*|tool1,tool2'] [--install-matching-skills]
   pifrost repo mcp remove <client>
   pifrost repo mcp instructions <on|off|default>
   pifrost repo vmcp list
-  pifrost repo vmcp add <name>
+  pifrost repo vmcp add <name> [--install-matching-skills]
   pifrost repo vmcp remove <name>
   pifrost repo skills list
   pifrost repo skills add <name>
   pifrost repo skills remove <name>
-  pifrost repo skills sync [name]
+  pifrost repo skills sync [name] [--force]
+  pifrost repo skills suggestions [--install-matching-skills]
+  pifrost repo skills bind <client> <skill>
+  pifrost repo skills unbind <client>
+  pifrost repo skills dismiss <client>
+  pifrost repo skills undismiss <client>
   pifrost repo reset [--delete-remote] [--recover-by-name] [--yes]
   pifrost secret repo-mcp --id <repo-id>
   pifrost doctor
@@ -167,6 +184,8 @@ Repo init options:
   --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
   --rotate-existing               Explicitly rotate an adopted existing repo Virtual Key when its raw value is unavailable
   --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
+  --install-matching-skills       Explicitly install safe matching Skills; never implied by --yes
+  --no-skill-discovery            Skip optional MCP-to-Skill discovery
 
 Repo reset options:
   --delete-remote                 Delete the repo Bifrost Virtual Key before local cleanup
@@ -876,6 +895,9 @@ async function commandRepoInit(flags) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const repo = repoIdentity();
+  const before = state.config.repos?.[repo.id] ?? {};
+  const previouslyDirect = new Set((before.mcpClients ?? []).map((item) => item.name.toLowerCase()));
+  const previouslyVirtual = new Set((before.virtualMcps ?? []).map((name) => name.toLowerCase()));
   const clientFlagPresent = Object.prototype.hasOwnProperty.call(flags, "clients");
   const virtualMcpFlagPresent = Object.prototype.hasOwnProperty.call(flags, "virtual-mcps");
   const available = await listMcpClients(url, managementKey);
@@ -946,6 +968,14 @@ async function commandRepoInit(flags) {
   if (!test.ok) {
     console.log(JSON.stringify(test.body));
     process.exitCode = 2;
+  } else {
+    const newlyDirect = available.filter((item) =>
+      configuredClients.some((assigned) => assigned.name.toLowerCase() === item.name.toLowerCase()) &&
+      !previouslyDirect.has(item.name.toLowerCase()));
+    const newlyVirtual = (desiredVirtualMcps ?? []).filter((item) =>
+      !previouslyVirtual.has(item.name.toLowerCase()));
+    const underlying = clientsForVirtualMcps(newlyVirtual, available);
+    await offerMatchingMcpSkills([...newlyDirect, ...underlying], flags);
   }
 }
 
@@ -986,7 +1016,7 @@ async function commandRepoStatus(snapshot) {
   console.log(`Bifrost Skills:   ${configuredSkills.map((item) => item.name).join(", ") || "none"}`);
   for (const skill of skillStatus) {
     const version = skill.installedVersion ?? skill.version ?? "unknown";
-    console.log(`  ${skill.name}@${version}: ${skill.state} source=Bifrost -> .agents/skills`);
+    console.log(`  ${skill.name}@${version}: ${skill.state} integrity=${skill.integrity} source=Bifrost -> .agents/skills`);
   }
 
   const managementAuth = managementAuthFromState(state);
@@ -1002,6 +1032,13 @@ async function commandRepoStatus(snapshot) {
           : listMcpClients(runtime.url, managementAuth),
       ]);
       const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
+      const active = clients.filter((item) => policy.effective.some((entry) =>
+        entry.client.toLowerCase() === item.name.toLowerCase()));
+      const drift = mcpSkillDrift(repoState.config?.mcpSkillDiscovery, active, [],
+        skillStatus.filter((item) => item.state === "installed").map((item) => item.name));
+      for (const finding of drift) {
+        console.log(`  WARN MCP/Skill drift: ${finding.type} client=${finding.clientName} skill=${finding.skillName}`);
+      }
       let liveTools;
       let liveToolsError;
       if (repoState.secret?.mcpVirtualKey) {
@@ -1116,6 +1153,14 @@ async function commandRepoStatus(snapshot) {
         ? snapshot.skills.value
         : await listBifrostSkills(runtime.url, managementAuth);
       const liveByName = new Map(availableSkills.map((item) => [item.name.toLowerCase(), item]));
+      for (const link of normalizeMcpSkillDiscovery(repoState.config?.mcpSkillDiscovery).links) {
+        const byId = availableSkills.find((item) => item.id === link.skillId);
+        if (byId && byId.name.toLowerCase() !== link.skillName.toLowerCase()) {
+          console.log(`  WARN Bifrost Skill renamed: ${link.skillName} -> ${byId.name} (id=${link.skillId}); manual review required`);
+        } else if (!byId) {
+          console.log(`  WARN Bifrost Skill id missing: ${link.skillName} (id=${link.skillId})`);
+        }
+      }
       console.log("Bifrost Skill provenance:");
       for (const localSkill of skillStatus) {
         const live = liveByName.get(localSkill.name.toLowerCase());
@@ -1146,14 +1191,100 @@ function upsertConfiguredSkill(state, repoId, skill) {
   updateRepoState(state, repoId, { bifrostSkills: next });
 }
 
-async function installRepoBifrostSkill(state, current, summary) {
+async function installRepoBifrostSkill(state, current, summary, options = {}) {
   const runtime = requireRuntime(state);
   const managementAuth = managementAuthFromState(state);
   if (!managementAuth) throw new Error("Bifrost management authentication is missing; run `pifrost global setup`");
   const bundle = await fetchBifrostSkillBundle(runtime.url, managementAuth, summary);
-  const installed = await installBifrostSkillBundle(current.repo.root, bundle);
+  const installed = await installBifrostSkillBundle(current.repo.root, bundle, { allowModifiedReplace: options.force === true });
   upsertConfiguredSkill(state, current.repo.id, bundle.skill);
   return { bundle, installed };
+}
+
+/**
+ * Post-grant advisory step. Never changes Bifrost policy, never fails a
+ * successfully configured MCP, and never prompts in a noninteractive shell.
+ * All writes reuse the existing Skills bridge.
+ */
+async function offerMatchingMcpSkills(selectedClients, flags = {}) {
+  if (!selectedClients.length || flags["no-skill-discovery"] === true) return;
+  try {
+    const state = loadState();
+    const { url, managementKey } = requireManagement(state);
+    const current = currentRepoState(state);
+    const skills = await listBifrostSkills(url, managementKey);
+    const config = normalizeMcpSkillDiscovery(current.config?.mcpSkillDiscovery);
+    const matches = discoverMcpSkillMatches(selectedClients, skills, config);
+    for (const candidate of matches) {
+      if (candidate.status === "missing" || candidate.status === "dismissed") continue;
+      if (candidate.status !== "matched") {
+        console.log(`WARN MCP ${candidate.client.name}: Skill matching ${candidate.status}; no installation`);
+        continue;
+      }
+      const { client, skill } = candidate;
+      const compat = bifrostSkillCompatibility(skill.raw);
+      if (!compat.compatible) {
+        console.log(`WARN MCP ${client.name}: matching Skill ${skill.name} incompatible: ${compat.reason}`);
+        continue;
+      }
+      const status = repoBifrostSkillStatus(current.repo.root, [{ name: skill.name, id: skill.id }])[0];
+      if (status.state === "installed") {
+        if (status.integrity === "modified") {
+          console.log(`WARN Skill ${skill.name} is locally modified; no automatic overwrite`);
+        } else if (status.installedVersion !== skill.version) {
+          console.log(`Skill ${skill.name} update available ${status.installedVersion} -> ${skill.version}; run pifrost repo skills sync ${skill.name}`);
+        }
+        continue;
+      }
+      if (status.state === "collision") {
+        console.log(`WARN Skill ${skill.name} already exists without Pifrost ownership; no overwrite`);
+        continue;
+      }
+      const collisions = findOmpSkillCollisions(current.repo.root, skill.name);
+      if (collisions.length) {
+        console.log(`WARN Skill ${skill.name} conflicts with ${collisions.join(", ")}; no install`);
+        continue;
+      }
+      console.log(`Matching Bifrost Skill: ${skill.name}@${skill.version} for MCP ${client.name} (${candidate.matchedBy})`);
+      if (skill.description) console.log(`  ${skill.description.slice(0, 240)}`);
+      console.log(`  Project location: .agents/skills/${skill.name}; no MCP grants change`);
+      let choice = flags["install-matching-skills"] === true ? "y" : "n";
+      if (flags["install-matching-skills"] !== true && input.isTTY && output.isTTY) {
+        choice = await withPrompter(async (rl) =>
+          (await rl.question("Install Skill? [y/N/d=never suggest]: ")).trim().toLowerCase());
+      } else if (flags["install-matching-skills"] !== true) {
+        console.log("  Skipped (noninteractive; use --install-matching-skills to opt in)");
+      }
+      if (choice === "d") {
+        const latest = normalizeMcpSkillDiscovery(loadState().config.repos?.[current.repo.id]?.mcpSkillDiscovery);
+        updateRepoState(loadState(), current.repo.id, {
+          mcpSkillDiscovery: setMcpSkillDismissal(latest, client, skill),
+        });
+        console.log(`Dismissed Skill suggestion for ${client.name}; undo with pifrost repo skills undismiss ${client.name}`);
+      } else if (choice === "y" || choice === "yes") {
+        try {
+          const refreshed = loadState();
+          const currentRepo = currentRepoState(refreshed);
+          const { bundle, installed } = await installRepoBifrostSkill(refreshed, currentRepo, skill);
+          if (bundle.skill.id !== skill.id || bundle.skill.name.toLowerCase() !== skill.name.toLowerCase()) {
+            // Prevent a changed upstream identity being linked silently.
+            removeManagedBifrostSkill(currentRepo.repo.root, bundle.skill.name);
+            throw new Error("Bifrost Skill identity changed during discovery; retry");
+          }
+          const afterInstall = loadState();
+          const latestConfig = afterInstall.config.repos?.[current.repo.id]?.mcpSkillDiscovery;
+          updateRepoState(afterInstall, current.repo.id, {
+            mcpSkillDiscovery: recordMcpSkillLink(latestConfig, client, bundle.skill),
+          });
+          console.log(`Installed ${bundle.skill.name}@${bundle.skill.version} -> ${installed.path}`);
+        } catch (error) {
+          console.log(`WARN MCP ${client.name} configured, but Skill installation failed: ${formatError(error)}`);
+        }
+      }
+    }
+  } catch (error) {
+    console.log(`WARN Optional MCP Skill discovery unavailable: ${formatError(error)}`);
+  }
 }
 
 async function commandRepoSkillsList() {
@@ -1200,20 +1331,21 @@ async function commandRepoSkillsAdd(name) {
   console.log(`OMP project skill: ${installed.path}`);
 }
 
-async function commandRepoSkillsRemove(name) {
+async function commandRepoSkillsRemove(name, flags = {}) {
   if (!name) throw new Error("Usage: pifrost repo skills remove <name>");
   const state = loadState();
   const current = currentRepoState(state);
   const configured = configuredSkillRows(current);
   const found = configured.find((item) => item.name.toLowerCase() === name.toLowerCase());
   if (!found) throw new Error(`Bifrost skill is not configured for this repo: ${name}`);
-  const removed = removeManagedBifrostSkill(current.repo.root, found.name);
+  const removed = removeManagedBifrostSkill(current.repo.root, found.name, { force: flags.force === true });
   const next = configured.filter((item) => item.name.toLowerCase() !== found.name.toLowerCase());
-  updateRepoState(state, current.repo.id, { bifrostSkills: next });
+  updateRepoState(state, current.repo.id, { bifrostSkills: next,
+    mcpSkillDiscovery: withoutMcpSkillLinks(current.config?.mcpSkillDiscovery, found.name) });
   console.log(`Removed Bifrost skill ${found.name}${removed.alreadyMissing ? " (managed directory was already missing)" : ""}.`);
 }
 
-async function commandRepoSkillsSync(name) {
+async function commandRepoSkillsSync(name, flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const current = currentRepoState(state);
@@ -1232,7 +1364,7 @@ async function commandRepoSkillsSync(name) {
     if (!compatibility.compatible) {
       throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
     }
-    const { bundle, installed } = await installRepoBifrostSkill(state, current, summary);
+    const { bundle, installed } = await installRepoBifrostSkill(state, current, summary, { force: flags.force === true });
     console.log(`Synced ${bundle.skill.name}@${bundle.skill.version} -> ${installed.path}`);
   }
 }
@@ -1291,12 +1423,14 @@ async function commandRepoVirtualMcpList() {
   }
 }
 
-async function commandRepoVirtualMcpAdd(name) {
+async function commandRepoVirtualMcpAdd(name, flags = {}) {
   if (!name) throw new Error("Usage: pifrost repo vmcp add <name>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
   const available = await listVirtualMcps(url, managementKey);
   const [found] = resolveVirtualMcpNames(available, [name]);
+  const alreadyAssigned = virtualMcpsForVirtualKey(available, vk.id)
+    .some((item) => Number(item.id) === Number(found.id));
   await attachVirtualMcpToVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = [...new Set([
     ...virtualMcpsForVirtualKey(available, vk.id).map((item) => item.name),
@@ -1304,6 +1438,10 @@ async function commandRepoVirtualMcpAdd(name) {
   ])];
   updateRepoState(state, current.repo.id, { virtualMcps: liveNames });
   console.log(`Added Virtual MCP ${found.name} to ${current.config.virtualKeyName}`);
+  if (!alreadyAssigned) {
+    const clients = await listMcpClients(url, managementKey);
+    await offerMatchingMcpSkills(clientsForVirtualMcps([found], clients), flags);
+  }
 }
 
 async function commandRepoVirtualMcpRemove(name) {
@@ -1328,6 +1466,8 @@ async function commandRepoMcpAdd(clientName, flags) {
   const found = available.find((client) => client.name.toLowerCase() === clientName.toLowerCase());
   if (!found) throw new Error(`Unknown Bifrost MCP client: ${clientName}`);
   const tools = splitCsv(flagString(flags, "tools"));
+  const alreadyAssigned = virtualKeyMcpConfigs(vk)
+    .some((item) => item.mcp_client_name.toLowerCase() === found.name.toLowerCase());
   const configs = virtualKeyMcpConfigs(vk).filter((item) => item.mcp_client_name !== found.name);
   configs.push({ mcp_client_name: found.name, tools_to_execute: tools.length ? tools : ["*"] });
   const updated = await updateVirtualKey(url, managementKey, vk.id, { mcp_configs: configs });
@@ -1337,6 +1477,7 @@ async function commandRepoMcpAdd(clientName, flags) {
   }));
   updateRepoState(state, current.repo.id, { mcpClients: normalized });
   console.log(`Added ${found.name} to ${current.config.virtualKeyName} with tools: ${(tools.length ? tools : ["*"]).join(",")}`);
+  if (!alreadyAssigned) await offerMatchingMcpSkills([found], flags);
 }
 
 async function commandRepoMcpRemove(clientName) {
@@ -1642,12 +1783,12 @@ const COMMANDS = new Map([
   ["repo mcp remove", (args) => commandRepoMcpRemove(args[0])],
   ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
   ["repo vmcp list", () => commandRepoVirtualMcpList()],
-  ["repo vmcp add", (args) => commandRepoVirtualMcpAdd(args[0])],
+  ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
   ["repo vmcp remove", (args) => commandRepoVirtualMcpRemove(args[0])],
   ["repo skills list", () => commandRepoSkillsList()],
   ["repo skills add", (args) => commandRepoSkillsAdd(args[0])],
-  ["repo skills remove", (args) => commandRepoSkillsRemove(args[0])],
-  ["repo skills sync", (args) => commandRepoSkillsSync(args[0])],
+  ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
+  ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
   ["doctor", () => commandDoctor()],
 ]);
