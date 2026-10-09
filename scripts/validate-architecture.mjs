@@ -88,7 +88,7 @@ for (const forbidden of ["managementApiKey", "managementAdminUsername", "managem
 }
 
 const ompCfg = readFileSync(resolve(root, "omp-cfg.ts"), "utf8");
-if (!/modelFallback\s*:\s*false/u.test(ompCfg)) {
+if (!/definition\(\s*["\']retry\.modelFallback["\']\s*,\s*false/u.test(ompCfg)) {
   errors.push("OMP model fallback must remain disabled; physical fallback is owned by Bifrost");
 }
 
