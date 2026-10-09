@@ -106,7 +106,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.12.0
+0.12.1
 ```
 
 Bun also works:
@@ -361,7 +361,7 @@ See the [technical reference](docs/REFERENCE.md#bifrost-skills--omp-skills-bridg
 
 ### Automatic MCP Skill offers
 
-When you add a new Bifrost MCP client through `pifrost repo init` or
+When you explicitly select a Bifrost MCP client through `pifrost repo init` or
 `pifrost repo mcp add`, Pifrost checks the Bifrost Skills catalogue for a
 **case-insensitive, exact-name** match. New Virtual MCP assignments also check
 the bundle's underlying clients by stable Bifrost client IDs. This is an
