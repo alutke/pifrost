@@ -1109,7 +1109,7 @@ async function commandRepoStatus(snapshot) {
             ? "conditional (Code Mode provenance unavailable)"
             : "not multimodal-ready";
       console.log(`    visual web:     ${visualWebState}`);
-      console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.visibleCount ?? hound.hound.configuredCount}/6 tools available`}`);
+      console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.callableCount}/6 callable tools`}`);
       if (hound.hound.codeMode.configured) {
         const metaCount = Object.values(hound.hound.codeMode.metaTools)
           .filter((item) => item.gatewayVisible === true).length;
