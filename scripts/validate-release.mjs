@@ -120,6 +120,7 @@ for (const path of [
   "CHANGELOG.md",
   "tsconfig.runtime.json",
   "scripts/build-runtime.mjs",
+  "scripts/validate-architecture.mjs",
   "scripts/smoke-live.mjs",
   "scripts/validate-release.mjs",
 ]) {
@@ -219,6 +220,7 @@ try {
     "docs/REFERENCE.md",
     "CHANGELOG.md",
     "scripts/build-runtime.mjs",
+    "scripts/validate-architecture.mjs",
     "scripts/smoke-live.mjs",
     "scripts/validate-release.mjs",
   ]) {
