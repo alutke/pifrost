@@ -359,6 +359,39 @@ This is opt-in per repository. Pifrost only updates/removes skill directories th
 
 See the [technical reference](docs/REFERENCE.md#bifrost-skills--omp-skills-bridge) for the compatibility rules.
 
+### Automatic MCP Skill offers
+
+When you add a new Bifrost MCP client through `pifrost repo init` or
+`pifrost repo mcp add`, Pifrost checks the Bifrost Skills catalogue for a
+**case-insensitive, exact-name** match. New Virtual MCP assignments also check
+the bundle's underlying clients by stable Bifrost client IDs. This is an
+optional CLI-only discovery step; it does not contact or execute the MCP server.
+
+The default interactive answer is **No**. In unattended scripts discovery
+reports possible matches without installing; `--install-matching-skills` is
+the explicit opt-in. Existing `--yes` never authorizes Skill installation.
+Reapplying unchanged MCP grants does not repeat the offer. A Skill failure does
+not undo a successful MCP grant.
+
+```bash
+pifrost repo mcp add donsetch               # Offers a matching Skill, if published
+pifrost repo mcp add donsetch --install-matching-skills  # Explicit unattended consent
+pifrost repo skills suggestions              # Review current matches and drift
+pifrost repo skills bind research web-search # Set a per-repo explicit name alias
+pifrost repo skills unbind research
+pifrost repo skills dismiss donsetch         # Don't ask for this MCP/Skill again
+pifrost repo skills undismiss donsetch
+```
+
+No fuzzy matching is performed, and aliases do not affect Bifrost MCP grants.
+`repo status` and `doctor` report orphaned MCP/Skill links and upstream
+renames by stable Skill ID. Installed Skills remain independent when their MCP
+is removed. Local file modifications are detected using SHA-256 payload hashes
+in the Pifrost ownership marker; `skills sync/add/remove --force` is required
+to deliberately replace or discard edited managed content. Legacy markers
+remain readable but their content integrity cannot be established until an
+explicit refresh. See [technical reference](docs/REFERENCE.md#automatic-mcp-to-skill-discovery).
+
 ## Upgrading
 
 The normal upgrade sequence is:
