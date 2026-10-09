@@ -1,4 +1,4 @@
-import { loadRepoResearchScreenshotTools, preferredRepoResearchGuidance } from "./research-repo-config.ts";
+import { loadRepoResearchScreenshotTools } from "./research-repo-config.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -910,10 +910,6 @@ export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], alia
 /** Native OMP 18 extension entry point. No legacy Pi compatibility imports are used at runtime. */
 export default function pifrostProvider(pi: ExtensionAPI): void {
 	registerBifrostRichContentBridge(pi, { allowedScreenshotTools: loadRepoResearchScreenshotTools() });
-	pi.on("before_agent_start", () => {
-		const guidance = preferredRepoResearchGuidance();
-		return guidance ? { systemPromptAppend: guidance } : undefined;
-	});
 	pi.registerFlag("bifrost-url", {
 		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL)",
 		type: "string",
