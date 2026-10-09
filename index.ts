@@ -1,4 +1,4 @@
-import { loadRepoResearchScreenshotTools } from "./config-store.ts";
+import { loadRepoResearchScreenshotTools } from "./research-repo-config.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";

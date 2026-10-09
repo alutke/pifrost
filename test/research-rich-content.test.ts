@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadRepoResearchScreenshotTools } from "../config-store.ts";
+import { loadRepoResearchScreenshotTools } from "../research-repo-config.ts";
 import { isPifrostBifrostScreenshotTool, registerBifrostRichContentBridge } from "../bifrost-rich-content.ts";
 
 test("DonSeTch screenshot tool is trusted only with directly attributable Bifrost identity",()=>{

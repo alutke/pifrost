@@ -26,6 +26,7 @@ const runtime = [
   "cache-schema.ts",
   "catalog-fallback.ts",
   "config-store.ts",
+  "research-repo-config.ts",
   "datasheet.ts",
   "omp-cfg.ts",
 ];

@@ -80,7 +80,8 @@
     "research-providers.mjs",
     "research-results.mjs",
     "docs/RESEARCH_PROVIDERS.md",
-    "scripts/validate-donsetch-contract.mjs"
+    "scripts/validate-donsetch-contract.mjs",
+    "research-repo-config.ts"
   ],
   "omp": {
     "extensions": [
