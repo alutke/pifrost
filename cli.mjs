@@ -1052,12 +1052,16 @@ async function commandRepoStatus(snapshot) {
             continue;
           }
           const execution = mcpClientExecutionDiagnostics(client, grant.tools);
+          const executableCount = execution.executePolicyKnown ? execution.executableCount : "unknown";
+          const autoCount = execution.autoPolicyKnown ? execution.autoExecutableCount : "unknown";
           console.log(
-            `  ${client.name}: granted=${execution.grantedCount} executable=${execution.executableCount} auto=${execution.autoExecutableCount}`,
+            `  ${client.name}: granted=${execution.grantedCount} executable=${executableCount} auto=${autoCount}`,
           );
           for (const row of execution.rows) {
+            const executable = row.executable === undefined ? "unknown" : row.executable ? "yes" : "no";
+            const auto = row.autoExecutable === undefined ? "unknown" : row.autoExecutable ? "yes" : "no";
             console.log(
-              `    ${row.tool}: granted=yes executable=${row.executable ? "yes" : "no"} auto=${row.autoExecutable ? "yes" : "no"}`,
+              `    ${row.tool}: granted=yes executable=${executable} auto=${auto}`,
             );
           }
           for (const warning of execution.warnings) console.log(`    WARN ${warning}`);
@@ -1286,8 +1290,8 @@ async function commandRepoMcpList() {
     ].filter(Boolean);
     console.log(`${client.name}  state=${client.state ?? "unknown"}  tools=${client.tools.length || "unknown"}${modes.length ? `  ${modes.join(" ")}` : ""}`);
     if (client.endpointSlug) console.log(`  endpoint=/mcp/${client.endpointSlug}`);
-    console.log(`  execute allow: ${client.toolsToExecute?.length ? client.toolsToExecute.join(", ") : "none"}`);
-    console.log(`  auto-execute: ${client.toolsToAutoExecute?.length ? client.toolsToAutoExecute.join(", ") : "none"}`);
+    console.log(`  execute allow: ${client.toolsToExecuteKnown === false ? "unknown" : client.toolsToExecute?.length ? client.toolsToExecute.join(", ") : "none"}`);
+    console.log(`  auto-execute: ${client.toolsToAutoExecuteKnown === false ? "unknown" : client.toolsToAutoExecute?.length ? client.toolsToAutoExecute.join(", ") : "none"}`);
     if (client.toolsToAutoExecute?.includes("*")) console.log("  WARN auto-execute wildcard grants every executable tool approval-free execution");
     if (client.serverInstructions) console.log(`  upstream instructions: set (${Buffer.byteLength(client.serverInstructions, "utf8")}B)`);
     if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
