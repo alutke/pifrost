@@ -37,6 +37,8 @@ export interface RichContentBridgeOptions {
 	maxImageBytes?: number;
 	maxTotalImageBytes?: number;
 	maxImages?: number;
+	/** Exact, repo-scoped Bifrost tool identities for explicitly bound research screenshot providers. */
+	allowedScreenshotTools?: string[];
 	visionTimeoutMs?: number;
 	visionMaxTokens?: number;
 	completeImpl?: CompleteSimple;
@@ -234,15 +236,16 @@ export function isPifrostBifrostMcpTool(toolName: string): boolean {
  * executeToolCode is intentionally excluded: once Code Mode has flattened nested
  * results, the outer tool result cannot prove which nested tool produced a marker.
  */
-export function isPifrostBifrostScreenshotTool(toolName: string): boolean {
+export function isPifrostBifrostScreenshotTool(toolName: string, allowedScreenshotTools: readonly string[] = []): boolean {
 	const lower = toolName.toLowerCase();
 	if (!isPifrostBifrostMcpTool(lower)) return false;
+	if (allowedScreenshotTools.includes(lower)) return true;
 	const inner = lower.slice("mcp__bifrost_".length);
 	return inner === "mcp_screenshot" ||
 		/(?:^|[-_.:\/])mcp_screenshot$/u.test(inner) ||
 		// DonSeTch identity must be encoded in the directly exposed tool name.
 		// A generic web_screenshot suffix could belong to an unrelated server.
-		/(?:^|[-_.:\/])donsetch[-_.:\/]web_screenshot$/u.test(inner);
+		(inner === "donsetch_web_screenshot" || inner === "donsetch-web_screenshot");
 }
 
 function visionModelFor(ctx: ExtensionContext): Model | undefined {
@@ -358,7 +361,7 @@ export function registerBifrostRichContentBridge(
 	options: RichContentBridgeOptions = {},
 ): void {
 	pi.on("tool_result", async (event, ctx) => {
-		if (event.isError || !isPifrostBifrostScreenshotTool(event.toolName)) return undefined;
+		if (event.isError || !isPifrostBifrostScreenshotTool(event.toolName, options.allowedScreenshotTools)) return undefined;
 		// DonSeTch uses application-level failure envelopes with isError=false.
 		// Never decode any image-like marker on a failed tool result.
 		const metadata = event.content.find((block) => block.type === "text" && block.text.startsWith("[meta] "));
