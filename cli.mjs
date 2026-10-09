@@ -895,9 +895,6 @@ async function commandRepoInit(flags) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const repo = repoIdentity();
-  const before = state.config.repos?.[repo.id] ?? {};
-  const previouslyDirect = new Set((before.mcpClients ?? []).map((item) => item.name.toLowerCase()));
-  const previouslyVirtual = new Set((before.virtualMcps ?? []).map((name) => name.toLowerCase()));
   const clientFlagPresent = Object.prototype.hasOwnProperty.call(flags, "clients");
   const virtualMcpFlagPresent = Object.prototype.hasOwnProperty.call(flags, "virtual-mcps");
   const available = await listMcpClients(url, managementKey);
@@ -969,13 +966,16 @@ async function commandRepoInit(flags) {
     console.log(JSON.stringify(test.body));
     process.exitCode = 2;
   } else {
-    const newlyDirect = available.filter((item) =>
-      configuredClients.some((assigned) => assigned.name.toLowerCase() === item.name.toLowerCase()) &&
-      !previouslyDirect.has(item.name.toLowerCase()));
-    const newlyVirtual = (desiredVirtualMcps ?? []).filter((item) =>
-      !previouslyVirtual.has(item.name.toLowerCase()));
-    const underlying = clientsForVirtualMcps(newlyVirtual, available);
-    await offerMatchingMcpSkills([...newlyDirect, ...underlying], flags);
+    // Explicit selection means the user is choosing this MCP, even if its
+    // Virtual Key grant existed before Pifrost supported Skill discovery.
+    // offerMatchingMcpSkills skips installed, dismissed and incompatible Skills.
+    const selectedDirect = clients
+      ? available.filter((item) =>
+          clients.some((selected) => selected.name.toLowerCase() === item.name.toLowerCase()) &&
+          configuredClients.some((assigned) => assigned.name.toLowerCase() === item.name.toLowerCase()))
+      : [];
+    const selectedVirtual = clientsForVirtualMcps(desiredVirtualMcps ?? [], available);
+    await offerMatchingMcpSkills([...selectedDirect, ...selectedVirtual], flags);
   }
 }
 
@@ -1136,7 +1136,7 @@ async function commandRepoStatus(snapshot) {
         if (provider.capabilities) for (const [name, cap] of Object.entries(provider.capabilities)) {
           if (!cap.tool) continue;
           const visible = cap.visible === undefined ? "unverified" : cap.visible ? "yes" : "no";
-          console.log(`    ${name.padEnd(10)} tool=${cap.tool} grant=${cap.granted ? "yes" : "no"} executable=${cap.executable === undefined ? "unknown" : cap.executable ? "yes" : "no"} visible=${visible}`);
+          console.log(`    ${name.padEnd(10)} tool=${cap.tool} grant=${cap.granted ? "yes" : "no"} executable=${cap.executable === undefined ? "unknown" : cap.executable ? "yes" : "no"} visible=${visible}${cap.gatewayName ? " gateway=" + cap.gatewayName : cap.visibilityReason ? " reason=" + cap.visibilityReason : ""}`);
         }
         if (provider.statefulHandles) console.log("    NOTE search handles require affinity to the same upstream MCP process; use full URLs across instances.");
         if (provider.screenshotCallable) console.log(`    visual web:     ${provider.visualWebStatus}`);
@@ -1741,7 +1741,7 @@ async function commandRepoResearchStatus() {
   for (const provider of diagnostics.providers) {
     console.log(provider.id + " [" + provider.client + "] profile=" + provider.profile + " mode=" + (provider.mode ?? "unknown") + " status=" + provider.status);
     for (const [cap, entry] of Object.entries(provider.capabilities ?? {})) {
-      if (entry.tool) console.log("  " + cap + ": " + entry.tool + " granted=" + entry.granted + " executable=" + String(entry.executable) + " visible=" + String(entry.visible));
+      if (entry.tool) console.log("  " + cap + ": " + entry.tool + " granted=" + entry.granted + " executable=" + String(entry.executable) + " visible=" + String(entry.visible) + (entry.gatewayName ? " gateway=" + entry.gatewayName : entry.visibilityReason ? " reason=" + entry.visibilityReason : ""));
     }
   }
   console.log("Search path: " + diagnostics.search.path);
