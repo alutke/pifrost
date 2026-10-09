@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
+import { bifrostCredentialTransportWarnings } from "./security-diagnostics.mjs";
 import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
 import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
 import {
@@ -566,6 +567,15 @@ async function commandGlobalStatus(snapshot) {
     );
   }
 
+  if (runtime.url) {
+    if (probes.setup.ok) {
+      const setup = value("setup");
+      console.log(`Bifrost setup:          ${setup.setupRequired ? "INCOMPLETE" : "complete"} (dashboard-auth=${setup.authEnabled ? "enabled" : "disabled"}, inference-auth=${setup.inferenceAuthEnforced ? "enforced" : "not enforced"}, setup-token=${setup.setupTokenConfigured ? "configured" : "not configured"})`);
+    } else {
+      console.log(`Bifrost setup/auth:     unavailable (${errorText("setup")})`);
+    }
+  }
+
   if (runtime.url && runtime.virtualKey) {
     const inference = value("inference");
     console.log(
@@ -611,7 +621,20 @@ async function commandGlobalStatus(snapshot) {
       const mcpAuthMode = client?.mcp_server_auth_mode ?? "headers";
       const chainDepth = client?.routing_chain_max_depth ?? "default";
       const requiredHeaders = Array.isArray(client?.required_headers) ? client.required_headers : [];
+      const compat = client?.compat && typeof client.compat === "object" && !Array.isArray(client.compat)
+        ? client.compat
+        : {};
+      const chatToResponses = typeof compat.convert_chat_to_responses === "boolean"
+        ? compat.convert_chat_to_responses
+        : undefined;
+      const reasoningToResponses = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? compat.force_reasoning_only_models_to_responses
+        : undefined;
       console.log(`Gateway config 2.x:     MCP-auth=${mcpAuthMode}, chain-depth=${chainDepth}, required-headers=${requiredHeaders.length}`);
+      console.log(`  Chat→Responses:       ${chatToResponses === undefined ? "not reported" : chatToResponses ? "enabled" : "disabled"}`);
+      if (reasoningToResponses !== undefined) {
+        console.log(`  Reasoning→Responses:  ${reasoningToResponses ? "enabled" : "disabled"}`);
+      }
       if (mcpAuthMode === "oauth") {
         console.log("  WARN repo MCP configs use x-bf-vk; OAuth-only MCP gateway mode requires OMP OAuth instead of VK/header auth.");
       }
@@ -1500,6 +1523,13 @@ async function commandDoctor() {
   const runtime = runtimeConfigFromState(state);
   const managementAuth = managementAuthFromState(state);
   const snapshot = await collectDoctorSnapshot({ runtime, managementAuth });
+
+  const transportWarnings = bifrostCredentialTransportWarnings(runtime, managementAuth);
+  if (transportWarnings.length) {
+    printHeader("Transport security");
+    for (const warning of transportWarnings) console.log(`WARN ${warning}`);
+    console.log("");
+  }
 
   await commandGlobalStatus(snapshot);
   console.log("");
