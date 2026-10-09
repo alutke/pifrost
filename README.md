@@ -363,15 +363,17 @@ See the [technical reference](docs/REFERENCE.md#bifrost-skills--omp-skills-bridg
 
 When you explicitly select a Bifrost MCP client through `pifrost repo init` or
 `pifrost repo mcp add`, Pifrost checks the Bifrost Skills catalogue for a
-**case-insensitive, exact-name** match. New Virtual MCP assignments also check
+**case-insensitive, exact-name** match. Selected Virtual MCP assignments also check
 the bundle's underlying clients by stable Bifrost client IDs. This is an
 optional CLI-only discovery step; it does not contact or execute the MCP server.
 
 The default interactive answer is **No**. In unattended scripts discovery
 reports possible matches without installing; `--install-matching-skills` is
 the explicit opt-in. Existing `--yes` never authorizes Skill installation.
-Reapplying unchanged MCP grants does not repeat the offer. A Skill failure does
-not undo a successful MCP grant.
+Re-selecting a client in `repo init` rechecks a missing matching Skill, while
+already installed or dismissed Skills do not prompt again. Reapplying unchanged
+`repo mcp add` grants does not repeat the offer. A Skill failure does not undo
+a successful MCP grant.
 
 ```bash
 pifrost repo mcp add donsetch               # Offers a matching Skill, if published
