@@ -882,6 +882,50 @@ Skills remain independent from MCP governance: adding a skill never grants an MC
 
 ---
 
+## Automatic MCP-to-Skill discovery
+
+The repository CLI offers matching Bifrost Agent Skills when an MCP client is newly
+granted, including clients resolved from a newly assigned Virtual MCP. This is an
+**advisory control-plane integration**, not runtime tool invocation.
+
+- `repo init`, `repo mcp add`, and `repo vmcp add` first complete their
+  existing Bifrost MCP grants, then look for matching Skills. Failure to list
+  Skills, decline, or failure to install never rolls back a valid MCP grant.
+- Match the **exact normalized client name** case-insensitively; punctuation
+  is not normalised and matches are rejected if multiple Bifrost Skills share
+  the same normalised name. The only exception is an explicit per-repository
+  alias created through `pifrost repo skills bind <client> <skill>`. The
+  association keys by Bifrost client ID, surviving display-name changes.
+- `--install-matching-skills` explicitly authorizes non-interactive installation;
+  `--yes` never does. In an interactive terminal, consent defaults to No.
+  The prompt also accepts `d` to persist a per-repository dismissal (undone
+  through `repo skills undismiss`). `--no-skill-discovery` disables the
+  post-grant advisory phase.
+- Only **newly assigned** clients trigger implicit prompts. Explicit
+  `repo skills suggestions` lists and offers all currently effective clients
+  including Virtual MCP members. Existing managed Skills are not automatically
+  updated, even with unattended installation consent.
+- All installations flow through the existing `fetchBifrostSkillBundle` and
+  `installBifrostSkillBundle` APIs. Permission restrictions, file validation,
+  collision rejection, staged writes and ownership markers remain authoritative.
+  Pifrost does not grant extra MCP tools or execute any MCP tool during discovery.
+- For schema-v2 Pifrost ownership markers, SHA-256 hashes of the managed payload
+  detect local edits, new files and unsafe entries. Updating/removing modified
+  content requires an explicit `--force`. Schema-v1 markers remain supported
+  as `unverified` (hashes cannot be reconstructed retroactively).
+- Repository configuration records per-repo aliases, dismissals and links as
+  `mcpSkillDiscovery`, strictly metadata—not a Bifrost policy or runtime
+  instruction. `repo status` and `doctor` report orphaned source clients,
+  missing local Skills, upstream renames or vanished Skill IDs. Removal of an
+  MCP **never removes its Skill**. Removing a Pifrost-managed Skill removes only
+  its local provenance links.
+
+For a Virtual MCP, the selection's concrete `tools[].mcpClientId` references
+must resolve to enabled Bifrost MCP clients with callable tool grants. No
+automatic match is attempted against the arbitrary Virtual MCP bundle name.
+
+---
+
 ## Repository-specific MCP
 
 Each repository gets its own Bifrost MCP Virtual Key. Access can come from direct MCP client/tool grants, named Bifrost Virtual MCP bundles, or both. Pifrost stores Virtual MCP **names** in local state for portability and resolves those names to Bifrost's numeric Virtual MCP IDs only when it attaches/detaches the repo VK.
