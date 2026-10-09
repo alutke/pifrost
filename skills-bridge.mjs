@@ -436,6 +436,10 @@ export async function installBifrostSkillBundle(repoRoot, bundle, options = {}) 
   const target = join(parent, name);
   assertSafeManagedTarget(target);
   const existingMarker = readBifrostSkillMarker(repoRoot, name);
+  if (existingMarker?.bifrostSkillId && existingMarker.bifrostSkillId !== skillId &&
+      !options.allowSourceRebind) {
+    throw new Error(`Refusing to replace Bifrost Skill ${name}: upstream id changed from ${existingMarker.bifrostSkillId} to ${skillId}; use explicit --force after review`);
+  }
   if (existingMarker && managedBifrostSkillIntegrity(repoRoot, name).status === "modified" &&
       !options.allowModifiedReplace) {
     throw new Error(`Refusing to overwrite locally modified Pifrost Skill ${name}; use explicit --force to replace`);
