@@ -1039,6 +1039,25 @@ async function commandRepoStatus(snapshot) {
       for (const finding of drift) {
         console.log(`  WARN MCP/Skill drift: ${finding.type} client=${finding.clientName} skill=${finding.skillName}`);
       }
+      try {
+        const skills = snapshot?.skills?.ok ? snapshot.skills.value
+          : await listBifrostSkills(runtime.url, managementAuth);
+        for (const match of discoverMcpSkillMatches(active, skills,
+          repoState.config?.mcpSkillDiscovery)) {
+          if (match.status !== "matched") continue;
+          const local = repoBifrostSkillStatus(repoState.repo.root, [{ name: match.skill.name }])[0];
+          const compatibility = bifrostSkillCompatibility(match.skill.raw);
+          if (!compatibility.compatible) {
+            console.log(`  WARN MCP Skill ${match.client.name}/${match.skill.name}: ${compatibility.reason}`);
+          } else if (local.state !== "installed") {
+            console.log(`  AVAILABLE MCP Skill ${match.client.name} -> ${match.skill.name}: not installed (${local.state}); use pifrost repo skills suggestions`);
+          } else if (local.installedVersion !== match.skill.version) {
+            console.log(`  UPDATE MCP Skill ${match.skill.name}: installed=${local.installedVersion ?? "unknown"} upstream=${match.skill.version}`);
+          }
+        }
+      } catch (error) {
+        console.log(`  MCP Skill suggestions: unavailable (${formatError(error)})`);
+      }
       let liveTools;
       let liveToolsError;
       if (repoState.secret?.mcpVirtualKey) {
