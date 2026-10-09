@@ -884,9 +884,10 @@ Skills remain independent from MCP governance: adding a skill never grants an MC
 
 ## Automatic MCP-to-Skill discovery
 
-The repository CLI offers matching Bifrost Agent Skills when an MCP client is newly
-granted, including clients resolved from a newly assigned Virtual MCP. This is an
-**advisory control-plane integration**, not runtime tool invocation.
+The repository CLI offers matching Bifrost Agent Skills when an MCP client is
+explicitly selected during `repo init`, even if previously granted. Newly added
+direct MCP clients and the members of selected Virtual MCPs are also checked.
+This is an **advisory control-plane integration**, not runtime tool invocation.
 
 - `repo init`, `repo mcp add`, and `repo vmcp add` first complete their
   existing Bifrost MCP grants, then look for matching Skills. Failure to list
