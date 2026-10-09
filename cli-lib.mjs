@@ -1945,6 +1945,11 @@ export async function upsertRepoVirtualKey({
     mcpClients: normalizedClients,
     ...(Array.isArray(local?.virtualMcps) ? { virtualMcps: local.virtualMcps } : {}),
     ...(typeof local?.mcpInstructions === "boolean" ? { mcpInstructions: local.mcpInstructions } : {}),
+    // Repository integrations are independent of VK grant reconciliation.
+    ...(Array.isArray(local?.bifrostSkills) ? { bifrostSkills: local.bifrostSkills } : {}),
+    ...(local?.research && typeof local.research === "object" ? { research: local.research } : {}),
+    ...(local?.mcpSkillDiscovery && typeof local.mcpSkillDiscovery === "object"
+      ? { mcpSkillDiscovery: local.mcpSkillDiscovery } : {}),
   };
 
   let keyValue = usableVirtualKeyValue(vk?.value) ?? localSecret;

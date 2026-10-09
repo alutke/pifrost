@@ -37,6 +37,7 @@ const controlOnly = new Set([
   "cli-preconditions.mjs",
   "doctor-probes.mjs",
   "skills-bridge.mjs",
+  "mcp-skill-discovery.mjs",
   "repo-reset.mjs",
   "route-cli.mjs",
   "model-diagnostics.mjs",

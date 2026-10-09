@@ -11,7 +11,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve, sep } from "node:path";
 import { Readable, Transform } from "node:stream";
@@ -178,6 +178,10 @@ export function safeSkillFilePath(value) {
     throw new Error(`Unsafe Bifrost skill file path: ${raw}`);
   }
   const parts = raw.split("/");
+  // These files belong to the bridge, not the upstream bundle.
+  if (parts.length === 1 && (parts[0] === "SKILL.md" || parts[0] === BIFROST_SKILL_MARKER)) {
+    throw new Error(`Unsafe reserved Bifrost skill file path: ${raw}`);
+  }
   if (parts.some((part) => !part || part === "." || part === "..")) {
     throw new Error(`Unsafe Bifrost skill file path: ${raw}`);
   }
@@ -272,6 +276,46 @@ export function readBifrostSkillMarker(repoRoot, name) {
     return marker;
   } catch {
     return undefined;
+  }
+}
+
+
+/**
+ * Snapshot the complete managed payload, excluding Pifrost's marker. Unexpected
+ * files and symlinks count as local modification, not content to overwrite.
+ */
+function skillPayloadHashes(directory) {
+  const hashes = {};
+  function visit(root, prefix = "") {
+    for (const entry of readdirSync(root, { withFileTypes: true })) {
+      if (!prefix && entry.name === BIFROST_SKILL_MARKER) continue;
+      const relative = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const path = join(root, entry.name);
+      const stat = lstatSync(path);
+      if (stat.isSymbolicLink() || (!stat.isFile() && !stat.isDirectory())) {
+        throw new Error(`Unsafe managed Skill payload entry: ${relative}`);
+      }
+      if (stat.isDirectory()) visit(path, relative);
+      else hashes[relative] = createHash("sha256").update(readFileSync(path)).digest("hex");
+    }
+  }
+  visit(directory);
+  return Object.fromEntries(Object.entries(hashes).sort(([a], [b]) => a.localeCompare(b)));
+}
+
+export function managedBifrostSkillIntegrity(repoRoot, name) {
+  const marker = readBifrostSkillMarker(repoRoot, name);
+  if (!marker) return { status: "unmanaged" };
+  if (!marker.fileHashes || typeof marker.fileHashes !== "object" ||
+      Array.isArray(marker.fileHashes)) return { status: "unverified" }; // legacy v1 marker
+  try {
+    const actual = skillPayloadHashes(bifrostSkillInstallPath(repoRoot, name));
+    const expected = marker.fileHashes;
+    const modified = Object.keys(actual).length !== Object.keys(expected).length ||
+      Object.entries(actual).some(([file, sha]) => expected[file] !== sha);
+    return { status: modified ? "modified" : "clean" };
+  } catch (error) {
+    return { status: "modified", reason: String(error.message ?? error) };
   }
 }
 
@@ -396,6 +440,14 @@ export async function installBifrostSkillBundle(repoRoot, bundle, options = {}) 
   const target = join(parent, name);
   assertSafeManagedTarget(target);
   const existingMarker = readBifrostSkillMarker(repoRoot, name);
+  if (existingMarker?.bifrostSkillId && existingMarker.bifrostSkillId !== skillId &&
+      !options.allowSourceRebind) {
+    throw new Error(`Refusing to replace Bifrost Skill ${name}: upstream id changed from ${existingMarker.bifrostSkillId} to ${skillId}; use explicit --force after review`);
+  }
+  if (existingMarker && managedBifrostSkillIntegrity(repoRoot, name).status === "modified" &&
+      !options.allowModifiedReplace) {
+    throw new Error(`Refusing to overwrite locally modified Pifrost Skill ${name}; use explicit --force to replace`);
+  }
   if (existsSync(target) && !existingMarker) throw new Error(`OMP skill collision: ${target} exists but is not owned by Pifrost`);
   const collisions = findOmpSkillCollisions(repoRoot, name, options).filter((path) => resolve(path) !== resolve(target));
   if (collisions.length) throw new Error(`OMP skill collision for "${name}": ${collisions.join(", ")}`);
@@ -428,13 +480,14 @@ export async function installBifrostSkillBundle(repoRoot, bundle, options = {}) 
     }
 
     const marker = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       provider: "bifrost",
       name,
       bifrostSkillId: skillId,
       version,
       ...(bundle.sourceUrl ? { sourceUrl: bundle.sourceUrl } : {}),
       installedAt: new Date().toISOString(),
+      fileHashes: skillPayloadHashes(staging),
     };
     writeFileSync(join(staging, BIFROST_SKILL_MARKER), `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o644 });
 
@@ -454,12 +507,15 @@ export async function installBifrostSkillBundle(repoRoot, bundle, options = {}) 
   }
 }
 
-export function removeManagedBifrostSkill(repoRoot, name) {
+export function removeManagedBifrostSkill(repoRoot, name, options = {}) {
   const parent = secureSkillParent(repoRoot, false);
   const target = parent ? join(parent, name) : bifrostSkillInstallPath(repoRoot, name);
   if (!parent || !existsSync(target)) return { removed: false, alreadyMissing: true, path: target };
   assertSafeManagedTarget(target);
   if (!readBifrostSkillMarker(repoRoot, name)) throw new Error(`Refusing to remove ${target}: directory is not owned by Pifrost`);
+  if (managedBifrostSkillIntegrity(repoRoot, name).status === "modified" && !options.force) {
+    throw new Error(`Refusing to remove locally modified Pifrost Skill ${name}; use --force to discard edits`);
+  }
   rmSync(target, { recursive: true, force: true });
   return { removed: true, alreadyMissing: false, path: target };
 }
@@ -489,6 +545,7 @@ export function repoBifrostSkillStatus(repoRoot, configured) {
       ...item,
       path: target,
       state: marker ? "installed" : existsSync(target) ? "collision" : "missing",
+      integrity: marker ? managedBifrostSkillIntegrity(repoRoot, item.name).status : "unmanaged",
       installedVersion: nonEmpty(marker?.version),
       bifrostSkillId: nonEmpty(marker?.bifrostSkillId),
     };
