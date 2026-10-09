@@ -178,6 +178,10 @@ export function safeSkillFilePath(value) {
     throw new Error(`Unsafe Bifrost skill file path: ${raw}`);
   }
   const parts = raw.split("/");
+  // These files belong to the bridge, not the upstream bundle.
+  if (parts.length === 1 && (parts[0] === "SKILL.md" || parts[0] === BIFROST_SKILL_MARKER)) {
+    throw new Error(`Unsafe reserved Bifrost skill file path: ${raw}`);
+  }
   if (parts.some((part) => !part || part === "." || part === "..")) {
     throw new Error(`Unsafe Bifrost skill file path: ${raw}`);
   }
