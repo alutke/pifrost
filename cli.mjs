@@ -1171,7 +1171,9 @@ async function commandRepoStatus(snapshot) {
         const compatibility = bifrostSkillCompatibility(live.raw);
         const update = localSkill.installedVersion && localSkill.installedVersion !== live.version ? ` update-available=${live.version}` : "";
         const incompatible = compatibility.compatible ? "" : ` incompatible=${compatibility.reason}`;
-        console.log(`  ${live.name}: upstream=${live.version} installed=${localSkill.installedVersion ?? "missing"} id=${live.id}${update}${incompatible}`);
+        const sourceDrift = localSkill.bifrostSkillId && localSkill.bifrostSkillId !== live.id
+          ? ` WARN-source-id-changed=${localSkill.bifrostSkillId}->${live.id}` : "";
+        console.log(`  ${live.name}: upstream=${live.version} installed=${localSkill.installedVersion ?? "missing"} id=${live.id}${update}${incompatible}${sourceDrift}`);
       }
     } catch (error) {
       console.log(`Bifrost Skill provenance: unavailable (${formatError(error)})`);
@@ -1200,7 +1202,9 @@ async function installRepoBifrostSkill(state, current, summary, options = {}) {
       bundle.skill.name.toLowerCase() !== summary.name.toLowerCase())) {
     throw new Error("Bifrost Skill identity changed during discovery; retry");
   }
-  const installed = await installBifrostSkillBundle(current.repo.root, bundle, { allowModifiedReplace: options.force === true });
+  const installed = await installBifrostSkillBundle(current.repo.root, bundle, {
+    allowModifiedReplace: options.force === true, allowSourceRebind: options.force === true,
+  });
   upsertConfiguredSkill(state, current.repo.id, bundle.skill);
   return { bundle, installed };
 }
@@ -1251,6 +1255,8 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
       }
       console.log(`Matching Bifrost Skill: ${skill.name}@${skill.version} for MCP ${client.name} (${candidate.matchedBy})`);
       if (skill.description) console.log(`  ${skill.description.slice(0, 240)}`);
+      console.log(`  Bifrost Skill id=${skill.id} files=${skill.fileCount} version=${skill.version}`);
+      if (skill.raw?.license) console.log(`  License: ${String(skill.raw.license).slice(0, 120)}`);
       console.log(`  Project location: .agents/skills/${skill.name}; no MCP grants change`);
       let choice = flags["install-matching-skills"] === true ? "y" : "n";
       if (flags["install-matching-skills"] !== true && input.isTTY && output.isTTY) {
