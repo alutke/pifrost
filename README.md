@@ -106,7 +106,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.10.1
+0.11.0
 ```
 
 Bun also works:
@@ -302,28 +302,31 @@ pifrost repo vmcp add 'Development Tools'
 pifrost repo vmcp remove 'Development Tools'
 ~~~
 
-### Web research through Hound MCP
+### Research providers through Bifrost MCP
 
-Pifrost treats Hound as a normal repository-scoped **Bifrost MCP client**. Pifrost does not install Hound, start it, connect to Hound directly, proxy its HTTP endpoint, or create a synthetic `omp-web` model. Bifrost remains the sole MCP boundary exposed to OMP.
+Pifrost 0.11 provides **provider-neutral research discovery and diagnostics**. DonSeTch is the preferred built-in profile, Hound remains available as a legacy profile, and any other MCP research server can be mapped explicitly. Pifrost never starts or directly calls the research server, rewrites tool calls or adjusts inference routing: OMP selects tools; Bifrost enforces execution via the repository Virtual Key.
 
-The supported Hound MCP contract is the six tools published by `master-fetch`: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`.
+DonSeTch's four tools are `web_search`, `web_fetch`, `web_crawl` and `web_screenshot`. Missing optional capabilities do not invalidate a useful search-only MCP.
 
-`pifrost repo status` validates Hound through the repository Virtual Key. In classic MCP mode it checks the canonical Hound tools returned by Bifrost `tools/list` and intersects them with the client's execution policy. An explicit empty `tools_to_execute` is deny-all; if an older Bifrost management response omits the policy field, Pifrost reports execution policy as unknown rather than inventing a denial. If the Hound client has **Bifrost Code Mode** enabled, the raw Hound tools are intentionally hidden; Pifrost instead verifies the four Code Mode meta-tools, calls `listToolFiles`, and reads the Hound virtual `.pyi` stub with `readToolFile`. Those probes are local and non-destructive: Pifrost does not run a search, fetch a page, crawl a site, or start a browser during status/doctor.
+```bash
+# First register DonSeTch as an MCP client in Bifrost.
+pifrost repo mcp add donsetch --tools '*'
+pifrost repo research bind ds donsetch --profile donsetch
+pifrost repo research prefer ds
+pifrost repo research status
 
-Readiness is reported separately:
+# Explicit, bounded and read-only external search probe (Classic MCP).
+pifrost repo research probe ds
 
-- **search ready** — `mcp_smart_search`
-- **web research ready** — search + fetch
-- **deep research ready** — search + fetch + crawl
-- **screenshot callable** — Hound exposes `mcp_screenshot`
-- **visual web ready** — screenshot content is either preserved natively or safely rehydrated from a directly exposed Hound screenshot result
-- **visual web conditional** — Code Mode can call `mcp_screenshot`, but nested image provenance is no longer trustworthy enough for safe rehydration
+# Explicit generic mapping; requires no Pifrost code changes.
+pifrost repo research bind alt another-mcp --profile generic --search-tool search_web --fetch-tool read_url
+```
 
-Current supported Bifrost MCP releases flatten upstream MCP `ImageContent` into text while relaying tool results. For classic/direct Hound `mcp_screenshot`, Pifrost validates and rehydrates that framing at the OMP tool-result boundary; for Bifrost Code Mode it deliberately leaves image-looking text unchanged and reports visual web as conditional. Search, fetch, crawl, PDF/OCR extraction and other text/structured Hound functions remain compatible with Bifrost Code Mode.
+`pifrost repo status` and `pifrost doctor` show per-provider readiness, client execute policies, Classic versus Code Mode binding evidence, independent OMP native web search, and missing capability warnings. The preferred provider is **guidance only**: it does not force a tool call, route results or provide automatic cross-provider fallback.
 
-OMP's native `modelRoles.web` / `retry.fallbackChains.web` remain a separate mechanism. Pifrost reports the Hound MCP path and native web path independently; it does not choose between them for the model.
+Code Mode detection inspects Bifrost virtual `.pyi` stubs without invoking remote providers or executing sandbox code. Screenshot recovery requires a directly attributable tool and validated image bytes; nested Code Mode screenshots remain conditional. DonSeTch's folded `[meta]` result envelope and application-level `ok:false` errors are interpreted for diagnostics, without rewriting evidence.
 
-Pifrost also reports the live Bifrost MCP tool count, OMP's default `discoverable` presentation, approximate eager schema footprint, Bifrost client instruction metadata where exposed, and attached Virtual MCP instruction provenance. Discoverable presentation, Bifrost Code Mode and provider-side `defer_loading`/Tool Search are separate mechanisms.
+DonSeTch handles (`S…` and `L…`) are stateful, so later fetches using handles require the same upstream process; use URLs across replicas. DonSeTch is **AGPL-3.0**: review obligations for its separate deployment and any modifications. See [Research providers](docs/RESEARCH_PROVIDERS.md) for architecture, setup, safety and migration guidance.
 
 ### MCP server instructions
 

@@ -32,7 +32,9 @@ jobs:
         run: npx tsx scripts/validate-current-routing.ts
       - name: Validate pinned Bifrost release contracts
         run: node scripts/validate-bifrost-v2-contract.mjs
-      - name: Validate Hound MCP contract
+      - name: Validate pinned DonSeTch MCP contract
+        run: node scripts/validate-donsetch-contract.mjs
+      - name: Validate legacy Hound MCP contract
         run: node scripts/validate-hound-contract.mjs
       - name: Validate minimum and current OMP contracts
         run: node scripts/validate-omp-contract.mjs
