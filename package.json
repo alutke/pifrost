@@ -68,6 +68,7 @@
     "docs/REFERENCE.md",
     "CHANGELOG.md",
     "scripts/smoke-live.mjs",
+    "scripts/validate-architecture.mjs",
     "scripts/validate-release.mjs",
     "NOTICE.md",
     "LICENSE",
