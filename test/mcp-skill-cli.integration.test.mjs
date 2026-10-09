@@ -164,7 +164,7 @@ test("repo init offers once and preserves Skill discovery preferences on subsequ
   await fixture(async ({ run, configDir, id, counters }) => {
     const first = await run("repo", "init", "--clients", "donsetch", "--install-matching-skills");
     assert.equal(first.code, 0, first.stderr + first.stdout);
-    assert.match(first.stdout, /Installed donsetch@1\\.0\\.0/u);
+    assert.match(first.stdout, /Installed donsetch@1\.0\.0/u);
     const once = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8"));
     assert.equal(once.repos[id].mcpSkillDiscovery.links.length, 1);
     assert.equal(counters.installs, 1);
