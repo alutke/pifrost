@@ -188,6 +188,7 @@ async function downloadSkillFile(url, destination, budget, options = {}) {
   const maxFileBytes = options.maxFileBytes ?? 50 * 1024 * 1024;
   const response = await fetch(url, {
     headers: { Accept: "*/*" },
+    redirect: "error",
     signal: AbortSignal.timeout(options.timeoutMs ?? 30_000),
   });
   if (!response.ok || !response.body) {
