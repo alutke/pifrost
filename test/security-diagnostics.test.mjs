@@ -27,6 +27,20 @@ test("doctor transport warning fires only for credentialed non-loopback HTTP", (
   );
   assert.equal(
     bifrostCredentialTransportWarnings(
+      { url: "http://[::ffff:127.0.0.1]:8180/v1", virtualKey: "vk" },
+      undefined,
+    ).length,
+    0,
+  );
+  assert.equal(
+    bifrostCredentialTransportWarnings(
+      { url: "http://[::ffff:192.168.1.221]:8180/v1", virtualKey: "vk" },
+      undefined,
+    ).length,
+    1,
+  );
+  assert.equal(
+    bifrostCredentialTransportWarnings(
       { url: "https://bifrost.example.com/v1", virtualKey: "vk" },
       undefined,
     ).length,
