@@ -27,7 +27,15 @@ function isLoopbackHostname(hostname) {
   if (hostname === "localhost" || hostname === "::1") return true;
   if (loopbackIpv4(hostname)) return true;
   const mappedPrefix = "::ffff:";
-  return hostname.startsWith(mappedPrefix) && loopbackIpv4(hostname.slice(mappedPrefix.length));
+  if (!hostname.startsWith(mappedPrefix)) return false;
+  const mapped = hostname.slice(mappedPrefix.length);
+  if (loopbackIpv4(mapped)) return true;
+  // WHATWG URL canonicalizes [::ffff:127.0.0.1] to [::ffff:7f00:1].
+  // Only the 127/8 IPv4-mapped range is loopback.
+  const groups = mapped.split(":");
+  return groups.length === 2 &&
+    groups.every((group) => /^[0-9a-f]{1,4}$/u.test(group)) &&
+    (Number.parseInt(groups[0], 16) >> 8) === 127;
 }
 
 /**
