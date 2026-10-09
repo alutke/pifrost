@@ -3,7 +3,7 @@ import test from "node:test";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { loadRepoResearchScreenshotTools } from "../research-repo-config.ts";
+import { loadRepoResearchScreenshotTools, preferredRepoResearchGuidance } from "../research-repo-config.ts";
 import { isPifrostBifrostScreenshotTool, registerBifrostRichContentBridge } from "../bifrost-rich-content.ts";
 
 test("DonSeTch screenshot tool is trusted only with directly attributable Bifrost identity",()=>{
@@ -27,6 +27,7 @@ test("runtime screenshot allow-list comes only from active repo configuration, n
    const tools=loadRepoResearchScreenshotTools({PIFROST_CONFIG_DIR:home},join(project,"src"));
    assert.ok(tools.includes("mcp__bifrost_acme_grabshot"));
    assert.ok(!tools.includes("mcp__bifrost_baddie_grabshot"));
+   assert.equal(preferredRepoResearchGuidance({PIFROST_CONFIG_DIR:home},join(project,"src")),undefined);
  }finally{rmSync(home,{recursive:true,force:true});}
 });
 test("DonSeTch application-level screenshot failure is never converted to an image",async()=>{

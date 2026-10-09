@@ -8,10 +8,12 @@ import { loadStoredConfig } from "./config-store.ts";
  * Untrusted project files cannot extend the allow-list unless they select a
  * locally configured repo id, which is still restricted to direct MCP names.
  */
-export function loadRepoResearchScreenshotTools(
+type ResearchBinding = { id?: string; mcpClient?: string; profile?: string; tools?: { screenshot?: string } };
+type RepoResearch = { preferred?: string; providers?: ResearchBinding[] };
+function activeRepoResearch(
 	env: NodeJS.ProcessEnv = process.env,
 	cwd: string = process.cwd(),
-): string[] {
+): RepoResearch | undefined {
 	let current = resolve(cwd);
 	let repoId: string | undefined;
 	for (let depth = 0; depth < 24; depth++) {
@@ -32,8 +34,16 @@ export function loadRepoResearchScreenshotTools(
 		if (parent === current) break;
 		current = parent;
 	}
-	const config = repoId ? (loadStoredConfig(env) as { repos?: Record<string, { research?: { providers?: Array<{ mcpClient?: string; profile?: string; tools?: { screenshot?: string } }> } }> } | undefined)?.repos?.[repoId] : undefined;
-	const providers = config?.research?.providers;
+	const config = repoId ? (loadStoredConfig(env) as { repos?: Record<string, { research?: RepoResearch }> } | undefined)?.repos?.[repoId] : undefined;
+	return config?.research;
+}
+
+/** Repo-scoped metadata only. Does not communicate with Bifrost MCP. */
+export function loadRepoResearchScreenshotTools(
+	env: NodeJS.ProcessEnv = process.env,
+	cwd: string = process.cwd(),
+): string[] {
+	const providers = activeRepoResearch(env, cwd)?.providers;
 	const allow: string[] = [];
 	for (const provider of Array.isArray(providers) ? providers : []) {
 		const name = provider?.mcpClient;
@@ -47,3 +57,19 @@ export function loadRepoResearchScreenshotTools(
 	return [...new Set(allow)];
 }
 
+
+/** Agent-facing hint only when there is an explicit local preference. */
+export function preferredRepoResearchGuidance(
+	env: NodeJS.ProcessEnv = process.env,
+	cwd: string = process.cwd(),
+): string | undefined {
+	const research = activeRepoResearch(env, cwd);
+	if (!research?.preferred || !Array.isArray(research.providers)) return undefined;
+	const binding = research.providers.find((row) => row?.id?.toLowerCase() === research.preferred?.toLowerCase());
+	const client = binding?.mcpClient;
+	// Do not inject arbitrary config text into the agent's system prompt.
+	if (!client || !/^[A-Za-z_][A-Za-z0-9_-]{0,127}$/u.test(client)) return undefined;
+	return "Research MCP preference: when relevant and actually available through Bifrost, prefer the " +
+		client + " MCP client for web research. This is guidance, not enforced routing; " +
+		"user requests, actual MCP tool availability and Bifrost authorization take precedence.";
+}
