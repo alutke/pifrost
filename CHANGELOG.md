@@ -1,3 +1,9 @@
+## 0.10.1 — 2026-10-09
+
+- Audited all 19 non-main branch tips against `main`, reviewed merged PR histories and the two superseded unmerged P1/P2 branches, including branch-exclusive provenance/MCP/setup tests. No valuable missing functionality needs porting: authoritative session-scoped provenance, MCP policy diagnostics, Bifrost setup checks and OMP canaries are already present in the current architecture.
+- One-time safe branch-hygiene workflow deletes only the 19 explicitly reviewed obsolete branches after checking exact head SHAs and confirming that there are no open pull requests. Deletions use force-with-lease. The workflow does not automatically delete future development branches and does not touch tags.
+- No changes to inference routing, model policy, MCP grants, Hound configuration, credentials or Bifrost runtime behaviour.
+
 ## 0.10.0 — 2026-10-09
 
 - Completed the root/branch architecture, code-quality and security hardening review. Added an executable architecture-boundary validator that keeps OMP runtime modules out of CLI/control-plane dependencies, keeps pinned OMP catalog/native imports at the extension boundary, preserves Bifrost ownership of physical fallback, and preserves stateless Responses across heterogeneous routes.

@@ -1,0 +1,84 @@
+name: One-time obsolete branch cleanup
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  cleanup:
+    if: >-
+      github.repository == 'alutke/pifrost' &&
+      contains(github.event.head_commit.message, '[pifrost-branch-cleanup]')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Confirm all branch heads and safely delete reviewed refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/main" || "$(git rev-parse HEAD)" != "$GITHUB_SHA" ]]; then
+            echo "::error::Refusing cleanup outside tested main commit"
+            exit 1
+          fi
+          if [[ "$(gh api 'repos/alutke/pifrost/pulls?state=open&per_page=100' --jq 'length')" != "0" ]]; then
+            echo "::error::Open pull requests exist; refusing destructive branch cleanup"
+            exit 1
+          fi
+          declare -A expected=(
+            ["feat/0.7.0-capability-parity"]="fcb200782746294efe33670a284c4c7c738a63cb"
+            ["feat/0.8.0-diagnostics-and-search"]="ce2bd2e500f52f64a69349b348ab19b24200418b"
+            ["feat/0.8.2-hound-mcp"]="cbb33ed46b876c685deb4ef6deabd1a99e5c7280"
+            ["feature/p0-routing-fidelity"]="f0a0dc3be90889b9a25d84efbb2335f207d0edd5"
+            ["feature/p1-p2-compat-diagnostics"]="27aee4d182d5d15609b2014bc953cc9d3b931748"
+            ["fix/compiled-omp-host-boundary"]="f995262525caf5767245040b15e72fcef5d714b0"
+            ["fix/omp-compiled-catalog-loader"]="cae124cf6a4d6aed83ad31ea7a8db47685794303"
+            ["fix/omp-runtime-dependency-closure"]="4e2aa7c9525cc64936db040217ea8c8d119e250f"
+            ["fix/openrouter-agentic-attribution"]="850fe11a365ecbb0a380619d23a9add1c0002f49"
+            ["fix/output-token-clamping"]="253d4e55fbdf907086c5ffa5a37f82820de4eefb"
+            ["fix/v0.9.1-critical-review"]="90c4b4cb4774045f9b25f0f1437afe2df94dced6"
+            ["fix/0.8.1-audit-hardening"]="190abdcf659ceedbb9033653af47641cb23d7616"
+            ["fix/0.8.3-hound-completion"]="b598ad656f525dfb1a275940ddc7fc934b4ca9d5"
+            ["fix/0.9.1-p1-p2-reconciliation"]="c1c13016b584378c36db0248aaf41b187e4c0d9c"
+            ["hardening/hound-0.8.5"]="5706934bf42f4a8a08f7b7c00d124ab1562aa84f"
+            ["release/p1-p2-observability"]="4ac7f02643d38c8e194b2108e492c7c06393384f"
+            ["release/v0.9.2-omp-18.8.6"]="1d6cbf4fc9447374e77d75b002d7fa39e9b664d8"
+            ["release/v0.10.0-architecture-security"]="00e2d6197d3c1dbfb3f0aa4d6485d0854e42a329"
+            ["release/0.8.3-hound-codemode"]="3007581e121db176ee7b01d21d1d0398e6fe7dd8"
+          )
+          actual_count=0
+          while IFS=$'\t' read -r sha ref; do
+            branch="${ref#refs/heads/}"
+            if [[ "$branch" == "main" ]]; then
+              continue
+            fi
+            expected_sha="${expected[$branch]-}"
+            if [[ -z "$expected_sha" || "$sha" != "$expected_sha" ]]; then
+              echo "::error::Unreviewed or modified branch $branch at $sha; refusing cleanup"
+              exit 1
+            fi
+            actual_count=$((actual_count + 1))
+          done < <(git ls-remote --heads origin)
+          if [[ "$actual_count" != "${#expected[@]}" ]]; then
+            echo "::error::Expected ${#expected[@]} reviewed refs, found $actual_count; refusing cleanup"
+            exit 1
+          fi
+          for branch in "${!expected[@]}"; do
+            sha="${expected[$branch]}"
+            echo "Deleting verified obsolete branch $branch at $sha"
+            git push --force-with-lease="refs/heads/$branch:$sha" origin ":refs/heads/$branch"
+          done
+          remaining="$(git ls-remote --heads origin | awk '$2 != "refs/heads/main" { print $2 }')"
+          if [[ -n "$remaining" ]]; then
+            echo "::error::Non-main branches remain: $remaining"
+            exit 1
+          fi
+          echo "Verified: only main remains; release tags untouched."
