@@ -707,6 +707,19 @@ async function compatibilityProbeValue(probes, key, fallback) {
   return fallback();
 }
 
+function bifrostClientConfigShape(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const candidates = [
+    value.client_config,
+    value.clientConfig,
+    value.data?.client_config,
+    value.data?.clientConfig,
+    value.config?.client_config,
+    value.config?.clientConfig,
+  ];
+  return candidates.find((candidate) => candidate && typeof candidate === "object" && !Array.isArray(candidate)) ?? {};
+}
+
 function validateSourceRefShape(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return true;
   for (const key of ["source_type", "source_id", "source_name"]) {
@@ -762,6 +775,64 @@ export async function bifrostCompatibilityMatrix({
         minimum: "2.2.6",
         ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
         impact: "Bifrost setup/auth state cannot be verified",
+      });
+    }
+  }
+
+  const conversionBase = featureUnavailable(
+    "bifrost-chat-responses-conversion",
+    "Chat→Responses compatibility adapter",
+    "2.2.6",
+    installedVersion,
+    "Gateway request-type conversion cannot be inspected",
+  );
+  if (conversionBase) {
+    results.push({ ...conversionBase, optional: true });
+  } else if (!managementAuth) {
+    results.push({
+      id: "bifrost-chat-responses-conversion",
+      label: "Chat→Responses compatibility adapter",
+      minimum: "2.2.6",
+      status: "inaccessible",
+      detail: "management authentication is not configured for /api/config",
+      impact: "Gateway conversion policy cannot be inspected",
+      optional: true,
+    });
+  } else {
+    const endpoint = "/api/config";
+    try {
+      const gateway = await compatibilityProbeValue(
+        probes,
+        "gateway",
+        () => getBifrostConfig(url, managementAuth),
+      );
+      const client = bifrostClientConfigShape(gateway);
+      const compat = client?.compat && typeof client.compat === "object" && !Array.isArray(client.compat)
+        ? client.compat
+        : undefined;
+      if (!compat || typeof compat.convert_chat_to_responses !== "boolean") {
+        throw new CompatibilityContractError(`${endpoint} did not expose client_config.compat.convert_chat_to_responses`);
+      }
+      const reasoningAdapter = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? `; reasoning-with-tools adapter=${compat.force_reasoning_only_models_to_responses ? "enabled" : "disabled"}`
+        : "; reasoning-with-tools adapter=not released by Bifrost 2.2.6";
+      results.push({
+        id: "bifrost-chat-responses-conversion",
+        label: "Chat→Responses compatibility adapter",
+        minimum: "2.2.6",
+        status: "supported",
+        detail: `convert_chat_to_responses=${compat.convert_chat_to_responses ? "enabled" : "disabled"}${reasoningAdapter}`,
+        impact: undefined,
+        optional: true,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-chat-responses-conversion",
+        label: "Chat→Responses compatibility adapter",
+        minimum: "2.2.6",
+        ...compatibilityHttpFailure(error, "2.2.6", installedVersion, endpoint),
+        impact: "Gateway conversion policy cannot be inspected",
+        optional: true,
       });
     }
   }

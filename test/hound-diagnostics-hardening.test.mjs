@@ -84,3 +84,73 @@ test("Code Mode probe requires real pyi function signatures rather than tool-nam
   }, ["hound"]);
   assert.equal(probe.ok, false);
 });
+
+
+test("Hound readiness respects an explicit Bifrost execution denial", () => {
+  const clients = [{
+    id: "hound-id",
+    name: "hound",
+    state: "connected",
+    isCodeModeClient: true,
+    tools: HOUND_TOOLS,
+    toolsToExecute: ["mcp_smart_fetch", "mcp_smart_crawl"],
+    toolsToExecuteKnown: true,
+    toolsToAutoExecute: [],
+    toolsToAutoExecuteKnown: true,
+  }];
+  const diagnostics = houndMcpDiagnostics(
+    {
+      effective: [{ client: "hound", tools: ["*"], sources: ["direct"] }],
+      virtualMcps: [],
+    },
+    clients,
+    [],
+    {
+      liveTools: BIFROST_CODE_MODE_TOOLS.map((name) => ({ name })),
+      codeModeProbe: {
+        ok: true,
+        bindingLevel: "server",
+        serverName: "hound",
+        fileName: "servers/hound.pyi",
+        tools: HOUND_TOOLS,
+        files: ["servers/hound.pyi"],
+      },
+    },
+  );
+  assert.equal(diagnostics.hound.capabilities.search.configured, true);
+  assert.equal(diagnostics.hound.capabilities.search.executePolicyKnown, true);
+  assert.equal(diagnostics.hound.capabilities.search.executable, false);
+  assert.equal(diagnostics.hound.capabilities.search.available, false);
+  assert.equal(diagnostics.hound.capabilities.fetch.executable, true);
+  assert.equal(diagnostics.hound.capabilities.fetch.available, true);
+  assert.equal(diagnostics.hound.callableCount, 2);
+  assert.equal(diagnostics.hound.contractComplete, false);
+  assert.ok(diagnostics.hound.missing.includes("mcp_smart_search"));
+  assert.ok(diagnostics.hound.missingResearch.includes("mcp_smart_search"));
+});
+
+test("Hound readiness remains backward-compatible when execution policy is absent", () => {
+  const clients = [{
+    id: "hound-id",
+    name: "hound",
+    state: "connected",
+    isCodeModeClient: false,
+    tools: HOUND_TOOLS,
+    toolsToExecute: [],
+    toolsToExecuteKnown: false,
+    toolsToAutoExecute: [],
+    toolsToAutoExecuteKnown: false,
+  }];
+  const diagnostics = houndMcpDiagnostics(
+    {
+      effective: [{ client: "hound", tools: ["*"], sources: ["direct"] }],
+      virtualMcps: [],
+    },
+    clients,
+    [],
+    { liveTools: HOUND_TOOLS.map((name) => ({ name })) },
+  );
+  assert.equal(diagnostics.hound.capabilities.search.executePolicyKnown, false);
+  assert.equal(diagnostics.hound.capabilities.search.executable, undefined);
+  assert.equal(diagnostics.hound.capabilities.search.available, true);
+});

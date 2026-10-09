@@ -88,7 +88,7 @@ Pifrost keeps inference and management authentication separate.
 - **Bifrost Enterprise:** you can use a scoped management Bearer/API key.
 - **Fresh Bifrost 2.2.6+ installs:** finish Bifrost's setup-token flow before normal management automation. Pifrost can use `--setup-token` or `BIFROST_SETUP_TOKEN` for an ephemeral bootstrap check, but never writes the setup token to its config or secrets store.
 
-HTTP Basic auth is only encoding. If Bifrost is not local, keep it on a trusted private network or put TLS/HTTPS in front of it.
+HTTP Basic auth is only encoding. If Bifrost is not local, keep it on a trusted private network or put TLS/HTTPS in front of it. `pifrost doctor` warns when credentials are configured against a non-loopback `http://` endpoint; the warning is advisory only and never blocks setup or requests.
 
 ## First-time setup
 
@@ -106,7 +106,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.9.2
+0.10.0
 ```
 
 Bun also works:
@@ -308,7 +308,7 @@ Pifrost treats Hound as a normal repository-scoped **Bifrost MCP client**. Pifro
 
 The supported Hound MCP contract is the six tools published by `master-fetch`: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`.
 
-`pifrost repo status` validates Hound through the repository Virtual Key. In classic MCP mode it checks the canonical Hound tools returned by Bifrost `tools/list`. If the Hound client has **Bifrost Code Mode** enabled, the raw Hound tools are intentionally hidden; Pifrost instead verifies the four Code Mode meta-tools, calls `listToolFiles`, and reads the Hound virtual `.pyi` stub with `readToolFile`. Those probes are local and non-destructive: Pifrost does not run a search, fetch a page, crawl a site, or start a browser during status/doctor.
+`pifrost repo status` validates Hound through the repository Virtual Key. In classic MCP mode it checks the canonical Hound tools returned by Bifrost `tools/list` and intersects them with the client's execution policy. An explicit empty `tools_to_execute` is deny-all; if an older Bifrost management response omits the policy field, Pifrost reports execution policy as unknown rather than inventing a denial. If the Hound client has **Bifrost Code Mode** enabled, the raw Hound tools are intentionally hidden; Pifrost instead verifies the four Code Mode meta-tools, calls `listToolFiles`, and reads the Hound virtual `.pyi` stub with `readToolFile`. Those probes are local and non-destructive: Pifrost does not run a search, fetch a page, crawl a site, or start a browser during status/doctor.
 
 Readiness is reported separately:
 

@@ -8,6 +8,7 @@ import { spawnSync } from "node:child_process";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
+import { bifrostCredentialTransportWarnings } from "./security-diagnostics.mjs";
 import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
 import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
 import {
@@ -566,6 +567,15 @@ async function commandGlobalStatus(snapshot) {
     );
   }
 
+  if (runtime.url) {
+    if (probes.setup.ok) {
+      const setup = value("setup");
+      console.log(`Bifrost setup:          ${setup.setupRequired ? "INCOMPLETE" : "complete"} (dashboard-auth=${setup.authEnabled ? "enabled" : "disabled"}, inference-auth=${setup.inferenceAuthEnforced ? "enforced" : "not enforced"}, setup-token=${setup.setupTokenConfigured ? "configured" : "not configured"})`);
+    } else {
+      console.log(`Bifrost setup/auth:     unavailable (${errorText("setup")})`);
+    }
+  }
+
   if (runtime.url && runtime.virtualKey) {
     const inference = value("inference");
     console.log(
@@ -611,7 +621,20 @@ async function commandGlobalStatus(snapshot) {
       const mcpAuthMode = client?.mcp_server_auth_mode ?? "headers";
       const chainDepth = client?.routing_chain_max_depth ?? "default";
       const requiredHeaders = Array.isArray(client?.required_headers) ? client.required_headers : [];
+      const compat = client?.compat && typeof client.compat === "object" && !Array.isArray(client.compat)
+        ? client.compat
+        : {};
+      const chatToResponses = typeof compat.convert_chat_to_responses === "boolean"
+        ? compat.convert_chat_to_responses
+        : undefined;
+      const reasoningToResponses = typeof compat.force_reasoning_only_models_to_responses === "boolean"
+        ? compat.force_reasoning_only_models_to_responses
+        : undefined;
       console.log(`Gateway config 2.x:     MCP-auth=${mcpAuthMode}, chain-depth=${chainDepth}, required-headers=${requiredHeaders.length}`);
+      console.log(`  Chat→Responses:       ${chatToResponses === undefined ? "not reported" : chatToResponses ? "enabled" : "disabled"}`);
+      if (reasoningToResponses !== undefined) {
+        console.log(`  Reasoning→Responses:  ${reasoningToResponses ? "enabled" : "disabled"}`);
+      }
       if (mcpAuthMode === "oauth") {
         console.log("  WARN repo MCP configs use x-bf-vk; OAuth-only MCP gateway mode requires OMP OAuth instead of VK/header auth.");
       }
@@ -1029,12 +1052,16 @@ async function commandRepoStatus(snapshot) {
             continue;
           }
           const execution = mcpClientExecutionDiagnostics(client, grant.tools);
+          const executableCount = execution.executePolicyKnown ? execution.executableCount : "unknown";
+          const autoCount = execution.autoPolicyKnown ? execution.autoExecutableCount : "unknown";
           console.log(
-            `  ${client.name}: granted=${execution.grantedCount} executable=${execution.executableCount} auto=${execution.autoExecutableCount}`,
+            `  ${client.name}: granted=${execution.grantedCount} executable=${executableCount} auto=${autoCount}`,
           );
           for (const row of execution.rows) {
+            const executable = row.executable === undefined ? "unknown" : row.executable ? "yes" : "no";
+            const auto = row.autoExecutable === undefined ? "unknown" : row.autoExecutable ? "yes" : "no";
             console.log(
-              `    ${row.tool}: granted=yes executable=${row.executable ? "yes" : "no"} auto=${row.autoExecutable ? "yes" : "no"}`,
+              `    ${row.tool}: granted=yes executable=${executable} auto=${auto}`,
             );
           }
           for (const warning of execution.warnings) console.log(`    WARN ${warning}`);
@@ -1082,7 +1109,7 @@ async function commandRepoStatus(snapshot) {
             ? "conditional (Code Mode provenance unavailable)"
             : "not multimodal-ready";
       console.log(`    visual web:     ${visualWebState}`);
-      console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.visibleCount ?? hound.hound.configuredCount}/6 tools available`}`);
+      console.log(`    contract:       ${hound.hound.contractComplete ? "6/6 tools available" : `${hound.hound.callableCount}/6 callable tools`}`);
       if (hound.hound.codeMode.configured) {
         const metaCount = Object.values(hound.hound.codeMode.metaTools)
           .filter((item) => item.gatewayVisible === true).length;
@@ -1263,8 +1290,8 @@ async function commandRepoMcpList() {
     ].filter(Boolean);
     console.log(`${client.name}  state=${client.state ?? "unknown"}  tools=${client.tools.length || "unknown"}${modes.length ? `  ${modes.join(" ")}` : ""}`);
     if (client.endpointSlug) console.log(`  endpoint=/mcp/${client.endpointSlug}`);
-    console.log(`  execute allow: ${client.toolsToExecute?.length ? client.toolsToExecute.join(", ") : "none"}`);
-    console.log(`  auto-execute: ${client.toolsToAutoExecute?.length ? client.toolsToAutoExecute.join(", ") : "none"}`);
+    console.log(`  execute allow: ${client.toolsToExecuteKnown === false ? "unknown" : client.toolsToExecute?.length ? client.toolsToExecute.join(", ") : "none"}`);
+    console.log(`  auto-execute: ${client.toolsToAutoExecuteKnown === false ? "unknown" : client.toolsToAutoExecute?.length ? client.toolsToAutoExecute.join(", ") : "none"}`);
     if (client.toolsToAutoExecute?.includes("*")) console.log("  WARN auto-execute wildcard grants every executable tool approval-free execution");
     if (client.serverInstructions) console.log(`  upstream instructions: set (${Buffer.byteLength(client.serverInstructions, "utf8")}B)`);
     if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
@@ -1500,6 +1527,13 @@ async function commandDoctor() {
   const runtime = runtimeConfigFromState(state);
   const managementAuth = managementAuthFromState(state);
   const snapshot = await collectDoctorSnapshot({ runtime, managementAuth });
+
+  const transportWarnings = bifrostCredentialTransportWarnings(runtime, managementAuth);
+  if (transportWarnings.length) {
+    printHeader("Transport security");
+    for (const warning of transportWarnings) console.log(`WARN ${warning}`);
+    console.log("");
+  }
 
   await commandGlobalStatus(snapshot);
   console.log("");

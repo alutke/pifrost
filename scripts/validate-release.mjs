@@ -111,6 +111,7 @@ for (const path of [
   "mcp-client-shape.mjs",
   "route-cli.mjs",
   "doctor-probes.mjs",
+  "security-diagnostics.mjs",
   "diagnostic-result.mjs",
   "cli-preconditions.mjs",
   "skills-bridge.mjs",
@@ -119,6 +120,7 @@ for (const path of [
   "CHANGELOG.md",
   "tsconfig.runtime.json",
   "scripts/build-runtime.mjs",
+  "scripts/validate-architecture.mjs",
   "scripts/smoke-live.mjs",
   "scripts/validate-release.mjs",
 ]) {
@@ -209,6 +211,7 @@ try {
     "mcp-client-shape.mjs",
     "route-cli.mjs",
     "doctor-probes.mjs",
+    "security-diagnostics.mjs",
     "diagnostic-result.mjs",
     "cli-preconditions.mjs",
     "skills-bridge.mjs",
@@ -217,6 +220,7 @@ try {
     "docs/REFERENCE.md",
     "CHANGELOG.md",
     "scripts/build-runtime.mjs",
+    "scripts/validate-architecture.mjs",
     "scripts/smoke-live.mjs",
     "scripts/validate-release.mjs",
   ]) {

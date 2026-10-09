@@ -230,7 +230,7 @@ There are two live verification paths:
 1. **Classic MCP.** Repository-key-scoped Bifrost `tools/list` exposes the Hound tools directly. Pifrost normalizes Bifrost client prefixes back to canonical Hound names.
 2. **Bifrost Code Mode.** A code-mode Hound client intentionally disappears from the raw tool list and Bifrost exposes `listToolFiles`, `readToolFile`, `getToolDocs` and `executeToolCode` instead. Pifrost verifies those four meta-tools, calls `listToolFiles`, then uses `readToolFile` to confirm the Hound binding and exact repository-visible Hound functions. The probe supports both Bifrost server-level and tool-level Code Mode binding.
 
-The Code Mode probe is deliberately non-destructive. It never invokes Hound search/fetch/crawl/screenshot, never launches Hound's browser and never makes an Internet research request. Nested Hound calls remain governed by Bifrost's repository Virtual Key and its `tools_to_execute` policy.
+The Code Mode probe is deliberately non-destructive. It never invokes Hound search/fetch/crawl/screenshot, never launches Hound's browser and never makes an Internet research request. Nested Hound calls remain governed by Bifrost's repository Virtual Key and its `tools_to_execute` policy. Pifrost distinguishes an explicit empty execution list from an older management response where the execution-policy field is absent; only an explicit denial makes the corresponding Hound capability uncallable.
 
 Capability reporting is derived rather than binary:
 
@@ -301,7 +301,7 @@ For route synchronization and repository MCP automation, Pifrost also needs mana
 
 HTTP Basic auth is encoding, not encryption. If Bifrost is exposed over plain `http://`, the admin credential is recoverable by an observer who can inspect that traffic.
 
-Prefer localhost, a tightly controlled private network, or TLS/HTTPS in front of Bifrost.
+Prefer localhost, a tightly controlled private network, or TLS/HTTPS in front of Bifrost. `pifrost doctor` emits a warning when inference or management credentials are configured for a non-loopback plain-HTTP endpoint. The warning is intentionally diagnostic-only: there is no block, override switch or runtime behavior change.
 
 ---
 
@@ -318,7 +318,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.9.2
+0.10.0
 ```
 
 Bun can also install the package globally:
@@ -811,6 +811,7 @@ OMP policy snapshot:     18.4.5 + Pifrost compatibility patches
 Bifrost version:         2.2.6 (minimum 2.2.4; validated through 2.2.6)
   [TESTED CURRENT] installed 2.2.6 matches the current validated release
   [OK] First-time setup lock >=2.2.6 — setup complete; dashboard auth=enabled, inference auth=enforced
+  [OK] Chat→Responses compatibility adapter >=2.2.6 — convert_chat_to_responses=enabled; reasoning-with-tools adapter=not released by Bifrost 2.2.6
   [OK] Virtual MCPs >=2.2.0 — live API contract verified
   [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
   [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable

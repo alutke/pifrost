@@ -120,3 +120,58 @@ test("Bifrost Skills bridge follows released management and public serving contr
     server.close();
   }
 });
+
+
+test("Bifrost Skills bridge refuses HTTP redirects for file downloads", async () => {
+  const server = createServer((request, response) => {
+    if (request.url === "/redirect") {
+      response.statusCode = 302;
+      response.setHeader("location", "/target");
+      response.end();
+      return;
+    }
+    if (request.url === "/target") {
+      response.end("should-not-be-fetched");
+      return;
+    }
+    response.statusCode = 404;
+    response.end();
+  });
+
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("server did not bind");
+
+  const root = mkdtempSync(join(tmpdir(), "pifrost-skill-redirect-"));
+  const repo = join(root, "repo");
+  mkdirSync(repo, { recursive: true });
+  const bundle = {
+    skill: {
+      id: "skill-redirect",
+      name: "redirect-test",
+      version: "1.0.0",
+      raw: {
+        id: "skill-redirect",
+        name: "redirect-test",
+        latest_version: "1.0.0",
+        description: "redirect test",
+      },
+    },
+    markdown: "---\nname: \"redirect-test\"\ndescription: \"redirect test\"\n---\n",
+    files: [{
+      path: "payload.txt",
+      url: `http://127.0.0.1:${address.port}/redirect`,
+    }],
+  };
+
+  try {
+    await assert.rejects(
+      installBifrostSkillBundle(repo, bundle, { home: join(root, "home") }),
+      /fetch failed|redirect/u,
+    );
+    assert.equal(readFileSync, readFileSync); // keep imported helper referenced consistently
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    server.close();
+  }
+});

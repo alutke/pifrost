@@ -191,6 +191,7 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
     });
     assert.deepEqual(matrix.map((item) => [item.id, item.status]), [
       ["bifrost-setup-lock", "unavailable"],
+      ["bifrost-chat-responses-conversion", "unavailable"],
       ["bifrost-virtual-mcp", "supported"],
       ["bifrost-skills", "supported"],
       ["bifrost-session-affinity", "supported"],

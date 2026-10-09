@@ -1,3 +1,16 @@
+## 0.10.0 — 2026-10-09
+
+- Completed the root/branch architecture, code-quality and security hardening review. Added an executable architecture-boundary validator that keeps OMP runtime modules out of CLI/control-plane dependencies, keeps pinned OMP catalog/native imports at the extension boundary, preserves Bifrost ownership of physical fallback, and preserves stateless Responses across heterogeneous routes.
+- Corrected MCP execution-policy semantics for current and older Bifrost surfaces. Pifrost now distinguishes an absent `tools_to_execute` / `tools_to_auto_execute` field from an explicit empty deny-all list, and Hound readiness respects an explicit Bifrost execution denial instead of treating repository visibility alone as callable.
+- Added stable Bifrost 2.2.6 Chat→Responses compatibility visibility. Doctor/global status report `convert_chat_to_responses` and newer reasoning-only conversion when exposed, without implementing request conversion in Pifrost.
+- Expanded Bifrost setup/auth diagnostics in global status, including first-time setup state and whether inference auth is enforced.
+- Added a doctor-only transport-security warning for credentialed non-loopback `http://` Bifrost endpoints. This is advisory only: Pifrost does not block the endpoint, require an override, change setup, or alter inference/management behavior.
+- Hardened CI/release supply chain: least-privilege read permissions for CI, pinned GitHub Action commit SHAs, disabled persisted checkout credentials, and SHA-256 verification for downloaded OMP release binaries. Production dependency auditing runs in the scheduled canary so a changing advisory feed cannot make an otherwise reproducible release nondeterministic.
+- Hardened the Bifrost Skills bridge by refusing HTTP redirects on file downloads. Bifrost 2.2.6 serves skill files directly, so cross-origin or same-origin redirects are unnecessary and are no longer followed.
+- Added pinned Bifrost 2.2.5 MCP execution-enforcement and 2.2.6 Chat→Responses contracts while retaining moving Bifrost `dev`, OMP `main` and Hound `master` checks as scheduled canaries only.
+- Closed obsolete PR #34 rather than allowing an older v0.9.1 branch to be merged over the v0.9.2 line. Existing historical branches were left unchanged because the connected GitHub surface does not expose branch deletion.
+- Kept upstream ownership intact: Hound BYOK/proxy rotation/cache behavior stays in Hound; Bifrost routing, pricing, key selection, session affinity, Code Mode and protocol conversion stay in Bifrost; OMP agent/compaction/model-role behavior stays in OMP.
+
 ## 0.9.2 — 2026-10-08
 
 - Advanced the current validated OMP host from 18.8.4 to **18.8.6**, including the compiled-binary compatibility gate and exact tokenizer/image-policy contracts. OMP 18.8.5/18.8.6 introduce account/compaction, warm-cache pruning and prompt-cache-lookback behavior but no Pifrost transport contract change requiring duplicated runtime policy.
