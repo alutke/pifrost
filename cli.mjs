@@ -153,8 +153,8 @@ Usage:
   pifrost repo vmcp add <name> [--install-matching-skills]
   pifrost repo vmcp remove <name>
   pifrost repo skills list
-  pifrost repo skills add <name>
-  pifrost repo skills remove <name>
+  pifrost repo skills add <name> [--force]
+  pifrost repo skills remove <name> [--force]
   pifrost repo skills sync [name] [--force]
   pifrost repo skills suggestions [--install-matching-skills]
   pifrost repo skills bind <client> <skill>
@@ -1305,6 +1305,8 @@ async function commandRepoSkillsList() {
     const flags = [
       selected ? "selected" : undefined,
       status?.state,
+      status?.integrity === "modified" ? "local-modifications" : undefined,
+      status?.integrity === "unverified" ? "legacy-unverified" : undefined,
       status?.installedVersion && status.installedVersion !== skill.version
         ? `update=${status.installedVersion}->${skill.version}`
         : undefined,
@@ -1316,7 +1318,7 @@ async function commandRepoSkillsList() {
   if (!available.length) console.log("No Bifrost skills are currently published.");
 }
 
-async function commandRepoSkillsAdd(name) {
+async function commandRepoSkillsAdd(name, flags = {}) {
   if (!name) throw new Error("Usage: pifrost repo skills add <name>");
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
@@ -1326,7 +1328,7 @@ async function commandRepoSkillsAdd(name) {
   if (!compatibility.compatible) {
     throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
   }
-  const { bundle, installed } = await installRepoBifrostSkill(state, current, summary);
+  const { bundle, installed } = await installRepoBifrostSkill(state, current, summary, { force: flags.force === true });
   console.log(`Installed Bifrost skill ${bundle.skill.name}@${bundle.skill.version}`);
   console.log(`OMP project skill: ${installed.path}`);
 }
@@ -1867,7 +1869,7 @@ const COMMANDS = new Map([
   ["repo skills unbind", (args) => commandRepoSkillUnbind(args[0])],
   ["repo skills dismiss", (args) => commandRepoSkillDismiss(args[0], true)],
   ["repo skills undismiss", (args) => commandRepoSkillDismiss(args[0], false)],
-  ["repo skills add", (args) => commandRepoSkillsAdd(args[0])],
+  ["repo skills add", (args, flags) => commandRepoSkillsAdd(args[0], flags)],
   ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
   ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
