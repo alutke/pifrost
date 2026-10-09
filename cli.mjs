@@ -1196,6 +1196,10 @@ async function installRepoBifrostSkill(state, current, summary, options = {}) {
   const managementAuth = managementAuthFromState(state);
   if (!managementAuth) throw new Error("Bifrost management authentication is missing; run `pifrost global setup`");
   const bundle = await fetchBifrostSkillBundle(runtime.url, managementAuth, summary);
+  if (options.expectedId && (bundle.skill.id !== options.expectedId ||
+      bundle.skill.name.toLowerCase() !== summary.name.toLowerCase())) {
+    throw new Error("Bifrost Skill identity changed during discovery; retry");
+  }
   const installed = await installBifrostSkillBundle(current.repo.root, bundle, { allowModifiedReplace: options.force === true });
   upsertConfiguredSkill(state, current.repo.id, bundle.skill);
   return { bundle, installed };
@@ -1265,12 +1269,8 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
         try {
           const refreshed = loadState();
           const currentRepo = currentRepoState(refreshed);
-          const { bundle, installed } = await installRepoBifrostSkill(refreshed, currentRepo, skill);
-          if (bundle.skill.id !== skill.id || bundle.skill.name.toLowerCase() !== skill.name.toLowerCase()) {
-            // Prevent a changed upstream identity being linked silently.
-            removeManagedBifrostSkill(currentRepo.repo.root, bundle.skill.name);
-            throw new Error("Bifrost Skill identity changed during discovery; retry");
-          }
+          const { bundle, installed } = await installRepoBifrostSkill(refreshed, currentRepo, skill,
+            { expectedId: skill.id });
           const afterInstall = loadState();
           const latestConfig = afterInstall.config.repos?.[current.repo.id]?.mcpSkillDiscovery;
           updateRepoState(afterInstall, current.repo.id, {
@@ -1367,6 +1367,82 @@ async function commandRepoSkillsSync(name, flags = {}) {
     const { bundle, installed } = await installRepoBifrostSkill(state, current, summary, { force: flags.force === true });
     console.log(`Synced ${bundle.skill.name}@${bundle.skill.version} -> ${installed.path}`);
   }
+}
+
+
+function findMcpClientOrThrow(clients, name) {
+  const found = clients.find((item) => item.name.toLowerCase() === String(name ?? "").toLowerCase());
+  if (!found) throw new Error(`Unknown Bifrost MCP client: ${name}`);
+  return found;
+}
+
+async function currentRepoSkillDiscovery() {
+  const state = loadState();
+  const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  const [clients, virtualMcps, skills] = await Promise.all([
+    listMcpClients(url, managementKey), listVirtualMcps(url, managementKey),
+    listBifrostSkills(url, managementKey),
+  ]);
+  const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
+  const active = clients.filter((client) => policy.effective.some((grant) =>
+    grant.client.toLowerCase() === client.name.toLowerCase()));
+  return { state, current, active, clients, skills };
+}
+
+async function commandRepoSkillSuggestions(flags = {}) {
+  const { current, active, skills } = await currentRepoSkillDiscovery();
+  const matches = discoverMcpSkillMatches(active, skills, current.config?.mcpSkillDiscovery);
+  printHeader("MCP-matched Bifrost Skill suggestions");
+  if (!matches.length) console.log("No assigned MCP clients.");
+  for (const candidate of matches) {
+    const skill = candidate.skill;
+    const status = skill
+      ? repoBifrostSkillStatus(current.repo.root, [{ name: skill.name }])[0]
+      : undefined;
+    const compat = skill ? bifrostSkillCompatibility(skill.raw) : undefined;
+    console.log(`  ${candidate.client.name} -> ${skill?.name ?? candidate.matchedName ?? "none"}: ${candidate.status}` +
+      (status ? ` local=${status.state} integrity=${status.integrity}` : "") +
+      (compat && !compat.compatible ? ` incompatible=${compat.reason}` : "") +
+      (status?.installedVersion && skill?.version !== status.installedVersion ? ` update=${skill.version}` : ""));
+  }
+  await offerMatchingMcpSkills(active, flags);
+}
+
+async function commandRepoSkillBind(clientName, skillName, flags = {}) {
+  if (!clientName || !skillName) throw new Error("Usage: pifrost repo skills bind <client> <skill>");
+  const { state, current, active, skills } = await currentRepoSkillDiscovery();
+  const client = findMcpClientOrThrow(active, clientName);
+  const [skill] = resolveBifrostSkillNames(skills, [skillName]);
+  updateRepoState(state, current.repo.id, {
+    mcpSkillDiscovery: setMcpSkillAlias(current.config?.mcpSkillDiscovery, client, skill.name),
+  });
+  console.log(`Bound ${client.name} -> ${skill.name} for repository Skill discovery; no grants changed.`);
+  await offerMatchingMcpSkills([client], flags);
+}
+
+async function commandRepoSkillUnbind(clientName) {
+  if (!clientName) throw new Error("Usage: pifrost repo skills unbind <client>");
+  const state = loadState();
+  const { url, managementKey } = requireManagement(state);
+  const current = currentRepoState(state);
+  const client = findMcpClientOrThrow(await listMcpClients(url, managementKey), clientName);
+  updateRepoState(state, current.repo.id, {
+    mcpSkillDiscovery: setMcpSkillAlias(current.config?.mcpSkillDiscovery, client, undefined),
+  });
+  console.log(`Cleared Skill alias for ${client.name}; installed Skills are unchanged.`);
+}
+
+async function commandRepoSkillDismiss(clientName, dismissed) {
+  if (!clientName) throw new Error("Usage: pifrost repo skills dismiss|undismiss <client>");
+  const { state, current, active, skills } = await currentRepoSkillDiscovery();
+  const client = findMcpClientOrThrow(active, clientName);
+  const [matched] = discoverMcpSkillMatches([client], skills, current.config?.mcpSkillDiscovery);
+  if (!matched?.skill) throw new Error(`No uniquely matching Bifrost Skill for MCP ${client.name}`);
+  updateRepoState(state, current.repo.id, {
+    mcpSkillDiscovery: setMcpSkillDismissal(
+      current.config?.mcpSkillDiscovery, client, matched.skill, dismissed),
+  });
+  console.log(`${dismissed ? "Dismissed" : "Restored"} suggestion for ${client.name} -> ${matched.skill.name}`);
 }
 
 async function commandRepoMcpList() {
@@ -1786,6 +1862,11 @@ const COMMANDS = new Map([
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
   ["repo vmcp remove", (args) => commandRepoVirtualMcpRemove(args[0])],
   ["repo skills list", () => commandRepoSkillsList()],
+  ["repo skills suggestions", (_args, flags) => commandRepoSkillSuggestions(flags)],
+  ["repo skills bind", (args, flags) => commandRepoSkillBind(args[0], args[1], flags)],
+  ["repo skills unbind", (args) => commandRepoSkillUnbind(args[0])],
+  ["repo skills dismiss", (args) => commandRepoSkillDismiss(args[0], true)],
+  ["repo skills undismiss", (args) => commandRepoSkillDismiss(args[0], false)],
   ["repo skills add", (args) => commandRepoSkillsAdd(args[0])],
   ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
   ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
