@@ -82,3 +82,44 @@ jobs:
             exit 1
           fi
           echo "Verified: only main remains; release tags untouched."
+
+  prune-research-release:
+    if: >-
+      github.repository == 'alutke/pifrost' &&
+      startsWith(github.event.head_commit.message, 'Pifrost 0.11.0: provider-neutral research')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+      - name: Delete the reviewed, merged release PR branch only
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          PR='38'
+          BRANCH='feature/research-provider-framework-v0.11.0'
+          if [[ "$(gh api "repos/alutke/pifrost/pulls/$PR" --jq '.merged')" != 'true' ]]; then
+            echo 'Release PR is not merged; refusing branch deletion.'
+            exit 1
+          fi
+          actual_branch="$(gh api "repos/alutke/pifrost/pulls/$PR" --jq '.head.ref')"
+          if [[ "$actual_branch" != "$BRANCH" ]]; then
+            echo 'PR head changed; refusing branch deletion.'
+            exit 1
+          fi
+          expected="$(gh api "repos/alutke/pifrost/pulls/$PR" --jq '.head.sha')"
+          current="$(git ls-remote --heads origin "refs/heads/$BRANCH" | awk '{print $1}')"
+          if [[ -z "$current" ]]; then
+            echo 'PR head already deleted.'
+            exit 0
+          fi
+          if [[ "$current" != "$expected" ]]; then
+            echo 'PR branch moved since merge; refusing deletion.'
+            exit 1
+          fi
+          git push --force-with-lease="refs/heads/$BRANCH:$expected" origin ":refs/heads/$BRANCH"
+          test -z "$(git ls-remote --heads origin | awk '$2 != "refs/heads/main" { print $2 }')"
+          echo 'Only main remains; release tags untouched.'

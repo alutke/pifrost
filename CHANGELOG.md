@@ -1,3 +1,10 @@
+## 0.11.0 — 2026-10-09
+
+- Provider-neutral Bifrost MCP research discovery and capability diagnostics: DonSeTch four-tool profile, retained Hound compatibility, explicitly mapped generic providers, repo-local provider preferences and bindings.
+- CLI research status, bind, unbind, prefer and explicit read-only search probe, plus provider-neutral repo status/doctor. Effective Bifrost Virtual Key and execute allow-list gates readiness; no duplicate runtime tool routing or automatic fallback.
+- Code Mode metadata-only inspection, DonSeTch application-level result errors including folded [meta] envelopes, trusted screenshot recovery with repo-specific generic mappings, and stateful-handle warnings.
+- Comprehensive regression coverage, pinned DonSeTch release MCP contract check and scheduled upstream canary, reproducible packaged documentation, and preserved non-loopback HTTP doctor-only warning semantics.
+
 ## 0.10.1 — 2026-10-09
 
 - Audited all 19 non-main branch tips against `main`, reviewed merged PR histories and the two superseded unmerged P1/P2 branches, including branch-exclusive provenance/MCP/setup tests. No valuable missing functionality needs porting: authoritative session-scoped provenance, MCP policy diagnostics, Bifrost setup checks and OMP canaries are already present in the current architecture.

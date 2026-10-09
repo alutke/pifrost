@@ -204,7 +204,11 @@ Pifrost preserves the relative order of all surviving Bifrost members and never 
 
 Pifrost's optional compact-before-skip coordinator is route preservation, not a replacement for OMP compaction policy. OMP owns normal automatic compaction, including 18.8.5+ per-model thresholds and 18.8.6+ cache-aware pruning. Pifrost calls OMP's own `compact()` only when a smaller physical fallback is about to become context-ineligible; set `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0` to disable that extra preservation step.
 
-### Hound and MCP presentation diagnostics
+### Provider-neutral Bifrost MCP research diagnostics (v0.11)
+
+Pifrost now exposes DonSeTch and generic research MCP capabilities independent of Hound. See [Research providers](RESEARCH_PROVIDERS.md) for provider mappings, Classic and Code Mode metadata inspection, authorization, DonSeTch result envelopes, screenshot safety and explicit live probes. OMP owns tool selection; Bifrost owns MCP execution.
+
+### Historical Hound and MCP presentation diagnostics
 
 Hound remains an external repository-scoped Bifrost MCP client. Pifrost does not own its process lifecycle, browser runtime, HTTP endpoint, search engines, BYOK keys, proxy pool or cache policy.
 
@@ -318,7 +322,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.10.1
+0.11.0
 ```
 
 Bun can also install the package globally:
