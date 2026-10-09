@@ -73,6 +73,9 @@ test("rejects path traversal and absolute skill files", () => {
   for (const value of ["../secret", "a/../secret", "/etc/passwd", "C:\\temp\\x", "a//b"]) {
     assert.throws(() => safeSkillFilePath(value), /Unsafe Bifrost skill file path/);
   }
+  for (const reserved of ["SKILL.md", BIFROST_SKILL_MARKER]) {
+    assert.throws(() => safeSkillFilePath(reserved), /Unsafe reserved Bifrost skill file path/);
+  }
 });
 
 test("installs atomically into .agents/skills and only removes Pifrost-owned skills", async () => {
