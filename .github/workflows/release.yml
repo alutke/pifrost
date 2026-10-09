@@ -54,8 +54,30 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
+          # A successful run for an older main commit must not publish a
+          # release after a newer main commit has been pushed.
+          CURRENT_MAIN_SHA="$(git ls-remote origin refs/heads/main | cut -f1)"
+          if [ -z "$CURRENT_MAIN_SHA" ]; then
+            echo "::error::Could not resolve origin/main for release verification"
+            exit 1
+          fi
+          if [ "$CURRENT_MAIN_SHA" != "$TARGET_SHA" ]; then
+            echo "Skipping stale CI run: main is $CURRENT_MAIN_SHA, tested SHA is $TARGET_SHA"
+            exit 0
+          fi
+
+          # Never attach a release to an existing mismatched tag. Handle
+          # annotated tags via their peeled commit SHA.
+          TAG_SHA="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
+          if [ -z "$TAG_SHA" ]; then
+            TAG_SHA="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          fi
+          if [ -n "$TAG_SHA" ] && [ "$TAG_SHA" != "$TARGET_SHA" ]; then
+            echo "::error::Existing tag $TAG points to $TAG_SHA, not tested SHA $TARGET_SHA"
+            exit 1
+          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "$TAG already exists; nothing to release."
+            echo "$TAG already exists at the tested commit; nothing to release."
             exit 0
           fi
 
@@ -63,3 +85,13 @@ jobs:
             --target "$TARGET_SHA" \
             --title "Pifrost $VERSION" \
             --notes-file release-notes.md
+
+          # Fail visibly if GitHub produced anything other than the tested tag.
+          PUBLISHED_SHA="$(git ls-remote origin "refs/tags/$TAG^{}" | cut -f1)"
+          if [ -z "$PUBLISHED_SHA" ]; then
+            PUBLISHED_SHA="$(git ls-remote origin "refs/tags/$TAG" | cut -f1)"
+          fi
+          if [ "$PUBLISHED_SHA" != "$TARGET_SHA" ]; then
+            echo "::error::Published tag $TAG does not point to tested SHA $TARGET_SHA"
+            exit 1
+          fi
