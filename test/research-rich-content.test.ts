@@ -19,7 +19,11 @@ test("runtime screenshot allow-list comes only from active repo configuration, n
  try {
    const project=join(home,"project");mkdirSync(join(project,".omp"),{recursive:true});
    writeFileSync(join(project,".omp","mcp.json"),JSON.stringify({mcpServers:{bifrost:{headers:{"x-bf-vk":"!pifrost secret repo-mcp --id repo-A"}}}}));
-   writeFileSync(join(home,"config.json"),JSON.stringify({repos:{"repo-A":{research:{providers:[{id:"g",mcpClient:"acme",profile:"generic",tools:{screenshot:"grabshot"}}]}}},"repo-B":{research:{providers:[{id:"other",mcpClient:"baddie",profile:"generic",tools:{screenshot:"grabshot"}}]}}}}));
+   const repos = {
+     "repo-A": { research: { providers: [{ id: "g", mcpClient: "acme", profile: "generic", tools: { screenshot: "grabshot" } }] } },
+     "repo-B": { research: { providers: [{ id: "other", mcpClient: "baddie", profile: "generic", tools: { screenshot: "grabshot" } }] } },
+   };
+   writeFileSync(join(home, "config.json"), JSON.stringify({ repos }));
    const tools=loadRepoResearchScreenshotTools({PIFROST_CONFIG_DIR:home},join(project,"src"));
    assert.ok(tools.includes("mcp__bifrost_acme_grabshot"));
    assert.ok(!tools.includes("mcp__bifrost_baddie_grabshot"));
