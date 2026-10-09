@@ -98,3 +98,64 @@ test("DonSeTch success and failure envelopes support folded and structured respo
   assert.equal(classifyResearchResult({isError:true,content:[]}).ok,false);
   assert.equal(classifyResearchResult({isError:false,content:[{type:"text",text:"Unclassified"}]},"donsetch").ok,undefined);
 });
+
+test("Bifrost Classic client-tool gateway names are recognized and callable",()=>{
+  const c=client();
+  const liveTools=c.tools.map(tool=>({name:"donsetch-"+tool}));
+  liveTools.push(...["executeToolCode","getToolDocs","listToolFiles","readToolFile"].map(name=>({name})));
+  const result=researchProviderDiagnostics(policy(),[c],{liveTools});
+  assert.equal(result.providers[0].status,"research-ready");
+  assert.equal(result.search.path,"Bifrost MCP/donsetch (classic)");
+  for(const cap of Object.values(result.providers[0].capabilities)){
+    assert.equal(cap.visible,true);
+    assert.equal(cap.gatewayName,"donsetch-"+cap.tool,"tool calls must use actual wire name");
+    assert.equal(cap.visibilityReason,undefined);
+  }
+});
+test("Classic MCP gateway client qualification remains generic for distinct providers",()=>{
+  const c=client("Research Agent",{tools:["search_web","fetch_web"]});
+  const p=researchProviderDiagnostics(policy("Research Agent"),[c],{
+    research:{preferred:"r",providers:[{id:"r",clientId:"Research Agent-id",profile:"generic",tools:{search:"search_web",fetch:"fetch_web"}}]},
+    liveTools:[{name:"research agent-search_web"},{name:"research agent-fetch_web"}],
+  });
+  assert.equal(p.providers[0].status,"research-ready");
+  assert.equal(p.providers[0].capabilities.search.gatewayName,"research agent-search_web");
+});
+test("ambiguous normalized client identities never claim ownership of gateway tools",()=>{
+  const a=client("web-search",{tools:["web_search"]});
+  const b=client("web_search",{tools:["web_search"]});
+  const p=researchProviderDiagnostics(policy("web-search"),[a,b],{
+    research:{providers:[{id:"generic",clientId:"web-search-id",profile:"generic",tools:{search:"web_search"}}]},
+    liveTools:[{name:"web-search-web_search"},{name:"mcp__bifrost_web_search_web_search"}],
+  });
+  assert.equal(p.providers[0].capabilities.search.visible,false);
+  assert.equal(p.providers[0].searchReady,false);
+  assert.equal(p.providers[0].capabilities.search.visibilityReason,"gateway-name-or-owner-mismatch");
+});
+test("absent and mismatched gateway presentations have distinct diagnostics",()=>{
+  const c=client();
+  const missing=researchProviderDiagnostics(policy(),[c],{liveTools:[]}).providers[0].capabilities.search;
+  assert.equal(missing.visible,false);
+  assert.equal(missing.visibilityReason,"not-published");
+  const mismatch=researchProviderDiagnostics(policy(),[c],{
+    liveTools:[{name:"donsetch__web_search"}],
+  }).providers[0].capabilities.search;
+  assert.equal(mismatch.visible,false);
+  assert.equal(mismatch.visibilityReason,"gateway-name-or-owner-mismatch");
+});
+test("duplicate wire names cannot be selected nondeterministically",()=>{
+  const c=client();
+  const p=researchProviderDiagnostics(policy(),[c],{
+    liveTools:[{name:"donsetch-web_search"},{name:"mcp__bifrost_donsetch_web_search"}],
+  });
+  assert.equal(p.providers[0].capabilities.search.visible,false);
+  assert.equal(p.providers[0].capabilities.search.visibilityReason,"ambiguous-gateway-tool");
+});
+test("Code Mode remains isolated from Classic names and uses validated stubs only",()=>{
+  const c=client("donsetch",{code:true});
+  const p=researchProviderDiagnostics(policy(),[c],{
+    liveTools:Object.values(RESEARCH_PROFILES.donsetch.tools).map(name=>({name:"donsetch-"+name})),
+  });
+  assert.equal(p.providers[0].searchReady,false);
+  assert.equal(p.providers[0].capabilities.search.visibilityReason,"code-mode-tools-not-presented");
+});
