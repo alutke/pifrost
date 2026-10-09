@@ -1,3 +1,5 @@
+import { mcpClientExecutionDiagnostics } from "./mcp-client-shape.mjs";
+
 const HOUND_TOOL_SPECS = Object.freeze([
   { name: "mcp_smart_search", capability: "search", research: true },
   { name: "mcp_smart_fetch", capability: "fetch", research: true },
@@ -144,11 +146,23 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
 
     if (!canonicalGranted.size) continue;
 
+    const execution = mcpClientExecutionDiagnostics(client, grant.tools);
+    const executableByCanonical = new Map();
+    const autoExecutableByCanonical = new Map();
+    for (const row of execution.rows) {
+      const canonical = canonicalHoundToolName(row.tool, [client?.name]);
+      if (!canonical) continue;
+      executableByCanonical.set(canonical, row.executable);
+      autoExecutableByCanonical.set(canonical, row.autoExecutable);
+    }
+
     clientRows.push({
       name: grant.client,
       state: client?.state,
       sources: grant.sources ?? [],
       granted: [...canonicalGranted],
+      executePolicyKnown: execution.executePolicyKnown,
+      autoPolicyKnown: execution.autoPolicyKnown,
       isCodeModeClient: client?.isCodeModeClient === true,
       serverInstructions: Boolean(client?.serverInstructions),
       maxInstructionsLength: client?.maxInstructionsLength,
@@ -160,6 +174,10 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
         client: grant.client,
         sources: grant.sources ?? [],
         isCodeModeClient: client?.isCodeModeClient === true,
+        executable: executableByCanonical.get(canonical),
+        autoExecutable: autoExecutableByCanonical.get(canonical),
+        executePolicyKnown: execution.executePolicyKnown,
+        autoPolicyKnown: execution.autoPolicyKnown,
       });
       granted.set(canonical, rows);
     }
@@ -197,8 +215,18 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
   const codeModeTools = new Set(codeModeProbe?.ok ? codeModeProbe.tools ?? [] : []);
 
   const tools = Object.fromEntries(HOUND_TOOLS.map((name) => {
-    const classicVisible = liveCanonical.has(name);
-    const codeModeVisible = codeModeProbe?.ok === true && codeModeTools.has(name) && granted.has(name);
+    const grantRows = granted.get(name) ?? [];
+    const executePolicyKnown = grantRows.some((row) => row.executePolicyKnown === true);
+    const executable = executePolicyKnown
+      ? grantRows.some((row) => row.executable === true)
+      : undefined;
+    const autoPolicyKnown = grantRows.some((row) => row.autoPolicyKnown === true);
+    const autoExecutable = autoPolicyKnown
+      ? grantRows.some((row) => row.autoExecutable === true)
+      : undefined;
+    const executionAllowed = executable !== false;
+    const classicVisible = liveCanonical.has(name) && executionAllowed;
+    const codeModeVisible = codeModeProbe?.ok === true && codeModeTools.has(name) && granted.has(name) && executionAllowed;
     let gatewayVisible;
     let gatewayName = liveCanonical.get(name);
 
@@ -217,9 +245,13 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
 
     return [name, {
       configured: granted.has(name),
+      executable,
+      autoExecutable,
+      executePolicyKnown,
+      autoPolicyKnown,
       gatewayVisible,
       gatewayName,
-      grants: granted.get(name) ?? [],
+      grants: grantRows,
     }];
   }));
 
@@ -244,13 +276,18 @@ function toolStatusMap(policy, clients, liveTools, codeModeProbe) {
 
 function capabilityStatus(tools, liveKnown, name) {
   const row = tools[name];
-  const available = liveKnown
+  const executionAllowed = row?.executable !== false;
+  const available = (liveKnown
     ? row?.gatewayVisible === true
-    : row?.configured === true;
+    : row?.configured === true) && executionAllowed;
   return {
     tool: name,
     available,
     configured: row?.configured === true,
+    executable: row?.executable,
+    autoExecutable: row?.autoExecutable,
+    executePolicyKnown: row?.executePolicyKnown === true,
+    autoPolicyKnown: row?.autoPolicyKnown === true,
     gatewayVisible: row?.gatewayVisible,
     gatewayName: row?.gatewayName,
   };
