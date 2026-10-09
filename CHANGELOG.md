@@ -1,3 +1,11 @@
+## 0.12.0 — 2026-10-09
+
+- Added opt-in, provider-neutral MCP-to-Bifrost-Skill discovery when selecting direct MCP clients or underlying clients of a newly assigned Virtual MCP. Matching is exact and case-insensitive, with explicit aliases for different names; installs use the existing OMP Skills bridge.
+- Interactive consent defaults to No; noninteractive automation requires explicit `--install-matching-skills` rather than inheriting `--yes`. Newly assigned clients are offered once; an unavailable Skill service or refused/incompatible Skill never rolls back MCP grants.
+- New per-repository Skill suggestions, explicit bind/unbind, dismissal/undismissal commands and provenance-based diagnostics for orphaned MCP links, missing installs and renamed upstream Skill IDs.
+- Added SHA-256 managed-Skill integrity manifests, guarded updates/removals for locally modified payloads, source-ID rebind protection, and refusal of reserved bridge-owned bundle paths. Existing schema-v1 markers remain readable.
+- Preserved per-repository research, Skills and discovery preferences across `repo init`, extended architecture validation and included mock-Bifrost CLI integration and regression tests.
+
 ## 0.11.0 — 2026-10-09
 
 - Provider-neutral Bifrost MCP research discovery and capability diagnostics: DonSeTch four-tool profile, retained Hound compatibility, explicitly mapped generic providers, repo-local provider preferences and bindings.
