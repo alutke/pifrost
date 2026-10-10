@@ -589,3 +589,18 @@ test("Bifrost 2.2.4 datasheet metadata enriches Tool Search, between-tools think
 	assert.equal(rich.models[0]?.capabilitySources?.toolSearch, "bifrost-datasheet");
 	assert.equal(rich.models[0]?.capabilitySources?.betweenToolsThinking, "bifrost-datasheet");
 });
+
+
+test("observed CommandCode Ling free output contract overrides stale live and datasheet limits", () => {
+	const sku = "CommandCode GOAT/inclusionai/ling-3.1-flash:free";
+	const aliased: PifrostAliasConfig = { includePhysicalModels: true, aliases: { "omp-smol": [sku] } };
+	const live = { ...liveModel(sku), maxTokens: 65_536, contextWindow: 262_144,
+		capabilitySources: { maxTokens: "live" as const, contextWindow: "live" as const } };
+	const rich = buildRichRouteCatalog([live], aliased, {
+		pricing: { "inclusionai/ling-3.1-flash:free": { max_output_tokens: 65_536, context_length: 262_144 } },
+		parameters: {},
+	}, []);
+	assert.equal(rich.models[0]?.maxTokens, 32_768);
+	assert.equal(rich.models[0]?.capabilitySources?.maxTokens, "vendor-override");
+	assert.equal(buildPifrostCatalog(rich.models, aliased).models.find((m) => m.id === "omp-smol")?.maxTokens, 32_768);
+});
