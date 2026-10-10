@@ -30,6 +30,8 @@
     "datasheet.ts",
     "catalog-fallback.ts",
     "model-resolution.ts",
+    "endpoint-contracts.ts",
+    "request-compatibility.ts",
     "protocol-capability.ts",
     "route-inventory.ts",
     "dynamic-routing.ts",

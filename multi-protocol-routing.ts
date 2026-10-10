@@ -3,7 +3,6 @@ import type {
 	AssistantMessageEvent,
 	Model,
 	ModelSpec,
-	SimpleStreamOptions,
 } from "@oh-my-pi/pi-ai";
 
 import type {
@@ -28,34 +27,9 @@ function withBifrostFallbacks(
 	} as Model["compatConfig"];
 }
 
-/** Use the selected physical upstream for OMP compatibility policy, not the
- * logical Bifrost provider. Keep the complete Bifrost model reference on wire. */
-export function physicalPolicyIdentity(reference: string): { id: string; provider: string; requestModelId: string } | undefined {
-	const slash = reference.indexOf("/");
-	if (slash > 0) {
-		const provider = reference.slice(0, slash).toLowerCase().replace(/[\s_-]+/gu, "");
-		if (provider === "commandcodegoat" || provider === "commandcode") {
-			const id = reference.slice(slash + 1).trim();
-			return id ? { id, provider: "commandcode", requestModelId: reference } : undefined;
-		}
-	}
-	return openCodePolicyIdentity(reference);
-}
-
-/** The observed CommandCode DeepSeek V4.1 Responses adapter returns the literal
- * placeholder "reasoning unavailable" as a summary. Do not request an opaque
- * summary on this exact route; retain native reasoning replay and tool history. */
-export function shouldOmitOpaqueReasoningSummary(reference: string): boolean {
-	const identity = physicalPolicyIdentity(reference);
-	return identity?.provider === "commandcode" && identity.id.toLowerCase() === "deepseek/deepseek-v4.1-flash";
-}
-
-function openCodePolicyIdentity(reference: string): { id: string; provider: "opencode-go"; requestModelId: string } | undefined {
-	const prefix = "opencode-go/";
-	if (!reference.toLowerCase().startsWith(prefix)) return undefined;
-	const id = reference.slice(prefix.length).trim();
-	return id ? { id, provider: "opencode-go", requestModelId: reference } : undefined;
-}
+// Shared by all provider families and Chat/Responses protocol paths.
+import { physicalPolicyIdentity } from "./request-compatibility.ts";
+export { physicalPolicyIdentity, shouldOmitOpaqueReasoningSummary, normalizePifrostReasoningOptions, pifrostDirectMaxTokens } from "./request-compatibility.ts";
 
 /**
  * Build the sparse OMP model spec for one physical Bifrost member. Keeping
@@ -69,12 +43,19 @@ export function createPifrostMemberModelSpec(
 	fallbacks: readonly string[] = [],
 ): ModelSpec<"openai-completions" | "openai-responses"> {
 	const policyIdentity = physicalPolicyIdentity(member.reference);
+	// No logical alias compat inheritance: it is a route intersection, not
+	// the selected physical provider's wire contract.
+	const physicalCompat: Record<string, unknown> = { supportsDeveloperRole: false };
+	for (const [key, value] of Object.entries(member.compat)) {
+		if (value !== undefined) physicalCompat[key] = value;
+	}
 	const base = {
-		...logicalModel,
 		id: policyIdentity?.id ?? member.reference,
 		name: member.reference,
 		provider: policyIdentity?.provider ?? logicalModel.provider,
-		...(policyIdentity ? { requestModelId: policyIdentity.requestModelId } : {}),
+		requestModelId: policyIdentity?.requestModelId ?? member.reference,
+		baseUrl: logicalModel.baseUrl,
+		cost: logicalModel.cost,
 		contextWindow: member.contextWindow,
 		maxTokens: member.maxTokens,
 		input: [...member.input],
@@ -86,14 +67,14 @@ export function createPifrostMemberModelSpec(
 		return {
 			...base,
 			api: "openai-responses",
-			compat: logicalModel.compatConfig,
+			compat: physicalCompat,
 		} as ModelSpec<"openai-responses">;
 	}
 	if (protocol === "openai-completions") {
 		return {
 			...base,
 			api: "openai-completions",
-			compat: withBifrostFallbacks(logicalModel.compatConfig, fallbacks),
+			compat: withBifrostFallbacks(physicalCompat as Model["compatConfig"], fallbacks),
 		} as ModelSpec<"openai-completions">;
 	}
 	throw new Error(`Pifrost does not have a native transport for ${protocol}`);
@@ -125,26 +106,6 @@ export function bifrostAttemptExtraBody(attempt: DynamicRouteAttempt): Record<st
  * requirement, so heterogeneous fallback groups are clamped to their weakest
  * member instead of rejecting otherwise-capable models.
  */
-/** Direct/non-dynamic dispatch has no per-attempt planner, but must still
- * clamp an OMP caller override to the resolved model's safe output limit. */
-export function pifrostDirectMaxTokens(requested: number | null | undefined, advertised: number | null | undefined): number | undefined {
-	const limits = [requested, advertised].filter((value): value is number =>
-		typeof value === "number" && Number.isFinite(value) && value > 0);
-	return limits.length ? Math.min(...limits.map(Math.ceil)) : undefined;
-}
-
-/** Do not silently re-enable reasoning when the caller expressly disabled it.
- * A mandatory effort floor is only applied when no explicit choice was made. */
-export function normalizePifrostReasoningOptions(
-	model: Pick<Model, "reasoning" | "thinking">,
-	options: SimpleStreamOptions | undefined,
-): SimpleStreamOptions | undefined {
-	if (!model.reasoning || !model.thinking?.requiresEffort || model.thinking.suppressWhenOff ||
-		options?.disableReasoning === true || options?.forceReasoningOff === true || options?.reasoning !== undefined) return options;
-	const floor = model.thinking.efforts[0];
-	return floor === undefined ? options : { ...options, reasoning: floor };
-}
-
 export function pifrostAttemptMaxTokens(
 	attempt: DynamicRouteAttempt,
 	requestedMaxTokens?: number,

@@ -16,6 +16,8 @@ const runtime = [
   "route-inventory.ts",
   "routing-core.ts",
   "model-resolution.ts",
+  "endpoint-contracts.ts",
+  "request-compatibility.ts",
   "omp-context-policy.ts",
   "compact-before-skip.ts",
   "bifrost-cost-bridge.ts",

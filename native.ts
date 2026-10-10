@@ -91,6 +91,7 @@ import {
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
+import { physicalRequestContractKey } from "./request-compatibility.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import {
 	activePifrostCfgSession,
