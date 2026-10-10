@@ -115,7 +115,7 @@ export function pifrostAttemptMaxTokens(
 		.filter((value) => Number.isFinite(value) && value > 0);
 	const routeCeiling = memberCeilings.length ? Math.min(...memberCeilings) : undefined;
 	const requested = typeof requestedMaxTokens === "number" && Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0
-		? Math.ceil(requestedMaxTokens)
+		? Math.floor(requestedMaxTokens)
 		: undefined;
 	if (requested !== undefined && routeCeiling !== undefined) return Math.min(requested, routeCeiling);
 	return requested ?? routeCeiling;

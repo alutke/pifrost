@@ -58,7 +58,11 @@ export function physicalRequestContractKey(model: Model): string {
     "alwaysSendMaxTokens", "supportsSamplingParams", "supportsPenaltyAndStopParams",
     "dropThinkingWhenReasoningEffort", "requiresReasoningOffJuiceInstruction",
   ];
-  const axes = keys.map((key) => [key, compat[key] ?? null]);
+  const axes = keys.map((key) => {
+    const value = compat[key];
+    // RegExp and string-backed stream healers must not collapse to JSON {}.
+    return [key, value instanceof RegExp ? String(value) : value ?? null];
+  });
   const effortMap = model.thinking?.effortMap
     ? Object.entries(model.thinking.effortMap).sort(([a], [b]) => a.localeCompare(b)) : [];
   const identity = model.identity as { class?: string; family?: string; revision?: string } | undefined;

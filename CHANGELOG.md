@@ -4,7 +4,7 @@
 - Protected same-protocol Bifrost fallback from incompatible wire encoders: compatible contiguous members remain Bifrost-managed; incompatible or unknown contracts are attempted in original order before any streamed model output, never after output has begun.
 - Removed logical alias compatibility inheritance from physical request models; retained physical capability restrictions and Bifrost routing IDs.
 - Added an evidence-backed endpoint contract registry, exact reseller/entitlement output limit protections, and fractional-output fail-safe rounding.
-- Added provider-family test matrix across physical identities, reasoning-off, tool policies, fallback grouping, unknown contracts and protocol sequencing; advanced catalogue cache schema to v18.
+- Added provider-family test matrix across physical identities, reasoning-off, tool policies, fallback grouping, unknown contracts and protocol sequencing; validates both protocol materializers for every bundled OMP provider namespace and pre-output/no-retry guarantees; advanced catalogue cache schema to v18.
 - Added production-dependency high-severity npm audit gate and advanced validated OMP compatibility canary and compiled binary from 18.8.6 to 18.8.7.
 - Known provider boundary: Pifrost cannot guarantee external Bifrost rules will not independently reroute an explicitly selected physical model after dispatch; gateway-managed conversion must be verified with live upstream logs before treating such routes as wire-compatible.
 
