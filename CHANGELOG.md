@@ -1,3 +1,11 @@
+## 0.12.7 — 2026-10-10
+
+- Recognise nested pure OMP `<think>` fallback messages without treating them as meaningful assistant text. The earlier safety invariant remains: keep one corroborated placeholder in an otherwise reasoning-only history turn; never discard native structured `reasoning_text`, tool calls or outputs.
+- Clean exact marker-prefixed substantive prose and nested markers in Responses replay, but only with same-assistant-run synthetic reasoning corroboration, no annotations, and no mutation of the originating OMP session. Chat Completions uses the same text rules only when the assistant's own native reasoning field confirms a synthetic marker.
+- Suppress unsigned, exact marker-only streamed thinking at the OMP event boundary, while preserving thinking-block metadata, final/partial consistency and tool call events. Do not rewrite opaque/signed reasoning. Nonmatching streams retain their original content.
+- Extend bounded per-route diagnostics with nested-history, prose-history, marker-only stream cleanups and signed-marker retentions. Existing raw Bifrost->OMP SSE counters remain count-only and must not be interpreted as provider->Bifrost attribution.
+- Add captured v0.12.6 pattern regressions, fragment streaming tests, signed-content safeguards and cross-provider invariants. Full live model-specific inference remains outside CI.
+
 ## 0.12.6 — 2026-10-10
 
 - Extend provider-neutral OpenAI Responses replay hygiene to leading synthetic markers in assistant messages containing additional text. Rewriting requires a same-turn synthetic `reasoning_text` marker, recognized replay markup, no annotations, and preserves all substantive text, tools and structure; no session or user-content mutation.

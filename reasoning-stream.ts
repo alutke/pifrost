@@ -9,6 +9,17 @@ import type { AssistantMessage, AssistantMessageEvent } from "@oh-my-pi/pi-ai";
  */
 const CONFIRMED_PREFIX = /^(?:reasoning unavailable[ \t]*(?:\r?\n[ \t]*)?){2,}(?=<think>)/u;
 const MAX_PREFIX_LOOKAHEAD = 256;
+const MARKERS_ONLY = /^\s*reasoning unavailable(?:\s+reasoning unavailable)*\s*$/u;
+
+/** Preserve provider-opaque or cryptographically signed reasoning unchanged.
+ * Bifrost's generated ids are not signatures and may safely accompany empty
+ * reasoning text after the UI-only synthetic marker is suppressed. */
+function isUnsignedOrSyntheticId(event: Extract<AssistantMessageEvent, { type: "thinking_end" }>): boolean {
+  const part = event.partial.content[event.contentIndex];
+  if (part?.type !== "thinking") return false;
+  const signature = part.thinkingSignature;
+  return !signature || /^(?:msg_|item_)[A-Za-z0-9_-]+_reasoning$/u.test(signature);
+}
 
 export interface ReasoningHygieneCounters {
   replayRemoved: number;
@@ -20,6 +31,8 @@ export interface ReasoningHygieneCounters {
   outputThinkingDeltas: number;
   outputPrefixesRemoved: number;
   outputPrefixCharsRemoved: number;
+  outputMarkerOnlyCleared: number;
+  outputMarkerOnlyRetainedSigned: number;
 }
 export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
   return {
@@ -27,6 +40,7 @@ export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
     replayStructuredRetained: 0, rawReasoningSseFrames: 0,
     rawReasoningMarkerFrames: 0, outputThinkingDeltas: 0,
     outputPrefixesRemoved: 0, outputPrefixCharsRemoved: 0,
+    outputMarkerOnlyCleared: 0, outputMarkerOnlyRetainedSigned: 0,
   };
 }
 
@@ -128,6 +142,25 @@ export class ResponsesReasoningPrefixFilter {
       return this.consumeDelta(event);
     }
 
+    // A marker-only thinking block must be buffered to its terminal event;
+    // prematurely emitting it cannot be undone in a streaming UI. No
+    // substantive reasoning is suppressed. Preserve signed content verbatim.
+    if (event.type === "thinking_end") {
+      if (this.pending && this.pending.index === event.contentIndex &&
+          MARKERS_ONLY.test(this.pending.buffered)) {
+        if (isUnsignedOrSyntheticId(event)) {
+          const removed = this.pending.buffered;
+          this.pending = undefined;
+          this.removed.set(event.contentIndex, removed);
+          this.counters.outputMarkerOnlyCleared++;
+          this.activeIndex = undefined;
+          this.decided = undefined;
+          const updated = this.snapshot(event);
+          return [{ ...updated, content: "" }];
+        }
+        this.counters.outputMarkerOnlyRetainedSigned++;
+      }
+    }
     const flushed = this.flushPending();
     if (event.type === "thinking_end") {
       this.activeIndex = undefined;

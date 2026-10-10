@@ -390,6 +390,8 @@ function streamDynamicPifrostRoute(
 					const hygiene = normalizeResponsesReplay(bridged);
 					hygieneCounters.replayRemoved = hygiene.removedVisiblePlaceholders;
 					hygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+					hygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
+					hygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
 					if (hygiene.removedVisiblePlaceholders > 0 || hygiene.rewrittenMixedMessages > 0) {
@@ -449,6 +451,8 @@ function streamDynamicPifrostRoute(
 					: upstream;
 				const hygiene = normalizeCompletionsReplay(bridged);
 				chatHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+				chatHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
+				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 				return hygiene.payload;
 			},
 			onSseEvent: (event, requestModel) => {
@@ -538,6 +542,8 @@ function streamPifrostOpenAI(
 				: upstream;
 			const hygiene = normalizeCompletionsReplay(bridged);
 			directHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+			directHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
+			directHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 			return hygiene.payload;
 		},
 		onSseEvent: (event, requestModel) => {
