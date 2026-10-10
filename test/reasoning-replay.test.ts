@@ -219,3 +219,77 @@ test("Chat Completions never strips quoted phrases, user messages or uncorrabora
   assert.equal(normalizeCompletionsReplay(source).payload, source);
   assert.equal(normalizeCompletionsReplay({ input: [] }).rewrittenMixedMessages, 0);
 });
+
+
+test("v0.12.6 captured nested placeholders are pure synthetic; remove duplicates only with a meaningful assistant sibling", () => {
+  for (const raw of [
+    "<think>\n<think>\nreasoning unavailable\n</think>",
+    "<think>\n\n<think>\nreasoning unavailable\n\n</think>",
+  ]) {
+    const pure = { type: "message", role: "assistant", content: [
+      { type: "output_text", text: raw, annotations: [] },
+    ] };
+    const real = { type: "message", role: "assistant", content: [
+      { type: "output_text", text: "Actual relevant answer" },
+    ] };
+    const before = { input: [reason(), pure, real, call("z"), output("z")] };
+    const result = normalizeResponsesReplay(before);
+    assert.equal(result.removedVisiblePlaceholders, 1);
+    assert.equal(result.rewrittenMixedMessages, 0);
+    assert.deepEqual((result.payload as typeof before).input, [before.input[0], real, before.input[3], before.input[4]]);
+    assert.deepEqual(before.input[1], pure);
+    const ambiguous = { input: [reason(), pure, { role: "user", content: "continue" }] };
+    assert.equal(normalizeResponsesReplay(ambiguous).payload, ambiguous, "reasoning-only turn must retain a safe placeholder");
+    assert.equal(normalizeResponsesReplay(ambiguous).retainedAmbiguousPlaceholders, 1);
+  }
+});
+
+test("v0.12.6 captured prose-prefixed mixed messages clean exactly one synthetic marker and keep every other byte", () => {
+  const samples = [
+    ["<think>\nreasoning unavailable\nTypecheck passes. Table/column names correct.",
+      "<think>\nTypecheck passes. Table/column names correct."],
+    ["<think>\nreasoning unavailable\nNo seeded server running. I must spin up my own isolated DB.",
+      "<think>\nNo seeded server running. I must spin up my own isolated DB."],
+    ["<think>\nreasoning unavailable\n\nThe .env load produced DATABASE_URL present.",
+      "<think>\nThe .env load produced DATABASE_URL present."],
+  ];
+  for (const [original, expected] of samples) {
+    const mixed = { type: "message", role: "assistant", content: [
+      { type: "output_text", text: original, annotations: [] },
+    ] };
+    const input = [reason(), mixed, call("request"), output("request")];
+    const payload = { model: "generic-model", input };
+    const result = normalizeResponsesReplay(payload);
+    assert.equal(result.rewrittenMixedMessages, 1);
+    assert.equal(result.rewrittenProseMessages, 1);
+    assert.equal(((result.payload as typeof payload).input[1] as typeof mixed).content[0].text, expected);
+    assert.equal(normalizeResponsesReplay(result.payload).payload, result.payload);
+    assert.deepEqual(input, payload.input);
+  }
+});
+
+test("prose and nested lookalikes outside corroborated assistant turns remain unchanged", () => {
+  const raw = "<think>\nreasoning unavailable\nThis could be a genuine quotation";
+  const block = { type: "message", role: "assistant", content: [{ type: "output_text", text: raw }] };
+  const withoutSynthetic = { input: [block, call("1")] };
+  assert.equal(normalizeResponsesReplay(withoutSynthetic).payload, withoutSynthetic);
+  const encrypted = { input: [{ ...reason(), encrypted_content: "signed" }, block, call("1")] };
+  assert.equal(normalizeResponsesReplay(encrypted).payload, encrypted);
+  const user = { input: [reason(), { role: "user", content: raw }] };
+  assert.equal(normalizeResponsesReplay(user).payload, user);
+  const annotated = { input: [reason(), { ...block, content: [
+    { type: "output_text", text: raw, annotations: [{ type: "citation" }] },
+  ] }, call("1")] };
+  assert.equal(normalizeResponsesReplay(annotated).payload, annotated);
+});
+
+test("Completions applies the same nested/prose cleanup only with its own explicit synthetic reasoning field", () => {
+  const marked = { role: "assistant", reasoning_content: "reasoning unavailable",
+    content: "<think>\n<think>\nreasoning unavailable\nReal content" };
+  const original = { messages: [{ role: "user", content: "hi" }, marked] };
+  const clean = normalizeCompletionsReplay(original);
+  assert.equal(clean.rewrittenMixedMessages, 1);
+  assert.equal(clean.rewrittenNestedMessages, 1);
+  assert.equal((clean.payload as typeof original).messages[1].content, "<think>\nReal content");
+  assert.equal(normalizeCompletionsReplay(clean.payload).payload, clean.payload);
+});

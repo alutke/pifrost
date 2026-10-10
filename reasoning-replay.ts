@@ -23,7 +23,7 @@ const PURE_SYNTHETIC_THINKING = /^\s*(?:<think>\s*)+reasoning unavailable\s*<\/t
 // Require complete marker boundaries (newline or known OMP markup), NEVER
 // a substring inside real prose. Corroborating structured synthetic reasoning
 // in the same assistant run is mandatory for Responses history rewriting.
-const MIXED_SYNTHETIC_PREFIX = /^(\s*<think>\s*)(?:(?:<think>\s*)*reasoning unavailable(?:[ \t]*\r?\n[ \t]*|(?=<(?:dy\b|think\b|parameter\b|\/think\b))))+(?=\S)/u;
+const MIXED_SYNTHETIC_PREFIX = /^(\s*<think>\s*)(?:(?:<think>\s*)*reasoning unavailable(?:[ \t]*(?:\r?\n[ \t]*)+|(?=<(?:dy\b|think\b|parameter\b|\/think\b))))+(?=\S)/u;
 
 function mixedSyntheticReplacement(value: unknown): JsonRecord | undefined {
   const item = record(value);
