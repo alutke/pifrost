@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeResponsesReplay } from "../reasoning-replay.ts";
+import { normalizeCompletionsReplay, normalizeResponsesReplay } from "../reasoning-replay.ts";
 
 const reason = () => ({ type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "reasoning unavailable" }] });
 const placeholder = () => ({
@@ -50,7 +50,11 @@ test("leaves mixed thinking, real reasoning, quoted user text, annotated message
   ];
   const body = { input };
   const normalized = normalizeResponsesReplay(body);
-  assert.equal(normalized.payload, body);
+  // This fixture contains an explicitly corroborated mixed marker; v0.12.6
+  // removes it while retaining the substantive model text.
+  assert.equal(normalized.rewrittenMixedMessages, 1);
+  const clean = (normalized.payload as typeof body).input;
+  assert.equal((clean[2] as typeof mixed).content[0].text, "<think>\n<dy>Actual further thought</think>");
   assert.equal(normalized.removedVisiblePlaceholders, 0);
   assert.equal(normalized.retainedReasoningItems, 1);
   assert.equal(normalizeResponsesReplay({ data: "no input" }).removedVisiblePlaceholders, 0);
@@ -117,4 +121,101 @@ test("never discards lookalike model text unless the same turn has synthetic rea
 test("no rewrites for physical non-Responses payload and never changes user content", () => {
   const source = { messages: [{ role: "user", content: "<think>reasoning unavailable</think>" }] };
   assert.equal(normalizeResponsesReplay(source).payload, source);
+});
+
+test("rewrites corroborated mixed DeepSeek/OMP assistant history while retaining real text and metadata", () => {
+  const mixedSamples = [
+    "<think>\nreasoning unavailable<dy>\nThe actual analysis is important\n</dy>",
+    "<think>\nreasoning unavailable<think>\nThe next thought",
+    "<think>\nreasoning unavailable<parameter name=\"i\">Checking state</parameter>",
+    "<think>\nreasoning unavailable\nreasoning unavailable<think>\nMore important thought",
+  ];
+  for (const raw of mixedSamples) {
+    const item = { type: "message", role: "assistant", status: "completed",
+      content: [{ type: "output_text", text: raw, annotations: [] }] };
+    const source = { input: [reason(), item, call("call_m"), output("call_m")] };
+    const original = JSON.stringify(source);
+    const normalized = normalizeResponsesReplay(source);
+    assert.equal(normalized.removedVisiblePlaceholders, 0);
+    assert.equal(normalized.rewrittenMixedMessages, 1);
+    const result = (normalized.payload as typeof source).input;
+    const rewritten = (result[1] as typeof item).content[0].text;
+    assert.equal(rewritten.includes("reasoning unavailable"), false);
+    assert.equal(rewritten.startsWith("<think>\n<"), true);
+    assert.equal(rewritten.endsWith(raw.slice(raw.lastIndexOf("<") + 1)) ||
+      rewritten.includes("The actual analysis") || rewritten.includes("The next thought") ||
+      rewritten.includes("Checking state") || rewritten.includes("More important thought"), true);
+    assert.equal(result[0], source.input[0], "structured reasoning untouched");
+    assert.equal(result[2], source.input[2], "tool-call untouched");
+    assert.equal(JSON.stringify(source), original, "original OMP body untouched");
+    assert.equal(normalizeResponsesReplay(normalized.payload).payload, normalized.payload, "idempotent");
+  }
+});
+
+test("does not rewrite mixed content without synthetic same-turn reason or with annotations", () => {
+  const mixed = { type: "message", role: "assistant",
+    content: [{ type: "output_text", text: "<think>\nreasoning unavailable<dy>Real" }] };
+  const real = { type: "reasoning", summary: [{ type: "summary_text", text: "genuine" }],
+    content: [{ type: "reasoning_text", text: "reasoning unavailable" }] };
+  const noReason = { input: [mixed, call("x")] };
+  assert.equal(normalizeResponsesReplay(noReason).payload, noReason);
+  const actual = { input: [real, mixed, call("x")] };
+  assert.equal(normalizeResponsesReplay(actual).payload, actual);
+  const annotated = { ...mixed, content: [{ ...mixed.content[0],
+    annotations: [{ type: "citation", text: "reasoning unavailable" }] }] };
+  const withAnnotations = { input: [reason(), annotated, call("x")] };
+  assert.equal(normalizeResponsesReplay(withAnnotations).payload, withAnnotations);
+  const boundary = { input: [reason(), { role: "user", content: "Question" }, mixed, call("x")] };
+  assert.equal(normalizeResponsesReplay(boundary).payload, boundary);
+});
+
+test("matches the new Bifrost capture mixed-history shapes across every Responses provider", () => {
+  // 20 known mixed candidates, 7 ambiguous pure placeholders, 158 reasoning
+  // items in v0.12.5. Redacted structural fixture without prompts/tool output.
+  const models = ["commandcode", "opencode-go", "openrouter", "xiaomi", "openai"];
+  for (const provider of models) {
+    const input: unknown[] = [{ role: "user", content: "request" }];
+    for (let i = 0; i < 20; i++) {
+      input.push(reason(), {
+        type: "message", role: "assistant", content: [{ type: "output_text",
+          text: "<think>\nreasoning unavailable<dy>Retained-" + i + "</dy>", annotations: [] }],
+      }, call("t" + i), output("t" + i));
+    }
+    for (let i = 0; i < 7; i++) input.push(reason(), placeholder(), { role: "user", content: "next" });
+    const normalized = normalizeResponsesReplay({ model: provider, input });
+    assert.equal(normalized.rewrittenMixedMessages, 20);
+    assert.equal(normalized.retainedAmbiguousPlaceholders, 7);
+    assert.equal(normalized.removedVisiblePlaceholders, 0);
+    const out = (normalized.payload as { input: Record<string, unknown>[] }).input;
+    for (let i = 0; i < 20; i++) assert(out.some(x => x.type === "function_call" && x.call_id === "t" + i));
+  }
+});
+
+test("Chat Completions normalises only corroborated synthetic assistant demotion for all models", () => {
+  for (const model of ["commandcode/deepseek", "opencode-go/muse", "openrouter/claude",
+    "deepseek/direct", "xiaomi/mimo", "openai/gpt", "qwen/flash"]) {
+    const tagged = { role: "assistant", reasoning_content: "reasoning unavailable",
+      content: "<think>\nreasoning unavailable<dy>Keep these words</dy>",
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "grep", arguments: "{}" } }] };
+    const source = { model, messages: [{ role: "user", content: "question" }, tagged,
+      { role: "tool", tool_call_id: "call_1", content: "success" }] };
+    const a = normalizeCompletionsReplay(source);
+    assert.equal(a.rewrittenMixedMessages, 1);
+    const modified = (a.payload as typeof source).messages[1] as typeof tagged;
+    assert.equal(modified.content, "<think>\n<dy>Keep these words</dy>");
+    assert.equal(modified.reasoning_content, "reasoning unavailable");
+    assert.equal(modified.tool_calls, tagged.tool_calls);
+    assert.deepEqual(source.messages[1], tagged, "source unchanged");
+    assert.equal(normalizeCompletionsReplay(a.payload).payload, a.payload);
+  }
+});
+
+test("Chat Completions never strips quoted phrases, user messages or uncorraborated reasoning", () => {
+  const user = { role: "user", content: "<think>\nreasoning unavailable<dy>user content" };
+  const plain = { role: "assistant", content: "<think>\nreasoning unavailable<dy>real text" };
+  const annotated = { role: "assistant", reasoning_content: "valid genuine content",
+    content: "<think>\nreasoning unavailable<dy>real text" };
+  const source = { messages: [user, plain, annotated] };
+  assert.equal(normalizeCompletionsReplay(source).payload, source);
+  assert.equal(normalizeCompletionsReplay({ input: [] }).rewrittenMixedMessages, 0);
 });

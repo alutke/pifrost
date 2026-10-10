@@ -16,6 +16,22 @@ function record(value: unknown): JsonRecord | undefined {
 }
 
 const PURE_SYNTHETIC_THINKING = /^\s*<think>\s*reasoning unavailable\s*<\/think>\s*$/u;
+/** Only strip exact OMP replay markers immediately before recognised markup.
+ * Plain language occurrences, arbitrary tags and unsigned reasoning stay intact. */
+const MIXED_SYNTHETIC_PREFIX = /^(\s*<think>\s*)(?:reasoning unavailable[ \t]*(?:\r?\n[ \t]*)?)+(?=<(?:dy\b|think\b|parameter\b|\/think\b))/u;
+
+function mixedSyntheticReplacement(value: unknown): JsonRecord | undefined {
+  const item = record(value);
+  if (item?.type !== "message" || item.role !== "assistant" ||
+      !Array.isArray(item.content) || item.content.length !== 1) return undefined;
+  const block = record(item.content[0]);
+  if (block?.type !== "output_text" || typeof block.text !== "string" ||
+      (Array.isArray(block.annotations) && block.annotations.length > 0)) return undefined;
+  const cleaned = block.text.replace(MIXED_SYNTHETIC_PREFIX, "$1");
+  return cleaned !== block.text && cleaned.trim().length > 0
+    ? { ...item, content: [{ ...block, text: cleaned }] }
+    : undefined;
+}
 
 /** A strict exact-shape match: never rewrite mixed text, real thoughts or user content. */
 function isRedundantAssistantPlaceholder(value: unknown): boolean {
@@ -64,6 +80,7 @@ function isMeaningfulAssistant(value: unknown): boolean {
 export interface ResponsesReplayHygiene {
   payload: unknown;
   removedVisiblePlaceholders: number;
+  rewrittenMixedMessages: number;
   retainedAmbiguousPlaceholders: number;
   retainedReasoningItems: number;
 }
@@ -78,10 +95,11 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
   const body = record(payload);
   const input = body?.input;
   if (!Array.isArray(input)) return {
-    payload, removedVisiblePlaceholders: 0, retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
+    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
 
   let removedVisiblePlaceholders = 0;
+  let rewrittenMixedMessages = 0;
   let retainedAmbiguousPlaceholders = 0;
   let retainedReasoningItems = 0;
   let changed = false;
@@ -97,7 +115,13 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
       if (record(item)?.type === "reasoning") retainedReasoningItems++;
       // Without corroborating OMP synthetic reasoning this could be literal
       // model-generated text; preserve it, regardless of provider identity.
-      if (!hasSyntheticReasoning || !isRedundantAssistantPlaceholder(item)) { result.push(item); continue; }
+      if (!hasSyntheticReasoning) { result.push(item); continue; }
+      if (!isRedundantAssistantPlaceholder(item)) {
+        const cleaned = mixedSyntheticReplacement(item);
+        if (cleaned) { result.push(cleaned); rewrittenMixedMessages++; changed = true; }
+        else result.push(item);
+        continue;
+      }
       if (!hasMeaningful && !keptPure) {
         keptPure = true;
         retainedAmbiguousPlaceholders++;
@@ -121,6 +145,38 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
   flush();
   return {
     payload: changed ? { ...body, input: result } : payload,
-    removedVisiblePlaceholders, retainedAmbiguousPlaceholders, retainedReasoningItems,
+    removedVisiblePlaceholders, rewrittenMixedMessages, retainedAmbiguousPlaceholders, retainedReasoningItems,
+  };
+}
+
+/**
+ * Chat Completions: preserve every assistant/tool turn and native reasoning
+ * continuation field. Only remove a redundant visible OMP demotion prefix
+ * when the SAME assistant message carries the exact synthetic reasoning hint.
+ * Works on direct aliases and all dynamic physical Chat routes.
+ */
+export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHygiene {
+  const body = record(payload);
+  if (!body || !Array.isArray(body.messages)) return {
+    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0,
+    retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
+  };
+  let rewrittenMixedMessages = 0;
+  const messages = body.messages.map((raw: unknown) => {
+    const item = record(raw);
+    if (item?.role !== "assistant" || typeof item.content !== "string") return raw;
+    const synthetic = item.reasoning_content === "reasoning unavailable" ||
+      item.reasoning_text === "reasoning unavailable" ||
+      item.reasoning === "reasoning unavailable";
+    if (!synthetic) return raw;
+    const cleaned = item.content.replace(MIXED_SYNTHETIC_PREFIX, "$1");
+    if (cleaned === item.content || !cleaned.trim()) return raw;
+    rewrittenMixedMessages++;
+    return { ...item, content: cleaned };
+  });
+  return {
+    payload: rewrittenMixedMessages ? { ...body, messages } : payload,
+    removedVisiblePlaceholders: 0, rewrittenMixedMessages,
+    retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
 }

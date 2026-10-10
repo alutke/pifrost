@@ -93,7 +93,9 @@ import {
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
-import { normalizeResponsesReplay } from "./reasoning-replay.ts";
+import { normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
+import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
+import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import {
 	activePifrostCfgSession,
 	applyPifrostOmpProfile,
@@ -175,6 +177,7 @@ function bridgeBifrostUsageCostStream(
 	source: AssistantMessageEventStream,
 	capture: BifrostCostCapture,
 	onTerminal?: (outcome: "done" | "error" | "thrown") => void,
+	reasoningFilter?: ResponsesReasoningPrefixFilter,
 ): AssistantMessageEventStream {
 	const output = new AssistantMessageEventStream();
 	output.forwardLocalWorkFrom(source);
@@ -187,7 +190,9 @@ function bridgeBifrostUsageCostStream(
 		};
 		try {
 			for await (const event of source) {
-				output.push(eventWithBifrostCost(event, capture));
+				for (const emitted of reasoningFilter ? reasoningFilter.consume(event) : [event]) {
+					output.push(eventWithBifrostCost(emitted, capture));
+				}
 				if (event.type === "done" || event.type === "error") terminal(event.type);
 			}
 		} catch (error) {
@@ -352,6 +357,12 @@ function streamDynamicPifrostRoute(
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
 		if (attempt.protocol === "openai-responses") {
 			const upstreamOnPayload = options?.onPayload;
+			const upstreamOnSseEvent = options?.onSseEvent;
+			const hygieneCounters = newReasoningHygieneCounters();
+			// Every physical Responses model receives the same semantic guard.
+			// Only the exact two-marker <think> prefix is transformed, irrespective
+			// of provider/model identity or a Bifrost fallback.
+			const reasoningFilter = new ResponsesReasoningPrefixFilter(hygieneCounters, true);
 			const responseOptions: OpenAIResponsesOptions = {
 				...options,
 				apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -377,12 +388,22 @@ function streamDynamicPifrostRoute(
 					// reasoning item and redundant visible text in an assistant run.
 					// Never strip the structured content required by DeepSeek.
 					const hygiene = normalizeResponsesReplay(bridged);
-					if (hygiene.removedVisiblePlaceholders > 0) {
+					hygieneCounters.replayRemoved = hygiene.removedVisiblePlaceholders;
+					hygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
+					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
+					if (hygiene.removedVisiblePlaceholders > 0 || hygiene.rewrittenMixedMessages > 0) {
 						process.stderr.write(
-							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible synthetic reasoning messages; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
+							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible messages; rewrote ${hygiene.rewrittenMixedMessages} mixed prefixes; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
 						);
 					}
 					return hygiene.payload;
+				},
+				onSseEvent: (event, requestModel) => {
+					observeReasoningSse(hygieneCounters, event);
+					try { upstreamOnSseEvent?.(event, requestModel); } catch {
+						// User diagnostics may not terminate the response stream.
+					}
 				},
 				extraBody: bifrostAttemptExtraBody(attempt),
 				fetch: baseFetch,
@@ -400,11 +421,15 @@ function streamDynamicPifrostRoute(
 					attempt: attemptIndex + 1,
 					requestedPrimary: attempt.primary,
 					outcome,
-				}, costCapture),
+				}, costCapture, hygieneCounters),
+				reasoningFilter,
 			);
 		}
 
 		const upstreamOnPayload = options?.onPayload;
+		const chatHygieneCounters = newReasoningHygieneCounters();
+		const chatReasoningFilter = new ResponsesReasoningPrefixFilter(chatHygieneCounters, true);
+		const chatUpstreamOnSseEvent = options?.onSseEvent;
 		const chatOptions: OpenAICompletionsOptions = {
 			...options,
 			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -417,12 +442,19 @@ function streamDynamicPifrostRoute(
 			openrouterVariant: options?.openrouterVariant,
 			maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 			promptCache: options?.promptCache,
-			onPayload: betweenToolsThinking
-				? async (payload, requestModel, signal) => {
-					const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
-					return bridgePifrostPayload(upstream, { betweenToolsThinking: true });
-				}
-				: upstreamOnPayload,
+			onPayload: async (payload, requestModel, signal) => {
+				const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
+				const bridged = betweenToolsThinking
+					? bridgePifrostPayload(upstream, { betweenToolsThinking: true })
+					: upstream;
+				const hygiene = normalizeCompletionsReplay(bridged);
+				chatHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+				return hygiene.payload;
+			},
+			onSseEvent: (event, requestModel) => {
+				observeReasoningSse(chatHygieneCounters, event);
+				try { chatUpstreamOnSseEvent?.(event, requestModel); } catch {}
+			},
 			fetch: baseFetch,
 		};
 		return bridgeBifrostUsageCostStream(
@@ -438,7 +470,8 @@ function streamDynamicPifrostRoute(
 				attempt: attemptIndex + 1,
 				requestedPrimary: attempt.primary,
 				outcome,
-			}, costCapture),
+			}, costCapture, chatHygieneCounters),
+			chatReasoningFilter,
 		);
 	}).catch((error) => outer.fail(error));
 
@@ -483,6 +516,9 @@ function streamPifrostOpenAI(
 	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
 	const upstreamOnPayload = options?.onPayload;
 	const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
+	const directHygieneCounters = newReasoningHygieneCounters();
+	const directReasoningFilter = new ResponsesReasoningPrefixFilter(directHygieneCounters, true);
+	const directUpstreamOnSseEvent = options?.onSseEvent;
 	const streamOptions: OpenAICompletionsOptions = {
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -495,12 +531,19 @@ function streamPifrostOpenAI(
 		openrouterVariant: options?.openrouterVariant,
 		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
 		promptCache: options?.promptCache,
-		onPayload: betweenToolsThinking
-			? async (payload, requestModel, signal) => {
-				const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
-				return bridgePifrostPayload(upstream, { betweenToolsThinking: true });
-			}
-			: upstreamOnPayload,
+		onPayload: async (payload, requestModel, signal) => {
+			const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
+			const bridged = betweenToolsThinking
+				? bridgePifrostPayload(upstream, { betweenToolsThinking: true })
+				: upstream;
+			const hygiene = normalizeCompletionsReplay(bridged);
+			directHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+			return hygiene.payload;
+		},
+		onSseEvent: (event, requestModel) => {
+			observeReasoningSse(directHygieneCounters, event);
+			try { directUpstreamOnSseEvent?.(event, requestModel); } catch {}
+		},
 		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes, {
 			outputCapExplicit: rawOptions?.maxTokens !== undefined,
 		}),
@@ -514,7 +557,8 @@ function streamPifrostOpenAI(
 			attempt: 1,
 			requestedPrimary: model.id,
 			outcome,
-		}, costCapture),
+		}, costCapture, directHygieneCounters),
+		directReasoningFilter,
 	);
 }
 
