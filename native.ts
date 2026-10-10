@@ -93,6 +93,7 @@ import {
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
+import { normalizeDeepSeekResponsesReplay } from "./reasoning-replay.ts";
 import {
 	activePifrostCfgSession,
 	applyPifrostOmpProfile,
@@ -367,11 +368,22 @@ function streamDynamicPifrostRoute(
 				statefulResponses: false,
 				onPayload: async (payload, requestModel, signal) => {
 					const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
-					return bridgePifrostPayload(upstream, {
+					const bridged = bridgePifrostPayload(upstream, {
 						deferredTools,
 						enableToolSearch: deferredTools.size > 0,
 						betweenToolsThinking,
 					});
+					// OMP's cross-model transcript demotion may repeat an exact
+					// synthetic reasoning marker in visible assistant messages. Keep
+					// all structured reasoning/tool items required by DeepSeek.
+					if (!shouldOmitOpaqueReasoningSummary(attempt.primary)) return bridged;
+					const hygiene = normalizeDeepSeekResponsesReplay(bridged);
+					if (hygiene.removedVisiblePlaceholders > 0) {
+						process.stderr.write(
+							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible synthetic reasoning messages; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
+						);
+					}
+					return hygiene.payload;
 				},
 				extraBody: bifrostAttemptExtraBody(attempt),
 				fetch: baseFetch,
