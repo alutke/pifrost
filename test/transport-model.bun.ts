@@ -214,7 +214,7 @@ test("all physical Chat and Responses requests authenticate to Bifrost with inhe
 			"x-bf-eh-user-agent": "pifrost/test OMP",
 		},
 		compatConfig: { reasoningContentField: "logical-incompatible" },
-	} as Model;
+	} as unknown as Model;
 	for (const api of ["openai-completions", "openai-responses"] as const) {
 		const reference = "CommandCode GOAT/deepseek/deepseek-v4.1-flash";
 		const spec = createPifrostMemberModelSpec(logical, {
@@ -233,6 +233,6 @@ test("all physical Chat and Responses requests authenticate to Bifrost with inhe
 		assert.equal(request.headers["x-bf-vk"], "vk-local-test-placeholder", api);
 		assert.equal(request.headers["x-bf-session-id"], "test-session", api);
 		assert.equal(request.headers.Authorization, "Bearer not-a-real-key", api);
-		assert.equal((transport.compat as Record<string, unknown>).reasoningContentField === "logical-incompatible", false);
+		assert.equal((transport.compat as unknown as Record<string, unknown>).reasoningContentField === "logical-incompatible", false);
 	}
 });
