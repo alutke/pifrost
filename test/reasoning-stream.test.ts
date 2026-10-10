@@ -202,6 +202,10 @@ test("count-only reasoning telemetry includes marker-only suppression without re
     { type: "thinking_start", contentIndex: 0, partial: message("") },
     { type: "thinking_delta", contentIndex: 0, delta: "reasoning unavailable", partial: message("reasoning unavailable") },
     { type: "thinking_end", contentIndex: 0, content: "reasoning unavailable", partial: message("reasoning unavailable") },
+    { type: "toolcall_start", contentIndex: 1, partial: { ...message("reasoning unavailable"),
+      content: [...message("reasoning unavailable").content,
+        { type: "toolCall", id: "call_valid", name: "bash", arguments: {} }],
+    } },
   ];
   events.flatMap(e => filter.consume(e));
   assert.equal(counters.rawReasoningMarkerFrames, 1);
