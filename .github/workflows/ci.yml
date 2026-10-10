@@ -22,6 +22,8 @@ jobs:
         with:
           bun-version: 1.4.0
       - run: npm ci
+      - name: Audit production dependencies for high severity advisories
+        run: npm audit --omit=dev --audit-level=high
       - run: npm run check
       - run: npm test
       - name: Validate release package
@@ -58,13 +60,13 @@ jobs:
           "$OMP_BIN" --version
           "$OMP_BIN" install . --force
           "$OMP_BIN" plugin list
-      - name: Validate with current OMP 18.8.6 release binary
+      - name: Validate with current OMP 18.8.7 release binary
         run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.8.6"
+          OMP_BIN="$RUNNER_TEMP/omp-18.8.7"
           curl --fail --location --silent --show-error \
-            "https://github.com/can1357/oh-my-pi/releases/download/v18.8.6/omp-linux-x64" \
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.8.7/omp-linux-x64" \
             --output "$OMP_BIN"
-          echo "877acdc48384b80fe4c083b1e610433d28922dd9fccde9ea430aaace8765b19b  $OMP_BIN" | sha256sum -c -
+          echo "b87f9835a0acdbb81bbbad8273aa2d999b608a208598421a9584cffeb3139a8a  $OMP_BIN" | sha256sum -c -
           chmod +x "$OMP_BIN"
           export HOME="$RUNNER_TEMP/omp-home-current"
           mkdir -p "$HOME"
