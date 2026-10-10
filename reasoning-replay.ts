@@ -14,7 +14,7 @@ function record(value: unknown): JsonRecord | undefined {
     ? value as JsonRecord : undefined;
 }
 
-const PURE_SYNTHETIC_THINKING = /^\\s*<think>\\s*reasoning unavailable\\s*<\\/think>\\s*$/u;
+const PURE_SYNTHETIC_THINKING = /^\s*<think>\s*reasoning unavailable\s*<\/think>\s*$/u;
 
 /** A strict exact-shape match: never rewrite mixed text, real thoughts or user content. */
 function isRedundantAssistantPlaceholder(value: unknown): boolean {
