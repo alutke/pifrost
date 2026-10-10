@@ -17,8 +17,12 @@ const MARKERS_ONLY = /^\s*reasoning unavailable(?:\s+reasoning unavailable)*\s*$
 function isUnsignedOrSyntheticId(event: Extract<AssistantMessageEvent, { type: "thinking_end" }>): boolean {
   const part = event.partial.content[event.contentIndex];
   if (part?.type !== "thinking") return false;
+  const generatedId = /^(?:msg_|item_)[A-Za-z0-9_-]+_reasoning$/u;
   const signature = part.thinkingSignature;
-  return !signature || /^(?:msg_|item_)[A-Za-z0-9_-]+_reasoning$/u.test(signature);
+  // itemId is a transport item identity, not necessarily the signature; a
+  // native rs_* item is never rewritten when signature is absent.
+  return (!signature || generatedId.test(signature)) &&
+    (!part.itemId || generatedId.test(part.itemId));
 }
 
 export interface ReasoningHygieneCounters {
@@ -159,6 +163,7 @@ export class ResponsesReasoningPrefixFilter {
           this.activeIndex = undefined;
           this.decided = undefined;
           const updated = this.snapshot(event);
+          if (updated.type !== "thinking_end") return [event];
           return [{ ...updated, content: "" }];
         }
         this.counters.outputMarkerOnlyRetainedSigned++;

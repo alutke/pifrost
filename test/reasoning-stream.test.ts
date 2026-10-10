@@ -163,8 +163,9 @@ test("marker-like content with substantive reasoning is preserved, even after ma
     assert.equal(run.counters.outputMarkerOnlyCleared, 0);
     assert.equal(run.emitted.filter(e => e.type === "thinking_delta")
       .map(e => e.type === "thinking_delta" ? e.delta : "").join(""), text);
-    assert(run.emitted.at(-1)?.type === "done");
-    assert.equal(thought(run.emitted.at(-1).message), text);
+    const final = run.emitted.at(-1);
+    assert(final?.type === "done");
+    assert.equal(thought(final.message), text);
   }
 });
 
@@ -206,4 +207,23 @@ test("count-only reasoning telemetry includes marker-only suppression without re
   assert.equal(counters.rawReasoningMarkerFrames, 1);
   assert.equal(counters.outputMarkerOnlyCleared, 1);
   assert.equal(JSON.stringify(counters).includes("reasoning unavailable"), false);
+});
+
+
+test("native OpenAI rs_* transport item without a signature must remain opaque", () => {
+  const text = "reasoning unavailable\nreasoning unavailable";
+  const counters = newReasoningHygieneCounters();
+  const filter = new ResponsesReasoningPrefixFilter(counters, true);
+  const msg = (thinking: string): AssistantMessage => ({
+    ...message(thinking), content: [{ type: "thinking", thinking, itemId: "rs_real_provider_item" }],
+  });
+  const emitted = ([
+    { type: "thinking_start", contentIndex: 0, partial: msg("") },
+    { type: "thinking_delta", contentIndex: 0, delta: text, partial: msg(text) },
+    { type: "thinking_end", contentIndex: 0, content: text, partial: msg(text) },
+    { type: "done", reason: "stop", message: msg(text) },
+  ] as AssistantMessageEvent[]).flatMap(event => filter.consume(event));
+  assert.equal(counters.outputMarkerOnlyCleared, 0);
+  assert.equal(counters.outputMarkerOnlyRetainedSigned, 1);
+  assert.equal(emitted.filter(x => x.type === "thinking_delta").map(x => x.type === "thinking_delta" ? x.delta : "").join(""), text);
 });
