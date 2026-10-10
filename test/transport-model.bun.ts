@@ -11,6 +11,7 @@ import {
 	resolvePifrostReasoningWithToolsPolicy,
 } from "../transport-model.ts";
 import { resolveRouteReasoningWithToolsPolicy } from "../datasheet.ts";
+import { createPifrostMemberModelSpec } from "../multi-protocol-routing.ts";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
 
@@ -135,4 +136,26 @@ test("runtime host imports stay at the extension entry boundary", () => {
 	assert.match(native, /@oh-my-pi\/pi-catalog\/compat\/behavior/u);
 	assert.doesNotMatch(materializer, /from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u);
 	assert.doesNotMatch(fallback, /from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u);
+});
+
+
+test("CommandCode DeepSeek V4.1 uses the same OMP reasoning policy as its physical identity on both protocols", () => {
+	const logical = {
+		id: "omp-default", name: "omp-default", provider: "bifrost", api: "openai-completions",
+		baseUrl: "http://bifrost/v1", reasoning: true, input: ["text"],
+		cost, contextWindow: 1_000_000, maxTokens: 384_000,
+	} as Model;
+	const reference = "CommandCode GOAT/deepseek/deepseek-v4.1-flash";
+	for (const api of ["openai-completions", "openai-responses"] as const) {
+		const spec = createPifrostMemberModelSpec(logical, {
+			reference, resolvedModelId: reference, contextWindow: 1_000_000, maxTokens: 384_000,
+			input: ["text"], reasoning: true, supportsTools: true, protocols: [api], compat: {},
+		}, api);
+		const transport = buildPifrostTransportModel(spec);
+		assert.equal(transport.requestModelId, reference);
+		assert.equal(transport.provider, "commandcode");
+		assert.equal(transport.identity.class, "deepseek");
+		assert.equal(transport.reasoning, true);
+		assert.deepEqual(requestProjection(transport), requestProjection(buildModel(spec)));
+	}
 });

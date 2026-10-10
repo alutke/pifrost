@@ -8,6 +8,10 @@ import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
 	pifrostAttemptMaxTokens,
+	pifrostDirectMaxTokens,
+	normalizePifrostReasoningOptions,
+	physicalPolicyIdentity,
+	shouldOmitOpaqueReasoningSummary,
 	runPifrostProtocolPlan,
 	type PifrostAttemptStream,
 	type PifrostProtocolOutput,
@@ -166,7 +170,9 @@ test("attempt specs use native protocol endpoints and preserve same-protocol Bif
 	assert.equal(responses.requestModelId, "opencode-go/muse-spark-1.3-contributor");
 	assert.equal(responses.baseUrl, "http://bifrost/v1");
 	assert.equal(chat.api, "openai-completions");
-	assert.equal(chat.id, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
+	assert.equal(chat.id, "deepseek/deepseek-v4.1-flash");
+	assert.equal(chat.requestModelId, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
+	assert.equal(chat.provider, "commandcode");
 	assert.deepEqual(
 		((chat.compat as Record<string, unknown> | undefined)?.extraBody as Record<string, unknown> | undefined)?.fallbacks,
 		["deepseek/deepseek-flash"],
@@ -252,4 +258,45 @@ test("single-member Responses attempt preserves a supported larger requested cei
 	responses.members[0] = { ...responses.members[0]!, maxTokens: 384_000 };
 
 	assert.equal(pifrostAttemptMaxTokens(responses, 262_144), 262_144);
+});
+
+
+test("non-dynamic dispatch caps oversized explicit token requests", () => {
+	assert.equal(pifrostDirectMaxTokens(65_536, 32_768), 32_768);
+	assert.equal(pifrostDirectMaxTokens(8_192, 32_768), 8_192);
+	assert.equal(pifrostDirectMaxTokens(384_000, 384_000), 384_000);
+	assert.equal(pifrostDirectMaxTokens(undefined, 32_768), 32_768);
+});
+
+test("explicit reasoning off remains off, but implicit mandatory efforts use a floor", () => {
+	const mandatory = { reasoning: true, thinking: { requiresEffort: true, efforts: ["low", "high"] } } as unknown as Model;
+	assert.equal(normalizePifrostReasoningOptions(mandatory, { disableReasoning: true })?.disableReasoning, true);
+	assert.equal(normalizePifrostReasoningOptions(mandatory, { forceReasoningOff: true })?.forceReasoningOff, true);
+	assert.equal(normalizePifrostReasoningOptions(mandatory, { reasoning: "high" as never })?.reasoning, "high");
+	assert.equal(normalizePifrostReasoningOptions(mandatory, undefined)?.reasoning, "low");
+	assert.equal(normalizePifrostReasoningOptions({ reasoning: false } as Model, undefined), undefined);
+});
+
+test("CommandCode reasoning compatibility is resolved using physical identity", () => {
+	const route = "CommandCode GOAT/deepseek/deepseek-v4.1-flash";
+	assert.deepEqual(physicalPolicyIdentity(route), {
+		id: "deepseek/deepseek-v4.1-flash", provider: "commandcode", requestModelId: route,
+	});
+	const spec = createPifrostAttemptModelSpec(logicalModel(), {
+		protocol: "openai-responses", primary: route, fallbacks: [], members: [member(route, "openai-responses")],
+	});
+	assert.equal(spec.id, "deepseek/deepseek-v4.1-flash");
+	assert.equal(spec.provider, "commandcode");
+	assert.equal(spec.requestModelId, route);
+	assert.equal(spec.api, "openai-responses");
+	assert.equal(spec.baseUrl, "http://bifrost/v1");
+	assert.equal(physicalPolicyIdentity("opencode-go/muse-spark-1.3-contributor")?.provider, "opencode-go");
+});
+
+
+test("opaque CommandCode DeepSeek Responses summary is omitted without disabling real reasoning", () => {
+	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/deepseek/deepseek-v4.1-flash"), true);
+	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/deepseek/deepseek-v4-flash"), false);
+	assert.equal(shouldOmitOpaqueReasoningSummary("deepseek/deepseek-v4.1-flash"), false);
+	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/inclusionai/ling-3.1-flash:free"), false);
 });

@@ -252,3 +252,17 @@ export function resolveModelReference<T extends { id: string }>(
 
 	return { model: selected, score: bestScore, kind: kindForScore(bestScore) };
 }
+
+/** Upper limits confirmed by upstream provider errors. This bound is strict to
+ * reseller and entitlement; never infer paid or unrelated provider limits. */
+export function confirmedProviderOutputCeiling(reference: string): number | undefined {
+	const slash = reference.indexOf("/");
+	if (slash < 1) return undefined;
+	const provider = reference.slice(0, slash).toLowerCase().replace(/[\s_-]+/gu, "");
+	const sku = reference.slice(slash + 1).trim().toLowerCase();
+	if ((provider === "commandcodegoat" || provider === "commandcode") && sku === "inclusionai/ling-3.1-flash:free") {
+		// CommandCode GOAT HTTP 400: max_tokens 65536 exceeds maximum 32768.
+		return 32_768;
+	}
+	return undefined;
+}
