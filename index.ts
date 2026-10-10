@@ -8,10 +8,10 @@ import { formatRoutePricing, type RoutePricingDiagnostic } from "./pricing-time.
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 
 import {
-	confirmedProviderOutputCeiling,
 	resolveModelReference,
 	type ModelResolutionKind,
 } from "./model-resolution.ts";
+import { confirmedProviderOutputCeiling } from "./endpoint-contracts.ts";
 import {
 	PIFROST_WIRE_PROTOCOL,
 	wireProtocolsFrom,

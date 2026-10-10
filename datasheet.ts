@@ -1,7 +1,7 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { PeakHoursSchedule, RoutePricingDiagnostic } from "./pricing-time.ts";
 import { resolvePifrostReasoningWithToolsPolicy } from "./transport-model.ts";
-import { confirmedProviderOutputCeiling } from "./model-resolution.ts";
+import { confirmedProviderOutputCeiling } from "./endpoint-contracts.ts";
 import {
 	wireProtocolsFrom,
 	type PifrostWireProtocol,
