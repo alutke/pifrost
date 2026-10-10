@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { test } from "bun:test";
 import type { Model, ModelSpec } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
+import { resolveOpenAIRequestSetup } from "@oh-my-pi/pi-ai/providers/openai-shared";
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { physicalPolicyIdentity, physicalRequestContractKey } from "../request-compatibility.ts";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
@@ -196,4 +197,42 @@ test("all bundled OMP provider namespaces retain physical policy materializer eq
 		}
 	}
 	assert.ok(checked >= 20, "expected broad coverage of pinned OMP provider catalogue");
+});
+
+
+// This exercises the same common request-header builder used by OMP's native
+// Chat Completions and Responses transports. A model-spec assertion alone did
+// not catch v0.12.3: the physical model lost headers before HTTP serialization.
+test("all physical Chat and Responses requests authenticate to Bifrost with inherited VK header", () => {
+	const logical = {
+		id: "omp-default", name: "omp-default", provider: "bifrost", api: "openai-completions",
+		baseUrl: "http://bifrost/v1", reasoning: true, input: ["text"], cost,
+		contextWindow: 128_000, maxTokens: 8_192,
+		headers: {
+			"x-bf-vk": "vk-local-test-placeholder",
+			"User-Agent": "pifrost/test OMP",
+			"x-bf-eh-user-agent": "pifrost/test OMP",
+		},
+		compatConfig: { reasoningContentField: "logical-incompatible" },
+	} as unknown as Model;
+	for (const api of ["openai-completions", "openai-responses"] as const) {
+		const reference = "CommandCode GOAT/deepseek/deepseek-v4.1-flash";
+		const spec = createPifrostMemberModelSpec(logical, {
+			reference, resolvedModelId: reference, contextWindow: 128_000, maxTokens: 8_192,
+			input: ["text"], reasoning: true, supportsTools: true, protocols: [api], compat: {},
+		}, api);
+		const transport = buildPifrostTransportModel(spec);
+		assert.equal(transport.headers?.["x-bf-vk"], "vk-local-test-placeholder", api);
+		assert.equal(transport.headers?.["User-Agent"], "pifrost/test OMP", api);
+		const request = resolveOpenAIRequestSetup(transport, {
+			apiKey: "not-a-real-key",
+			extraHeaders: { "x-bf-session-id": "test-session" },
+			messages: [],
+			sessionId: "test-session",
+		});
+		assert.equal(request.headers["x-bf-vk"], "vk-local-test-placeholder", api);
+		assert.equal(request.headers["x-bf-session-id"], "test-session", api);
+		assert.equal(request.headers.Authorization, "Bearer not-a-real-key", api);
+		assert.equal((transport.compat as unknown as Record<string, unknown>).reasoningContentField === "logical-incompatible", false);
+	}
 });
