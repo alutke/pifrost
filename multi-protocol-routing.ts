@@ -42,6 +42,14 @@ export function physicalPolicyIdentity(reference: string): { id: string; provide
 	return openCodePolicyIdentity(reference);
 }
 
+/** The observed CommandCode DeepSeek V4.1 Responses adapter returns the literal
+ * placeholder "reasoning unavailable" as a summary. Do not request an opaque
+ * summary on this exact route; retain native reasoning replay and tool history. */
+export function shouldOmitOpaqueReasoningSummary(reference: string): boolean {
+	const identity = physicalPolicyIdentity(reference);
+	return identity?.provider === "commandcode" && identity.id.toLowerCase() === "deepseek/deepseek-v4.1-flash";
+}
+
 function openCodePolicyIdentity(reference: string): { id: string; provider: "opencode-go"; requestModelId: string } | undefined {
 	const prefix = "opencode-go/";
 	if (!reference.toLowerCase().startsWith(prefix)) return undefined;

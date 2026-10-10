@@ -11,6 +11,7 @@ import {
 	pifrostDirectMaxTokens,
 	normalizePifrostReasoningOptions,
 	physicalPolicyIdentity,
+	shouldOmitOpaqueReasoningSummary,
 	runPifrostProtocolPlan,
 	type PifrostAttemptStream,
 	type PifrostProtocolOutput,
@@ -288,4 +289,12 @@ test("CommandCode reasoning compatibility is resolved using physical identity", 
 	assert.equal(spec.api, "openai-responses");
 	assert.equal(spec.baseUrl, "http://bifrost/v1");
 	assert.equal(physicalPolicyIdentity("opencode-go/muse-spark-1.3-contributor")?.provider, "opencode-go");
+});
+
+
+test("opaque CommandCode DeepSeek Responses summary is omitted without disabling real reasoning", () => {
+	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/deepseek/deepseek-v4.1-flash"), true);
+	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/deepseek/deepseek-v4-flash"), false);
+	assert.equal(shouldOmitOpaqueReasoningSummary("deepseek/deepseek-v4.1-flash"), false);
+	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/inclusionai/ling-3.1-flash:free"), false);
 });

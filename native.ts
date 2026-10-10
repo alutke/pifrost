@@ -87,6 +87,7 @@ import {
 	pifrostAttemptMaxTokens,
 	pifrostDirectMaxTokens,
 	normalizePifrostReasoningOptions,
+	shouldOmitOpaqueReasoningSummary,
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
@@ -349,6 +350,7 @@ function streamDynamicPifrostRoute(
 				maxTokens,
 				headers,
 				reasoning,
+				...(shouldOmitOpaqueReasoningSummary(attempt.primary) ? { reasoningSummary: null } : {}),
 				disableReasoning: options?.disableReasoning,
 				toolChoice: options?.toolChoice,
 				serviceTier: options?.serviceTier,
