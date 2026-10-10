@@ -127,7 +127,7 @@ export function bifrostAttemptExtraBody(attempt: DynamicRouteAttempt): Record<st
  */
 /** Direct/non-dynamic dispatch has no per-attempt planner, but must still
  * clamp an OMP caller override to the resolved model's safe output limit. */
-export function pifrostDirectMaxTokens(requested: number | undefined, advertised: number | undefined): number | undefined {
+export function pifrostDirectMaxTokens(requested: number | null | undefined, advertised: number | null | undefined): number | undefined {
 	const limits = [requested, advertised].filter((value): value is number =>
 		typeof value === "number" && Number.isFinite(value) && value > 0);
 	return limits.length ? Math.min(...limits.map(Math.ceil)) : undefined;
