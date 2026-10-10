@@ -1,7 +1,8 @@
 ## 0.12.6 — 2026-10-10
 
 - Extend provider-neutral OpenAI Responses replay hygiene to leading synthetic markers in assistant messages containing additional text. Rewriting requires a same-turn synthetic `reasoning_text` marker, recognized replay markup, no annotations, and preserves all substantive text, tools and structure; no session or user-content mutation.
-- Add bounded streaming prefix handling for the observed CommandCode GOAT DeepSeek V4.1 Flash double-marker response only, with no heterogeneous Bifrost fallback. Streaming deltas, partial/final assistant content and thinking_end agree; unrecognized prefixes pass through unchanged. Native reasoning signatures and encrypted replay content are not rewritten.
+- Add bounded provider-neutral streaming prefix handling for the exact observed double-marker pattern, covering all physical Responses and Chat Completions routes including heterogeneous Bifrost fallback. Streaming deltas, partial/final assistant content and thinking_end agree; unrecognized prefixes pass through unchanged. Native reasoning signatures and encrypted replay content are not rewritten.
+- Add conservative Chat Completions history cleanup when an assistant contains both the exact synthetic reasoning field and a redundant visible mixed prefix, preserving all tool-call/result pairs.
 - Expose count-only diagnostics for Responses history changes, incoming Bifrost SSE reasoning frames and stream-prefix cleanup in per-session Pifrost route traces, with no logging or persistence of SSE data.
 - Add cross-model, annotated-content, multi-chunk streaming, non-match, terminal consistency and supplied-log-derived structural regression tests. Correctness is validated by CI; live inference against every upstream provider is not claimed.
 - Upstream OMP ownership remains: provenance-aware synthetic reasoning generation, native-history payload persistence and restoration are not modified by this release.

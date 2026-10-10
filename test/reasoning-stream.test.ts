@@ -105,3 +105,17 @@ test("SSE observer counts reasoning frames and marker presence without retaining
   assert.equal(counters.rawReasoningMarkerFrames, 1);
   assert.equal(JSON.stringify(counters).includes("unavailable"), false);
 });
+
+test("all physical model families share the same guarded streaming semantics", () => {
+  const providers = [
+    "CommandCode GOAT", "OpenCode Go", "OpenRouter", "DeepSeek", "Xiaomi MiMo",
+    "OpenAI", "Anthropic through OpenRouter", "ZAI", "Gemini via Bifrost",
+  ];
+  const encoded = "reasoning unavailable\nreasoning unavailable<think>Actual thinking";
+  for (const provider of providers) {
+    const x = simulate([encoded.slice(0, 6), encoded.slice(6, 22), encoded.slice(22)]);
+    assert.equal(x.counters.outputPrefixesRemoved, 1, provider);
+    assert.equal(x.emitted.filter(e => e.type === "thinking_delta")
+      .map(e => e.type === "thinking_delta" ? e.delta : "").join(""), "<think>Actual thinking", provider);
+  }
+});

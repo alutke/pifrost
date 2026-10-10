@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeResponsesReplay } from "../reasoning-replay.ts";
+import { normalizeCompletionsReplay, normalizeResponsesReplay } from "../reasoning-replay.ts";
 
 const reason = () => ({ type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "reasoning unavailable" }] });
 const placeholder = () => ({
@@ -185,4 +185,33 @@ test("matches the new Bifrost capture mixed-history shapes across every Response
     const out = (normalized.payload as { input: Record<string, unknown>[] }).input;
     for (let i = 0; i < 20; i++) assert(out.some(x => x.type === "function_call" && x.call_id === "t" + i));
   }
+});
+
+test("Chat Completions normalises only corroborated synthetic assistant demotion for all models", () => {
+  for (const model of ["commandcode/deepseek", "opencode-go/muse", "openrouter/claude",
+    "deepseek/direct", "xiaomi/mimo", "openai/gpt", "qwen/flash"]) {
+    const tagged = { role: "assistant", reasoning_content: "reasoning unavailable",
+      content: "<think>\nreasoning unavailable<dy>Keep these words</dy>",
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "grep", arguments: "{}" } }] };
+    const source = { model, messages: [{ role: "user", content: "question" }, tagged,
+      { role: "tool", tool_call_id: "call_1", content: "success" }] };
+    const a = normalizeCompletionsReplay(source);
+    assert.equal(a.rewrittenMixedMessages, 1);
+    const modified = (a.payload as typeof source).messages[1] as typeof tagged;
+    assert.equal(modified.content, "<think>\n<dy>Keep these words</dy>");
+    assert.equal(modified.reasoning_content, "reasoning unavailable");
+    assert.equal(modified.tool_calls, tagged.tool_calls);
+    assert.deepEqual(source.messages[1], tagged, "source unchanged");
+    assert.equal(normalizeCompletionsReplay(a.payload).payload, a.payload);
+  }
+});
+
+test("Chat Completions never strips quoted phrases, user messages or uncorraborated reasoning", () => {
+  const user = { role: "user", content: "<think>\nreasoning unavailable<dy>user content" };
+  const plain = { role: "assistant", content: "<think>\nreasoning unavailable<dy>real text" };
+  const annotated = { role: "assistant", reasoning_content: "valid genuine content",
+    content: "<think>\nreasoning unavailable<dy>real text" };
+  const source = { messages: [user, plain, annotated] };
+  assert.equal(normalizeCompletionsReplay(source).payload, source);
+  assert.equal(normalizeCompletionsReplay({ input: [] }).rewrittenMixedMessages, 0);
 });

@@ -148,3 +148,35 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
     removedVisiblePlaceholders, rewrittenMixedMessages, retainedAmbiguousPlaceholders, retainedReasoningItems,
   };
 }
+
+/**
+ * Chat Completions: preserve every assistant/tool turn and native reasoning
+ * continuation field. Only remove a redundant visible OMP demotion prefix
+ * when the SAME assistant message carries the exact synthetic reasoning hint.
+ * Works on direct aliases and all dynamic physical Chat routes.
+ */
+export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHygiene {
+  const body = record(payload);
+  if (!body || !Array.isArray(body.messages)) return {
+    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0,
+    retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
+  };
+  let rewrittenMixedMessages = 0;
+  const messages = body.messages.map((raw: unknown) => {
+    const item = record(raw);
+    if (item?.role !== "assistant" || typeof item.content !== "string") return raw;
+    const synthetic = item.reasoning_content === "reasoning unavailable" ||
+      item.reasoning_text === "reasoning unavailable" ||
+      item.reasoning === "reasoning unavailable";
+    if (!synthetic) return raw;
+    const cleaned = item.content.replace(MIXED_SYNTHETIC_PREFIX, "$1");
+    if (cleaned === item.content || !cleaned.trim()) return raw;
+    rewrittenMixedMessages++;
+    return { ...item, content: cleaned };
+  });
+  return {
+    payload: rewrittenMixedMessages ? { ...body, messages } : payload,
+    removedVisiblePlaceholders: 0, rewrittenMixedMessages,
+    retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
+  };
+}

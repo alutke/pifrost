@@ -1,10 +1,11 @@
 import type { AssistantMessage, AssistantMessageEvent } from "@oh-my-pi/pi-ai";
 
 /**
- * Narrow, evidence-led live-stream repair. In captured CommandCode DeepSeek
- * Responses streams Bifrost emitted TWO literal synthetic replay markers
- * followed by <think> before the genuine reasoning. Never suppress one
- * occurrence, other models, ordinary answers or unrecognised prefixes.
+ * Provider-neutral, evidence-led live-stream repair. In a captured
+ * DeepSeek Responses stream Bifrost emitted TWO literal synthetic replay
+ * markers followed by <think> before genuine reasoning. Exactly this
+ * prefix is removed for any model/protocol; never suppress one occurrence,
+ * genuine thoughts, ordinary answers or unrecognised prefixes.
  */
 const CONFIRMED_PREFIX = /^(?:reasoning unavailable[ \t]*(?:\r?\n[ \t]*)?){2,}(?=<think>)/u;
 const MAX_PREFIX_LOOKAHEAD = 256;
@@ -35,7 +36,13 @@ export function observeReasoningSse(
   counters: ReasoningHygieneCounters,
   event: { event?: string; data?: string },
 ): void {
-  if (typeof event.event !== "string" || !event.event.startsWith("response.reasoning")) return;
+  const responsesReasoning = typeof event.event === "string" && event.event.startsWith("response.reasoning");
+  const chatReasoning = typeof event.data === "string" && (
+    event.data.includes('"reasoning_content"') ||
+    event.data.includes('"reasoning_text"') ||
+    event.data.includes('"reasoning"')
+  );
+  if (!responsesReasoning && !chatReasoning) return;
   counters.rawReasoningSseFrames++;
   if (typeof event.data === "string" && event.data.includes("reasoning unavailable")) {
     counters.rawReasoningMarkerFrames++;
