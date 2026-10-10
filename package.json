@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.12.5",
+  "version": "0.12.6",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -33,6 +33,7 @@
     "endpoint-contracts.ts",
     "request-compatibility.ts",
     "reasoning-replay.ts",
+    "reasoning-stream.ts",
     "protocol-capability.ts",
     "route-inventory.ts",
     "dynamic-routing.ts",

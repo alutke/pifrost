@@ -1,3 +1,11 @@
+## 0.12.6 — 2026-10-10
+
+- Extend provider-neutral OpenAI Responses replay hygiene to leading synthetic markers in assistant messages containing additional text. Rewriting requires a same-turn synthetic `reasoning_text` marker, recognized replay markup, no annotations, and preserves all substantive text, tools and structure; no session or user-content mutation.
+- Add bounded streaming prefix handling for the observed CommandCode GOAT DeepSeek V4.1 Flash double-marker response only, with no heterogeneous Bifrost fallback. Streaming deltas, partial/final assistant content and thinking_end agree; unrecognized prefixes pass through unchanged. Native reasoning signatures and encrypted replay content are not rewritten.
+- Expose count-only diagnostics for Responses history changes, incoming Bifrost SSE reasoning frames and stream-prefix cleanup in per-session Pifrost route traces, with no logging or persistence of SSE data.
+- Add cross-model, annotated-content, multi-chunk streaming, non-match, terminal consistency and supplied-log-derived structural regression tests. Correctness is validated by CI; live inference against every upstream provider is not claimed.
+- Upstream OMP ownership remains: provenance-aware synthetic reasoning generation, native-history payload persistence and restoration are not modified by this release.
+
 ## 0.12.5 — 2026-10-10
 
 - Added strict, turn-aware Responses replay hygiene for all OpenAI Responses provider routes. OMP may demote synthetic unavailable reasoning to redundant visible assistant text across physical model/protocol handoffs; Pifrost now removes those exact standalone duplicates in the outgoing Responses payload while keeping all structured reasoning, real assistant output, calls and tool outputs unchanged.

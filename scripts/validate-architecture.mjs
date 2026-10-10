@@ -19,6 +19,7 @@ const runtime = [
   "endpoint-contracts.ts",
   "request-compatibility.ts",
   "reasoning-replay.ts",
+  "reasoning-stream.ts",
   "omp-context-policy.ts",
   "compact-before-skip.ts",
   "bifrost-cost-bridge.ts",

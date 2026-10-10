@@ -94,6 +94,8 @@ import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { normalizeResponsesReplay } from "./reasoning-replay.ts";
+import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
+import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import {
 	activePifrostCfgSession,
 	applyPifrostOmpProfile,
@@ -175,6 +177,7 @@ function bridgeBifrostUsageCostStream(
 	source: AssistantMessageEventStream,
 	capture: BifrostCostCapture,
 	onTerminal?: (outcome: "done" | "error" | "thrown") => void,
+	reasoningFilter?: ResponsesReasoningPrefixFilter,
 ): AssistantMessageEventStream {
 	const output = new AssistantMessageEventStream();
 	output.forwardLocalWorkFrom(source);
@@ -187,7 +190,9 @@ function bridgeBifrostUsageCostStream(
 		};
 		try {
 			for await (const event of source) {
-				output.push(eventWithBifrostCost(event, capture));
+				for (const emitted of reasoningFilter ? reasoningFilter.consume(event) : [event]) {
+					output.push(eventWithBifrostCost(emitted, capture));
+				}
 				if (event.type === "done" || event.type === "error") terminal(event.type);
 			}
 		} catch (error) {
@@ -352,6 +357,14 @@ function streamDynamicPifrostRoute(
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
 		if (attempt.protocol === "openai-responses") {
 			const upstreamOnPayload = options?.onPayload;
+			const upstreamOnSseEvent = options?.onSseEvent;
+			const hygieneCounters = newReasoningHygieneCounters();
+			// Live-prefix repair is scoped to the exact provider/model observed.
+			// Bifrost can fall back independently; do not rewrite a different
+			// provider's output on heterogeneous same-protocol fallbacks.
+			const canFilterOutput = shouldOmitOpaqueReasoningSummary(attempt.primary) &&
+				attempt.fallbacks.length === 0;
+			const reasoningFilter = new ResponsesReasoningPrefixFilter(hygieneCounters, canFilterOutput);
 			const responseOptions: OpenAIResponsesOptions = {
 				...options,
 				apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
@@ -377,12 +390,22 @@ function streamDynamicPifrostRoute(
 					// reasoning item and redundant visible text in an assistant run.
 					// Never strip the structured content required by DeepSeek.
 					const hygiene = normalizeResponsesReplay(bridged);
-					if (hygiene.removedVisiblePlaceholders > 0) {
+					hygieneCounters.replayRemoved = hygiene.removedVisiblePlaceholders;
+					hygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
+					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
+					if (hygiene.removedVisiblePlaceholders > 0 || hygiene.rewrittenMixedMessages > 0) {
 						process.stderr.write(
-							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible synthetic reasoning messages; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
+							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible messages; rewrote ${hygiene.rewrittenMixedMessages} mixed prefixes; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
 						);
 					}
 					return hygiene.payload;
+				},
+				onSseEvent: (event, requestModel) => {
+					observeReasoningSse(hygieneCounters, event);
+					try { upstreamOnSseEvent?.(event, requestModel); } catch {
+						// User diagnostics may not terminate the response stream.
+					}
 				},
 				extraBody: bifrostAttemptExtraBody(attempt),
 				fetch: baseFetch,
@@ -400,7 +423,8 @@ function streamDynamicPifrostRoute(
 					attempt: attemptIndex + 1,
 					requestedPrimary: attempt.primary,
 					outcome,
-				}, costCapture),
+				}, costCapture, hygieneCounters),
+				reasoningFilter,
 			);
 		}
 

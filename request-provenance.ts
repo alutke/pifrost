@@ -1,4 +1,5 @@
 import type { BifrostCostCapture } from "./bifrost-cost-bridge.ts";
+import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 
 export interface PifrostRouteTrace {
 	timestamp: number;
@@ -18,6 +19,7 @@ export interface PifrostRouteTrace {
 	requestType?: string;
 	upstreamLatencyMs?: number;
 	totalCost?: number;
+	reasoningHygiene?: ReasoningHygieneCounters;
 	outcome: "done" | "error" | "thrown";
 }
 
@@ -50,6 +52,7 @@ export function recordBifrostCaptureTrace(
 		outcome: PifrostRouteTrace["outcome"];
 	},
 	capture: BifrostCostCapture,
+	reasoningHygiene?: ReasoningHygieneCounters,
 ): PifrostRouteTrace {
 	return recordPifrostRouteTrace(sessionId, {
 		...base,
@@ -64,6 +67,7 @@ export function recordBifrostCaptureTrace(
 		...(capture.requestType ? { requestType: capture.requestType } : {}),
 		...(capture.upstreamLatencyMs !== undefined ? { upstreamLatencyMs: capture.upstreamLatencyMs } : {}),
 		...(capture.total !== undefined ? { totalCost: capture.total } : {}),
+		...(reasoningHygiene ? { reasoningHygiene: { ...reasoningHygiene } } : {}),
 	});
 }
 
@@ -96,6 +100,14 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			trace.requestId ? `request-id=${trace.requestId}` : undefined,
 			trace.upstreamLatencyMs !== undefined ? `upstream=${trace.upstreamLatencyMs.toFixed(1)}ms` : undefined,
 			money(trace.totalCost) ? `cost=${money(trace.totalCost)}` : undefined,
+			trace.reasoningHygiene ? [
+				`history-removed=${trace.reasoningHygiene.replayRemoved}`,
+				`history-mixed=${trace.reasoningHygiene.replayMixedRewritten}`,
+				`history-ambiguous=${trace.reasoningHygiene.replayAmbiguousRetained}`,
+				`sse-reasoning=${trace.reasoningHygiene.rawReasoningSseFrames}`,
+				`sse-markers=${trace.reasoningHygiene.rawReasoningMarkerFrames}`,
+				`stream-prefixes=${trace.reasoningHygiene.outputPrefixesRemoved}`,
+			].join(" ") : undefined,
 			`outcome=${trace.outcome}`,
 		].filter(Boolean);
 		lines.push(`  ${trace.logicalModel}: ${details.join(" ")}`);
