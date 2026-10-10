@@ -1,8 +1,8 @@
 ## 0.12.5 — 2026-10-10
 
-- Added strict, turn-aware Responses replay hygiene for CommandCode GOAT DeepSeek V4.1 Flash. OMP may demote synthetic unavailable reasoning to redundant visible assistant text across physical model/protocol handoffs; Pifrost now removes those exact standalone duplicates in the outgoing Responses payload while keeping all structured reasoning, real assistant output, calls and tool outputs unchanged.
+- Added strict, turn-aware Responses replay hygiene for all OpenAI Responses provider routes. OMP may demote synthetic unavailable reasoning to redundant visible assistant text across physical model/protocol handoffs; Pifrost now removes those exact standalone duplicates in the outgoing Responses payload while keeping all structured reasoning, real assistant output, calls and tool outputs unchanged.
 - Ambiguous assistant turns retain one placeholder rather than producing a reasoning-only turn; mixed real thinking, unknown message shapes, user content and annotated text remain untouched. The source OMP session is never modified, and request telemetry records counts only (no content).
-- Added synthetic 590-item-shape regression tests, no-mutation/idempotence, call/result pairing and strict false-positive tests. No global disablement of DeepSeek continuation policy.
+- Added synthetic 590-item-shape regression tests, no-mutation/idempotence, call/result pairing and strict false-positive and cross-provider tests. No global disablement of DeepSeek continuation policy.
 - Limitation: upstream OMP may still emit synthetic reasoning summaries in provider responses or persist them before Pifrost's wire normalizer; resolving that fully requires a provenance-aware upstream OMP change. No external provider live inference was run by GitHub CI.
 
 ## 0.12.4 — 2026-10-10

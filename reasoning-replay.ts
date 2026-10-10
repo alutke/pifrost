@@ -3,9 +3,10 @@
  * text during cross-model history replay. DeepSeek Responses still requires
  * its structured, non-empty reasoning_text items; these are never changed.
  *
- * Run only on an explicitly confirmed CommandCode/DeepSeek Responses route,
- * after OMP has built its wire payload. Do not mutate persisted session
- * messages, tool call IDs, or real model-generated reasoning.
+ * Apply at the physical Responses wire boundary for every provider.
+ * No rewriting occurs without a matching OMP synthetic reasoning item
+ * in the same assistant run. Do not mutate persisted session messages,
+ * tool call IDs, or real model-generated reasoning.
  */
 type JsonRecord = Record<string, unknown>;
 
@@ -27,6 +28,16 @@ function isRedundantAssistantPlaceholder(value: unknown): boolean {
   return PURE_SYNTHETIC_THINKING.test(block.text);
 }
 
+/** OMP's exact all-turn replay fallback; genuine/opaque reasoning is never a match. */
+function isSyntheticReasoningReplay(value: unknown): boolean {
+  const item = record(value);
+  if (item?.type !== "reasoning" || typeof item.encrypted_content === "string" ||
+      !Array.isArray(item.content) || item.content.length !== 1) return false;
+  if (Array.isArray(item.summary) && item.summary.length > 0) return false;
+  const part = record(item.content[0]);
+  return part?.type === "reasoning_text" && part.text === "reasoning unavailable";
+}
+
 function isBoundary(value: unknown): boolean {
   const item = record(value);
   if (!item) return true;
@@ -39,7 +50,13 @@ function isBoundary(value: unknown): boolean {
 function isMeaningfulAssistant(value: unknown): boolean {
   const item = record(value);
   if (!item) return false;
-  if (item.type === "message" && item.role === "assistant") return !isRedundantAssistantPlaceholder(item);
+  if (item.type === "message" && item.role === "assistant") {
+    if (isRedundantAssistantPlaceholder(item) || !Array.isArray(item.content)) return false;
+    return item.content.some((part: unknown) => {
+      const block = record(part);
+      return block?.type === "output_text" && typeof block.text === "string" && block.text.trim().length > 0;
+    });
+  }
   return item.type === "function_call" || item.type === "custom_tool_call" ||
     item.type === "computer_call" || item.type === "local_shell_call";
 }
@@ -57,7 +74,7 @@ export interface ResponsesReplayHygiene {
  * text is redundant. Otherwise retain one message so the run does not become
  * reasoning-only; this fails closed for unrecognised host contracts.
  */
-export function normalizeDeepSeekResponsesReplay(payload: unknown): ResponsesReplayHygiene {
+export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygiene {
   const body = record(payload);
   const input = body?.input;
   if (!Array.isArray(input)) return {
@@ -74,10 +91,13 @@ export function normalizeDeepSeekResponsesReplay(payload: unknown): ResponsesRep
   function flush() {
     if (!run.length) return;
     const hasMeaningful = run.some(isMeaningfulAssistant);
+    const hasSyntheticReasoning = run.some(isSyntheticReasoningReplay);
     let keptPure = false;
     for (const item of run) {
       if (record(item)?.type === "reasoning") retainedReasoningItems++;
-      if (!isRedundantAssistantPlaceholder(item)) { result.push(item); continue; }
+      // Without corroborating OMP synthetic reasoning this could be literal
+      // model-generated text; preserve it, regardless of provider identity.
+      if (!hasSyntheticReasoning || !isRedundantAssistantPlaceholder(item)) { result.push(item); continue; }
       if (!hasMeaningful && !keptPure) {
         keptPure = true;
         retainedAmbiguousPlaceholders++;
