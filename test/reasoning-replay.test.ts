@@ -5,7 +5,7 @@ import { normalizeDeepSeekResponsesReplay } from "../reasoning-replay.ts";
 const reason = () => ({ type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "reasoning unavailable" }] });
 const placeholder = () => ({
   type: "message", status: "completed", role: "assistant",
-  content: [{ type: "output_text", text: "<think>\\nreasoning unavailable\\n</think>", annotations: [] }],
+  content: [{ type: "output_text", text: "<think>\nreasoning unavailable\n</think>", annotations: [] }],
 });
 const call = (id: string) => ({ type: "function_call", call_id: id, name: "grep", arguments: "{}" });
 const output = (id: string) => ({ type: "function_call_output", call_id: id, output: "ok" });
@@ -40,7 +40,7 @@ test("retains one ambiguous placeholder in an otherwise reasoning-only assistant
 
 test("leaves mixed thinking, real reasoning, quoted user text, annotated messages and unknown structures untouched", () => {
   const mixed = { type: "message", role: "assistant", content: [{
-    type: "output_text", text: "<think>\\nreasoning unavailable<dy>Actual further thought</think>",
+    type: "output_text", text: "<think>\nreasoning unavailable<dy>Actual further thought</think>",
   }] };
   const annotated = { type: "message", role: "assistant", content: [{
     type: "output_text", text: "<think>reasoning unavailable</think>", annotations: [{ type: "file_citation" }],
