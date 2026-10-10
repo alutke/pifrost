@@ -8,6 +8,7 @@ import { formatRoutePricing, type RoutePricingDiagnostic } from "./pricing-time.
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 
 import {
+	confirmedProviderOutputCeiling,
 	resolveModelReference,
 	type ModelResolutionKind,
 } from "./model-resolution.ts";
@@ -460,7 +461,8 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		model.top_provider?.max_completion_tokens,
 		model.per_request_limits?.completion_tokens,
 	);
-	const maxTokens = Math.min(contextWindow, liveMaxTokens ?? DEFAULT_MAX_TOKENS);
+	const confirmedOutputCeiling = confirmedProviderOutputCeiling(id);
+	const maxTokens = Math.min(contextWindow, liveMaxTokens ?? DEFAULT_MAX_TOKENS, confirmedOutputCeiling ?? Infinity);
 
 	const hasParameterInventory = Array.isArray(model.supported_parameters);
 	const parameters = model.supported_parameters?.map((parameter) => parameter.toLowerCase()) ?? [];
@@ -506,7 +508,8 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		...(protocols ? { protocols } : {}),
 		capabilitySources: {
 			contextWindow: liveContextWindow ? "live" : "fallback",
-			maxTokens: liveMaxTokens ? "live" : "fallback",
+			maxTokens: confirmedOutputCeiling !== undefined && (!liveMaxTokens || liveMaxTokens > confirmedOutputCeiling)
+				? "vendor-override" : liveMaxTokens ? "live" : "fallback",
 			image: hasInputModalities ? "live" : "fallback",
 			reasoning: model.reasoning !== undefined || hasParameterInventory ? "live" : "fallback",
 			reasoningEfforts: (model.reasoning?.supported_efforts?.length ?? 0) > 0 ? "live" : "fallback",

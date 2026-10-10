@@ -291,3 +291,14 @@ test("resolver selects the best equivalent candidate without requiring global so
 	assert.equal(result.model?.id, "deepseek/deepseek-v4-pro");
 	assert.equal(result.kind, "exact");
 });
+
+import { confirmedProviderOutputCeiling } from "../model-resolution.ts";
+
+test("Ling 3.1 free observed output cap applies to exact CommandCode entitlement only", () => {
+	for (const name of ["CommandCode GOAT/inclusionai/ling-3.1-flash:free", "command-code-goat/inclusionai/ling-3.1-flash:free"]) {
+		assert.equal(confirmedProviderOutputCeiling(name), 32_768);
+	}
+	for (const name of ["openrouter/inclusionai/ling-3.1-flash:free", "CommandCode GOAT/inclusionai/ling-3.1-flash", "CommandCode GOAT/inclusionai/ling-3.2-flash:free"]) {
+		assert.equal(confirmedProviderOutputCeiling(name), undefined);
+	}
+});

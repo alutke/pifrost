@@ -1,6 +1,7 @@
 import type { Effort as OmpEffort, Model as OmpModel } from "@oh-my-pi/pi-ai";
 import type { PeakHoursSchedule, RoutePricingDiagnostic } from "./pricing-time.ts";
 import { resolvePifrostReasoningWithToolsPolicy } from "./transport-model.ts";
+import { confirmedProviderOutputCeiling } from "./model-resolution.ts";
 import {
 	wireProtocolsFrom,
 	type PifrostWireProtocol,
@@ -785,9 +786,12 @@ export function buildRichRouteCatalog(
 			cacheRead,
 			cacheWrite,
 		});
+		const confirmedOutputCeiling = confirmedProviderOutputCeiling(reference);
+		const contractedOutput = confirmedOutputCeiling === undefined ? output.value : Math.min(output.value!, confirmedOutputCeiling);
 		const sources: CapabilityProvenance = {
 			contextWindow: context.source,
-			maxTokens: output.source,
+			maxTokens: confirmedOutputCeiling !== undefined && contractedOutput! < output.value!
+				? "vendor-override" : output.source,
 			image: image.source,
 			reasoning: reasoning.source,
 			reasoningEfforts: thinking.source,
@@ -811,7 +815,7 @@ export function buildRichRouteCatalog(
 			id: reference,
 			name: reference,
 			contextWindow: context.value,
-			maxTokens: Math.min(context.value, output.value),
+			maxTokens: Math.min(context.value, contractedOutput!),
 			input: image.value ? ["text", "image"] : ["text"],
 			reasoning: Boolean(reasoning.value),
 			thinking: reasoning.value ? thinking.value : undefined,
