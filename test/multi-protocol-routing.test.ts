@@ -300,3 +300,41 @@ test("opaque CommandCode DeepSeek Responses summary is omitted without disabling
 	assert.equal(shouldOmitOpaqueReasoningSummary("deepseek/deepseek-v4.1-flash"), false);
 	assert.equal(shouldOmitOpaqueReasoningSummary("CommandCode GOAT/inclusionai/ling-3.1-flash:free"), false);
 });
+
+
+test("same-protocol incompatible pre-output fallback uses second physical policy safely", async () => {
+	const logical = logicalModel();
+	const m1 = member("opencode-go/model-a", "openai-completions");
+	const m2 = member("CommandCode GOAT/model-b", "openai-completions");
+	const attempts = [m1, m2].map(m => ({protocol: "openai-completions" as const,
+		primary:m.reference, fallbacks:[], members:[m]}));
+	const route = {...plan(),attempts};
+	const visited:string[]=[];
+	const collected=outputCollector();
+	await runPifrostProtocolPlan(logical,route,collected.output,a=>{
+		visited.push(a.primary);
+		return a.primary===m1.reference ? failedAttempt(a.primary,"openai-completions") : successfulAttempt(a.primary,"openai-completions");
+	});
+	assert.deepEqual(visited,[m1.reference,m2.reference]);
+	assert.deepEqual(collected.events.map(e=>e.type),["start","done"]);
+});
+
+test("same-protocol incompatible fallback cannot replay after first reasoning output", async () => {
+	const logical=logicalModel();
+	const m1=member("opencode-go/model-a","openai-responses");
+	const m2=member("CommandCode GOAT/model-b","openai-responses");
+	const route={...plan(),attempts:[m1,m2].map(m=>({protocol:"openai-responses" as const,primary:m.reference,fallbacks:[],members:[m]}))};
+	const visited:string[]=[];
+	const collected=outputCollector();
+	await runPifrostProtocolPlan(logical,route,collected.output,a=>{
+		visited.push(a.primary);
+		const partial=assistant(a.primary,"openai-responses","stop");
+		partial.content=[{type:"thinking",thinking:"progress"}];
+		const failure=assistant(a.primary,"openai-responses","error");
+		failure.errorMessage="upstream failure after reasoning";
+		return eventStream([{type:"start",partial},{type:"thinking_start",contentIndex:0,partial},
+			{type:"error",reason:"error",error:failure}]);
+	});
+	assert.deepEqual(visited,[m1.reference]);
+	assert.deepEqual(collected.events.map(e=>e.type),["start","thinking_start","error"]);
+});

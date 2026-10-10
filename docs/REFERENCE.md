@@ -322,7 +322,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.12.2
+0.12.3
 ```
 
 Bun can also install the package globally:
@@ -1545,3 +1545,13 @@ Management credentials and raw VK values must never be added to provider runtime
 ## Attribution
 
 Pifrost is derived from `lxdlam/pi-bifrost-provider` under the MIT license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
+
+### Physical request compatibility (v0.12.3)
+
+Pifrost creates physical Chat/Responses policies for every provider-qualified Bifrost route (including unrecognised third-party provider namespaces). Physical requests retain the original route's `requestModelId` but never inherit the logical alias's reasoning or tool dialect. A logical route remains a conservative selection envelope, not a physical adapter policy.
+
+For a dynamic route, native OMP builds a request-compatibility signature for each eligible provider and model. Adjacent members can share a Bifrost-managed same-protocol fallback request only if their provider, identity, reasoning replay, tool and role fields, and relevant wire policy agree. Differing or unknown signatures create a distinct pre-output attempt in the configured route order. No retries occur after model text, thinking or tool output. A stderr diagnostic reports each split without leaking request content. Bifrost remains authoritative for ordering, credentials, quotas and compatible same-protocol fallbacks.
+
+Verified hard output-limit exceptions are stored in `endpoint-contracts.ts` with upstream evidence, not inferred for other entitlements. Actual output limits remain the lower of confirmed and live capabilities. Cache schema v18 invalidates earlier capability policy snapshots.
+
+Do not delete synthetic DeepSeek reasoning replay placeholders: some DeepSeek-compatible adapters require non-empty replay content. Pifrost's exact CommandCode DeepSeek V4.1 summary-omission workaround is transport-only. For production provider verification, use Bifrost request logs and run representative reasoning-on/off, tools, multi-turn history, compaction, and fallback tests; the repository's automated provider matrix is an offline compatibility test, **not** a claim of live access to every external provider.

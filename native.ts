@@ -91,6 +91,7 @@ import {
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
+import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import {
 	activePifrostCfgSession,
@@ -294,6 +295,7 @@ function streamDynamicPifrostRoute(
 	const betweenToolsThinking = options?.disableReasoning === true && profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true);
 	const planningBody = dynamicRoutePlanningBody(model, context, options, { deferredTools, betweenToolsThinking });
 	const estimatedInputTokensByMember = new Map<string, number>();
+	const compatibilityByMember = new Map<string, string>();
 	for (const member of profile.members) {
 		const protocol = resolveDynamicMemberProtocolForRequest(member, planningBody, PIFROST_NATIVE_PROTOCOLS);
 		if (!protocol) continue;
@@ -301,6 +303,7 @@ function streamDynamicPifrostRoute(
 			const candidate = buildPifrostTransportModel(
 				createPifrostMemberModelSpec(model, member, protocol),
 			);
+			compatibilityByMember.set(member.reference, physicalRequestContractKey(candidate));
 			const estimate = estimateOmpContextInputTokens(
 				context,
 				createModelAwareContextTokenizer({
@@ -330,8 +333,12 @@ function streamDynamicPifrostRoute(
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
 		estimatedInputTokens,
 		estimatedInputTokensByMember,
+		compatibilityByMember,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
+	if (plan.compatibilityBreaks?.length) {
+		process.stderr.write(`pifrost: ${model.id} split ${plan.compatibilityBreaks.length} same-protocol fallback boundary/boundaries due to physical wire incompatibility; only pre-output retries are permitted\\n`);
+	}
 	const underlyingFetch = options?.fetch ?? globalThis.fetch;
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
@@ -454,8 +461,10 @@ function streamPifrostOpenAI(
 	// Non-dynamic aliases and physical models retain the long-standing Chat
 	// transport. The fetch wrapper is kept as a no-op-compatible guard for
 	// callers that install a route profile between model selection and dispatch.
+	const directPhysical = physicalPolicyIdentity(model.id);
 	const transportModel = buildPifrostTransportModel({
 		...model,
+		...(directPhysical ? { id: directPhysical.id, provider: directPhysical.provider, requestModelId: directPhysical.requestModelId } : {}),
 		api: "openai-completions",
 		compat: model.compatConfig,
 	} as ModelSpec<"openai-completions">);

@@ -80,6 +80,7 @@ export interface DynamicRoutePlan {
 	requiredContextTokens: number;
 	attempts: DynamicRouteAttempt[];
 	excluded: Array<{ reference: string; reasons: string[] }>;
+	compatibilityBreaks?: Array<{ previous: string; next: string; protocol: PifrostWireProtocol }>;
 }
 
 export interface DynamicRouteEstimateOptions {
@@ -100,6 +101,9 @@ export interface DynamicRouteEstimateOptions {
 	estimatedInputTokensByMember?: ReadonlyMap<string, number>;
 	/** True only when the caller explicitly requested the serialized max-token cap. */
 	outputCapExplicit?: boolean;
+	/** OMP physical wire policy signatures for all route members. Missing keys
+	 * must split requests rather than silently assuming compatibility. */
+	compatibilityByMember?: ReadonlyMap<string, string>;
 }
 
 type DynamicAliasDefinition = {
@@ -504,12 +508,25 @@ export function planDynamicRouteAttempts(
 ): DynamicRoutePlan {
 	const evaluated = evaluateDynamicRoute(profile, body, options, supportedProtocols);
 	const attempts: DynamicRouteAttempt[] = [];
+	const compatibilityBreaks: NonNullable<DynamicRoutePlan["compatibilityBreaks"]> = [];
 	for (const item of evaluated.eligible) {
 		const previous = attempts.at(-1);
-		if (previous?.protocol === item.protocol) {
+		const last = previous?.members.at(-1);
+		// Preserve Bifrost same-protocol fallbacks when the *whole* encoder contract
+		// agrees. Otherwise retry pre-output with the next physical OMP encoder.
+		const compatible = !options.compatibilityByMember || (
+			last !== undefined &&
+			options.compatibilityByMember.has(last.reference) &&
+			options.compatibilityByMember.has(item.member.reference) &&
+			options.compatibilityByMember.get(last.reference) === options.compatibilityByMember.get(item.member.reference)
+		);
+		if (previous?.protocol === item.protocol && compatible) {
 			previous.members.push(item.member);
 			previous.fallbacks.push(item.member.reference);
 			continue;
+		}
+		if (previous?.protocol === item.protocol && last) {
+			compatibilityBreaks.push({ previous: last.reference, next: item.member.reference, protocol: item.protocol });
 		}
 		attempts.push({
 			protocol: item.protocol,
@@ -526,6 +543,7 @@ export function planDynamicRouteAttempts(
 		requiredContextTokens: evaluated.requiredContextTokens,
 		attempts,
 		excluded: evaluated.excluded,
+		...(compatibilityBreaks.length ? { compatibilityBreaks } : {}),
 	};
 }
 

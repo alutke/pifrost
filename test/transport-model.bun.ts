@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { test } from "bun:test";
 import type { Model, ModelSpec } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
+import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
+import { physicalPolicyIdentity, physicalRequestContractKey } from "../request-compatibility.ts";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import {
 	buildPifrostTransportModel,
@@ -158,4 +160,40 @@ test("CommandCode DeepSeek V4.1 uses the same OMP reasoning policy as its physic
 		assert.equal(transport.reasoning, true);
 		assert.deepEqual(requestProjection(transport), requestProjection(buildModel(spec)));
 	}
+});
+
+
+test("all bundled OMP provider namespaces retain physical policy materializer equivalence on Chat and Responses", () => {
+	const providers = getBundledProviders();
+	let checked = 0;
+	for (const provider of providers) {
+		const rows = getBundledModels(provider);
+		const exemplar = rows.find((row) => typeof row.id === "string" && row.id.length > 0);
+		if (!exemplar) continue;
+		const reference = provider + "/" + exemplar.id;
+		const identity = physicalPolicyIdentity(reference);
+		assert.ok(identity, reference);
+		assert.equal(identity.provider, provider, reference);
+		assert.equal(identity.requestModelId, reference);
+		const logical = {
+			id: "omp-test", provider: "bifrost", api: "openai-completions", name: "omp-test",
+			baseUrl: "http://bifrost/v1", cost, contextWindow: 262_144, maxTokens: 32_768,
+			compatConfig: { reasoningContentField: "do-not-inherit", supportsDeveloperRole: true },
+		} as unknown as Model;
+		for (const api of ["openai-completions", "openai-responses"] as const) {
+			const spec = createPifrostMemberModelSpec(logical, {
+				reference, resolvedModelId: reference, contextWindow: 262_144, maxTokens: 32_768,
+				input: ["text"], reasoning: exemplar.reasoning ?? false, supportsTools: true,
+				protocols: [api], compat: { supportsToolChoice: true },
+			}, api);
+			assert.equal((spec.compat as Record<string, unknown>).reasoningContentField, undefined);
+			const actual = buildPifrostTransportModel(spec);
+			const expected = buildModel(spec);
+			assert.deepEqual(requestProjection(actual), requestProjection(expected), reference + " " + api);
+			assert.equal(actual.requestModelId, reference);
+			assert.ok(physicalRequestContractKey(actual).length > 50);
+			checked += 1;
+		}
+	}
+	assert.ok(checked >= 20, "expected broad coverage of pinned OMP provider catalogue");
 });

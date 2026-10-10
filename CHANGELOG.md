@@ -1,3 +1,13 @@
+## 0.12.3 — 2026-10-10
+
+- Added provider-agnostic physical model identity and request compatibility contracts for **all Bifrost-qualified providers** (not only CommandCode/DeepSeek). Resolved OMP reasoning, history replay, effort, tool and role semantics from the physical member rather than a logical alias.
+- Protected same-protocol Bifrost fallback from incompatible wire encoders: compatible contiguous members remain Bifrost-managed; incompatible or unknown contracts are attempted in original order before any streamed model output, never after output has begun.
+- Removed logical alias compatibility inheritance from physical request models; retained physical capability restrictions and Bifrost routing IDs.
+- Added an evidence-backed endpoint contract registry, exact reseller/entitlement output limit protections, and fractional-output fail-safe rounding.
+- Added provider-family test matrix across physical identities, reasoning-off, tool policies, fallback grouping, unknown contracts and protocol sequencing; validates both protocol materializers for every bundled OMP provider namespace and pre-output/no-retry guarantees; advanced catalogue cache schema to v18.
+- Added production-dependency high-severity npm audit gate and advanced validated OMP compatibility canary and compiled binary from 18.8.6 to 18.8.7.
+- Known provider boundary: Pifrost cannot guarantee external Bifrost rules will not independently reroute an explicitly selected physical model after dispatch; gateway-managed conversion must be verified with live upstream logs before treating such routes as wire-compatible.
+
 ## 0.12.2 — 2026-10-10
 
 - Bound the exact CommandCode GOAT `inclusionai/ling-3.1-flash:free` entitlement to its observed 32,768-token completion ceiling, even when the live Bifrost model list or public datasheet advertises 65,536. No blanket `:free` stripping or cross-provider limit inheritance.
