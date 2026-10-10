@@ -50,7 +50,11 @@ test("leaves mixed thinking, real reasoning, quoted user text, annotated message
   ];
   const body = { input };
   const normalized = normalizeResponsesReplay(body);
-  assert.equal(normalized.payload, body);
+  // This fixture contains an explicitly corroborated mixed marker; v0.12.6
+  // removes it while retaining the substantive model text.
+  assert.equal(normalized.rewrittenMixedMessages, 1);
+  const clean = (normalized.payload as typeof body).input;
+  assert.equal((clean[2] as typeof mixed).content[0].text, "<think>\\n<dy>Actual further thought</think>");
   assert.equal(normalized.removedVisiblePlaceholders, 0);
   assert.equal(normalized.retainedReasoningItems, 1);
   assert.equal(normalizeResponsesReplay({ data: "no input" }).removedVisiblePlaceholders, 0);
