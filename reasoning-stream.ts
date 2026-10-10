@@ -39,6 +39,7 @@ export interface ReasoningHygieneCounters {
   outputPrefixCharsRemoved: number;
   outputMarkerOnlyCleared: number;
   outputMarkerOnlyRetainedSigned: number;
+  outputMarkerOnlyRetainedNoContinuation: number;
 }
 export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
   return {
@@ -48,6 +49,7 @@ export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
     rawReasoningMarkerFrames: 0, outputThinkingDeltas: 0,
     outputPrefixesRemoved: 0, outputPrefixCharsRemoved: 0,
     outputMarkerOnlyCleared: 0, outputMarkerOnlyRetainedSigned: 0,
+    outputMarkerOnlyRetainedNoContinuation: 0,
   };
 }
 
@@ -75,6 +77,34 @@ type Pending = {
   buffered: string;
   last: Extract<AssistantMessageEvent, { type: "thinking_delta" }>;
 };
+type MarkerOnlyCandidate = {
+  pending: Pending;
+  end: Extract<AssistantMessageEvent, { type: "thinking_end" }>;
+};
+
+/**
+ * Suppressing a thinking-only assistant message with no answer/tool would
+ * silently turn a valid provider response into an empty completion. Confirm
+ * another substantive block before committing any marker-only suppression.
+ */
+function isMeaningfulContinuation(event: AssistantMessageEvent): boolean {
+  switch (event.type) {
+    case "toolcall_start":
+    case "toolcall_delta":
+    case "toolcall_end":
+    case "text_start":
+    case "text_delta":
+    case "text_end":
+    case "image_end":
+      return true;
+    case "done":
+      return event.message.content.some((block) =>
+        block.type === "toolCall" || block.type === "image" ||
+        (block.type === "text" && block.text.trim().length > 0));
+    default:
+      return false;
+  }
+}
 
 /**
  * Stateful transform of OMP's published event protocol. Buffers only an
@@ -84,6 +114,7 @@ type Pending = {
  */
 export class ResponsesReasoningPrefixFilter {
   private pending?: Pending;
+  private markerOnlyCandidate?: MarkerOnlyCandidate;
   private decided: "pass" | "strip" | undefined;
   private activeIndex?: number;
   private readonly removed = new Map<number, string>();
@@ -124,6 +155,25 @@ export class ResponsesReasoningPrefixFilter {
   /** Returns zero or more valid OMP events. */
   consume(event: AssistantMessageEvent): AssistantMessageEvent[] {
     if (!this.enabled) return [event];
+    if (this.markerOnlyCandidate) {
+      const candidate = this.markerOnlyCandidate;
+      this.markerOnlyCandidate = undefined;
+      if (isMeaningfulContinuation(event)) {
+        const prefix = candidate.pending.buffered;
+        this.removed.set(candidate.pending.index, prefix);
+        this.counters.outputMarkerOnlyCleared++;
+        const end = this.snapshot(candidate.end);
+        if (end.type !== "thinking_end") {
+          return [{ ...candidate.pending.last, delta: prefix }, candidate.end, ...this.consume(event)];
+        }
+        return [{ ...end, content: "" }, ...this.consume(event)];
+      }
+      // Fail closed: without an actual answer or tool call, preserve the
+      // provider's marker-only content and every event byte.
+      this.counters.outputMarkerOnlyRetainedNoContinuation++;
+      return [{ ...candidate.pending.last, delta: candidate.pending.buffered },
+        candidate.end, ...this.consume(event)];
+    }
     if (event.type === "start") {
       const flushed = this.flushPending();
       this.decided = undefined;
@@ -156,15 +206,12 @@ export class ResponsesReasoningPrefixFilter {
       if (this.pending && this.pending.index === event.contentIndex &&
           MARKERS_ONLY.test(this.pending.buffered)) {
         if (isUnsignedOrSyntheticId(event)) {
-          const removed = this.pending.buffered;
+          const pending = this.pending;
           this.pending = undefined;
-          this.removed.set(event.contentIndex, removed);
-          this.counters.outputMarkerOnlyCleared++;
           this.activeIndex = undefined;
           this.decided = undefined;
-          const updated = this.snapshot(event);
-          if (updated.type !== "thinking_end") return [event];
-          return [{ ...updated, content: "" }];
+          this.markerOnlyCandidate = { pending, end: event };
+          return [];
         }
         this.counters.outputMarkerOnlyRetainedSigned++;
       }

@@ -235,6 +235,7 @@ test("v0.12.6 captured nested placeholders are pure synthetic; remove duplicates
     const before = { input: [reason(), pure, real, call("z"), output("z")] };
     const result = normalizeResponsesReplay(before);
     assert.equal(result.removedVisiblePlaceholders, 1);
+    assert.equal(result.rewrittenNestedMessages, 1);
     assert.equal(result.rewrittenMixedMessages, 0);
     assert.deepEqual((result.payload as typeof before).input, [before.input[0], real, before.input[3], before.input[4]]);
     assert.deepEqual(before.input[1], pure);

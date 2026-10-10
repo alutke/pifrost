@@ -227,3 +227,42 @@ test("native OpenAI rs_* transport item without a signature must remain opaque",
   assert.equal(counters.outputMarkerOnlyRetainedSigned, 1);
   assert.equal(emitted.filter(x => x.type === "thinking_delta").map(x => x.type === "thinking_delta" ? x.delta : "").join(""), text);
 });
+
+
+test("marker-only thinking without a substantive continuation is preserved (never create empty answer)", () => {
+  const text = "reasoning unavailable\nreasoning unavailable";
+  const counters = newReasoningHygieneCounters();
+  const filter = new ResponsesReasoningPrefixFilter(counters, true);
+  const original: AssistantMessageEvent[] = [
+    { type: "start", partial: message("") },
+    { type: "thinking_start", contentIndex: 0, partial: message("") },
+    { type: "thinking_delta", contentIndex: 0, delta: text, partial: message(text) },
+    { type: "thinking_end", contentIndex: 0, content: text, partial: message(text) },
+    { type: "done", reason: "stop", message: message(text) },
+  ];
+  const emitted = original.flatMap(event => filter.consume(event));
+  assert.deepEqual(emitted, original);
+  assert.equal(counters.outputMarkerOnlyCleared, 0);
+  assert.equal(counters.outputMarkerOnlyRetainedNoContinuation, 1);
+});
+
+test("marker-only thinking is suppressed if terminal response includes actual tool call even without toolcall_start", () => {
+  const text = "reasoning unavailable\nreasoning unavailable";
+  const counters = newReasoningHygieneCounters();
+  const filter = new ResponsesReasoningPrefixFilter(counters, true);
+  const terminal: AssistantMessage = { ...message(text), content: [
+    { type: "thinking", thinking: text },
+    { type: "toolCall", id: "call_valid", name: "bash", arguments: { command: "pwd" } },
+  ] };
+  const emitted = ([
+    { type: "thinking_start", contentIndex: 0, partial: message("") },
+    { type: "thinking_delta", contentIndex: 0, delta: text, partial: message(text) },
+    { type: "thinking_end", contentIndex: 0, content: text, partial: message(text) },
+    { type: "done", reason: "toolUse", message: terminal },
+  ] as AssistantMessageEvent[]).flatMap(event => filter.consume(event));
+  assert.equal(counters.outputMarkerOnlyCleared, 1);
+  const final = emitted.at(-1);
+  assert(final?.type === "done");
+  assert.equal(thought(final.message), "");
+  assert.deepEqual(final.message.content[1], terminal.content[1]);
+});

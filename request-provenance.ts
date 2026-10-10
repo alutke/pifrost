@@ -111,6 +111,7 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 				`stream-prefixes=${trace.reasoningHygiene.outputPrefixesRemoved}`,
 				`stream-marker-only=${trace.reasoningHygiene.outputMarkerOnlyCleared}`,
 				`stream-signed-retained=${trace.reasoningHygiene.outputMarkerOnlyRetainedSigned}`,
+				`stream-no-continuation=${trace.reasoningHygiene.outputMarkerOnlyRetainedNoContinuation}`,
 			].join(" ") : undefined,
 			`outcome=${trace.outcome}`,
 		].filter(Boolean);

@@ -144,6 +144,9 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
         result.push(item);
       } else {
         removedVisiblePlaceholders++;
+        if (/^\s*<think>\s*<think>/u.test((record(item)?.content as JsonRecord[])?.[0]?.text as string)) {
+          rewrittenNestedMessages++;
+        }
         changed = true;
       }
     }
