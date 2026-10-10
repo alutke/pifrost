@@ -1,3 +1,9 @@
+## 0.12.4 — 2026-10-10
+
+- Fixed a v0.12.3 regression where physical Chat Completions/Responses models omitted the logical gateway's transport headers and Bifrost rejected inference requests with HTTP 401 `virtual_key_required` (`x-bf-vk` missing). Explicitly copy gateway request headers when constructing physical model specifications without inheriting logical-provider reasoning/tool compatibility.
+- Added Chat/Responses regression coverage for immutable gateway header propagation and OMP request-header serialisation, including the Bifrost virtual key and conversation/session headers. No credentials are logged; tests use non-secret fixtures.
+- Retained provider-agnostic reasoning compatibility isolation, ordered safe fallback boundaries, and Bifrost credential ownership introduced in v0.12.3.
+
 ## 0.12.3 — 2026-10-10
 
 - Added provider-agnostic physical model identity and request compatibility contracts for **all Bifrost-qualified providers** (not only CommandCode/DeepSeek). Resolved OMP reasoning, history replay, effort, tool and role semantics from the physical member rather than a logical alias.

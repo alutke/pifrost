@@ -55,6 +55,10 @@ export function createPifrostMemberModelSpec(
 		provider: policyIdentity?.provider ?? logicalModel.provider,
 		requestModelId: policyIdentity?.requestModelId ?? member.reference,
 		baseUrl: logicalModel.baseUrl,
+		// Gateway transport headers are not model compatibility policy. They must
+		// survive physical-model materialization for both Chat and Responses.
+		// In particular x-bf-vk is required when Bifrost rejects bare Bearer auth.
+		...(logicalModel.headers ? { headers: { ...logicalModel.headers } } : {}),
 		cost: logicalModel.cost,
 		contextWindow: member.contextWindow,
 		maxTokens: member.maxTokens,

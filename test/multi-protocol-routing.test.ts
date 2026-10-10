@@ -338,3 +338,27 @@ test("same-protocol incompatible fallback cannot replay after first reasoning ou
 	assert.deepEqual(visited,[m1.reference]);
 	assert.deepEqual(collected.events.map(e=>e.type),["start","thinking_start","error"]);
 });
+
+
+test("physical Chat and Responses attempts preserve gateway authentication without importing logical reasoning policy", () => {
+	const logical = logicalModel();
+	logical.headers = {
+		"x-bf-vk": "sk-bf-regression-fixture",
+		"User-Agent": "pifrost/test OMP",
+		"x-bf-eh-http-referer": "https://github.com/alutke/pifrost",
+	};
+	const originalHeaders = logical.headers;
+	for (const api of ["openai-completions", "openai-responses"] as const) {
+		const target = member("CommandCode GOAT/deepseek/deepseek-v4.1-flash", api);
+		const spec = createPifrostAttemptModelSpec(logical, {
+			protocol: api, primary: target.reference, fallbacks: [], members: [target],
+		});
+		assert.deepEqual(spec.headers, originalHeaders, api);
+		assert.notStrictEqual(spec.headers, originalHeaders, "headers must be copied to avoid mutation");
+		assert.equal(spec.provider, "commandcode");
+		assert.equal(spec.requestModelId, target.reference);
+		assert.equal((spec.compat as Record<string, unknown>).supportsDeveloperRole, false);
+		assert.equal((spec.compat as Record<string, unknown>).extraBody, undefined);
+	}
+	assert.deepEqual(logical.headers, originalHeaders);
+});
