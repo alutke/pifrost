@@ -54,7 +54,7 @@ test("leaves mixed thinking, real reasoning, quoted user text, annotated message
   // removes it while retaining the substantive model text.
   assert.equal(normalized.rewrittenMixedMessages, 1);
   const clean = (normalized.payload as typeof body).input;
-  assert.equal((clean[2] as typeof mixed).content[0].text, "<think>\\n<dy>Actual further thought</think>");
+  assert.equal((clean[2] as typeof mixed).content[0].text, "<think>\n<dy>Actual further thought</think>");
   assert.equal(normalized.removedVisiblePlaceholders, 0);
   assert.equal(normalized.retainedReasoningItems, 1);
   assert.equal(normalizeResponsesReplay({ data: "no input" }).removedVisiblePlaceholders, 0);
