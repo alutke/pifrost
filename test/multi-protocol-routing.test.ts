@@ -313,7 +313,7 @@ test("same-protocol incompatible pre-output fallback uses second physical policy
 	const collected=outputCollector();
 	await runPifrostProtocolPlan(logical,route,collected.output,a=>{
 		visited.push(a.primary);
-		return a.primary===m1.reference ? failedAttempt(a.primary,a.protocol) : successfulAttempt(a.primary,a.protocol);
+		return a.primary===m1.reference ? failedAttempt(a.primary,"openai-completions") : successfulAttempt(a.primary,"openai-completions");
 	});
 	assert.deepEqual(visited,[m1.reference,m2.reference]);
 	assert.deepEqual(collected.events.map(e=>e.type),["start","done"]);
