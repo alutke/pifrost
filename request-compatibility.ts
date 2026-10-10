@@ -35,38 +35,38 @@ export function pifrostDirectMaxTokens(requested: number | null | undefined, adv
   return limits.length ? Math.min(...limits.map(Math.floor)) : undefined;
 }
 
-/** Fail closed on heterogeneous wire dialects; no prompts, keys, user text or
- * request bodies are embedded in this compatibility signature. All known OMP
- * reasoning/replay/tool/role request-affecting axes and physical identity are
- * compared. Model version and provider differences force separate attempts. */
+/** Normalise the *whole* OMP compat policy, including future flags. Unknown
+ * recursive/function values cannot be proved compatible and must force an
+ * individual pre-output attempt instead of sharing a Bifrost fallback request. */
+function stableWireValue(value: unknown, seen: WeakSet<object>, depth = 0): unknown {
+  if (value === null || value === undefined || typeof value === "string" ||
+      typeof value === "boolean" || typeof value === "number") return value ?? null;
+  if (value instanceof RegExp) return value.toString();
+  if (typeof value !== "object" || depth > 12 || seen.has(value)) throw new Error("unsupported physical wire policy value");
+  seen.add(value);
+  try {
+    if (Array.isArray(value)) return value.map(v => stableWireValue(v, seen, depth + 1));
+    return Object.fromEntries(Object.entries(value).sort(([a],[b]) => a.localeCompare(b))
+      .map(([key,v]) => [key, stableWireValue(v, seen, depth + 1)]));
+  } finally {
+    seen.delete(value);
+  }
+}
+
+/** Conservative signature of the full physical wire encoder. No request,
+ * prompt, credential or response content is incorporated. */
 export function physicalRequestContractKey(model: Model): string {
-  const compat = model.compat as unknown as Record<string, unknown>;
-  const keys = [
-    "supportsDeveloperRole", "supportsMultipleSystemMessages", "supportsReasoningEffort",
-    "supportsReasoningParams", "supportsReasoningSummary", "includeEncryptedReasoning",
-    "omitReasoningEffort", "reasoningDisableMode", "reasoningContentField",
-    "requiresReasoningContentForToolCalls", "requiresReasoningContentForAllAssistantTurns",
-    "allowsSyntheticReasoningContentForToolCalls", "syntheticReasoningContentFallback",
-    "replayReasoningContent", "filterReasoningHistory", "requiresThinkingAsText",
-    "thinkingFormat", "reasoningDeltasMayBeCumulative", "stripDeepseekSpecialTokens",
-    "streamMarkupHealingPattern", "disableReasoningWithTools", "supportsReasoningWithTools",
-    "disableReasoningOnToolChoice", "disableReasoningOnForcedToolChoice",
-    "supportsToolChoice", "supportsForcedToolChoice", "supportsNamedToolChoice",
-    "supportsStrictMode", "strictResponsesPairing", "supportsAssistantPrefill",
-    "requiresAssistantContentForToolCalls", "requiresMistralToolIds",
-    "usesOpenAIToolCallIdLimit", "wireModelIdMode", "clampOutputToModelMax",
-    "alwaysSendMaxTokens", "supportsSamplingParams", "supportsPenaltyAndStopParams",
-    "dropThinkingWhenReasoningEffort", "requiresReasoningOffJuiceInstruction",
-  ];
-  const axes = keys.map((key) => {
-    const value = compat[key];
-    // RegExp and string-backed stream healers must not collapse to JSON {}.
-    return [key, value instanceof RegExp ? String(value) : value ?? null];
-  });
-  const effortMap = model.thinking?.effortMap
-    ? Object.entries(model.thinking.effortMap).sort(([a], [b]) => a.localeCompare(b)) : [];
+  if (!model.compat || !model.provider || !model.api) throw new Error("unknown physical wire compatibility");
   const identity = model.identity as { class?: string; family?: string; revision?: string } | undefined;
-  return JSON.stringify([model.api, model.provider, identity?.class ?? null, identity?.family ?? null,
-    identity?.revision ?? null, model.reasoning, model.thinking?.mode ?? null,
-    model.thinking?.requiresEffort ?? null, effortMap, axes]);
+  const thinking = model.thinking ? {
+    mode: model.thinking.mode, requiresEffort: model.thinking.requiresEffort ?? null,
+    suppressWhenOff: model.thinking.suppressWhenOff ?? null,
+    efforts: model.thinking.efforts?.map(String) ?? [],
+    effortMap: model.thinking.effortMap ?? {},
+  } : null;
+  return JSON.stringify(stableWireValue({
+    api: model.api, provider: model.provider, identityClass: identity?.class ?? null,
+    identityFamily: identity?.family ?? null, identityRevision: identity?.revision ?? null,
+    reasoning: model.reasoning, thinking, compat: model.compat,
+  }, new WeakSet<object>()));
 }
