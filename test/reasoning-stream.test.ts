@@ -59,7 +59,9 @@ test("removes the exact repeated upstream marker despite every-character SSE chu
   for (const event of emitted) {
     if ("partial" in event && event.partial.content[0]?.type === "thinking" &&
         event.type !== "thinking_start" && event.type !== "start") {
-      assert.equal(thought(event.partial), expected);
+      // Partial snapshots are incremental, not all equal to the terminal
+      // snapshot. They must remain prefixes of the cleaned final content.
+      assert.equal(expected.startsWith(thought(event.partial)), true);
     }
   }
   const end = emitted.find(x => x.type === "thinking_end");
