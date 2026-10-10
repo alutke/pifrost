@@ -9,10 +9,27 @@ import type { AssistantMessage, AssistantMessageEvent } from "@oh-my-pi/pi-ai";
  */
 const CONFIRMED_PREFIX = /^(?:reasoning unavailable[ \t]*(?:\r?\n[ \t]*)?){2,}(?=<think>)/u;
 const MAX_PREFIX_LOOKAHEAD = 256;
+const MARKERS_ONLY = /^\s*reasoning unavailable(?:\s+reasoning unavailable)*\s*$/u;
+
+/** Preserve provider-opaque or cryptographically signed reasoning unchanged.
+ * Bifrost's generated ids are not signatures and may safely accompany empty
+ * reasoning text after the UI-only synthetic marker is suppressed. */
+function isUnsignedOrSyntheticId(event: Extract<AssistantMessageEvent, { type: "thinking_end" }>): boolean {
+  const part = event.partial.content[event.contentIndex];
+  if (part?.type !== "thinking") return false;
+  const generatedId = /^(?:msg_|item_)[A-Za-z0-9_-]+_reasoning$/u;
+  const signature = part.thinkingSignature;
+  // itemId is a transport item identity, not necessarily the signature; a
+  // native rs_* item is never rewritten when signature is absent.
+  return (!signature || generatedId.test(signature)) &&
+    (!part.itemId || generatedId.test(part.itemId));
+}
 
 export interface ReasoningHygieneCounters {
   replayRemoved: number;
   replayMixedRewritten: number;
+  replayNestedRewritten: number;
+  replayProseRewritten: number;
   replayAmbiguousRetained: number;
   replayStructuredRetained: number;
   rawReasoningSseFrames: number;
@@ -20,13 +37,19 @@ export interface ReasoningHygieneCounters {
   outputThinkingDeltas: number;
   outputPrefixesRemoved: number;
   outputPrefixCharsRemoved: number;
+  outputMarkerOnlyCleared: number;
+  outputMarkerOnlyRetainedSigned: number;
+  outputMarkerOnlyRetainedNoContinuation: number;
 }
 export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
   return {
-    replayRemoved: 0, replayMixedRewritten: 0, replayAmbiguousRetained: 0,
+    replayRemoved: 0, replayMixedRewritten: 0,
+    replayNestedRewritten: 0, replayProseRewritten: 0, replayAmbiguousRetained: 0,
     replayStructuredRetained: 0, rawReasoningSseFrames: 0,
     rawReasoningMarkerFrames: 0, outputThinkingDeltas: 0,
     outputPrefixesRemoved: 0, outputPrefixCharsRemoved: 0,
+    outputMarkerOnlyCleared: 0, outputMarkerOnlyRetainedSigned: 0,
+    outputMarkerOnlyRetainedNoContinuation: 0,
   };
 }
 
@@ -54,6 +77,34 @@ type Pending = {
   buffered: string;
   last: Extract<AssistantMessageEvent, { type: "thinking_delta" }>;
 };
+type MarkerOnlyCandidate = {
+  pending: Pending;
+  end: Extract<AssistantMessageEvent, { type: "thinking_end" }>;
+};
+
+/**
+ * Suppressing a thinking-only assistant message with no answer/tool would
+ * silently turn a valid provider response into an empty completion. Confirm
+ * another substantive block before committing any marker-only suppression.
+ */
+function isMeaningfulContinuation(event: AssistantMessageEvent): boolean {
+  switch (event.type) {
+    case "toolcall_start":
+    case "toolcall_delta":
+    case "toolcall_end":
+    case "text_start":
+    case "text_delta":
+    case "text_end":
+    case "image_end":
+      return true;
+    case "done":
+      return event.message.content.some((block) =>
+        block.type === "toolCall" || block.type === "image" ||
+        (block.type === "text" && block.text.trim().length > 0));
+    default:
+      return false;
+  }
+}
 
 /**
  * Stateful transform of OMP's published event protocol. Buffers only an
@@ -63,6 +114,7 @@ type Pending = {
  */
 export class ResponsesReasoningPrefixFilter {
   private pending?: Pending;
+  private markerOnlyCandidate?: MarkerOnlyCandidate;
   private decided: "pass" | "strip" | undefined;
   private activeIndex?: number;
   private readonly removed = new Map<number, string>();
@@ -103,6 +155,25 @@ export class ResponsesReasoningPrefixFilter {
   /** Returns zero or more valid OMP events. */
   consume(event: AssistantMessageEvent): AssistantMessageEvent[] {
     if (!this.enabled) return [event];
+    if (this.markerOnlyCandidate) {
+      const candidate = this.markerOnlyCandidate;
+      this.markerOnlyCandidate = undefined;
+      if (isMeaningfulContinuation(event)) {
+        const prefix = candidate.pending.buffered;
+        this.removed.set(candidate.pending.index, prefix);
+        this.counters.outputMarkerOnlyCleared++;
+        const end = this.snapshot(candidate.end);
+        if (end.type !== "thinking_end") {
+          return [{ ...candidate.pending.last, delta: prefix }, candidate.end, ...this.consume(event)];
+        }
+        return [{ ...end, content: "" }, ...this.consume(event)];
+      }
+      // Fail closed: without an actual answer or tool call, preserve the
+      // provider's marker-only content and every event byte.
+      this.counters.outputMarkerOnlyRetainedNoContinuation++;
+      return [{ ...candidate.pending.last, delta: candidate.pending.buffered },
+        candidate.end, ...this.consume(event)];
+    }
     if (event.type === "start") {
       const flushed = this.flushPending();
       this.decided = undefined;
@@ -128,6 +199,23 @@ export class ResponsesReasoningPrefixFilter {
       return this.consumeDelta(event);
     }
 
+    // A marker-only thinking block must be buffered to its terminal event;
+    // prematurely emitting it cannot be undone in a streaming UI. No
+    // substantive reasoning is suppressed. Preserve signed content verbatim.
+    if (event.type === "thinking_end") {
+      if (this.pending && this.pending.index === event.contentIndex &&
+          MARKERS_ONLY.test(this.pending.buffered)) {
+        if (isUnsignedOrSyntheticId(event)) {
+          const pending = this.pending;
+          this.pending = undefined;
+          this.activeIndex = undefined;
+          this.decided = undefined;
+          this.markerOnlyCandidate = { pending, end: event };
+          return [];
+        }
+        this.counters.outputMarkerOnlyRetainedSigned++;
+      }
+    }
     const flushed = this.flushPending();
     if (event.type === "thinking_end") {
       this.activeIndex = undefined;

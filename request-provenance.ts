@@ -103,10 +103,15 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			trace.reasoningHygiene ? [
 				`history-removed=${trace.reasoningHygiene.replayRemoved}`,
 				`history-mixed=${trace.reasoningHygiene.replayMixedRewritten}`,
+				`history-nested=${trace.reasoningHygiene.replayNestedRewritten}`,
+				`history-prose=${trace.reasoningHygiene.replayProseRewritten}`,
 				`history-ambiguous=${trace.reasoningHygiene.replayAmbiguousRetained}`,
 				`sse-reasoning=${trace.reasoningHygiene.rawReasoningSseFrames}`,
 				`sse-markers=${trace.reasoningHygiene.rawReasoningMarkerFrames}`,
 				`stream-prefixes=${trace.reasoningHygiene.outputPrefixesRemoved}`,
+				`stream-marker-only=${trace.reasoningHygiene.outputMarkerOnlyCleared}`,
+				`stream-signed-retained=${trace.reasoningHygiene.outputMarkerOnlyRetainedSigned}`,
+				`stream-no-continuation=${trace.reasoningHygiene.outputMarkerOnlyRetainedNoContinuation}`,
 			].join(" ") : undefined,
 			`outcome=${trace.outcome}`,
 		].filter(Boolean);

@@ -15,10 +15,15 @@ function record(value: unknown): JsonRecord | undefined {
     ? value as JsonRecord : undefined;
 }
 
-const PURE_SYNTHETIC_THINKING = /^\s*<think>\s*reasoning unavailable\s*<\/think>\s*$/u;
+// OMP sometimes serialises a nested opening <think> around its fallback.
+// The entire message is still synthetic; retain a safe ambiguous turn below.
+const PURE_SYNTHETIC_THINKING = /^\s*(?:<think>\s*)+reasoning unavailable\s*<\/think>\s*$/u;
 /** Only strip exact OMP replay markers immediately before recognised markup.
  * Plain language occurrences, arbitrary tags and unsigned reasoning stay intact. */
-const MIXED_SYNTHETIC_PREFIX = /^(\s*<think>\s*)(?:reasoning unavailable[ \t]*(?:\r?\n[ \t]*)?)+(?=<(?:dy\b|think\b|parameter\b|\/think\b))/u;
+// Require complete marker boundaries (newline or known OMP markup), NEVER
+// a substring inside real prose. Corroborating structured synthetic reasoning
+// in the same assistant run is mandatory for Responses history rewriting.
+const MIXED_SYNTHETIC_PREFIX = /^(\s*<think>\s*)(?:(?:<think>\s*)*reasoning unavailable(?:[ \t]*(?:\r?\n[ \t]*)+|(?=<(?:dy\b|think\b|parameter\b|\/think\b))))+(?=\S)/u;
 
 function mixedSyntheticReplacement(value: unknown): JsonRecord | undefined {
   const item = record(value);
@@ -81,6 +86,8 @@ export interface ResponsesReplayHygiene {
   payload: unknown;
   removedVisiblePlaceholders: number;
   rewrittenMixedMessages: number;
+  rewrittenNestedMessages: number;
+  rewrittenProseMessages: number;
   retainedAmbiguousPlaceholders: number;
   retainedReasoningItems: number;
 }
@@ -95,11 +102,13 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
   const body = record(payload);
   const input = body?.input;
   if (!Array.isArray(input)) return {
-    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
+    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, rewrittenNestedMessages: 0, rewrittenProseMessages: 0, retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
 
   let removedVisiblePlaceholders = 0;
   let rewrittenMixedMessages = 0;
+  let rewrittenNestedMessages = 0;
+  let rewrittenProseMessages = 0;
   let retainedAmbiguousPlaceholders = 0;
   let retainedReasoningItems = 0;
   let changed = false;
@@ -118,7 +127,14 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
       if (!hasSyntheticReasoning) { result.push(item); continue; }
       if (!isRedundantAssistantPlaceholder(item)) {
         const cleaned = mixedSyntheticReplacement(item);
-        if (cleaned) { result.push(cleaned); rewrittenMixedMessages++; changed = true; }
+        if (cleaned) {
+          result.push(cleaned);
+          rewrittenMixedMessages++;
+          const beforeText = (record(item)?.content as JsonRecord[])?.[0]?.text;
+          if (typeof beforeText === "string" && /^\s*<think>\s*<think>/u.test(beforeText)) rewrittenNestedMessages++;
+          if (typeof beforeText === "string" && /^\s*<think>\s*reasoning unavailable\s*\r?\n[ \t]*[^<\s]/u.test(beforeText)) rewrittenProseMessages++;
+          changed = true;
+        }
         else result.push(item);
         continue;
       }
@@ -128,6 +144,9 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
         result.push(item);
       } else {
         removedVisiblePlaceholders++;
+        if (/^\s*<think>\s*<think>/u.test((record(item)?.content as JsonRecord[])?.[0]?.text as string)) {
+          rewrittenNestedMessages++;
+        }
         changed = true;
       }
     }
@@ -145,7 +164,7 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
   flush();
   return {
     payload: changed ? { ...body, input: result } : payload,
-    removedVisiblePlaceholders, rewrittenMixedMessages, retainedAmbiguousPlaceholders, retainedReasoningItems,
+    removedVisiblePlaceholders, rewrittenMixedMessages, rewrittenNestedMessages, rewrittenProseMessages, retainedAmbiguousPlaceholders, retainedReasoningItems,
   };
 }
 
@@ -158,10 +177,12 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
 export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHygiene {
   const body = record(payload);
   if (!body || !Array.isArray(body.messages)) return {
-    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0,
+    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, rewrittenNestedMessages: 0, rewrittenProseMessages: 0,
     retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
   let rewrittenMixedMessages = 0;
+  let rewrittenNestedMessages = 0;
+  let rewrittenProseMessages = 0;
   const messages = body.messages.map((raw: unknown) => {
     const item = record(raw);
     if (item?.role !== "assistant" || typeof item.content !== "string") return raw;
@@ -172,11 +193,13 @@ export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHyg
     const cleaned = item.content.replace(MIXED_SYNTHETIC_PREFIX, "$1");
     if (cleaned === item.content || !cleaned.trim()) return raw;
     rewrittenMixedMessages++;
+    if (/^\s*<think>\s*<think>/u.test(item.content)) rewrittenNestedMessages++;
+    if (/^\s*<think>\s*reasoning unavailable\s*\r?\n[ \t]*[^<\s]/u.test(item.content)) rewrittenProseMessages++;
     return { ...item, content: cleaned };
   });
   return {
     payload: rewrittenMixedMessages ? { ...body, messages } : payload,
-    removedVisiblePlaceholders: 0, rewrittenMixedMessages,
+    removedVisiblePlaceholders: 0, rewrittenMixedMessages, rewrittenNestedMessages, rewrittenProseMessages,
     retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
 }
