@@ -33,7 +33,7 @@ function withBifrostFallbacks(
 export function physicalPolicyIdentity(reference: string): { id: string; provider: string; requestModelId: string } | undefined {
 	const slash = reference.indexOf("/");
 	if (slash > 0) {
-		const provider = reference.slice(0, slash).toLowerCase().replace(/[\\s_-]+/gu, "");
+		const provider = reference.slice(0, slash).toLowerCase().replace(/[\s_-]+/gu, "");
 		if (provider === "commandcodegoat" || provider === "commandcode") {
 			const id = reference.slice(slash + 1).trim();
 			return id ? { id, provider: "commandcode", requestModelId: reference } : undefined;
