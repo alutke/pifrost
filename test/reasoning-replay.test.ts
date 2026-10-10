@@ -118,3 +118,71 @@ test("no rewrites for physical non-Responses payload and never changes user cont
   const source = { messages: [{ role: "user", content: "<think>reasoning unavailable</think>" }] };
   assert.equal(normalizeResponsesReplay(source).payload, source);
 });
+
+test("rewrites corroborated mixed DeepSeek/OMP assistant history while retaining real text and metadata", () => {
+  const mixedSamples = [
+    "<think>\nreasoning unavailable<dy>\nThe actual analysis is important\n</dy>",
+    "<think>\nreasoning unavailable<think>\nThe next thought",
+    "<think>\nreasoning unavailable<parameter name=\"i\">Checking state</parameter>",
+    "<think>\nreasoning unavailable\nreasoning unavailable<think>\nMore important thought",
+  ];
+  for (const raw of mixedSamples) {
+    const item = { type: "message", role: "assistant", status: "completed",
+      content: [{ type: "output_text", text: raw, annotations: [] }] };
+    const source = { input: [reason(), item, call("call_m"), output("call_m")] };
+    const original = JSON.stringify(source);
+    const normalized = normalizeResponsesReplay(source);
+    assert.equal(normalized.removedVisiblePlaceholders, 0);
+    assert.equal(normalized.rewrittenMixedMessages, 1);
+    const result = (normalized.payload as typeof source).input;
+    const rewritten = (result[1] as typeof item).content[0].text;
+    assert.equal(rewritten.includes("reasoning unavailable"), false);
+    assert.equal(rewritten.startsWith("<think>\n<"), true);
+    assert.equal(rewritten.endsWith(raw.slice(raw.lastIndexOf("<") + 1)) ||
+      rewritten.includes("The actual analysis") || rewritten.includes("The next thought") ||
+      rewritten.includes("Checking state") || rewritten.includes("More important thought"), true);
+    assert.equal(result[0], source.input[0], "structured reasoning untouched");
+    assert.equal(result[2], source.input[2], "tool-call untouched");
+    assert.equal(JSON.stringify(source), original, "original OMP body untouched");
+    assert.equal(normalizeResponsesReplay(normalized.payload).payload, normalized.payload, "idempotent");
+  }
+});
+
+test("does not rewrite mixed content without synthetic same-turn reason or with annotations", () => {
+  const mixed = { type: "message", role: "assistant",
+    content: [{ type: "output_text", text: "<think>\nreasoning unavailable<dy>Real" }] };
+  const real = { type: "reasoning", summary: [{ type: "summary_text", text: "genuine" }],
+    content: [{ type: "reasoning_text", text: "reasoning unavailable" }] };
+  const noReason = { input: [mixed, call("x")] };
+  assert.equal(normalizeResponsesReplay(noReason).payload, noReason);
+  const actual = { input: [real, mixed, call("x")] };
+  assert.equal(normalizeResponsesReplay(actual).payload, actual);
+  const annotated = { ...mixed, content: [{ ...mixed.content[0],
+    annotations: [{ type: "citation", text: "reasoning unavailable" }] }] };
+  const withAnnotations = { input: [reason(), annotated, call("x")] };
+  assert.equal(normalizeResponsesReplay(withAnnotations).payload, withAnnotations);
+  const boundary = { input: [reason(), { role: "user", content: "Question" }, mixed, call("x")] };
+  assert.equal(normalizeResponsesReplay(boundary).payload, boundary);
+});
+
+test("matches the new Bifrost capture mixed-history shapes across every Responses provider", () => {
+  // 20 known mixed candidates, 7 ambiguous pure placeholders, 158 reasoning
+  // items in v0.12.5. Redacted structural fixture without prompts/tool output.
+  const models = ["commandcode", "opencode-go", "openrouter", "xiaomi", "openai"];
+  for (const provider of models) {
+    const input: unknown[] = [{ role: "user", content: "request" }];
+    for (let i = 0; i < 20; i++) {
+      input.push(reason(), {
+        type: "message", role: "assistant", content: [{ type: "output_text",
+          text: "<think>\nreasoning unavailable<dy>Retained-" + i + "</dy>", annotations: [] }],
+      }, call("t" + i), output("t" + i));
+    }
+    for (let i = 0; i < 7; i++) input.push(reason(), placeholder(), { role: "user", content: "next" });
+    const normalized = normalizeResponsesReplay({ model: provider, input });
+    assert.equal(normalized.rewrittenMixedMessages, 20);
+    assert.equal(normalized.retainedAmbiguousPlaceholders, 7);
+    assert.equal(normalized.removedVisiblePlaceholders, 0);
+    const out = (normalized.payload as { input: Record<string, unknown>[] }).input;
+    for (let i = 0; i < 20; i++) assert(out.some(x => x.type === "function_call" && x.call_id === "t" + i));
+  }
+});
