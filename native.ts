@@ -85,6 +85,8 @@ import {
 	createPifrostAttemptModelSpec,
 	createPifrostMemberModelSpec,
 	pifrostAttemptMaxTokens,
+	pifrostDirectMaxTokens,
+	normalizePifrostReasoningOptions,
 	runPifrostProtocolPlan,
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
@@ -201,36 +203,12 @@ function pifrostSupportsBetweenToolsThinking(model: Model): boolean {
 }
 
 
-function normalizePifrostReasoningOptions(
-	model: Model,
-	options: SimpleStreamOptions | undefined,
-	allowBetweenToolsThinking = false,
-): SimpleStreamOptions | undefined {
-	if (allowBetweenToolsThinking && options?.disableReasoning === true) return options;
-	if (
-		!model.reasoning ||
-		!model.thinking?.requiresEffort ||
-		model.thinking.suppressWhenOff ||
-		(options?.reasoning !== undefined && !options.disableReasoning && !options.forceReasoningOff)
-	) {
-		return options;
-	}
-	const floor = model.thinking.efforts[0];
-	if (floor === undefined) return options;
-	return {
-		...options,
-		reasoning: floor,
-		disableReasoning: undefined,
-		forceReasoningOff: undefined,
-	};
-}
-
 function resolvePifrostReasoningEffort(
 	model: Model,
 	options: SimpleStreamOptions | undefined,
 ): OpenAICompletionsOptions["reasoning"] {
 	const reasoning = options?.reasoning;
-	if (!reasoning || !model.reasoning || !model.thinking) return undefined;
+	if (!reasoning || !model.reasoning || !model.thinking || options?.disableReasoning || options?.forceReasoningOff) return undefined;
 	if (model.thinking.efforts.includes(reasoning) || model.thinking.effortMap?.[reasoning] !== undefined) {
 		return reasoning;
 	}
@@ -466,10 +444,7 @@ function streamPifrostOpenAI(
 	}
 	recordAgentRequest(sessionId, model.id);
 	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
-	const allowBetweenToolsThinking = profile
-		? profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true)
-		: pifrostSupportsBetweenToolsThinking(model);
-	const options = normalizePifrostReasoningOptions(model, rawOptions, allowBetweenToolsThinking);
+	const options = normalizePifrostReasoningOptions(model, rawOptions);
 	if (profile) {
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}
@@ -489,7 +464,7 @@ function streamPifrostOpenAI(
 	const streamOptions: OpenAICompletionsOptions = {
 		...options,
 		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
-		maxTokens: options?.maxTokens ?? model.maxTokens ?? undefined,
+		maxTokens: pifrostDirectMaxTokens(options?.maxTokens, model.maxTokens),
 		headers: pifrostSessionHeaders(options?.headers, sessionId),
 		reasoning: resolvePifrostReasoningEffort(model, options),
 		disableReasoning: options?.disableReasoning,
