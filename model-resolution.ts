@@ -258,7 +258,7 @@ export function resolveModelReference<T extends { id: string }>(
 export function confirmedProviderOutputCeiling(reference: string): number | undefined {
 	const slash = reference.indexOf("/");
 	if (slash < 1) return undefined;
-	const provider = reference.slice(0, slash).toLowerCase().replace(/[\\s_-]+/gu, "");
+	const provider = reference.slice(0, slash).toLowerCase().replace(/[\s_-]+/gu, "");
 	const sku = reference.slice(slash + 1).trim().toLowerCase();
 	if ((provider === "commandcodegoat" || provider === "commandcode") && sku === "inclusionai/ling-3.1-flash:free") {
 		// CommandCode GOAT HTTP 400: max_tokens 65536 exceeds maximum 32768.
