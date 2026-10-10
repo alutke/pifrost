@@ -34,7 +34,7 @@ export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
  * This observes Bifrost -> OMP, not the inaccessible provider -> Bifrost hop. */
 export function observeReasoningSse(
   counters: ReasoningHygieneCounters,
-  event: { event?: string; data?: string },
+  event: { event?: string | null; data?: string | null },
 ): void {
   const responsesReasoning = typeof event.event === "string" && event.event.startsWith("response.reasoning");
   const chatReasoning = typeof event.data === "string" && (
