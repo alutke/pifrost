@@ -270,7 +270,7 @@ test("explicit reasoning off remains off, but implicit mandatory efforts use a f
 	const mandatory = { reasoning: true, thinking: { requiresEffort: true, efforts: ["low", "high"] } } as unknown as Model;
 	assert.equal(normalizePifrostReasoningOptions(mandatory, { disableReasoning: true })?.disableReasoning, true);
 	assert.equal(normalizePifrostReasoningOptions(mandatory, { forceReasoningOff: true })?.forceReasoningOff, true);
-	assert.equal(normalizePifrostReasoningOptions(mandatory, { reasoning: "high" })?.reasoning, "high");
+	assert.equal(normalizePifrostReasoningOptions(mandatory, { reasoning: "high" as never })?.reasoning, "high");
 	assert.equal(normalizePifrostReasoningOptions(mandatory, undefined)?.reasoning, "low");
 	assert.equal(normalizePifrostReasoningOptions({ reasoning: false } as Model, undefined), undefined);
 });
