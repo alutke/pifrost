@@ -32,7 +32,7 @@ export function nativeJudgeGateway(config, env = process.env) {
   catch { throw new Error("Cannot register native judge: Bifrost URL is invalid"); }
   if (!["http:", "https:"].includes(url.protocol) || url.search || url.hash ||
       !/^\/v1\/?$/.test(url.pathname) || url.username || url.password) {
-    throw new Error("Cannot register native judge: expected Bifrost /v1 base URL without credentials or query");
+    throw new Error("Cannot register native judge: expected Bifrost URL ending in /v1 without credentials or query");
   }
   // Native OMP TypeSafeJudge calls baseUrl + /v1/systemone.
   // Bifrost exposes /typesafe/v1/systemone, with native response shape.
