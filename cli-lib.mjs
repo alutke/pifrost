@@ -26,6 +26,7 @@ import {
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
 import { postMcpJsonRpc } from "./mcp-rpc.mjs";
+import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import {
   mcpClientExecutionDiagnostics,
   normalizeMcpClientShape,
@@ -1305,16 +1306,29 @@ export function backupOmpConfig(env = process.env) {
 
 export function configureOmp() {
   if (!commandExists("omp")) throw new Error("`omp` is not installed or not on PATH");
+  // OMP config set replaces the entire record/array. Fail before any write
+  // if existing user-defined model settings cannot be read.
+  const merged = new Map();
+  for (const [id, desired] of [
+    ["modelProviderOrder", ["bifrost"]],
+    ["enabledModels", ["bifrost/*"]],
+    ["modelRoles", ROLE_MAP],
+  ]) {
+    const current = readOmpConfigValueResult(id);
+    if (current.status !== "ok") {
+      throw new Error("Cannot safely configure OMP " + id + ": " + (current.error ?? "current value unavailable"));
+    }
+    merged.set(id, JSON.stringify(reconcilePifrostOmpSetting(id, current.value, desired)));
+  }
   const backup = backupOmpConfig();
-  // OMP exposes modelRoles as one schema record, not modelRoles.<role> paths.
-  // Always use OMP's schema-aware CLI rather than rewriting its YAML directly.
+  // Use OMP's schema-aware CLI rather than writing YAML directly.
   const settings = [
-    ["modelProviderOrder", JSON.stringify(["bifrost"])],
-    ["enabledModels", JSON.stringify(["bifrost/*"])],
+    ["modelProviderOrder", merged.get("modelProviderOrder")],
+    ["enabledModels", merged.get("enabledModels")],
     ["retry.modelFallback", "false"],
     ["task.enableEffort", "true"],
     ["task.enableLsp", "true"],
-    ["modelRoles", JSON.stringify(ROLE_MAP)],
+    ["modelRoles", merged.get("modelRoles")],
   ];
   for (const [key, value] of settings) runCommand("omp", ["config", "set", key, value]);
   return { backup, settings: settings.length };

@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { reconcilePifrostOmpJson } from "./omp-profile-merge.mjs";
 
 import type { Settings } from "@oh-my-pi/pi-coding-agent/config/settings";
 import type { CfgProtocolHandler } from "@oh-my-pi/pi-coding-agent/internal-urls/cfg-protocol";
@@ -231,9 +232,17 @@ export async function writePifrostOmpSetting(
 	save = false,
 ): Promise<PifrostOmpWriteResult> {
 	assertPifrostCfgSession(session, true);
-	const url = save ? `${setting.url}/save` : setting.url;
+	const url = save ? (setting.url + "/save") : setting.url;
+	let safeContent = content;
+	if (setting.id === "modelRoles" || setting.id === "modelProviderOrder" || setting.id === "enabledModels") {
+		// cfg:// writes replace the entire collection. Preserve all other
+		// roles and namespaces by reading the effective OMP session first.
+		const status = await readPifrostOmpSetting(session, setting);
+		if (!status.valueText) throw new Error("Cannot safely write " + setting.id + ": current OMP setting unreadable");
+		safeContent = reconcilePifrostOmpJson(setting.id, status.value, content);
+	}
 	const { runtime, handler } = await cfgHandler();
-	const result = await handler.write(runtime.parseInternalUrl(url), content, {
+	const result = await handler.write(runtime.parseInternalUrl(url), safeContent, {
 		cwd: session.cwd,
 		session: toolSession(session),
 	});
