@@ -95,7 +95,17 @@ for (const forbidden of ["managementApiKey", "managementAdminUsername", "managem
   }
 }
 
+const cliLib = readFileSync(resolve(root, "cli-lib.mjs"), "utf8");
 const ompCfg = readFileSync(resolve(root, "omp-cfg.ts"), "utf8");
+if (!cliLib.includes('reconcilePifrostOmpSetting(id, current.value, desired)') ||
+    !ompCfg.includes('reconcilePifrostOmpJson(setting.id, status.value, content)')) {
+  errors.push("OMP profile writes must preserve unrelated roles and model namespaces");
+}
+const toolPolicy = readFileSync(resolve(root, "provider-tool-policy.mjs"), "utf8");
+if (toolPolicy.includes("tools/call") || toolPolicy.includes("POST /api/providers") ||
+    toolPolicy.includes("ExecuteChatTool")) {
+  errors.push("Bifrost injected-tool diagnostics must be read-only and never execute MCP");
+}
 if (!/definition\(\s*["']retry\.modelFallback["']\s*,\s*false/u.test(ompCfg)) {
   errors.push("OMP model fallback must remain disabled; physical fallback is owned by Bifrost");
 }

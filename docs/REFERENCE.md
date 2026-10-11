@@ -54,6 +54,15 @@ These entries are owned by the **Pifrost integration boundary**, not by a replac
 
 ---
 
+### Release B — upstream-owned governance and context
+
+- **OMP settings:** Reconcile only Pifrost-managed role and provider preferences into OMP's effective settings. CLI setup uses read-before-write through `omp config get --json` and the interactive command uses OMP's approval-aware `cfg://` read/write path. Both reject unreadable mappings or arrays rather than discarding user roles, presets or namespaces. Pifrost does not write OMP YAML itself.
+- **Injected MCP tools:** Bifrost main supports provider-level `injected_tools.web_search` references (`mcp_client_name`, `tool_name`), executed server-side. `pifrost global mcp-policy` and `pifrost doctor` display only names and drift from the **redacted** management `GET /api/providers` response and MCP client metadata. This is configuration visibility, not a promise of executable tool grants, downstream policy or provider availability. Absent `injected_tools` on older gateways means **unknown**, not disabled. Pifrost does not advertise injected tools in OMP's client tool list or replace Bifrost's executor.
+- **Context ownership:** OMP defines `extendedContext`, `compaction.modelThresholds`, effective windows, experimental context management and compaction methods. Pifrost does not write or copy these policies. Doctor surfaces the OMP settings where readable. Optional compact-before-skip uses OMP's reported `getContextUsage()` window and invokes OMP `compact()` only when idle and an otherwise eligible smaller physical route member would be excluded. Invalid/overflowed windows are left to OMP's recovery. Set `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0` to disable the independent proactive scheduler, including when the user's OMP compaction is disabled.
+- **Research compatibility:** DonSeTch remains a separate upstream MCP provider. Pinned v4.7.4 canary verifies `tools/list` and `[meta]` result shape; no DonSeTch code is copied.
+
+All governance diagnostics are read-only and deliberately redact provider internals.
+
 ## Architecture
 
 Pifrost deliberately does **not** become a second prompt router. Bifrost remains the authority for provider selection and fallback.
@@ -337,7 +346,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.13.1
+0.14.0
 ```
 
 Bun can also install the package globally:

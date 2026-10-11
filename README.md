@@ -109,7 +109,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.13.1
+0.14.0
 ```
 
 Bun also works:
@@ -156,6 +156,7 @@ For narrower checks:
 
 ~~~bash
 pifrost global status
+pifrost global mcp-policy
 pifrost routes list
 pifrost routes effective
 pifrost models doctor
@@ -179,6 +180,19 @@ Pifrost's recommended OMP configuration maps OMP roles to Bifrost aliases:
 | tiny | <code>bifrost/omp-tiny</code> |
 
 The alias names describe the OMP role; **Pifrost does not decide which physical model should fulfil that role**. Define and change the corresponding routing rules in Bifrost.
+
+**Release B configuration safety:** `pifrost global configure-omp` and the approval-aware in-session `/pifrost cfg` profile merge Pifrost roles into the current OMP `modelRoles` mapping. Custom `judge`, `web`, `memory` and future roles survive. Existing enabled-model namespaces and other provider-order entries remain intact. If OMP cannot read an existing collection, Pifrost refuses to overwrite it.
+
+Bifrost can also configure provider-managed MCP web-search injection. Inspect what Bifrost reports, without allowing Pifrost to execute injected tools:
+
+~~~bash
+pifrost global mcp-policy
+pifrost doctor
+~~~
+
+This uses the redacted provider-management endpoint. A missing injection field on an older Bifrost release means *unverified*, not disabled. Client metadata cannot establish effective Virtual Key permissions or prove runtime execution.
+
+`pifrost doctor` also reports OMP's own `extendedContext`, `compaction.modelThresholds` and compaction settings where readable. OMP owns actual tier/threshold selection. The optional Pifrost idle compact-before-skip scheduler can be disabled with `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0`; this is separate from OMP's `compaction.enabled` setting.
 
 After changing Bifrost <code>omp-*</code> routes, synchronize Pifrost:
 

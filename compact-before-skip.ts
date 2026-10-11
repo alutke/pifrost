@@ -177,7 +177,13 @@ function currentPifrostRoute(
 	if (!model || model.provider.toLowerCase() !== providerId.toLowerCase()) return undefined;
 	const profile = getProfile(model.id.toLowerCase());
 	const usage = ctx.getContextUsage();
-	if (!profile || !usage || !Number.isFinite(usage.tokens) || usage.tokens < 0) return undefined;
+	// OMP's getContextUsage() supplies the session's effective context window:
+	// extended-context eligibility and model-specific threshold resolution
+	// belong upstream. If the host has no valid window, or is already at
+	// overflow, defer to OMP recovery instead of inventing an independent one.
+	if (!profile || !usage || !Number.isFinite(usage.tokens) || usage.tokens < 0 ||
+		!Number.isFinite(usage.contextWindow) || usage.contextWindow <= 0 ||
+		usage.tokens >= usage.contextWindow) return undefined;
 	return { profile, usage };
 }
 

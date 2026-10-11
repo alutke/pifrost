@@ -26,6 +26,7 @@ import {
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
 import { postMcpJsonRpc } from "./mcp-rpc.mjs";
+import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import {
   mcpClientExecutionDiagnostics,
   normalizeMcpClientShape,
@@ -407,6 +408,15 @@ export async function getComplexityAnalyzerConfig(url, auth) {
     if (error instanceof PifrostHttpError && [404, 405].includes(error.status)) return undefined;
     throw error;
   }
+}
+
+/** Read-only redacted provider inventory for gateway-owned injected-tool visibility. */
+export async function listBifrostProviderInventory(url, auth) {
+  const base = bifrostManagementBase(url);
+  return requestJson(base + "/api/providers", {
+    headers: managementHeaders(auth),
+    timeoutMs: 10_000,
+  });
 }
 
 export async function getBifrostConfig(url, auth) {
@@ -1305,16 +1315,29 @@ export function backupOmpConfig(env = process.env) {
 
 export function configureOmp() {
   if (!commandExists("omp")) throw new Error("`omp` is not installed or not on PATH");
+  // OMP config set replaces the entire record/array. Fail before any write
+  // if existing user-defined model settings cannot be read.
+  const merged = new Map();
+  for (const [id, desired] of [
+    ["modelProviderOrder", ["bifrost"]],
+    ["enabledModels", ["bifrost/*"]],
+    ["modelRoles", ROLE_MAP],
+  ]) {
+    const current = readOmpConfigValueResult(id);
+    if (current.status !== "ok") {
+      throw new Error("Cannot safely configure OMP " + id + ": " + (current.error ?? "current value unavailable"));
+    }
+    merged.set(id, JSON.stringify(reconcilePifrostOmpSetting(id, current.value, desired)));
+  }
   const backup = backupOmpConfig();
-  // OMP exposes modelRoles as one schema record, not modelRoles.<role> paths.
-  // Always use OMP's schema-aware CLI rather than rewriting its YAML directly.
+  // Use OMP's schema-aware CLI rather than writing YAML directly.
   const settings = [
-    ["modelProviderOrder", JSON.stringify(["bifrost"])],
-    ["enabledModels", JSON.stringify(["bifrost/*"])],
+    ["modelProviderOrder", merged.get("modelProviderOrder")],
+    ["enabledModels", merged.get("enabledModels")],
     ["retry.modelFallback", "false"],
     ["task.enableEffort", "true"],
     ["task.enableLsp", "true"],
-    ["modelRoles", JSON.stringify(ROLE_MAP)],
+    ["modelRoles", merged.get("modelRoles")],
   ];
   for (const [key, value] of settings) runCommand("omp", ["config", "set", key, value]);
   return { backup, settings: settings.length };
@@ -1536,6 +1559,50 @@ export function readOmpConfigValueResult(key, options = {}) {
 export function readOmpConfigValue(key, options = {}) {
   const result = readOmpConfigValueResult(key, options);
   return result.status === "ok" ? result.value : undefined;
+}
+
+/**
+ * Read-only snapshot of OMP-owned extended-context / model threshold policy.
+ * Pifrost must not recalculate compaction.modelThresholds or change the user's
+ * compaction policy. The actual in-session window comes from OMP's
+ * ExtensionContext.getContextUsage().
+ */
+export function ompContextPolicyDiagnostics(options = {}) {
+  const ids = ["extendedContext", "compaction.enabled", "compaction.experimentalContextManagement",
+    "compaction.modelThresholds", "compaction.methodOrder"];
+  const values = Object.fromEntries(ids.map(id => [id, readOmpConfigValueResult(id, options)]));
+  const failing = ids.filter(id => values[id].status !== "ok");
+  if (failing.length) {
+    return { status: "unavailable", failures: failing, values, thresholds: [] };
+  }
+  const raw = values["compaction.modelThresholds"].value;
+  const validThresholds = raw && typeof raw === "object" && !Array.isArray(raw) ?
+    Object.entries(raw).filter(([key, value]) => key.startsWith("bifrost/") &&
+      (typeof value === "string" || typeof value === "number")) : [];
+  return { status: "ok", failures: [], values, thresholds: validThresholds };
+}
+
+export function formatOmpContextPolicyDiagnostics(info) {
+  const lines = ["OMP-owned context/compaction policy (read-only):"];
+  if (info.status !== "ok") {
+    lines.push("  unavailable: " + info.failures.join(", "));
+    lines.push("  Pifrost will not infer model threshold or extended-context settings.");
+    return lines.join("\n");
+  }
+  lines.push("  extendedContext: " + String(info.values["extendedContext"].value));
+  lines.push("  compaction.enabled: " + String(info.values["compaction.enabled"].value));
+  lines.push("  experimental context management: " + String(info.values["compaction.experimentalContextManagement"].value));
+  const methods = info.values["compaction.methodOrder"].value;
+  lines.push("  method order: " + (Array.isArray(methods) ? methods.map(String).join(" -> ") : "unknown"));
+  lines.push("  bifrost/* model thresholds: " + (info.thresholds.length
+    ? info.thresholds.slice(0, 15).map(([key, value]) => key + "=" + String(value)).join(", ")
+    : "none"));
+  if (info.thresholds.length > 15) lines.push("  ... " + (info.thresholds.length - 15) + " more");
+  lines.push("  OMP owns extended tiers, thresholds and compaction method; Pifrost only proposes optional idle compaction before an otherwise-ineligible route member.");
+  if (info.values["compaction.enabled"].value === false) {
+    lines.push("  WARN Pifrost's separate compact-before-skip scheduler defaults on; use PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0 to disable it as well.");
+  }
+  return lines.join("\n");
 }
 
 export function ompWebSearchDiagnostics(options = {}) {

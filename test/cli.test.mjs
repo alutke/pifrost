@@ -24,6 +24,8 @@ import {
   formatQuotaGovernanceSource,
   ompCompatibilityMatrix,
   ompWebSearchDiagnostics,
+  ompContextPolicyDiagnostics,
+  formatOmpContextPolicyDiagnostics,
   webSearchConfigDiagnostics,
   parseSemver,
   versionAtLeast,
@@ -51,6 +53,7 @@ test("canonical CLI help exposes the full repo Skills/reset surface", () => {
   assert.match(result.stdout, /--rotate-existing/u);
   assert.match(result.stdout, /pifrost routes diagnose/u);
   assert.match(result.stdout, /pifrost routes effective/u);
+  assert.match(result.stdout, /pifrost global mcp-policy/u);
   assert.match(result.stdout, /pifrost routes explain <role\|alias>/u);
 });
 
@@ -819,4 +822,36 @@ test("generic MCP tool caller preserves repository Virtual Key scope and parses 
   assert.equal(calls[0].url, "http://bifrost.test/mcp");
   assert.equal(calls[0].init.headers["x-bf-vk"], "vk-repo");
   assert.match(result.content[0].text, /hound\.pyi/u);
+});
+
+
+test("context diagnostics report OMP model-specific thresholds without changing them", () => {
+  const values = {
+    extendedContext: true,
+    "compaction.enabled": false,
+    "compaction.experimentalContextManagement": true,
+    "compaction.modelThresholds": {
+      "bifrost/omp-default": "80%",
+      "other/model": "f90000",
+      "bifrost/*": 100_000,
+    },
+    "compaction.methodOrder": ["shake", "compact"],
+  };
+  const reads = [];
+  const result = ompContextPolicyDiagnostics({
+    commandExists: () => true,
+    runCommand: (_cmd, args) => {
+      reads.push(args[2]);
+      return { stdout: JSON.stringify({ value: values[args[2]] }) };
+    },
+  });
+  assert.equal(result.status, "ok");
+  assert.equal(result.thresholds.length, 2);
+  assert.ok(reads.includes("extendedContext"));
+  assert.match(formatOmpContextPolicyDiagnostics(result), /extendedContext: true/);
+  assert.match(formatOmpContextPolicyDiagnostics(result), /PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0/);
+  assert.doesNotMatch(formatOmpContextPolicyDiagnostics(result), /other\/model/);
+  const missing = ompContextPolicyDiagnostics({ commandExists: () => false });
+  assert.equal(missing.status, "unavailable");
+  assert.match(formatOmpContextPolicyDiagnostics(missing), /will not infer/);
 });

@@ -21,7 +21,12 @@ test("configureOmp writes modelRoles as one OMP schema record", () => {
     const omp = join(bin, "omp");
     writeFileSync(
       omp,
-      `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\nif [ "$1" = "--version" ]; then echo 'omp 18.0.4'; exit 0; fi\nif [ "$1" = "config" ] && [ "$2" = "path" ]; then echo '${agent}'; exit 0; fi\nif [ "$1" = "config" ] && [ "$2" = "set" ]; then exit 0; fi\nexit 1\n`,
+      `#!/bin/sh\nprintf '%s\\n' "$*" >> "${log}"\nif [ "$1" = "--version" ]; then echo 'omp 18.0.4'; exit 0; fi\nif [ "$1" = "config" ] && [ "$2" = "path" ]; then echo '${agent}'; exit 0; fi\nif [ "$1" = "config" ] && [ "$2" = "get" ] && [ "$4" = "--json" ]; then
+  if [ "$3" = "modelRoles" ]; then echo '{"value":{"judge":"other/judge","web":"other/search","memory":"other/memory","default":"old/default"}}'; exit 0; fi
+  if [ "$3" = "modelProviderOrder" ]; then echo '{"value":["openai","gemini"]}'; exit 0; fi
+  if [ "$3" = "enabledModels" ]; then echo '{"value":["openai/*"]}'; exit 0; fi
+fi
+if [ "$1" = "config" ] && [ "$2" = "set" ]; then exit 0; fi\nexit 1\n`,
     );
     chmodSync(omp, 0o755);
 
@@ -35,10 +40,10 @@ test("configureOmp writes modelRoles as one OMP schema record", () => {
     const lines = readFileSync(log, "utf8").trim().split("\n");
     const roleLines = lines.filter((line) => line.startsWith("config set modelRoles"));
     assert.equal(roleLines.length, 1);
-    assert.equal(roleLines[0], `config set modelRoles ${JSON.stringify(ROLE_MAP)}`);
+    assert.equal(roleLines[0], `config set modelRoles ${JSON.stringify({ judge: "other/judge", web: "other/search", memory: "other/memory", ...ROLE_MAP })}`);
     assert.equal(lines.some((line) => line.includes("modelRoles.default")), false);
-    assert.equal(lines.some((line) => line === 'config set modelProviderOrder ["bifrost"]'), true);
-    assert.equal(lines.some((line) => line === 'config set enabledModels ["bifrost/*"]'), true);
+    assert.equal(lines.some((line) => line === 'config set modelProviderOrder ["bifrost","openai","gemini"]'), true);
+    assert.equal(lines.some((line) => line === 'config set enabledModels ["openai/*","bifrost/*"]'), true);
     assert.equal(lines.some((line) => line === "config set retry.modelFallback false"), true);
   } finally {
     if (oldPath === undefined) delete process.env.PATH;
