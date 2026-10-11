@@ -3,7 +3,7 @@
  * upstream, not a Pifrost runtime dependency. GitHub release tags are pinned
  * to immutable commit IDs for required CI and master remains opt-in advisory.
  */
-const stable="b04fddae439e03cb9908399612a2fb045df8f2b0"; // v4.7.0
+const stable="33aeff4f863bb5dd413b0ca89fbc408bb4d163d3"; // v4.7.4
 const expected={
   web_search:["query","intent","max_results","deadline_ms"],
   web_fetch:["url","focus","mode","offset","since_last"],
@@ -30,5 +30,5 @@ async function check(ref,label) {
     throw Error(label+" tool surface or result compatibility contract changed");
   console.log(label+" passed: "+names.join(", ")+", [meta] result status available");
 }
-await check(stable,"DonSeTch v4.7.0 pinned");
+await check(stable,"DonSeTch v4.7.4 pinned");
 if(process.env.PIFROST_DONSETCH_UPSTREAM_CANARY==="1")await check("master","DonSeTch master canary");

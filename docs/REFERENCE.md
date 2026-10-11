@@ -337,7 +337,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.13.1
+0.14.0
 ```
 
 Bun can also install the package globally:
