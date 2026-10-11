@@ -1,0 +1,27 @@
+name: Release A lockfile generation (temporary)
+on:
+  push:
+    branches:
+      - feat/release-a-upstream-compat
+permissions:
+  contents: read
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - run: npm install --package-lock-only --ignore-scripts
+      - name: Export lockfile for review
+        run: |
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const b64 = fs.readFileSync('package-lock.json').toString('base64');
+          console.log('PIFROST_LOCK_BEGIN');
+          for (let i=0; i<b64.length; i+=1000) console.log('PIFROST_LOCK_CHUNK:' + b64.slice(i,i+1000));
+          console.log('PIFROST_LOCK_END');
+          NODE
