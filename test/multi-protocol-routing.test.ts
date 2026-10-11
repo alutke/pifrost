@@ -372,11 +372,12 @@ test("logical alias mapping preserves actual physical origin after cross-protoco
 	};
 	await runPifrostProtocolPlan(logicalModel(), plan(), output, (attempt, index) => {
 		if (index === 0) {
-			const failed = assistant(attempt.primary, attempt.protocol, "error");
+			const protocol = attempt.protocol === "openai-responses" ? "openai-responses" : "openai-completions";
+			const failed = assistant(attempt.primary, protocol, "error");
 			return eventStream([{ type: "start", partial: failed }, { type: "error", reason: "error", error: failed }]);
 		}
 		const physical = {
-			...assistant(attempt.primary, attempt.protocol, "stop"),
+			...assistant(attempt.primary, attempt.protocol === "openai-responses" ? "openai-responses" : "openai-completions", "stop"),
 			upstreamProvider: "deepseek",
 			upstreamModel: "deepseek-v4",
 		};
