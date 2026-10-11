@@ -46,6 +46,7 @@
     "compact-before-skip.ts",
     "omp-cfg.ts",
     "omp-profile-merge.mjs",
+    "omp-profile-merge.d.mts",
     "provider-tool-policy.mjs",
     "agent-attribution.ts",
     "bifrost-usage.ts",
