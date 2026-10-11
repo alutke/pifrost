@@ -110,6 +110,8 @@ import {
   runtimeConfigFromState,
   saveState,
   ompWebSearchDiagnostics,
+  ompContextPolicyDiagnostics,
+  formatOmpContextPolicyDiagnostics,
   readOmpConfigValue,
   testInference,
   testManagement,
@@ -1866,6 +1868,8 @@ async function commandDoctor() {
   await commandGlobalStatus(snapshot);
   console.log("");
   await commandGlobalMcpPolicy(snapshot);
+  console.log("");
+  console.log(formatOmpContextPolicyDiagnostics(ompContextPolicyDiagnostics()));
   console.log("");
   await commandCompatibilityDoctor(snapshot);
   console.log("");

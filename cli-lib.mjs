@@ -1561,6 +1561,50 @@ export function readOmpConfigValue(key, options = {}) {
   return result.status === "ok" ? result.value : undefined;
 }
 
+/**
+ * Read-only snapshot of OMP-owned extended-context / model threshold policy.
+ * Pifrost must not recalculate compaction.modelThresholds or change the user's
+ * compaction policy. The actual in-session window comes from OMP's
+ * ExtensionContext.getContextUsage().
+ */
+export function ompContextPolicyDiagnostics(options = {}) {
+  const ids = ["extendedContext", "compaction.enabled", "compaction.experimentalContextManagement",
+    "compaction.modelThresholds", "compaction.methodOrder"];
+  const values = Object.fromEntries(ids.map(id => [id, readOmpConfigValueResult(id, options)]));
+  const failing = ids.filter(id => values[id].status !== "ok");
+  if (failing.length) {
+    return { status: "unavailable", failures: failing, values, thresholds: [] };
+  }
+  const raw = values["compaction.modelThresholds"].value;
+  const validThresholds = raw && typeof raw === "object" && !Array.isArray(raw) ?
+    Object.entries(raw).filter(([key, value]) => key.startsWith("bifrost/") &&
+      (typeof value === "string" || typeof value === "number")) : [];
+  return { status: "ok", failures: [], values, thresholds: validThresholds };
+}
+
+export function formatOmpContextPolicyDiagnostics(info) {
+  const lines = ["OMP-owned context/compaction policy (read-only):"];
+  if (info.status !== "ok") {
+    lines.push("  unavailable: " + info.failures.join(", "));
+    lines.push("  Pifrost will not infer model threshold or extended-context settings.");
+    return lines.join("\n");
+  }
+  lines.push("  extendedContext: " + String(info.values["extendedContext"].value));
+  lines.push("  compaction.enabled: " + String(info.values["compaction.enabled"].value));
+  lines.push("  experimental context management: " + String(info.values["compaction.experimentalContextManagement"].value));
+  const methods = info.values["compaction.methodOrder"].value;
+  lines.push("  method order: " + (Array.isArray(methods) ? methods.map(String).join(" -> ") : "unknown"));
+  lines.push("  bifrost/* model thresholds: " + (info.thresholds.length
+    ? info.thresholds.slice(0, 15).map(([key, value]) => key + "=" + String(value)).join(", ")
+    : "none"));
+  if (info.thresholds.length > 15) lines.push("  ... " + (info.thresholds.length - 15) + " more");
+  lines.push("  OMP owns extended tiers, thresholds and compaction method; Pifrost only proposes optional idle compaction before an otherwise-ineligible route member.");
+  if (info.values["compaction.enabled"].value === false) {
+    lines.push("  WARN Pifrost's separate compact-before-skip scheduler defaults on; use PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0 to disable it as well.");
+  }
+  return lines.join("\n");
+}
+
 export function ompWebSearchDiagnostics(options = {}) {
   const roles = readOmpConfigValueResult("modelRoles", options);
   const fallback = readOmpConfigValueResult("retry.fallbackChains", options);
