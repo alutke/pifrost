@@ -94,7 +94,7 @@ import {
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
-import { normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
+import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
 import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
 import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import {
@@ -388,16 +388,18 @@ function streamDynamicPifrostRoute(
 					// Provider-neutral and inert unless OMP replayed both a synthetic
 					// reasoning item and redundant visible text in an assistant run.
 					// Never strip the structured content required by DeepSeek.
-					const hygiene = normalizeResponsesReplay(bridged);
+					const hygiene = normalizeResponsesReplay(bridged, {
+						allowSyntheticReasoningRemoval: mayOmitSyntheticReasoning(transportModel.compat, attempt.primary),
+					});
 					hygieneCounters.replayRemoved = hygiene.removedVisiblePlaceholders;
 					hygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
 					hygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
 					hygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
-					if (hygiene.removedVisiblePlaceholders > 0 || hygiene.rewrittenMixedMessages > 0) {
+					if (hygiene.removedVisiblePlaceholders > 0 || hygiene.rewrittenMixedMessages > 0 || hygiene.removedSyntheticReasoningItems > 0) {
 						process.stderr.write(
-							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible messages; rewrote ${hygiene.rewrittenMixedMessages} mixed prefixes; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
+							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible messages; rewrote ${hygiene.rewrittenMixedMessages} mixed prefixes; removed ${hygiene.removedSyntheticReasoningItems} optional synthetic reasoning items; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
 						);
 					}
 					return hygiene.payload;
