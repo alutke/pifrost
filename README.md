@@ -97,6 +97,8 @@ pifrost judge probe --decisions
 
 The probes validate yes/no, choice and score answers, print no prompt or raw provider response and do **not** change OMP's judgment workflow. A working model-list GET alone does not prove live inference success.
 
+To see how the live gateway classifies its advertised models without creating new OMP runners, run `pifrost models kinds` (read-only GET `/v1/models`). This reports chat, unknown and explicitly non-chat kinds, without guessing specialized API compatibility.
+
 Pifrost's existing chat aliases remain chat-only. Non-chat `judge`, image, search, speech, dictation, embedding, rerank and video model kinds must use their appropriate OMP-native transports, not be converted to Pifrost chat aliases. Release C excludes explicitly non-chat gateway models from the chat inventory and reports no unsupported execution capability.
 
 ## Requirements

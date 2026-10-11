@@ -54,6 +54,7 @@ test("canonical CLI help exposes the full repo Skills/reset surface", () => {
   assert.match(result.stdout, /pifrost routes diagnose/u);
   assert.match(result.stdout, /pifrost routes effective/u);
   assert.match(result.stdout, /pifrost global mcp-policy/u);
+  assert.match(result.stdout, /pifrost models kinds/u);
   assert.match(result.stdout, /pifrost routes explain <role\|alias>/u);
 });
 

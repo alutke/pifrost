@@ -33,6 +33,7 @@ import {
 } from "./research-providers.mjs";
 import { classifyResearchResult } from "./research-results.mjs";
 import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
+import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-boundary.mjs";
 import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
@@ -150,6 +151,7 @@ Usage:
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
+  pifrost models kinds                     Read-only Bifrost model-kind inventory, not model runner registration
   pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
   pifrost repo status
   pifrost repo research status
@@ -1861,6 +1863,31 @@ function judgeRuntimeConfig() {
   return runtime;
 }
 
+async function commandModelsKinds() {
+  const runtime = judgeRuntimeConfig();
+  const headers = { "x-bf-vk": runtime.virtualKey };
+  if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
+  const catalog = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
+  if (!Array.isArray(catalog?.data)) throw new Error("Bifrost model-kinds inventory returned no data array");
+  const rows = catalog.data.filter(model => model && typeof model.id === "string");
+  const summary = bifrostModelKindSummary(rows);
+  console.log("Bifrost model-kind inventory (read-only; source: live /v1/models):");
+  console.log("  chat-declared: " + summary.chat);
+  console.log("  unknown/legacy metadata: " + summary.unknown + " (chat-compatible until gateway states otherwise)");
+  console.log("  non-chat: " + summary.nonChat);
+  const kinds = new Map();
+  for (const row of rows) {
+    const detail = bifrostModelKindEvidence(row);
+    if (detail.chat) continue;
+    kinds.set(detail.kind, (kinds.get(detail.kind) ?? 0) + 1);
+  }
+  for (const [kind, count] of [...kinds].sort((a, b) => a[0].localeCompare(b[0]))) {
+    console.log("    " + kind + ": " + count);
+  }
+  console.log("  non-chat kinds must use OMP-native APIs, not Pifrost chat transport.");
+  console.log("  Bifrost Decisions capability requires separate native judge discovery/probe: pifrost judge status");
+}
+
 async function commandJudgeStatus() {
   const selected = nativeJudgeSelection();
   console.log("OMP native judgment (optional; OMP owns judge execution and session usage):");
@@ -1998,6 +2025,7 @@ const COMMANDS = new Map([
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
   ["models doctor", () => commandModelsDoctor()],
+  ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", () => commandRepoStatus()],
   ["repo research status", () => commandRepoResearchStatus()],
