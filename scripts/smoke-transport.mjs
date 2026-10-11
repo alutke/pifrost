@@ -9,8 +9,8 @@ const required = name => {
   return value;
 };
 
-const base = required("BIFROST_URL").replace(/\\/+$/u, "").replace(/\\/(?:chat\\/completions|responses|models)$/u, "").replace(/\\/+$/u, "");
-const api = /\\/v1$/u.test(base) ? base : `${base}/v1`;
+const base = required("BIFROST_URL").replace(/\/+$/u, "").replace(/\/(?:chat\/completions|responses|models)$/u, "").replace(/\/+$/u, "");
+const api = /\/v1$/u.test(base) ? base : `${base}/v1`;
 const vk = required("BIFROST_VIRTUAL_KEY");
 const bearer = process.env.BIFROST_API_KEY?.trim();
 const chatModel = required("PIFROST_CONFORMANCE_CHAT_MODEL");
@@ -26,7 +26,7 @@ const headers = {
 function eventPayloads(body) {
   const result = [];
   let finished = false;
-  for (const line of body.split(/\\r?\\n/u)) {
+  for (const line of body.split(/\r?\n/u)) {
     if (!line.startsWith("data:")) continue;
     const data = line.slice(5).trim();
     if (data === "[DONE]") { finished = true; continue; }
@@ -45,7 +45,7 @@ async function streamProbe(label, path, body, kind) {
     signal: AbortSignal.timeout(90000),
   });
   if (!result.ok) {
-    const description = (await result.text()).slice(0, 250).replace(/[\\r\\n]+/gu, " ");
+    const description = (await result.text()).slice(0, 250).replace(/[\r\n]+/gu, " ");
     throw new Error(`${label}: HTTP ${result.status} ${description}`);
   }
   const type = result.headers.get("content-type") ?? "";
