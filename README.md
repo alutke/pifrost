@@ -8,6 +8,9 @@ Pifrost also provides a terminal CLI for setup, route synchronization, diagnosti
 
 > **Design rule:** Pifrost is not a second policy router. Bifrost remains authoritative for provider credentials, physical model/provider ordering, routing policy, same-protocol fallback and governance. Pifrost may remove members that cannot satisfy the request contract and may cross a wire-protocol boundary only before any model output is emitted; it never reorders surviving members for quality, cost, quota or preference.
 
+> **Upstream-first compatibility principle:** Prefer stable, current, versioned OhMyPi and Bifrost interfaces over permanent Pifrost copies of their runtime behaviour. Pifrost owns only translation, evidence-based compatibility checks and diagnostics at their boundary. Every workaround must have a reproducible upstream defect or contract gap, a regression test, clear ownership and a revalidation/removal condition. Do not add a parallel agent runtime, provider router, session-history writer or MCP executor. Preserve Bifrost's configured provider order and OMP's agent/session ownership.
+
+
 ## Start here
 
 If you already run OMP and Bifrost, the normal setup is:
@@ -70,7 +73,7 @@ That gives you six useful properties:
 | --- | --- |
 | Node.js | **22.19+** |
 | OhMyPi | **18.4.5+** in the 18.x line |
-| Pifrost OMP policy snapshot | **18.4.5**, with explicit compatibility patches; host integration validated through **18.8.6** |
+| Pifrost OMP policy snapshot | **18.8.9**, with evidence-backed compatibility patches; host integration validated separately |
 | Maxim Bifrost | **2.2.4+** |
 | Recommended Bifrost | **2.2.6+** for setup-lock awareness, routed-response provenance and current cost semantics |
 
@@ -106,7 +109,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.12.7
+0.13.0
 ```
 
 Bun also works:
