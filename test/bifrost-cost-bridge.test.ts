@@ -157,6 +157,17 @@ test("records only Bifrost-confirmed physical origin without changing logical se
 	const withoutProvider = applyBifrostResolvedModel(original, { resolvedModel: "different-fallback" });
 	assert.equal(withoutProvider.upstreamModel, "different-fallback");
 	assert.equal(withoutProvider.upstreamProvider, undefined, "never attach a stale provider to a different model");
+	const sameModelWithoutProvider = applyBifrostResolvedModel(original, { resolvedModel: "primary" });
+	assert.equal(sameModelWithoutProvider.upstreamModel, "primary");
+	assert.equal(sameModelWithoutProvider.upstreamProvider, undefined,
+		"same model ID is not proof of serving provider across hosts");
+	assert.notStrictEqual(sameModelWithoutProvider, original);
+	assert.equal(original.upstreamProvider, "commandcode", "do not modify OMP history");
+	const sameModelDifferentProvider = applyBifrostResolvedModel(original, {
+		resolvedModel: "primary", provider: "deepseek",
+	});
+	assert.equal(sameModelDifferentProvider.upstreamProvider, "deepseek",
+		"explicit Bifrost serving-provider evidence supersedes prior inferred host");
 });
 
 test("preserves native reasoning and complete tool arguments while bridging routed JSON", async () => {

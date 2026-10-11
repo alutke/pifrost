@@ -1,3 +1,10 @@
+## 0.13.1 — 2026-10-11
+
+- Release A audit: reject stale, unverified physical-provider provenance when Bifrost reports a model but not its serving provider, including same-model cross-host fallbacks.
+- Add regression coverage for same-model provider ambiguity and retain immutable logical OMP history.
+- Tighten opt-in live gateway conformance: require substantive Chat/Responses output; optionally enforce Bifrost physical provenance headers, while keeping tool-argument verification opt-in.
+- Document compatibility ownership, exception evidence, retirement gates and the distinction between CI fixture tests and real gateway conformance under the upstream-first architecture principle.
+
 ## 0.13.0 — 2026-10-11
 
 - Adopt the upstream-first architectural principle: prefer current versioned upstream OMP/Bifrost behaviour, keep only boundary-specific compatibility and require evidence, tests and removal criteria for workarounds.

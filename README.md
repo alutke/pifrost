@@ -29,7 +29,7 @@ If <code>pifrost doctor</code> is healthy, you are done.
 
 Inside OMP, use <code>/pifrost trace</code> to inspect the most recent request-level routing provenance for the current session, including the model Bifrost actually served and whether a fallback fired.
 
-For the full implementation and compatibility detail, see the [technical reference](docs/REFERENCE.md). For release-specific changes, see the [changelog](CHANGELOG.md).
+For the full implementation, Release A compatibility-exception register and verification limits, see the [technical reference](docs/REFERENCE.md). For release-specific changes, see the [changelog](CHANGELOG.md).
 
 ## What Pifrost solves
 
@@ -109,7 +109,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.13.0
+0.13.1
 ```
 
 Bun also works:

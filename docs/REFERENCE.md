@@ -13,6 +13,19 @@ Pifrost is derived from [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam
 
 > **Upstream-first compatibility principle:** Prefer current, versioned upstream OhMyPi/Bifrost behaviour over copied implementations. Pifrost owns capability and protocol translation, verified provenance, safe diagnostics and repository MCP bindings only. Every compatibility workaround needs evidence, regression tests, ownership and removal criteria. Never duplicate OMP agent/session authority or Bifrost provider ordering, gateway fallback, credentials, queues or MCP execution.
 
+### Release A — compatibility exception register
+
+These entries are owned by the **Pifrost integration boundary**, not by a replacement upstream agent or router. Revalidate on every packaged OMP upgrade or supported Bifrost gateway upgrade.
+
+| Boundary | Evidence / regression | Revalidation or removal condition |
+| --- | --- | --- |
+| Bundled OMP transport and capability rules | Pinned `@oh-my-pi/*` 18.8.9, OMP upstream contract canaries, current/minimum loader checks, and `test/transport-model.bun.ts` | Revalidate with every packaged OMP upgrade; drop local policy exceptions only when the stable OMP API handles the equivalent physical model contract |
+| Gateway-confirmed physical provenance | Bifrost 2.2.6 routed-response headers; `test/bifrost-cost-bridge.test.ts` and `test/multi-protocol-routing.test.ts` | Prefer a future stable OMP physical-origin contract when available; until then preserve separate `upstreamModel`/`upstreamProvider` metadata without rewriting OMP's logical provider, session or history |
+| Historical reasoning-marker hygiene | Exact synthetic-marker fixtures in `test/reasoning-replay.test.ts` and `test/reasoning-stream.test.ts`; signed/opaque content is retained | Remove each narrow workaround after a versioned OMP fix demonstrably passes the corresponding regression; never guess that a newer OMP binary fixes Pifrost's separately bundled transport |
+| Wire-incompatible fallback split | `test/dynamic-routing.test.ts` and `test/multi-protocol-routing.test.ts` verify Bifrost route order, authenticated requests, and no retry after output | Retire the split only if Bifrost and OMP expose a stable native protocol-aware retry contract with the same at-most-once output guarantee |
+
+**Verification boundary:** CI exercises deterministic Chat/Responses, provenance, tool-argument and fallback fixtures, package installation and pinned upstream contracts. Run `npm run smoke:transport` separately against a **real Bifrost gateway** with `BIFROST_URL`, `BIFROST_VIRTUAL_KEY`, `PIFROST_CONFORMANCE_CHAT_MODEL` and `PIFROST_CONFORMANCE_RESPONSES_MODEL`. To test forced tool arguments, also set `PIFROST_CONFORMANCE_TOOL_MODEL`. To require Bifrost 2.2.6+ physical provenance, set `PIFROST_CONFORMANCE_REQUIRE_PROVENANCE=1`. The opt-in runner tests gateway streaming; it does not by itself prove every OMP-to-Pifrost application flow or every physical provider.
+
 > **Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS management endpoints use the configured dashboard/admin username and password over HTTP Basic auth. Pifrost supports OSS Basic auth and Enterprise Bearer/scoped-key auth separately. On fresh Bifrost 2.2.6+ instances, Pifrost also detects the first-time setup lock; `--setup-token` / `BIFROST_SETUP_TOKEN` is accepted only as ephemeral bootstrap authentication and is never persisted.
 
 ---
@@ -324,7 +337,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.13.0
+0.13.1
 ```
 
 Bun can also install the package globally:
