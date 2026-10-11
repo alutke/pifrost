@@ -16,6 +16,7 @@ const bearer = process.env.BIFROST_API_KEY?.trim();
 const chatModel = required("PIFROST_CONFORMANCE_CHAT_MODEL");
 const responsesModel = required("PIFROST_CONFORMANCE_RESPONSES_MODEL");
 const toolModel = process.env.PIFROST_CONFORMANCE_TOOL_MODEL?.trim();
+const requireProvenance = process.env.PIFROST_CONFORMANCE_REQUIRE_PROVENANCE === "1";
 const headers = {
   "content-type": "application/json",
   accept: "text/event-stream",
@@ -60,10 +61,25 @@ async function streamProbe(label, path, body, kind) {
     ? events.some(event => event.type === "response.completed")
     : events.some(event => event.choices?.some(choice => choice.finish_reason));
   if (!complete) throw new Error(`${label}: no completed inference marker`);
+  // A terminal frame alone is not evidence of a usable model reply.
+  // Forced-tool responses are validated separately using complete JSON args.
+  if (label !== "Forced Chat tool") {
+    const hasOutput = kind === "responses"
+      ? events.some(event =>
+          (event.type === "response.output_text.delta" && typeof event.delta === "string" && event.delta.trim()) ||
+          (event.type === "response.completed" && event.response?.output?.some(item =>
+            item.content?.some(part => part.type === "output_text" && typeof part.text === "string" && part.text.trim()))))
+      : events.some(event => event.choices?.some(choice =>
+          typeof choice.delta?.content === "string" && choice.delta.content.trim()));
+    if (!hasOutput) throw new Error(`${label}: completed without assistant text`);
+  }
   const gatewayProvider = result.headers.get("x-bifrost-routing-info-provider") ??
     result.headers.get("x-bifrost-provider") ?? "unreported";
   const gatewayModel = result.headers.get("x-bifrost-routing-info-model") ??
     result.headers.get("x-bifrost-resolved-model") ?? "unreported";
+  if (requireProvenance && (gatewayProvider === "unreported" || gatewayModel === "unreported")) {
+    throw new Error(`${label}: missing Bifrost physical provider/model provenance headers`);
+  }
   console.log(`[OK] ${label}: events=${events.length} served=${gatewayProvider}/${gatewayModel}`);
   return events;
 }
