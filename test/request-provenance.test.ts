@@ -14,6 +14,7 @@ test("records and formats actual Bifrost route provenance", () => {
 		protocol: "openai-completions",
 		attempt: 2,
 		requestedPrimary: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+		compatibilityBoundaryCount: 1,
 		outcome: "done",
 	}, {
 		requestId: "req-42",
@@ -28,6 +29,8 @@ test("records and formats actual Bifrost route provenance", () => {
 	const report = formatPifrostRouteTraces(sessionId);
 	assert.match(report, /omp-default/u);
 	assert.match(report, /attempt=2/u);
+	assert.match(report, /wire-boundaries=1 boundary-retry=pre-output-only/u);
+	assert.equal(report.includes("\\n"), false, "format readable newlines, never escaped backslash-n");
 	assert.match(report, /served=deepseek\/deepseek-v4\.1-flash/u);
 	assert.match(report, /fallback=1/u);
 	assert.match(report, /request-id=req-42/u);
@@ -36,4 +39,19 @@ test("records and formats actual Bifrost route provenance", () => {
 
 	releasePifrostRouteTraces(sessionId);
 	assert.match(formatPifrostRouteTraces(sessionId), /no requests recorded/u);
+});
+
+
+test("trace leaves compatible routes free of wire-boundary notices", () => {
+	const sessionId = "session-compatible-route";
+	recordBifrostCaptureTrace(sessionId, {
+		logicalModel: "omp-task",
+		protocol: "openai-completions",
+		attempt: 1,
+		requestedPrimary: "commandcode-goat/deepseek-v4.1-flash",
+		outcome: "done",
+	}, {});
+	const report = formatPifrostRouteTraces(sessionId);
+	assert.doesNotMatch(report, /wire-boundaries|boundary-retry/u);
+	releasePifrostRouteTraces(sessionId);
 });

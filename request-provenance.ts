@@ -8,6 +8,8 @@ export interface PifrostRouteTrace {
 	protocol: string;
 	attempt: number;
 	requestedPrimary: string;
+	/** Same-protocol physical wire splits: crossing them is pre-output-only. */
+	compatibilityBoundaryCount?: number;
 	requestId?: string;
 	provider?: string;
 	resolvedModel?: string;
@@ -49,6 +51,8 @@ export function recordBifrostCaptureTrace(
 		protocol: string;
 		attempt: number;
 		requestedPrimary: string;
+		/** Same-protocol physical wire splits: crossing them is pre-output-only. */
+		compatibilityBoundaryCount?: number;
 		outcome: PifrostRouteTrace["outcome"];
 	},
 	capture: BifrostCostCapture,
@@ -91,6 +95,9 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			`attempt=${trace.attempt}`,
 			`protocol=${trace.protocol}`,
 			`requested=${trace.requestedPrimary}`,
+			trace.compatibilityBoundaryCount
+				? `wire-boundaries=${trace.compatibilityBoundaryCount} boundary-retry=pre-output-only`
+				: undefined,
 			`served=${served}`,
 			trace.fallbackIndex !== undefined
 				? `fallback=${trace.fallbackIndex}`

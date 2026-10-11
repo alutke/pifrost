@@ -157,7 +157,7 @@ Do not reuse a repository MCP VK as the global inference VK.
 
 ### Request routing provenance
 
-Bifrost 2.2.6 exposes routed identity on successful responses through `x-bifrost-*` headers. Pifrost captures the actual provider/model, fallback index, request type and upstream latency without changing routing. Newer Bifrost builds that emit `x-bifrost-request-id` are picked up automatically. Inside an OMP session, `/pifrost trace` displays the latest ten requests for that session together with Pifrost's logical alias/protocol attempt and the authoritative Bifrost cost when present. Trace state is in-memory only and is discarded when the OMP session shuts down.
+Bifrost 2.2.6 exposes routed identity on successful responses through `x-bifrost-*` headers. Pifrost captures the actual provider/model, fallback index, request type and upstream latency without changing routing. Newer Bifrost builds that emit `x-bifrost-request-id` are picked up automatically. Inside an OMP session, `/pifrost trace` displays the latest ten requests for that session together with Pifrost's logical alias/protocol attempt and the authoritative Bifrost cost when present. Each trace also records `wire-boundaries=N boundary-retry=pre-output-only` when physical model encoders require a compatibility split. Non-actionable compatibility notices and replay-cleanup counts are not emitted to stderr during inference; the latter remain visible in the existing trace counters. This preserves the physical wire guard and keeps OMP settings and TUI operations quiet. Trace state is in-memory only and is discarded when the OMP session shuts down.
 
 
 New Pifrost repository MCP keys on Bifrost 2.x are explicitly created with `allow_all_providers: false` and no provider configs, making the intended MCP-only posture explicit. Existing repository keys are not silently rewritten, because that could destroy operator-managed governance.
@@ -359,7 +359,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.15.1
+0.15.2
 ```
 
 Bun can also install the package globally:
