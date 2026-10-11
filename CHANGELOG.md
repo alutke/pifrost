@@ -1,3 +1,11 @@
+## 0.14.0 — 2026-10-11
+
+- Release B: merge Pifrost-owned OMP `modelRoles` into the current mapping on CLI setup and approval-aware cfg:// writes. Preserve custom `judge`, `web`, `memory` and future roles; fail closed on unreadable settings. Retain enabled-model namespaces and other provider ordering while preferring Bifrost.
+- Add read-only Bifrost provider-injected MCP tool visibility (`pifrost global mcp-policy` and `pifrost doctor`) through the redacted `/api/providers` management endpoint. Show configured provider/client/tool references and metadata drift without executing tools, modifying grants or asserting per-VK execution rights. Unsupported gateway schemas are reported as unknown.
+- Report OMP-owned extended-context, model-specific compaction thresholds, method order and compaction enablement in doctor. Proactive compact-before-skip delegates to OMP; invalid or already-overflowed effective session windows defer to OMP recovery.
+- Update the pinned DonSeTch schema canary to verified v4.7.4, retaining the provider-neutral research boundary.
+- Extend regression checks, package validation and architecture documentation for these governance changes.
+
 ## 0.13.1 — 2026-10-11
 
 - Release A audit: reject stale, unverified physical-provider provenance when Bifrost reports a model but not its serving provider, including same-model cross-host fallbacks.
