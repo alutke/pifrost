@@ -138,3 +138,35 @@ test("coordinator compacts once while idle and re-evaluates after compression", 
 	await new Promise<void>((resolve) => setImmediate(resolve));
 	assert.equal(compactCalls, 1);
 });
+
+
+test("extended OMP context still protects smaller Bifrost fallback without mirroring OMP thresholds", () => {
+  const route = profile();
+  const plan = planCompactBeforeContextSkip(route, 210_000);
+  assert.equal(plan.targetReference, "provider/small");
+  assert.equal(plan.targetContextWindow, 256_000);
+  assert.equal(plan.reason, "context-skip");
+});
+
+test("scheduler yields invalid and already-overflowed session windows to OMP recovery", async () => {
+  for (const window of [0, Number.NaN, 200_000]) {
+    const timers: Array<() => void> = [];
+    let calls = 0;
+    const ctx: CompactBeforeSkipRuntimeContext = {
+      sessionManager: {},
+      model: { provider: "bifrost", id: "omp-default" },
+      models: { current: () => ({ provider: "bifrost", id: "omp-default" }) },
+      getContextUsage: () => ({ tokens: 210_000, contextWindow: window, percent: 105 }),
+      isIdle: () => true,
+      compact: async () => { calls++; },
+      setTimeout: callback => { timers.push(() => callback()); return 0; },
+    };
+    const schedule = createCompactBeforeSkipCoordinator(
+      id => id === "omp-default" ? profile() : undefined, { env: {}, idleRetryMs: 1 },
+    );
+    schedule(ctx);
+    timers.shift()!();
+    await new Promise<void>(resolve => setImmediate(resolve));
+    assert.equal(calls, 0, "invalid or overflowing OMP session cannot trigger proactive compaction");
+  }
+});
