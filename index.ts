@@ -1,4 +1,5 @@
 import { loadRepoResearchScreenshotTools } from "./research-repo-config.ts";
+import { isBifrostChatModel } from "./model-kind-boundary.mjs";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -73,6 +74,8 @@ export interface BifrostModelResponse {
 }
 
 export interface BifrostModel {
+	kind?: string;
+	model_kind?: string;
 	id?: string;
 	name?: string;
 	normalized_name?: string;
@@ -414,9 +417,7 @@ function pricePerMillion(value: string | number | undefined): number | undefined
 }
 
 function isTextGenerationModel(model: BifrostModel): boolean {
-	const methods = model.supported_methods?.map((method) => method.toLowerCase()) ?? [];
-	if (methods.length === 0) return true;
-	return methods.some((method) => /chat|message|generate|completion|response/u.test(method));
+	return isBifrostChatModel(model);
 }
 
 function modelThinking(model: BifrostModel): OmpThinkingConfig | undefined {

@@ -19,6 +19,7 @@ import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
+import { nativeJudgeGateway } from "./judge-bridge.mjs";
 import { installPifrostTextTokenCounter } from "./omp-context-policy.ts";
 import {
 	applyBifrostAuthoritativeCost,
@@ -752,6 +753,36 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		const providerApiKey = config.apiKey ?? config.virtualKey;
 		const virtualKeyBearerCompatible = /^sk-bf-/u.test(config.virtualKey);
 		const usage = createBifrostUsageProvider(config);
+		// An explicitly opted-in OMP native judge; never a second judge executor
+		// or session ledger. The user's OMP modelRoles.judge is not modified.
+		try {
+			const judge = nativeJudgeGateway(config, mergedEnvironment);
+			if (judge) {
+				const reference = getBundledModels("typesafe").find(item => item.id === "jev-latest");
+				pi.registerProvider(judge.provider, {
+					baseUrl: judge.baseUrl,
+					api: "typesafe",
+					apiKey: judge.virtualKey,
+					models: [{
+						id: judge.model,
+						name: "Bifrost TypeSafe " + judge.model + " (native judge)",
+						api: "typesafe",
+						kind: "judge",
+						reasoning: false,
+						input: ["text"],
+						// Pinned OMP catalog TypeSafe rate; Bifrost bills actual.
+						cost: reference?.cost ?? { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
+						// Numeric fields are required by OMP's extension type
+						// even for non-chat runners; not chat context limits.
+						contextWindow: 8192,
+						maxTokens: 256,
+					}],
+				});
+			}
+		} catch (error) {
+			process.stderr.write("pifrost: optional native judge not registered: " + (error instanceof Error ? error.message : String(error)) + "\n");
+		}
+
 		pi.registerProvider(PROVIDER_ID, {
 			baseUrl: config.url,
 			apiKey: providerApiKey,
