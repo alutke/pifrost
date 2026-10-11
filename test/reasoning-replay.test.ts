@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { normalizeCompletionsReplay, normalizeResponsesReplay } from "../reasoning-replay.ts";
+import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "../reasoning-replay.ts";
 
 const reason = () => ({ type: "reasoning", summary: [], content: [{ type: "reasoning_text", text: "reasoning unavailable" }] });
 const placeholder = () => ({
@@ -293,4 +293,39 @@ test("Completions applies the same nested/prose cleanup only with its own explic
   assert.equal(clean.rewrittenNestedMessages, 1);
   assert.equal((clean.payload as typeof original).messages[1].content, "<think>\nReal content");
   assert.equal(normalizeCompletionsReplay(clean.payload).payload, clean.payload);
+});
+
+test("opt-in cleanup preserves signed content and every tool pair", () => {
+  const signed = { ...reason(), id: "rs_native" };
+  const input = [{role:"user",content:"question"},reason(),placeholder(),call("one"),output("one"),
+    signed,{type:"message",role:"assistant",content:[{type:"output_text",text:"Genuine answer"}]}];
+  const src={input};const snapshot=JSON.stringify(src);
+  const result=normalizeResponsesReplay(src,{allowSyntheticReasoningRemoval:true});
+  assert.equal(result.removedSyntheticReasoningItems,1);
+  assert.equal(result.removedVisiblePlaceholders,1);
+  assert.equal(result.retainedReasoningItems,1);
+  assert.deepEqual((result.payload as typeof src).input,[input[0],input[3],input[4],signed,input[6]]);
+  assert.equal(JSON.stringify(src),snapshot);
+  assert.equal(normalizeResponsesReplay(result.payload,{allowSyntheticReasoningRemoval:true}).payload,result.payload);
+  assert.equal(normalizeResponsesReplay(src).removedSyntheticReasoningItems,0);
+});
+
+test("ambiguous reasoning-only continuations and opaque items remain intact", () => {
+  const a={input:[reason(),placeholder(),{role:"user",content:"next"}]};
+  assert.equal(normalizeResponsesReplay(a,{allowSyntheticReasoningRemoval:true}).removedSyntheticReasoningItems,0);
+  const b={input:[{...reason(),encrypted_content:"signed"},call("c"),output("c")]};
+  assert.equal(normalizeResponsesReplay(b,{allowSyntheticReasoningRemoval:true}).payload,b);
+});
+
+test("resolved physical policy is mandatory and DeepSeek/Kimi/MiMo always fail closed", () => {
+  const optional={requiresReasoningContentForAllAssistantTurns:false,requiresReasoningContentForToolCalls:false};
+  assert.equal(mayOmitSyntheticReasoning(optional,"openai/gpt-6"),true);
+  assert.equal(mayOmitSyntheticReasoning({}, "openai/gpt-6"),false);
+  assert.equal(mayOmitSyntheticReasoning({...optional,requiresReasoningContentForToolCalls:true},"openai/gpt-6"),false);
+  assert.equal(mayOmitSyntheticReasoning({...optional,requiresReasoningContentForAllAssistantTurns:true},"openai/gpt-6"),false);
+  for(const model of ["CommandCode GOAT/deepseek/deepseek-v4.1-flash","openrouter/moonshot/kimi-k3","xiaomi/mimo-v2"]) {
+    assert.equal(mayOmitSyntheticReasoning(optional,model),false,model);
+  }
+  const chat={messages:[{role:"assistant",reasoning_content:"reasoning unavailable",content:"answer"}]};
+  assert.equal(normalizeCompletionsReplay(chat).payload,chat);
 });
