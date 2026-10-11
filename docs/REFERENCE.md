@@ -63,6 +63,19 @@ These entries are owned by the **Pifrost integration boundary**, not by a replac
 
 All governance diagnostics are read-only and deliberately redact provider internals.
 
+### Release C — versioned native Decisions / OMP model-kind contract
+
+**Stable upstream contracts inspected:**
+- OMP 18.8.9/18.9.0 `pi.registerProvider` exposes typed `kind: "judge"` models under the built-in `api: "typesafe"`. `TypeSafeJudge` itself implements `Judge`, typed response parsing, retries and credentials; OMP's `ChainJudge` owns candidate selection, cache, session usage and concurrency. Native HTTP request is `POST {baseUrl}/v1/systemone` with fields `state`, `model`, `questions` and `type: "noul" | "choice" | "score"`.
+- Bifrost `transports/v2.2.6` exposes `POST /typesafe/v1/systemone` and `GET /typesafe/v1/models`, a native TypeSafe shape (typed answers under `type` and `noul`/`choice`/`score`). Its separate `POST /v1/decisions` uses `kind` and `value`; it is **not** interchangeable with OMP's TypeSafe transport.
+- The isolated `bifrost-judge` registration maps the **stable native** TypeSafe API directly to Bifrost, not the incompatible canonical Decisions schema. Pifrost does not create a custom HTTP-to-judge service or global fetch interception.
+
+**Opt-in/ownership:** `PIFROST_NATIVE_JUDGE_MODEL=jev-latest` registers one native provider, with the configured inference Virtual Key; requires a modern `sk-bf-*` key. No role changes happen automatically, preserving OMP's existing `modelRoles.judge` and judge chain. Explicit `pifrost judge activate` calls OMP's schema-aware config command after read-before-write and a successful Bifrost native model-list GET. If native registration is invalid, Pifrost reports the reason without disabling its main chat provider. Per-session attribution, typed decoding, retries, model choice, physical routing and billing remain with OMP/Bifrost.
+
+**Model kinds:** The `bifrost` chat provider filters explicitly non-chat kinds and non-chat-only method catalogs. Unrecognised kinds fail closed; unsupported new model kinds are **not** registered through fake Chat/Responses endpoints. OMP's image, TTS, STT, embedding, rerank, search and video APIs remain upstream responsibilities.
+
+**Verification and retirement:** Deterministic no-secret tests cover opt-in gating, native/Decisions wire-shape separation, read-only discovery, opt-in paid probes, malformed responses and chat-kind filtering. The Bifrost native TypeSafe contract should be revalidated on supported gateway upgrades and when OMP adds a stable direct Bifrost Decisions API. Retire this provider mapping if OMP supplies native `/v1/decisions` support with equivalent per-session attribution and permission semantics. Live inference, actual VK governance and hosted provider availability cannot be established by CI fixtures.
+
 ## Architecture
 
 Pifrost deliberately does **not** become a second prompt router. Bifrost remains the authority for provider selection and fallback.
@@ -346,7 +359,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.14.0
+0.15.0
 ```
 
 Bun can also install the package globally:

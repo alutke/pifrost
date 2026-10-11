@@ -1,3 +1,10 @@
+## 0.15.0 — 2026-10-11
+
+- Release C: explicit opt-in OMP native `judge` provider through Bifrost 2.2.6's stable TypeSafe `/typesafe/v1/systemone` interface. `PIFROST_NATIVE_JUDGE_MODEL=jev-latest` registers `bifrost-judge/jev-latest` as OMP `kind:judge`, using OMP's native judgment runner. No Pifrost decisions engine, worker, session ledger, router, cache or queue is created; `modelRoles.judge` remains user-owned unless explicitly activated.
+- `pifrost judge status` performs read-only native model discovery; `pifrost judge activate` confirms the configured model upstream and safely merges the single OMP judge role; `pifrost judge probe [--decisions]` performs a **billed, explicitly requested** typed contract test against native System One or canonical Bifrost Decisions. Credential, incomplete-response and unsupported-model failures are detected conservatively.
+- Protect Pifrost's chat-only model catalogue against known non-chat kinds and endpoints (judge, image, speech, embedding, rerank, video). Other model-kind runners remain owned by OMP; no non-chat model is silently cast into an OpenAI Chat Completions transport.
+- Versioned fixture tests, architecture guardrails and packaging checks cover the native bridge. Live execution against the private Bifrost gateway remains an opt-in verification step.
+
 ## 0.14.0 — 2026-10-11
 
 - Release B: merge Pifrost-owned OMP `modelRoles` into the current mapping on CLI setup and approval-aware cfg:// writes. Preserve custom `judge`, `web`, `memory` and future roles; fail closed on unreadable settings. Retain enabled-model namespaces and other provider ordering while preferring Bifrost.
