@@ -32,6 +32,9 @@ import {
   probeResearchCodeMode,
 } from "./research-providers.mjs";
 import { classifyResearchResult } from "./research-results.mjs";
+import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
+import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
+import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 
 import {
@@ -71,6 +74,7 @@ import {
   buildRepoMcpConfig,
   commandExists,
   configureOmp,
+  backupOmpConfig,
   currentRepoState,
   detachVirtualMcpFromVirtualKey,
   diffAliases,
@@ -113,6 +117,7 @@ import {
   ompContextPolicyDiagnostics,
   formatOmpContextPolicyDiagnostics,
   readOmpConfigValue,
+  readOmpConfigValueResult,
   testInference,
   testManagement,
   syncVirtualMcpAssignments,
@@ -134,6 +139,9 @@ Usage:
   pifrost global status
   pifrost global mcp-policy               Read-only gateway-injected provider tools
   pifrost global configure-omp
+  pifrost judge status                      Inspect opt-in native OMP judge and gateway model availability
+  pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
+  pifrost judge probe [--decisions]         Billed opt-in System One or canonical Decisions conformance
   pifrost routes list
   pifrost routes diff
   pifrost routes sync [--no-refresh]
@@ -1843,6 +1851,71 @@ async function commandGlobalMcpPolicy(snapshot) {
   }
 }
 
+
+function judgeRuntimeConfig() {
+  const state = loadState();
+  const runtime = runtimeConfigFromState(state);
+  if (!runtime.url || !runtime.virtualKey) {
+    throw new Error("Bifrost URL and inference Virtual Key are required; run pifrost global setup");
+  }
+  return runtime;
+}
+
+async function commandJudgeStatus() {
+  const selected = nativeJudgeSelection();
+  console.log("OMP native judgment (optional; OMP owns judge execution and session usage):");
+  if (!selected) {
+    console.log("  disabled: set PIFROST_NATIVE_JUDGE_MODEL=jev-latest before launching OMP");
+    console.log("  other OMP kinds (image, search, speech, dictation, embedding, rerank, video) remain OMP-owned");
+    return;
+  }
+  console.log("  configured provider: bifrost-judge");
+  console.log("  configured model: " + selected.model);
+  const current = readOmpConfigValueResult("modelRoles");
+  const roles = current.status === "ok" && current.value && typeof current.value === "object"
+    && !Array.isArray(current.value) ? current.value : undefined;
+  console.log("  OMP judge role: " + (roles?.judge ?? (current.status === "ok" ? "not explicitly assigned" : "unavailable")));
+  console.log("  role matches opt-in: " + (roles?.judge === selected.selector ? "yes" : "no"));
+  try {
+    const status = await inspectNativeJudgeModels(judgeRuntimeConfig());
+    console.log("  Bifrost native TypeSafe model: " + status.status);
+    console.log("  model-list names: " + status.models.length);
+    if (status.status !== "available") process.exitCode = 2;
+  } catch (error) {
+    console.log("  Bifrost native TypeSafe models: unavailable (" + formatError(error) + ")");
+    process.exitCode = 2;
+  }
+  console.log("  canonical /v1/decisions differs from OMP TypeSafe wire; Bifrost owns its translation");
+  console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
+}
+
+async function commandJudgeActivate() {
+  const selected = nativeJudgeSelection();
+  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest to explicitly opt into the native judge provider first");
+  const runtime = judgeRuntimeConfig();
+  const judge = nativeJudgeGateway(runtime);
+  if (!judge) throw new Error("Native judge provider unavailable");
+  const available = await inspectNativeJudgeModels(runtime);
+  if (available.status !== "available") throw new Error("Configured native judge model was not confirmed by the Bifrost gateway");
+  const existing = readOmpConfigValueResult("modelRoles");
+  if (existing.status !== "ok") throw new Error("Cannot safely update OMP judge role: " + (existing.error ?? "role map unreadable"));
+  const roles = reconcilePifrostOmpSetting("modelRoles", existing.value, { judge: selected.selector });
+  const backup = backupOmpConfig();
+  runCommand("omp", ["config", "set", "modelRoles", JSON.stringify(roles)]);
+  console.log("OMP modelRoles.judge explicitly assigned: " + selected.selector);
+  console.log("All unrelated OMP model roles and presets were preserved.");
+  if (backup) console.log("Configuration backup: " + backup);
+}
+
+async function commandJudgeProbe(flags = {}) {
+  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true });
+  console.log("Bifrost " + result.kind + " judgment conformance: OK");
+  console.log("  model: " + result.model);
+  console.log("  typed answers checked: " + result.answered);
+  console.log("  usage: " + (result.hasUsage ? "reported" : "not reported"));
+  console.log("  this was an explicitly requested inference request; normal judgments remain OMP-owned");
+}
+
 async function commandDoctor() {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
@@ -1890,6 +1963,9 @@ const COMMANDS = new Map([
   ["global setup", (_args, flags) => commandGlobalSetup(flags)],
   ["global status", () => commandGlobalStatus()],
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
+  ["judge status", () => commandJudgeStatus()],
+  ["judge activate", () => commandJudgeActivate()],
+  ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
   ["global configure-omp", () => {
     const result = configureOmp();
     console.log(`Configured ${result.settings} OMP settings.`);
