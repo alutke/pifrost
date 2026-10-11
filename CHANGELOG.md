@@ -1,3 +1,10 @@
+## 0.15.2 — 2026-10-11
+
+- Stop writing routine physical wire fallback-boundary notices to stderr for every model request, preventing repeated warnings and literal escaped newline output in OMP's terminal during settings and memory operations. Preserve the ordered, pre-output-only transport compatibility guard without relaxing fallback behaviour.
+- Surface the number of per-request wire compatibility boundaries and retry limitations in session-scoped `/pifrost trace`; no new routing policy or persistent diagnostic state.
+- Stop routine Responses history-cleanup stderr noise; the existing per-session reasoning-hygiene counters remain available in `/pifrost trace`.
+- Add tests for compatibility-boundary trace rendering, clean routes, real newline formatting and no routine stderr writes in the native dynamic stream path. Live OMP TUI validation remains a separate host check.
+
 ## 0.15.1 — 2026-10-11
 
 - Omit redundant unsigned `reasoning unavailable` Responses history items only when the selected physical OMP model's resolved compatibility contract explicitly permits omission of both all-turn and tool-call reasoning. Preserve native/signed/encrypted reasoning, ambiguous turns, substantive output, and all tool-call/result pairs.

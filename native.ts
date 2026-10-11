@@ -343,9 +343,9 @@ function streamDynamicPifrostRoute(
 		compatibilityByMember,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
-	if (plan.compatibilityBreaks?.length) {
-		process.stderr.write(`pifrost: ${model.id} split ${plan.compatibilityBreaks.length} same-protocol fallback boundary/boundaries due to physical wire incompatibility; only pre-output retries are permitted\\n`);
-	}
+	// Non-actionable compatibility boundaries are reported with each session trace,
+	// not written to stderr for every model call (which corrupts OMP's TUI).
+	const compatibilityBoundaryCount = plan.compatibilityBreaks?.length ?? 0;
 	const underlyingFetch = options?.fetch ?? globalThis.fetch;
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
@@ -397,11 +397,8 @@ function streamDynamicPifrostRoute(
 					hygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
-					if (hygiene.removedVisiblePlaceholders > 0 || hygiene.rewrittenMixedMessages > 0 || hygiene.removedSyntheticReasoningItems > 0) {
-						process.stderr.write(
-							`pifrost: Responses history hygiene removed ${hygiene.removedVisiblePlaceholders} redundant visible messages; rewrote ${hygiene.rewrittenMixedMessages} mixed prefixes; removed ${hygiene.removedSyntheticReasoningItems} optional synthetic reasoning items; preserved ${hygiene.retainedReasoningItems} structured reasoning items; retained ${hygiene.retainedAmbiguousPlaceholders} ambiguous placeholders\\n`,
-						);
-					}
+					// Counters are available in /pifrost trace; do not log routine
+					// cleanup to stderr on every streamed model request.
 					return hygiene.payload;
 				},
 				onSseEvent: (event, requestModel) => {
@@ -425,6 +422,7 @@ function streamDynamicPifrostRoute(
 					protocol: attempt.protocol,
 					attempt: attemptIndex + 1,
 					requestedPrimary: attempt.primary,
+					...(compatibilityBoundaryCount ? { compatibilityBoundaryCount } : {}),
 					outcome,
 				}, costCapture, hygieneCounters),
 				reasoningFilter,
@@ -476,6 +474,7 @@ function streamDynamicPifrostRoute(
 				protocol: attempt.protocol,
 				attempt: attemptIndex + 1,
 				requestedPrimary: attempt.primary,
+				...(compatibilityBoundaryCount ? { compatibilityBoundaryCount } : {}),
 				outcome,
 			}, costCapture, chatHygieneCounters),
 			chatReasoningFilter,
