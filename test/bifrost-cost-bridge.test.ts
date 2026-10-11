@@ -146,3 +146,34 @@ test("authoritative Bifrost resolved model overrides ambiguous response identity
 	assert.deepEqual(resolved, { upstreamModel: "actual-fallback-model", value: 1 });
 	assert.deepEqual(applyBifrostResolvedModel(message, {}), message);
 });
+
+test("records only Bifrost-confirmed physical origin without changing logical session identity", () => {
+	const original = { provider: "bifrost", model: "omp-default", api: "openai-completions", upstreamModel: "primary", upstreamProvider: "commandcode" };
+	const actual = applyBifrostResolvedModel(original, { provider: "deepseek", resolvedModel: "deepseek-v4" });
+	assert.deepEqual(actual, { ...original, upstreamModel: "deepseek-v4", upstreamProvider: "deepseek" });
+	assert.deepEqual(original, { provider: "bifrost", model: "omp-default", api: "openai-completions", upstreamModel: "primary", upstreamProvider: "commandcode" });
+	assert.strictEqual(applyBifrostResolvedModel(actual, { provider: "deepseek", resolvedModel: "deepseek-v4" }), actual);
+	assert.strictEqual(applyBifrostResolvedModel(original, { provider: "deepseek" }), original, "no model evidence");
+	const withoutProvider = applyBifrostResolvedModel(original, { resolvedModel: "different-fallback" });
+	assert.equal(withoutProvider.upstreamModel, "different-fallback");
+	assert.equal(withoutProvider.upstreamProvider, undefined, "never attach a stale provider to a different model");
+});
+
+test("preserves native reasoning and complete tool arguments while bridging routed JSON", async () => {
+	const payload = {
+		id: "resp-opaque",
+		output: [
+			{ type: "reasoning", encrypted_content: "signed-provider-opaque", summary: [] },
+			{ type: "function_call", call_id: "call_1", name: "search", arguments: '{"query":"all providers","limit":4}' },
+			{ type: "message", role: "assistant", content: [{ type: "output_text", text: "Complete" }] },
+		],
+		usage: { input_tokens: 10, output_tokens: 20, cost: { total_cost: 0.031 } },
+	};
+	const capture: import("../bifrost-cost-bridge.ts").BifrostCostCapture = {};
+	const response = new Response(JSON.stringify(payload), { headers: {
+		"content-type": "application/json", "x-bifrost-provider": "deepseek", "x-bifrost-resolved-model": "deepseek-v4",
+	} });
+	const bridged = await (await bridgeBifrostUsageCostResponse(response, capture)).json() as Record<string, unknown>;
+	assert.deepEqual(bridged.output, payload.output, "reasoning and tool args are opaque to this boundary");
+	assert.deepEqual({ provider: capture.provider, model: capture.resolvedModel }, { provider: "deepseek", model: "deepseek-v4" });
+});

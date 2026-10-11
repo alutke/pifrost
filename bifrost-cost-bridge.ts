@@ -220,15 +220,30 @@ export function createBifrostCostBridgeFetch(
 
 export interface PifrostMessageWithUpstreamModel {
 	upstreamModel?: string;
+	upstreamProvider?: string;
 }
 
+/**
+ * Keep the logical OMP model stable while recording what Bifrost actually
+ * served. Never infer a provider from the configured primary: Bifrost may
+ * independently select a fallback for the same wire request.
+ *
+ * If a different serving model is confirmed without a provider, discard
+ * stale upstreamProvider rather than fabricating cross-host reasoning
+ * provenance. This never modifies the original OMP session message.
+ */
 export function applyBifrostResolvedModel<T extends PifrostMessageWithUpstreamModel>(
 	message: T,
 	capture: BifrostCostCapture,
 ): T {
 	const resolvedModel = capture.resolvedModel?.trim();
-	if (!resolvedModel || message.upstreamModel === resolvedModel) return message;
-	return { ...message, upstreamModel: resolvedModel };
+	if (!resolvedModel) return message;
+	const provider = capture.provider?.trim();
+	if (message.upstreamModel === resolvedModel && (!provider || message.upstreamProvider === provider)) return message;
+	const next: PifrostMessageWithUpstreamModel = { ...message, upstreamModel: resolvedModel };
+	if (provider) next.upstreamProvider = provider;
+	else if (message.upstreamModel !== resolvedModel) delete next.upstreamProvider;
+	return next as T;
 }
 
 export interface PifrostUsageWithCost {
