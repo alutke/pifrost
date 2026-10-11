@@ -52,7 +52,7 @@ function isRedundantAssistantPlaceholder(value: unknown): boolean {
 /** OMP's exact all-turn replay fallback; genuine/opaque reasoning is never a match. */
 function isSyntheticReasoningReplay(value: unknown): boolean {
   const item = record(value);
-  if (item?.type !== "reasoning" || typeof item.encrypted_content === "string" ||
+  if (item?.type !== "reasoning" || typeof item.encrypted_content === "string" || typeof item.id === "string" ||
       !Array.isArray(item.content) || item.content.length !== 1) return false;
   if (Array.isArray(item.summary) && item.summary.length > 0) return false;
   const part = record(item.content[0]);
@@ -82,7 +82,20 @@ function isMeaningfulAssistant(value: unknown): boolean {
     item.type === "computer_call" || item.type === "local_shell_call";
 }
 
+/**
+ * Only drop unsigned OMP fallback history when the RESOLVED PHYSICAL model
+ * explicitly does not require reasoning replay on tool calls or other turns.
+ * An absent contract or a known strict continuation family fails closed.
+ */
+export function mayOmitSyntheticReasoning(compat: unknown, physicalId: string): boolean {
+  const policy = record(compat);
+  return policy?.requiresReasoningContentForAllAssistantTurns === false &&
+    policy.requiresReasoningContentForToolCalls === false &&
+    !/(?:^|[\\/._-])(?:deepseek|kimi|mimo)(?:[\\/._-]|$)/iu.test(physicalId);
+}
+
 export interface ResponsesReplayHygiene {
+  removedSyntheticReasoningItems: number;
   payload: unknown;
   removedVisiblePlaceholders: number;
   rewrittenMixedMessages: number;
@@ -98,13 +111,14 @@ export interface ResponsesReplayHygiene {
  * text is redundant. Otherwise retain one message so the run does not become
  * reasoning-only; this fails closed for unrecognised host contracts.
  */
-export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygiene {
+export function normalizeResponsesReplay(payload: unknown, options: { allowSyntheticReasoningRemoval?: boolean } = {}): ResponsesReplayHygiene {
   const body = record(payload);
   const input = body?.input;
   if (!Array.isArray(input)) return {
-    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, rewrittenNestedMessages: 0, rewrittenProseMessages: 0, retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
+    payload, removedSyntheticReasoningItems: 0, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, rewrittenNestedMessages: 0, rewrittenProseMessages: 0, retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
 
+  let removedSyntheticReasoningItems = 0;
   let removedVisiblePlaceholders = 0;
   let rewrittenMixedMessages = 0;
   let rewrittenNestedMessages = 0;
@@ -121,6 +135,12 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
     const hasSyntheticReasoning = run.some(isSyntheticReasoningReplay);
     let keptPure = false;
     for (const item of run) {
+      // Preserve reasoning-only turns and all native/signed reasoning.
+      if (options.allowSyntheticReasoningRemoval === true && hasMeaningful && isSyntheticReasoningReplay(item)) {
+        removedSyntheticReasoningItems++;
+        changed = true;
+        continue;
+      }
       if (record(item)?.type === "reasoning") retainedReasoningItems++;
       // Without corroborating OMP synthetic reasoning this could be literal
       // model-generated text; preserve it, regardless of provider identity.
@@ -164,7 +184,7 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
   flush();
   return {
     payload: changed ? { ...body, input: result } : payload,
-    removedVisiblePlaceholders, rewrittenMixedMessages, rewrittenNestedMessages, rewrittenProseMessages, retainedAmbiguousPlaceholders, retainedReasoningItems,
+    removedSyntheticReasoningItems, removedVisiblePlaceholders, rewrittenMixedMessages, rewrittenNestedMessages, rewrittenProseMessages, retainedAmbiguousPlaceholders, retainedReasoningItems,
   };
 }
 
@@ -177,7 +197,7 @@ export function normalizeResponsesReplay(payload: unknown): ResponsesReplayHygie
 export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHygiene {
   const body = record(payload);
   if (!body || !Array.isArray(body.messages)) return {
-    payload, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, rewrittenNestedMessages: 0, rewrittenProseMessages: 0,
+    payload, removedSyntheticReasoningItems: 0, removedVisiblePlaceholders: 0, rewrittenMixedMessages: 0, rewrittenNestedMessages: 0, rewrittenProseMessages: 0,
     retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
   let rewrittenMixedMessages = 0;
@@ -199,7 +219,7 @@ export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHyg
   });
   return {
     payload: rewrittenMixedMessages ? { ...body, messages } : payload,
-    removedVisiblePlaceholders: 0, rewrittenMixedMessages, rewrittenNestedMessages, rewrittenProseMessages,
+    removedSyntheticReasoningItems: 0, removedVisiblePlaceholders: 0, rewrittenMixedMessages, rewrittenNestedMessages, rewrittenProseMessages,
     retainedAmbiguousPlaceholders: 0, retainedReasoningItems: 0,
   };
 }
