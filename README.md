@@ -397,6 +397,22 @@ to deliberately replace or discard edited managed content. Legacy markers
 remain readable but their content integrity cannot be established until an
 explicit refresh. See [technical reference](docs/REFERENCE.md#automatic-mcp-to-skill-discovery).
 
+## Optional live inference conformance
+
+The unit and compiled-host CI suites validate request contracts without contacting paid providers. To verify the **actual** Bifrost/provider path, run this explicitly after configuring your target test routes and global inference credentials:
+
+~~~bash
+export BIFROST_URL=http://127.0.0.1:8180/v1
+export BIFROST_VIRTUAL_KEY=your-inference-virtual-key
+export PIFROST_CONFORMANCE_CHAT_MODEL='provider/chat-model'
+export PIFROST_CONFORMANCE_RESPONSES_MODEL='provider/responses-model'
+# Optional: a model that supports required function calls
+export PIFROST_CONFORMANCE_TOOL_MODEL='provider/tool-capable-chat-model'
+npm run smoke:transport
+~~~
+
+This performs **real billable model calls** and checks both streaming wire formats, terminal completion, and optionally fragmented tool-call arguments. It never prints the VK or prompts. Set `BIFROST_API_KEY` separately only when your gateway requires bearer auth in addition to the VK. Results cannot be inferred from CI; keep exact provider IDs and command outputs as the live acceptance record.
+
 ## Upgrading
 
 The normal upgrade sequence is:
