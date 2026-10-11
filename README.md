@@ -8,6 +8,9 @@ Pifrost also provides a terminal CLI for setup, route synchronization, diagnosti
 
 > **Design rule:** Pifrost is not a second policy router. Bifrost remains authoritative for provider credentials, physical model/provider ordering, routing policy, same-protocol fallback and governance. Pifrost may remove members that cannot satisfy the request contract and may cross a wire-protocol boundary only before any model output is emitted; it never reorders surviving members for quality, cost, quota or preference.
 
+> **Upstream-first compatibility principle:** Prefer stable, current, versioned OhMyPi and Bifrost interfaces over permanent Pifrost copies of their runtime behaviour. Pifrost owns only translation, evidence-based compatibility checks and diagnostics at their boundary. Every workaround must have a reproducible upstream defect or contract gap, a regression test, clear ownership and a revalidation/removal condition. Do not add a parallel agent runtime, provider router, session-history writer or MCP executor. Preserve Bifrost's configured provider order and OMP's agent/session ownership.
+
+
 ## Start here
 
 If you already run OMP and Bifrost, the normal setup is:
@@ -70,7 +73,7 @@ That gives you six useful properties:
 | --- | --- |
 | Node.js | **22.19+** |
 | OhMyPi | **18.4.5+** in the 18.x line |
-| Pifrost OMP policy snapshot | **18.4.5**, with explicit compatibility patches; host integration validated through **18.8.6** |
+| Pifrost OMP policy snapshot | **18.8.9**, with evidence-backed compatibility patches; host integration validated separately |
 | Maxim Bifrost | **2.2.4+** |
 | Recommended Bifrost | **2.2.6+** for setup-lock awareness, routed-response provenance and current cost semantics |
 
@@ -106,7 +109,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.12.7
+0.13.0
 ```
 
 Bun also works:
@@ -393,6 +396,22 @@ in the Pifrost ownership marker; `skills sync/add/remove --force` is required
 to deliberately replace or discard edited managed content. Legacy markers
 remain readable but their content integrity cannot be established until an
 explicit refresh. See [technical reference](docs/REFERENCE.md#automatic-mcp-to-skill-discovery).
+
+## Optional live inference conformance
+
+The unit and compiled-host CI suites validate request contracts without contacting paid providers. To verify the **actual** Bifrost/provider path, run this explicitly after configuring your target test routes and global inference credentials:
+
+~~~bash
+export BIFROST_URL=http://127.0.0.1:8180/v1
+export BIFROST_VIRTUAL_KEY=your-inference-virtual-key
+export PIFROST_CONFORMANCE_CHAT_MODEL='provider/chat-model'
+export PIFROST_CONFORMANCE_RESPONSES_MODEL='provider/responses-model'
+# Optional: a model that supports required function calls
+export PIFROST_CONFORMANCE_TOOL_MODEL='provider/tool-capable-chat-model'
+npm run smoke:transport
+~~~
+
+This performs **real billable model calls** and checks both streaming wire formats, terminal completion, and optionally fragmented tool-call arguments. It never prints the VK or prompts. Set `BIFROST_API_KEY` separately only when your gateway requires bearer auth in addition to the VK. Results cannot be inferred from CI; keep exact provider IDs and command outputs as the live acceptance record.
 
 ## Upgrading
 

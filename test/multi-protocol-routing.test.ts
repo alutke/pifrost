@@ -362,3 +362,32 @@ test("physical Chat and Responses attempts preserve gateway authentication witho
 	}
 	assert.deepEqual(logical.headers, originalHeaders);
 });
+
+test("logical alias mapping preserves actual physical origin after cross-protocol fallback", async () => {
+	const received: AssistantMessageEvent[] = [];
+	const output: PifrostProtocolOutput = {
+		push(event) { received.push(event); },
+		fail(error) { throw error; },
+		forwardLocalWorkFrom() {},
+	};
+	await runPifrostProtocolPlan(logicalModel(), plan(), output, (attempt, index) => {
+		if (index === 0) {
+			const protocol = attempt.protocol === "openai-responses" ? "openai-responses" : "openai-completions";
+			const failed = assistant(attempt.primary, protocol, "error");
+			return eventStream([{ type: "start", partial: failed }, { type: "error", reason: "error", error: failed }]);
+		}
+		const physical = {
+			...assistant(attempt.primary, attempt.protocol === "openai-responses" ? "openai-responses" : "openai-completions", "stop"),
+			upstreamProvider: "deepseek",
+			upstreamModel: "deepseek-v4",
+		};
+		return eventStream([{ type: "start", partial: physical }, { type: "done", reason: "stop", message: physical }]);
+	});
+	const terminal = received.find((event) => event.type === "done");
+	assert.ok(terminal && terminal.type === "done");
+	assert.equal(terminal.message.provider, "bifrost");
+	assert.equal(terminal.message.model, "omp-default");
+	assert.equal(terminal.message.upstreamProvider, "deepseek");
+	assert.equal(terminal.message.upstreamModel, "deepseek-v4");
+	assert.deepEqual(received.map((e) => e.type), ["start", "done"]);
+});

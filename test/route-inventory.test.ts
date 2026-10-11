@@ -232,7 +232,7 @@ test("MiMo V2.6 provider variants preserve vision capability without live metada
 });
 
 
-test("current omp-default keeps Muse primary via Responses then falls back to the Chat group", () => {
+test("current omp-default follows current OMP transport policy without reordering the physical chain", () => {
 	const aliases: PifrostAliasConfig = {
 		includePhysicalModels: false,
 		aliases: {
@@ -248,7 +248,7 @@ test("current omp-default keeps Muse primary via Responses then falls back to th
 		},
 	};
 	assert.deepEqual(findCatalogProtocolCapability("opencode-go/muse-spark-1.3-contributor"), ["openai-responses"]);
-	assert.deepEqual(findCatalogProtocolCapability("CommandCode GOAT/deepseek/deepseek-v4.1-flash"), ["openai-completions"]);
+	assert.deepEqual(findCatalogProtocolCapability("CommandCode GOAT/deepseek/deepseek-v4.1-flash"), ["openai-responses"]);
 	const augmented = augmentLiveInventoryForRoutes([], aliases);
 	const catalogOverride = [
 		{
@@ -298,7 +298,7 @@ test("current omp-default keeps Muse primary via Responses then falls back to th
 	const muse = rich.models.find((model) => model.id === "opencode-go/muse-spark-1.3-contributor");
 	const commandCode = rich.models.find((model) => model.id === "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
 	assert.deepEqual(muse?.protocols, ["openai-responses"]);
-	assert.deepEqual(commandCode?.protocols, ["openai-completions"]);
+	assert.deepEqual(commandCode?.protocols, ["openai-responses"]);
 	assert.equal(muse?.capabilitySources?.protocol, "canonical-family");
 	assert.equal(commandCode?.capabilitySources?.protocol, "canonical-family");
 
@@ -326,22 +326,17 @@ test("current omp-default keeps Muse primary via Responses then falls back to th
 	);
 	assert.equal(plan.outputReserveExplicit, false);
 	assert.deepEqual(plan.excluded, []);
-	assert.deepEqual(plan.attempts.map((attempt) => ({
-		protocol: attempt.protocol,
-		primary: attempt.primary,
-		fallbacks: attempt.fallbacks,
-	})), [
-		{
-			protocol: "openai-responses",
-			primary: "opencode-go/muse-spark-1.3-contributor",
-			fallbacks: [],
-		},
-		{
-			protocol: "openai-completions",
-			primary: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
-			fallbacks: ["deepseek/deepseek-flash"],
-		},
+	assert.equal(plan.attempts[0]?.protocol, "openai-responses");
+	assert.equal(plan.attempts[0]?.primary, "opencode-go/muse-spark-1.3-contributor");
+	assert.deepEqual(plan.attempts.flatMap((attempt) => [attempt.primary, ...attempt.fallbacks]), [
+		"opencode-go/muse-spark-1.3-contributor",
+		"CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+		"deepseek/deepseek-flash",
 	]);
+	// OMP 18.8.9 now marks the CommandCode deployment as Responses-capable.
+	// An independently confirmed Bifrost live capability can still override
+	// the portable catalogue; neither path may reorder route members.
+	assert.ok(plan.attempts[0]?.fallbacks.includes("CommandCode GOAT/deepseek/deepseek-v4.1-flash"));
 });
 
 test("provider-specific OMP protocol policy outranks cross-provider family datasheet endpoints", () => {
@@ -413,7 +408,10 @@ test("provider-specific OMP protocol policy outranks cross-provider family datas
 	);
 	assert.equal(plan.attempts[0]?.protocol, "openai-responses");
 	assert.equal(plan.attempts[0]?.primary, "opencode-go/muse-spark-1.3-contributor");
-	assert.equal(plan.attempts[1]?.protocol, "openai-completions");
-	assert.equal(plan.attempts[1]?.primary, "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
+	assert.deepEqual(plan.attempts.flatMap((attempt) => [attempt.primary, ...attempt.fallbacks]), [
+		"opencode-go/muse-spark-1.3-contributor",
+		"CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+	]);
+	assert.equal(plan.attempts[0]?.fallbacks[0], "CommandCode GOAT/deepseek/deepseek-v4.1-flash");
 });
 

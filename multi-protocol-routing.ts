@@ -130,6 +130,9 @@ function logicalAssistantMessage(
 	logicalModel: Model,
 	physicalModel: string,
 ): AssistantMessage {
+	// The session stays on its logical alias. Preserve independent physical
+	// upstreamProvider/upstreamModel fields; do not impersonate the physical
+	// provider in OMP history just to enable reasoning portability.
 	return {
 		...message,
 		api: "openai-completions",

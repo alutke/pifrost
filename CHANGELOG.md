@@ -1,3 +1,11 @@
+## 0.13.0 — 2026-10-11
+
+- Adopt the upstream-first architectural principle: prefer current versioned upstream OMP/Bifrost behaviour, keep only boundary-specific compatibility and require evidence, tests and removal criteria for workarounds.
+- Upgrade the packaged OMP transport/catalog/utility dependencies and policy snapshot to 18.8.9, while retaining separate minimum-host and gateway conformance checks.
+- Preserve Bifrost-corroborated physical provider and model as OMP upstream metadata without rewriting the logical Bifrost session/model identity, and add regressions for stale or missing provenance.
+- Add cross-protocol fallback, authentication and opaque-native-reasoning / tool-argument conformance coverage. Live inference must be verified separately; CI fixtures are not a substitute.
+- OMP's newer main-branch native cross-host reasoning portability is not silently backported ahead of a stable release; existing defensive history handling remains conservative.
+
 ## 0.12.7 — 2026-10-10
 
 - Recognise nested pure OMP `<think>` fallback messages without treating them as meaningful assistant text. The earlier safety invariant remains: keep one corroborated placeholder in an otherwise reasoning-only history turn; never discard native structured `reasoning_text`, tool calls or outputs.

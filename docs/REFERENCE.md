@@ -11,6 +11,8 @@ It has two responsibilities:
 
 Pifrost is derived from [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam/pi-bifrost-provider), but uses the current OMP 18 native provider API.
 
+> **Upstream-first compatibility principle:** Prefer current, versioned upstream OhMyPi/Bifrost behaviour over copied implementations. Pifrost owns capability and protocol translation, verified provenance, safe diagnostics and repository MCP bindings only. Every compatibility workaround needs evidence, regression tests, ownership and removal criteria. Never duplicate OMP agent/session authority or Bifrost provider ordering, gateway fallback, credentials, queues or MCP execution.
+
 > **Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS management endpoints use the configured dashboard/admin username and password over HTTP Basic auth. Pifrost supports OSS Basic auth and Enterprise Bearer/scoped-key auth separately. On fresh Bifrost 2.2.6+ instances, Pifrost also detects the first-time setup lock; `--setup-token` / `BIFROST_SETUP_TOKEN` is accepted only as ephemeral bootstrap authentication and is never persisted.
 
 ---
@@ -290,7 +292,7 @@ thinking=high,max source=explicit
 
 - Node.js **22.19 or later**
 - OhMyPi **18.4.5 or later** in the 18.x line
-- Pifrost's packaged OMP policy/catalog snapshot is **18.4.5**; Pifrost layers explicit compatibility patches over that portable baseline and validates host integration through **18.8.6**. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host.
+- Pifrost's packaged OMP policy/catalog snapshot is **18.8.9**; evidence-backed compatibility patches must be revalidated whenever this snapshot advances. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host. Packaged library compatibility and host executable compatibility are validated separately.
 - Maxim Bifrost **2.2.4 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
@@ -322,7 +324,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.12.7
+0.13.0
 ```
 
 Bun can also install the package globally:
