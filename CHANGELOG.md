@@ -1,3 +1,9 @@
+## 0.15.1 — 2026-10-11
+
+- Omit redundant unsigned `reasoning unavailable` Responses history items only when the selected physical OMP model's resolved compatibility contract explicitly permits omission of both all-turn and tool-call reasoning. Preserve native/signed/encrypted reasoning, ambiguous turns, substantive output, and all tool-call/result pairs.
+- Preserve DeepSeek, Kimi and MiMo reasoning replay even if metadata is permissive. These providers can require non-empty reasoning content on tool continuation; the user's CommandCode GOAT DeepSeek V4.1 Flash traces cannot safely be purged at this boundary. A complete upstream fix requires provenance-aware OMP history handling.
+- Add policy, tool-pair preservation, idempotence, and opaque-history regression tests. No changes to Chat Completions native reasoning, provider routing, fallback, or credentials.
+
 ## 0.15.0 — 2026-10-11
 
 - Release C: explicit opt-in OMP native `judge` provider through Bifrost 2.2.6's stable TypeSafe `/typesafe/v1/systemone` interface. `PIFROST_NATIVE_JUDGE_MODEL=jev-latest` registers `bifrost-judge/jev-latest` as OMP `kind:judge`, using OMP's native judgment runner. No Pifrost decisions engine, worker, session ledger, router, cache or queue is created; `modelRoles.judge` remains user-owned unless explicitly activated.
