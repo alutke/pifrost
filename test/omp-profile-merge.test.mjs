@@ -32,3 +32,16 @@ test("malformed or unreadable model-role data fails closed instead of erasing us
 test("non-collection Pifrost settings remain single-value writes", () => {
   assert.equal(reconcilePifrostOmpSetting("retry.modelFallback", true, false), false);
 });
+
+
+test("Release C judge activation keeps existing OMP namespaces and all other roles", () => {
+  const roles = { default: "bifrost/omp-default", advisor: "bifrost/omp-advisor", judge: "other/judge", web: "other/search" };
+  const enabledModels = ["bifrost/*", "openrouter/*"];
+  const nextEnabled = reconcilePifrostOmpSetting("enabledModels", enabledModels, ["bifrost-judge/*"]);
+  const nextRoles = reconcilePifrostOmpSetting("modelRoles", roles, { judge: "bifrost-judge/jev-latest" });
+  assert.deepEqual(nextEnabled, ["bifrost/*", "openrouter/*", "bifrost-judge/*"]);
+  assert.deepEqual(nextRoles, { ...roles, judge: "bifrost-judge/jev-latest" });
+  assert.deepEqual(roles, { default: "bifrost/omp-default", advisor: "bifrost/omp-advisor", judge: "other/judge", web: "other/search" });
+  assert.deepEqual(enabledModels, ["bifrost/*", "openrouter/*"]);
+  assert.throws(() => reconcilePifrostOmpSetting("enabledModels", undefined, ["bifrost-judge/*"]), /Cannot safely merge/);
+});
