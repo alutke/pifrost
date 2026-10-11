@@ -410,6 +410,15 @@ export async function getComplexityAnalyzerConfig(url, auth) {
   }
 }
 
+/** Read-only redacted provider inventory for gateway-owned injected-tool visibility. */
+export async function listBifrostProviderInventory(url, auth) {
+  const base = bifrostManagementBase(url);
+  return requestJson(base + "/api/providers", {
+    headers: managementHeaders(auth),
+    timeoutMs: 10_000,
+  });
+}
+
 export async function getBifrostConfig(url, auth) {
   const base = bifrostManagementBase(url);
   return requestJson(`${base}/api/config`, {

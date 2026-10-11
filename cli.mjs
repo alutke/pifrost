@@ -32,6 +32,7 @@ import {
   probeResearchCodeMode,
 } from "./research-providers.mjs";
 import { classifyResearchResult } from "./research-results.mjs";
+import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -80,6 +81,7 @@ import {
   getBifrostSetupState,
   getOmpVersion,
   getBifrostConfig,
+  listBifrostProviderInventory,
   getVirtualKeyQuota,
   getComplexityAnalyzerConfig,
   formatQuotaGovernanceSource,
@@ -128,6 +130,7 @@ Usage:
   pifrost init
   pifrost global setup [options]
   pifrost global status
+  pifrost global mcp-policy               Read-only gateway-injected provider tools
   pifrost global configure-omp
   pifrost routes list
   pifrost routes diff
@@ -1817,6 +1820,27 @@ async function commandSecretRepoMcp(flags) {
   process.stdout.write(value);
 }
 
+async function commandGlobalMcpPolicy(snapshot) {
+  const state = loadState();
+  const runtime = runtimeConfigFromState(state);
+  const management = managementAuthFromState(state);
+  if (!runtime.url || !management) {
+    console.log("Gateway-managed MCP tools: unavailable (management access not configured)");
+    return;
+  }
+  try {
+    const providers = snapshot?.providerInventory?.ok
+      ? snapshot.providerInventory.value
+      : await listBifrostProviderInventory(runtime.url, management);
+    const clients = snapshot?.mcpClients?.ok
+      ? snapshot.mcpClients.value
+      : await listMcpClients(runtime.url, management).catch(() => undefined);
+    console.log(formatGatewayInjectedToolDiagnostics(gatewayInjectedToolDiagnostics(providers, clients)));
+  } catch (error) {
+    console.log("Gateway-managed MCP tools: unavailable (" + formatError(error) + ")");
+  }
+}
+
 async function commandDoctor() {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
@@ -1841,6 +1865,8 @@ async function commandDoctor() {
 
   await commandGlobalStatus(snapshot);
   console.log("");
+  await commandGlobalMcpPolicy(snapshot);
+  console.log("");
   await commandCompatibilityDoctor(snapshot);
   console.log("");
   await commandModelsDoctor();
@@ -1859,6 +1885,7 @@ const COMMANDS = new Map([
   ["init", (_args, flags) => commandInit(flags)],
   ["global setup", (_args, flags) => commandGlobalSetup(flags)],
   ["global status", () => commandGlobalStatus()],
+  ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global configure-omp", () => {
     const result = configureOmp();
     console.log(`Configured ${result.settings} OMP settings.`);
