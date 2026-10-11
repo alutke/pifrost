@@ -33,6 +33,8 @@ const runtime = [
   "research-repo-config.ts",
   "datasheet.ts",
   "omp-cfg.ts",
+  "judge-bridge.mjs",
+  "model-kind-boundary.mjs",
 ];
 
 const controlOnly = new Set([
@@ -51,6 +53,7 @@ const controlOnly = new Set([
   "research-providers.mjs",
   "research-results.mjs",
   "security-diagnostics.mjs",
+  "judge-control.mjs",
 ]);
 
 function imports(source) {
@@ -110,7 +113,28 @@ if (!/definition\(\s*["']retry\.modelFallback["']\s*,\s*false/u.test(ompCfg)) {
   errors.push("OMP model fallback must remain disabled; physical fallback is owned by Bifrost");
 }
 
+const judgeBridge = readFileSync(resolve(root, "judge-bridge.mjs"), "utf8");
+const judgeControl = readFileSync(resolve(root, "judge-control.mjs"), "utf8");
+const modelKinds = readFileSync(resolve(root, "model-kind-boundary.mjs"), "utf8");
+const index = readFileSync(resolve(root, "index.ts"), "utf8");
+if (!index.includes("isBifrostChatModel(model)") || !modelKinds.includes("NON_CHAT_KINDS")) {
+  errors.push("Pifrost chat discovery must preserve non-chat model-kind boundaries");
+}
+if (!judgeBridge.includes('PIFROST_NATIVE_JUDGE_MODEL') || !judgeBridge.includes('/typesafe') ||
+    !judgeControl.includes('canonicalDecisionProbeRequest') ||
+    !judgeControl.includes('options.decisions === true')) {
+  errors.push("Optional native judge must use versioned Bifrost TypeSafe and explicit canonical Decisions probe contracts");
+}
+if (judgeControl.includes("judgeBatch(") || judgeControl.includes("queueMicrotask(") ||
+    judgeControl.includes("setInterval(")) {
+  errors.push("Pifrost must not implement an OMP judgment queue");
+}
+
 const native = readFileSync(resolve(root, "native.ts"), "utf8");
+if (!native.includes("nativeJudgeGateway(config, mergedEnvironment)") ||
+    !native.includes('api: "typesafe"') || !native.includes('kind: "judge"')) {
+  errors.push("Release C native judge must register an isolated OMP-owned TypeSafe provider");
+}
 if (!/statefulResponses\s*:\s*false/u.test(native)) {
   errors.push("Pifrost dynamic Responses must remain stateless across heterogeneous Bifrost fallback routes");
 }

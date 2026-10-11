@@ -67,6 +67,40 @@ That gives you six useful properties:
 - **Repository-scoped MCP.** Each repository can have its own Bifrost MCP Virtual Key without committing the raw secret.
 - **One diagnostic surface.** <code>pifrost doctor</code> checks the OMP, Bifrost, routing, model and current-repository integration together.
 
+## Release C: optional native judgment and model kinds
+
+OMP already owns the `judge` role, typed decisions, per-session usage, caching and batch scheduling. Bifrost 2.2.6 serves an OMP-compatible TypeSafe System One endpoint at `/typesafe/v1/systemone` and its canonical typed endpoint at `/v1/decisions`. **Pifrost does not implement another judge or reroute its requests.** Release C exposes a separate native provider only when explicitly opted into a TypeSafe jev model.
+
+To register a judge model (disabled by default), set the environment for the OMP process, then restart OMP:
+
+~~~bash
+export PIFROST_NATIVE_JUDGE_MODEL=jev-latest
+pifrost judge status
+~~~
+
+This registers `bifrost-judge/jev-latest` as an OMP model of `kind: judge`, using the existing Bifrost inference Virtual Key. A modern `sk-bf-*` Bifrost 2.x Virtual Key and Bifrost 2.2.6+ native TypeSafe integration are required; the configured Virtual Key must be permitted to use the TypeSafe model. No separate TypeSafe credentials are stored by Pifrost.
+
+The user-selected `modelRoles.judge` is **not** changed just by registration. After confirming the gateway offers the model, explicitly enable it:
+
+~~~bash
+pifrost judge activate
+pifrost judge status
+~~~
+
+`activate` reads both the OMP role map and `enabledModels` before making changes. It adds the `bifrost-judge/*` namespace (required because a default Pifrost setup enables only `bifrost/*`) and merges only the `judge` role, preserving all other roles, model patterns and presets. To test real provider execution, invoke **one billed probe** explicitly:
+
+~~~bash
+pifrost judge probe
+# Alternatively, test the canonical Bifrost Decisions API (different wire schema):
+pifrost judge probe --decisions
+~~~
+
+The probes validate yes/no, choice and score answers, print no prompt or raw provider response and do **not** change OMP's judgment workflow. A working model-list GET alone does not prove live inference success.
+
+To see how the live gateway classifies its advertised models without creating new OMP runners, run `pifrost models kinds` (read-only GET `/v1/models`). This reports chat, unknown and explicitly non-chat kinds, without guessing specialized API compatibility.
+
+Pifrost's existing chat aliases remain chat-only. Non-chat `judge`, image, search, speech, dictation, embedding, rerank and video model kinds must use their appropriate OMP-native transports, not be converted to Pifrost chat aliases. Release C excludes explicitly non-chat gateway models from the chat inventory and reports no unsupported execution capability.
+
 ## Requirements
 
 | Component | Requirement |
@@ -109,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.14.0
+0.15.0
 ```
 
 Bun also works:

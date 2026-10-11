@@ -15,6 +15,8 @@ import {
 } from "../transport-model.ts";
 import { resolveRouteReasoningWithToolsPolicy } from "../datasheet.ts";
 import { createPifrostMemberModelSpec } from "../multi-protocol-routing.ts";
+import pifrostProvider from "../native.ts";
+import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
 
@@ -234,5 +236,49 @@ test("all physical Chat and Responses requests authenticate to Bifrost with inhe
 		assert.equal(request.headers["x-bf-session-id"], "test-session", api);
 		assert.equal(request.headers.Authorization, "Bearer not-a-real-key", api);
 		assert.equal((transport.compat as unknown as Record<string, unknown>).reasoningContentField === "logical-incompatible", false);
+	}
+});
+
+
+test("Release C opt-in registers an OMP-native TypeSafe judge, without rewriting role or executing any judgment", async () => {
+	const names = ["BIFROST_URL", "BIFROST_API_KEY", "BIFROST_VIRTUAL_KEY", "PIFROST_NATIVE_JUDGE_MODEL", "PIFROST_CONFIG_DIR"] as const;
+	const saved = Object.fromEntries(names.map(name => [name, process.env[name]])) as Record<string, string | undefined>;
+	const providers = new Map<string, Record<string, unknown>>();
+	let commandCount = 0;
+	let eventCount = 0;
+	try {
+		process.env.BIFROST_URL = "http://127.0.0.1:8180/v1";
+		delete process.env.BIFROST_API_KEY;
+		process.env.BIFROST_VIRTUAL_KEY = "sk-bf-unit-test";
+		process.env.PIFROST_NATIVE_JUDGE_MODEL = "jev-latest";
+		process.env.PIFROST_CONFIG_DIR = "/tmp/pifrost-judge-bun-fixture-should-not-write";
+		const pi = {
+			registerFlag: () => {},
+			getFlag: () => undefined,
+			registerProvider: (name: string, config: Record<string, unknown>) => { providers.set(name, config); },
+			on: () => { eventCount++; },
+			registerCommand: () => { commandCount++; },
+		} as unknown as ExtensionAPI;
+		await pifrostProvider(pi);
+		assert.ok(providers.has("bifrost"), "normal chat provider is still registered");
+		const judge = providers.get("bifrost-judge");
+		assert.ok(judge, "native judge is registered separately");
+		assert.equal(judge.api, "typesafe");
+		assert.equal(judge.baseUrl, "http://127.0.0.1:8180/typesafe");
+		assert.equal(judge.apiKey, "sk-bf-unit-test");
+		const models = judge.models as Array<Record<string, unknown>>;
+		assert.equal(models.length, 1);
+		assert.equal(models[0]?.id, "jev-latest");
+		assert.equal(models[0]?.api, "typesafe");
+		assert.equal(models[0]?.kind, "judge");
+		assert.equal(models[0]?.reasoning, false);
+		assert.equal(commandCount, 1, "Pifrost retains its existing slash-command handler");
+		assert.ok(eventCount > 0);
+		assert.equal("modelRoles" in judge, false, "judge role stays with OMP's model-role configuration");
+	} finally {
+		for (const name of names) {
+			if (saved[name] === undefined) delete process.env[name];
+			else process.env[name] = saved[name];
+		}
 	}
 });

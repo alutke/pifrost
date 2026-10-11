@@ -32,6 +32,10 @@ import {
   probeResearchCodeMode,
 } from "./research-providers.mjs";
 import { classifyResearchResult } from "./research-results.mjs";
+import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
+import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-boundary.mjs";
+import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
+import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 
 import {
@@ -71,6 +75,7 @@ import {
   buildRepoMcpConfig,
   commandExists,
   configureOmp,
+  backupOmpConfig,
   currentRepoState,
   detachVirtualMcpFromVirtualKey,
   diffAliases,
@@ -113,6 +118,7 @@ import {
   ompContextPolicyDiagnostics,
   formatOmpContextPolicyDiagnostics,
   readOmpConfigValue,
+  readOmpConfigValueResult,
   testInference,
   testManagement,
   syncVirtualMcpAssignments,
@@ -134,6 +140,9 @@ Usage:
   pifrost global status
   pifrost global mcp-policy               Read-only gateway-injected provider tools
   pifrost global configure-omp
+  pifrost judge status                      Inspect opt-in native OMP judge and gateway model availability
+  pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
+  pifrost judge probe [--decisions]         Billed opt-in System One or canonical Decisions conformance
   pifrost routes list
   pifrost routes diff
   pifrost routes sync [--no-refresh]
@@ -142,6 +151,7 @@ Usage:
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
+  pifrost models kinds                     Read-only Bifrost model-kind inventory, not model runner registration
   pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
   pifrost repo status
   pifrost repo research status
@@ -1843,6 +1853,115 @@ async function commandGlobalMcpPolicy(snapshot) {
   }
 }
 
+
+function judgeRuntimeConfig() {
+  const state = loadState();
+  const runtime = runtimeConfigFromState(state);
+  if (!runtime.url || !runtime.virtualKey) {
+    throw new Error("Bifrost URL and inference Virtual Key are required; run pifrost global setup");
+  }
+  return runtime;
+}
+
+async function commandModelsKinds() {
+  const runtime = judgeRuntimeConfig();
+  const headers = { "x-bf-vk": runtime.virtualKey };
+  if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
+  const catalog = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
+  if (!Array.isArray(catalog?.data)) throw new Error("Bifrost model-kinds inventory returned no data array");
+  const rows = catalog.data.filter(model => model && typeof model.id === "string");
+  const summary = bifrostModelKindSummary(rows);
+  console.log("Bifrost model-kind inventory (read-only; source: live /v1/models):");
+  console.log("  chat-declared: " + summary.chat);
+  console.log("  unknown/legacy metadata: " + summary.unknown + " (chat-compatible until gateway states otherwise)");
+  console.log("  non-chat: " + summary.nonChat);
+  const kinds = new Map();
+  for (const row of rows) {
+    const detail = bifrostModelKindEvidence(row);
+    if (detail.chat) continue;
+    kinds.set(detail.kind, (kinds.get(detail.kind) ?? 0) + 1);
+  }
+  for (const [kind, count] of [...kinds].sort((a, b) => a[0].localeCompare(b[0]))) {
+    console.log("    " + kind + ": " + count);
+  }
+  console.log("  non-chat kinds must use OMP-native APIs, not Pifrost chat transport.");
+  console.log("  Bifrost Decisions capability requires separate native judge discovery/probe: pifrost judge status");
+}
+
+async function commandJudgeStatus() {
+  const selected = nativeJudgeSelection();
+  console.log("OMP native judgment (optional; OMP owns judge execution and session usage):");
+  if (!selected) {
+    console.log("  disabled: set PIFROST_NATIVE_JUDGE_MODEL=jev-latest before launching OMP");
+    console.log("  other OMP kinds (image, search, speech, dictation, embedding, rerank, video) remain OMP-owned");
+    return;
+  }
+  console.log("  configured provider: bifrost-judge");
+  console.log("  configured model: " + selected.model);
+  const current = readOmpConfigValueResult("modelRoles");
+  const roles = current.status === "ok" && current.value && typeof current.value === "object"
+    && !Array.isArray(current.value) ? current.value : undefined;
+  console.log("  OMP judge role: " + (roles?.judge ?? (current.status === "ok" ? "not explicitly assigned" : "unavailable")));
+  console.log("  role matches opt-in: " + (roles?.judge === selected.selector ? "yes" : "no"));
+  const enabled = readOmpConfigValueResult("enabledModels");
+  const allowed = enabled.status === "ok" && Array.isArray(enabled.value)
+    ? enabled.value : undefined;
+  const visible = allowed?.some(pattern => pattern === "*" || pattern === selected.selector ||
+    pattern === "bifrost-judge/*" || pattern === "bifrost-*/*");
+  console.log("  OMP judge model namespace enabled: " + (allowed ? (allowed.length === 0 || visible ? "yes" : "no") : "unavailable"));
+  if (allowed && allowed.length > 0 && !visible) {
+    console.log("  WARN run pifrost judge activate to enable bifrost-judge/* while preserving other model patterns");
+  }
+  try {
+    const status = await inspectNativeJudgeModels(judgeRuntimeConfig());
+    console.log("  Bifrost native TypeSafe model: " + status.status);
+    console.log("  model-list names: " + status.models.length);
+    if (status.status !== "available") process.exitCode = 2;
+  } catch (error) {
+    console.log("  Bifrost native TypeSafe models: unavailable (" + formatError(error) + ")");
+    process.exitCode = 2;
+  }
+  console.log("  canonical /v1/decisions differs from OMP TypeSafe wire; Bifrost owns its translation");
+  console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
+}
+
+async function commandJudgeActivate() {
+  const selected = nativeJudgeSelection();
+  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest to explicitly opt into the native judge provider first");
+  const runtime = judgeRuntimeConfig();
+  const judge = nativeJudgeGateway(runtime);
+  if (!judge) throw new Error("Native judge provider unavailable");
+  const available = await inspectNativeJudgeModels(runtime);
+  if (available.status !== "available") throw new Error("Configured native judge model was not confirmed by the Bifrost gateway");
+  // Release B's profile narrows OMP enabledModels to "bifrost/*".
+  // A separate native judge provider is otherwise invisible even if its role
+  // is assigned. Read both values before any write and preserve all other
+  // namespaces and roles; apply visibility first so a failed write cannot
+  // leave a dangling active judge role.
+  const existing = readOmpConfigValueResult("modelRoles");
+  const models = readOmpConfigValueResult("enabledModels");
+  if (existing.status !== "ok") throw new Error("Cannot safely update OMP judge role: " + (existing.error ?? "role map unreadable"));
+  if (models.status !== "ok") throw new Error("Cannot safely enable OMP judge namespace: " + (models.error ?? "enabledModels unreadable"));
+  const roles = reconcilePifrostOmpSetting("modelRoles", existing.value, { judge: selected.selector });
+  const enabled = reconcilePifrostOmpSetting("enabledModels", models.value, ["bifrost-judge/*"]);
+  const backup = backupOmpConfig();
+  runCommand("omp", ["config", "set", "enabledModels", JSON.stringify(enabled)]);
+  runCommand("omp", ["config", "set", "modelRoles", JSON.stringify(roles)]);
+  console.log("OMP modelRoles.judge explicitly assigned: " + selected.selector);
+  console.log("OMP enabledModels includes bifrost-judge/*.");
+  console.log("All unrelated OMP model roles, enabled model patterns and presets were preserved.");
+  if (backup) console.log("Configuration backup: " + backup);
+}
+
+async function commandJudgeProbe(flags = {}) {
+  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true });
+  console.log("Bifrost " + result.kind + " judgment conformance: OK");
+  console.log("  model: " + result.model);
+  console.log("  typed answers checked: " + result.answered);
+  console.log("  usage: " + (result.hasUsage ? "reported" : "not reported"));
+  console.log("  this was an explicitly requested inference request; normal judgments remain OMP-owned");
+}
+
 async function commandDoctor() {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
@@ -1890,6 +2009,9 @@ const COMMANDS = new Map([
   ["global setup", (_args, flags) => commandGlobalSetup(flags)],
   ["global status", () => commandGlobalStatus()],
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
+  ["judge status", () => commandJudgeStatus()],
+  ["judge activate", () => commandJudgeActivate()],
+  ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
   ["global configure-omp", () => {
     const result = configureOmp();
     console.log(`Configured ${result.settings} OMP settings.`);
@@ -1903,6 +2025,7 @@ const COMMANDS = new Map([
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
   ["models doctor", () => commandModelsDoctor()],
+  ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", () => commandRepoStatus()],
   ["repo research status", () => commandRepoResearchStatus()],
