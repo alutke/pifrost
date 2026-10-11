@@ -87,7 +87,7 @@ pifrost judge activate
 pifrost judge status
 ~~~
 
-`activate` reads the existing OMP role map and merges only `judge`, preserving all other roles and model presets. To test real provider execution, invoke **one billed probe** explicitly:
+`activate` reads both the OMP role map and `enabledModels` before making changes. It adds the `bifrost-judge/*` namespace (required because a default Pifrost setup enables only `bifrost/*`) and merges only the `judge` role, preserving all other roles, model patterns and presets. To test real provider execution, invoke **one billed probe** explicitly:
 
 ~~~bash
 pifrost judge probe
