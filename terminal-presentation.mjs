@@ -16,9 +16,24 @@ export function terminalSection(title) {
 export function terminalField(label, value) {
   return `  ${cleanDisplay(label)}: ${cleanDisplay(value)}`;
 }
-export function terminalStatus(status, label, detail) {
+export function wrapTerminalText(value, width = 88, indent = "    ") {
+  const text = cleanDisplay(value);
+  if (text.length <= width) return text;
+  const words = text.split(/\s+/u), lines = [], prefix = indent;
+  let line = "";
+  for (const word of words) {
+    if (!line) line = word;
+    else if (line.length + 1 + word.length <= width) line += " " + word;
+    else { lines.push(line); line = prefix + word; }
+  }
+  if (line) lines.push(line);
+  return lines.join("\n");
+}
+export function terminalStatus(status, label, detail, issueId) {
   const code = LABELS[status] ?? "UNKNOWN";
-  return `  [${code}] ${cleanDisplay(label)}${detail ? " - " + cleanDisplay(detail) : ""}`;
+  const title = "  [" + code + "] " + cleanDisplay(label)
+    + (issueId ? " (" + cleanDisplay(issueId) + ")" : "");
+  return wrapTerminalText(title + (detail ? " - " + cleanDisplay(detail) : ""));
 }
 export function terminalNextSteps(steps, max = 6) {
   const unique = [...new Set((steps ?? []).filter(s => typeof s === "string" && s.trim()).map(s => s.trim()))].slice(0, max);
@@ -37,7 +52,7 @@ export function renderHealthOverview(checks, { details = false, title = "Pifrost
   const lines = [terminalSection(title), `Result: ${label} (${passed}/${items.length} checks OK)`, ""];
   const visible = details ? items : [...issues, ...items.filter(x => x.status === "ok").slice(0, 8)];
   for (const item of visible) {
-    lines.push(terminalStatus(item.status, item.label, item.detail));
+    lines.push(terminalStatus(item.status, item.label, item.detail, item.id));
   }
   const actions = terminalNextSteps(issues.map(item => item.action));
   if (actions) lines.push("", actions);
