@@ -286,7 +286,13 @@ export async function reconcileRoutesOnce({ capture, stage = stageRouteCatalog,
       const reply = { status: "updated", fingerprint: second.policyFingerprint.slice(0, 12),
         routes: Object.keys(next.aliases).length, lastCheckedAt: new Date().toISOString(),
         lastChangedAt: new Date().toISOString(), restartRequired: true, lastError: null, failures: 0 };
-      status(reply, env);
+      try {
+        status(reply, env);
+      } catch {
+        // Publishing routes succeeded. Status telemetry must never make the
+        // caller believe that the old configuration was retained.
+        process.stderr.write("pifrost: routes synchronized; watcher status file could not be updated\\n");
+      }
       return reply;
     } catch (error) {
       throw error instanceof RouteWatchError ? error : new RouteWatchError("catalog-commit-failed");

@@ -288,7 +288,7 @@ journalctl --user -u pifrost-route-watch.service -f
 
 The watcher uses stored management credentials from `pifrost global setup` and keeps them **out of OMP**. It compares the complete Bifrost rule policy, debounces changes, stages/validates the new model catalogue and atomically replaces each local file. A changed policy is rechecked after staging; partial responses, outages and changed-during-stage snapshots are rejected without overwriting valid routing. Unchanged routes do not trigger model refreshes.
 
-Use `pifrost routes watch once` for a one-off reconciliation or `pifrost routes watch --interval 60` for foreground monitoring on another service manager. Override the service interval with `pifrost routes watch enable --interval 120` (15–3600 seconds). Stop/remove only the managed unit with `pifrost routes watch disable`.
+Use `pifrost routes watch once` for a one-off reconciliation or `pifrost routes watch --interval 60` for foreground monitoring on another service manager. Override the service interval with `pifrost routes watch enable --interval 120` (15–3600 seconds). Stop/remove only the managed unit with `pifrost routes watch disable`. Re-running `enable` updates its interval and restarts the unit. A systemd **user** service runs while the user manager exists; if you need polling when logged out, enable user lingering separately with your operating system's `loginctl` administration (Pifrost does not alter lingering automatically).
 
 **In-session limitation:** OMP's registered model and compatibility metadata are not hot-reloaded. Already-running sessions should be restarted after a detected change; new OMP processes pick up the synchronized catalogue. This is not a Bifrost routing or credential mutation.
 

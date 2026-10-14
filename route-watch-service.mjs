@@ -75,7 +75,12 @@ export function enableRouteWatchService({ intervalMs, env = process.env, cli = r
     writeFileSync(temp, unitSource({ node, cli, path: env.PATH, intervalMs: ms }), { mode: 0o600, flag: "wx" });
     renameSync(temp, path);
     systemctl(["daemon-reload"]);
-    if (start) systemctl(["enable", "--now", UNIT]);
+    if (start) {
+      systemctl(["enable", UNIT]);
+      // enable --now doesn't restart an already-running unit. Apply changed
+      // intervals and upgraded CLI paths immediately on re-enable.
+      systemctl(["restart", UNIT]);
+    }
     return { path, intervalSeconds: ms / 1000, started: start };
   } catch (error) {
     if (existsSync(temp)) rmSync(temp);
