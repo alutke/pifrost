@@ -155,6 +155,16 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.22.0 — full terminal command semantics and accessibility
+
+Pifrost CLI operations declare validated arguments and flags, side-effect class (read-only, local or gateway mutation, paid probe, or internal machine-secret output), and contextual help. `--tools` must be explicitly provided when granting MCP permissions; wildcard grants are not inferred from omissions.
+
+Read-only health commands `doctor`, `global status`, `repo status`, and `models doctor` support `--json` with schemaVersion 1, and `--strict` for warning-as-error automation. Exit code 2 indicates failed required checks (or strict warnings), whereas syntax failures use exit code 1. Machine-secret output remains raw and unaffected.
+
+Where supported, `--dry-run` enumerates intended actions without writes. Use `pifrost routes sync --dry-run` and `pifrost repo reset --dry-run --delete-remote` before modifying policy or credentials. Direct Skills suggestions never automatically install files. Inventory list commands accept `--filter` and `--limit`.
+
+`/pifrost trace` supports a compact default, plus `last N`, `errors`, `role alias` and `verbose` modifiers; it never implies that observing a logical Bifrost request proves a CEL match.
+
 ### 0.21.0 — terminal output and accessibility
 
 Pifrost presents a task-oriented quick help screen by default; `pifrost help --all` retains all commands and flags. The renderer is plain-text-first with explicit [OK]/[WARN]/[FAIL]/[UNKNOWN] labels, no ANSI escape codes, and consistent next-step commands. Quick `doctor`, `global status`, `repo status`, and `models doctor` views prioritise problems; `--verbose` retains the earlier detailed output. The compact views do not assert that configured MCP grants or eligibility imply successful live execution.
@@ -409,7 +419,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.21.0
+0.22.0
 ```
 
 Bun can also install the package globally:

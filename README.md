@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.21.0
+0.22.0
 ```
 
 Bun also works:
@@ -254,6 +254,16 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### Unified terminal usability: 0.22.0
+
+The 46-command CLI now has explicit argument/flag contracts and per-command help (e.g. `pifrost repo mcp add --help`). Unexpected or missing flags fail before any changes. MCP `--tools` must be given explicitly, with `'*'` only when all executable tools are intentionally granted.
+
+`pifrost doctor`, `pifrost global status`, `pifrost models doctor` and `pifrost repo status` support redacted, stable `--json` summaries and `--strict` validation. Essential failures return 2; optional warnings only fail in strict mode. Sensitive secret-resolution commands never use a report formatter.
+
+Preview potentially disruptive changes with `--dry-run` on route synchronisation/verification, repository reset/key rotation, MCP/VMCP grants, managed Skills and judge activation. Normal Skills suggestions do not install anything; installation requires an explicit install action/flag. Listings support `--filter` and `--limit`.
+
+Inside OMP, use `/pifrost trace` for a short overview or `/pifrost trace errors`, `/pifrost trace last 5`, `/pifrost trace role omp-default`, and `/pifrost trace verbose` for focused history and full gateway evidence. No new runtime telemetry store was created.
+
 ### Terminal readability and accessibility: 0.21.0
 
 The default terminal experience is now intentionally concise and plain-text-first, with no reliance on colour, emoji, animation or TTY features. Use `pifrost help` for a task-oriented starter guide and `pifrost help --all` for the complete command reference. Unknown commands display a short recovery hint rather than the entire help page.
@@ -313,9 +323,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.21.0
+npm install --global github:alutke/pifrost#v0.22.0
 hash -r
-omp install --force github:alutke/pifrost#v0.21.0
+omp install --force github:alutke/pifrost#v0.22.0
 pifrost routes sync
 pifrost doctor
 ~~~

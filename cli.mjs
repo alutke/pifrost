@@ -25,6 +25,8 @@ import {
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
+import { commandCatalog, flagRequiresValue, isKnownFlag, cliUsageError, validateCliInvocation, commandUsage, operationLabel } from "./cli-command-schema.mjs";
+import { reportHealth, listFilter, operationSummary, safeUiText } from "./cli-health.mjs";
 import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
 import {
   RESEARCH_PROFILES,
@@ -234,33 +236,25 @@ Repo .omp/mcp.json files contain no secret; they resolve the repo VK through
 `;
 
 function parseArgs(argv) {
-  const positional = [];
-  const flags = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === "--") {
-      positional.push(...argv.slice(i + 1));
-      break;
-    }
-    if (!arg.startsWith("--")) {
-      positional.push(arg);
-      continue;
-    }
-    const eq = arg.indexOf("=");
-    if (eq > 2) {
-      flags[arg.slice(2, eq)] = arg.slice(eq + 1);
-      continue;
-    }
-    const key = arg.slice(2);
-    const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
-      flags[key] = next;
-      i += 1;
-    } else {
-      flags[key] = true;
+  const positional = [], flags = {};
+  for (let i=0;i<argv.length;i++) {
+    const token=argv[i];
+    if(token==="--") { positional.push(...argv.slice(i+1)); break; }
+    if(!token.startsWith("--") || token==="--") {positional.push(token);continue;}
+    const eq=token.indexOf("=");
+    const key=eq>2?token.slice(2,eq):token.slice(2);
+    if(!isKnownFlag(key))throw cliUsageError("Unknown option --"+key+". Use the command's --help.");
+    if(Object.hasOwn(flags,key))throw cliUsageError("Option --"+key+" was provided more than once.");
+    if(flagRequiresValue(key, positional.slice(0,2).join(" "))){
+      const value=eq>2?token.slice(eq+1):argv[++i];
+      if(!value || value.startsWith("--"))throw cliUsageError("Option --"+key+" requires a value.");
+      flags[key]=value;
+    }else{
+      if(eq>2)throw cliUsageError("Option --"+key+" is a switch and cannot take a value.");
+      flags[key]=true;
     }
   }
-  return { positional, flags };
+  return {positional,flags};
 }
 
 function flagString(flags, name) {
@@ -384,6 +378,20 @@ async function askSecret(rl, prompt, existing) {
     const keep = await confirm(rl, `${prompt} is already configured. Keep it?`, true);
     if (keep) return existing;
   }
+  if(process.platform==="win32" && process.stdin.isTTY){
+    // PowerShell Read-Host masks TTY input; plaintext remains in private
+    // subprocess stdout pipe, never terminal output or command arguments.
+    rl.pause();
+    try{
+      console.log(prompt+":");
+      const script="$sec=Read-Host -AsSecureString; $p=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec); try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($p) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p) }";
+      const read=spawnSync("powershell.exe",["-NoProfile","-Command",script],{
+        stdio:["inherit","pipe","inherit"],encoding:"utf8",
+      });
+      if(read.status!==0)throw new Error("Secure Windows prompt unavailable. Supply the secret via a protected environment variable.");
+      return (read.stdout??"").trim();
+    }finally{rl.resume();}
+  }
   let echoDisabled = false;
   try {
     if (process.platform !== "win32" && process.stdin.isTTY) {
@@ -469,7 +477,7 @@ async function commandGlobalSetup(flags) {
     }
   }
 
-  const nonInteractive = Boolean(flags.yes) || (!process.stdin.isTTY && !flagString(flags, "url"));
+  const nonInteractive = Boolean(flags.yes) || !process.stdin.isTTY;
   if (!nonInteractive) {
     await withPrompter(async (rl) => {
       url = await ask(rl, "Bifrost URL", url ?? "http://127.0.0.1:8180/v1");
@@ -536,6 +544,14 @@ async function commandGlobalSetup(flags) {
     managementMode === "setup" ? setupToken : managementApiKey,
   );
 
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would save Bifrost connection configuration and protected credentials",
+      "Would test inference/management access unless --skip-test",
+      flags["skip-omp"]?"Would leave OMP settings unchanged":"Would configure Pifrost-owned OMP settings with backup",
+      "Secret values will not be printed"
+    ]));return;
+  }
   if (!flags["skip-test"]) {
     process.stdout.write("Testing inference connection... ");
     const inference = await testInference({ url, apiKey, virtualKey });
@@ -567,6 +583,8 @@ async function commandGlobalSetup(flags) {
     delete state.config.bifrost.managementAuthMode;
   }
 
+  if(["api-key","virtual-key","management-key","management-password","setup-token"].some(k=>
+    Object.hasOwn(flags,k))) console.log("Security note: CLI secret flags can appear in shell history/process listings; prefer protected environment variables or interactive prompts.");
   const paths = saveState(state.config, state.secrets);
   console.log(`Saved config:  ${paths.config}`);
   console.log(`Saved secrets: ${paths.secrets} (0600)`);
@@ -577,20 +595,21 @@ async function commandGlobalSetup(flags) {
     console.log(`OK (${result.settings} settings)`);
     if (result.backup) console.log(`OMP config backup: ${result.backup}`);
   }
+  console.log("Setup completed. Verify with pifrost doctor; synchronise routes using pifrost routes sync, then restart OMP.");
 }
 
-function snapshotCheck(id, label, snapshot, action) {
+function snapshotCheck(id, label, snapshot, action, required = false) {
   const item = snapshot?.[id];
   if (item?.ok) {
     const detail = id === "inference" && Number.isFinite(item.value?.models)
       ? `${item.value.models} models visible`
       : id === "routing" && Array.isArray(item.value) ? `${item.value.length} routing rules`
       : "Connection verified";
-    return { label, status:"ok", detail };
+    return { id,label, status:"ok", detail,required };
   }
   return {
-    label,
-    status: item?.skipped ? "unknown" : "warn",
+    id,label,required,
+    status: item?.skipped ? "unknown" : required ? "fail" : "warn",
     detail: item?.skipped ? "Not configured or not checked" : "Could not verify",
     action,
   };
@@ -603,14 +622,18 @@ async function commandGlobalStatus(snapshot, options = {}) {
     const management = managementAuthFromState(state);
     const live = snapshot ?? await collectDoctorSnapshot({ runtime, managementAuth: management });
     const checks = [
-      snapshotCheck("health", "Bifrost gateway", live, "pifrost global setup"),
-      snapshotCheck("inference", "Inference access", live, "pifrost global setup"),
-      snapshotCheck("management", "Management access", live, "pifrost global setup"),
-      snapshotCheck("routing", "Routing policy", live, "pifrost routes diagnose"),
+      snapshotCheck("health", "Bifrost gateway", live, "pifrost global setup", true),
+      snapshotCheck("inference", "Inference access", live, "pifrost global setup", true),
+      snapshotCheck("management", "Management access", live, "pifrost global setup", false),
+      snapshotCheck("routing", "Routing policy", live, "pifrost routes diagnose", false),
     ];
-    console.log(renderHealthOverview(checks, {title:"Pifrost global status"}));
-    console.log(terminalField("Gateway", runtime.url ?? "not configured"));
-    console.log("For full gateway, quota and MCP details: pifrost global status --verbose");
+    const result=reportHealth({command:"global status",checks,strict:options.strict,json:options.json});
+    if(!options.json){
+      console.log(renderHealthOverview(result.checks, {title:"Pifrost global status"}));
+      console.log(terminalField("Gateway", runtime.url ?? "not configured"));
+      console.log("For full gateway, quota and MCP details: pifrost global status --verbose");
+    }
+    if(result.exitCode) process.exitCode=result.exitCode;
     return;
   }
   const state = loadState();
@@ -763,6 +786,14 @@ async function commandGlobalStatus(snapshot, options = {}) {
 
 async function commandInit(flags) {
   printHeader("Pifrost first-time setup");
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would install/update the Pifrost OMP extension",
+      "Would configure Bifrost connection and management credentials",
+      "Would sync routes and refresh model catalogue where available",
+      "Would configure Pifrost-owned OMP settings; no changes made"
+    ]));return;
+  }
   if (!commandExists("omp")) throw new Error("OMP is required but `omp` is not on PATH");
   console.log("Installing/updating Pifrost OMP extension...");
   installOmpPlugin();
@@ -790,10 +821,14 @@ async function routingSnapshot() {
   };
 }
 
-async function commandRoutesList() {
+async function commandRoutesList(flags = {}) {
   const { manifest } = await routingSnapshot();
   printHeader(`Bifrost OMP routes (${Object.keys(manifest.aliases).length})`);
-  for (const [id, definition] of Object.entries(manifest.aliases).sort(([a], [b]) => a.localeCompare(b))) {
+  const aliases=Object.entries(manifest.aliases).sort(([a],[b])=>a.localeCompare(b))
+    .map(([name,definition])=>({name,definition}));
+  const shown=listFilter(aliases,flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching routes");
+  for (const {name:id,definition} of shown.items) {
     console.log(id);
     const pins = Array.isArray(definition.routingPins) ? definition.routingPins : [];
     definition.chain.forEach((member, index) => {
@@ -859,7 +894,7 @@ async function commandRoutesDiff() {
   process.exitCode = 2;
 }
 
-async function commandRoutesVerify() {
+async function commandRoutesVerify(flags = {}) {
   const { policyFingerprint, manifest } = await routingSnapshot();
   const local = loadAliasManifest();
   const status = routePolicyDrift(local.policyFingerprint, policyFingerprint);
@@ -874,6 +909,10 @@ async function commandRoutesVerify() {
     process.exitCode = 2;
     return;
   }
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Rule fingerprints match; verification timestamp would be refreshed",
+    "Restart OMP after applying verification"
+  ]));return;}
   const stamp = new Date().toISOString();
   const result = writeAliasManifest({ ...local, synchronizedAt: stamp, policyFingerprint });
   console.log(`Verified full Bifrost rule policy unchanged; refreshed local verification at ${stamp}.`);
@@ -893,6 +932,13 @@ async function commandRoutesSync(flags = {}) {
   }
   // A local exception route must carry provenance of an actual management API
   // read. Model-catalog refresh alone does not refresh Bifrost rule membership.
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would save "+count+" logical route aliases and the complete Bifrost rule-policy fingerprint",
+      flags["no-refresh"]?"Model refresh would be skipped":"Would refresh the OMP model catalogue",
+      "Restart OMP after applying"
+    ]));return;
+  }
   const result = writeAliasManifest({ ...manifest, synchronizedAt: new Date().toISOString(), policyFingerprint });
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
@@ -911,6 +957,11 @@ async function commandModelsDoctor(options = {}) {
     const result = printModelDoctor(process.env, { log() {} });
     const check = result.checks?.[0];
     const issues = (result.unresolved ?? []).length;
+    const checks=[{id:"model-catalogue",label:"Model readiness",status:result.ok?"ok":"fail",
+      required:true,detail:check?.summary ?? (result.ok?"Available":"Needs attention"),
+      action:"pifrost models refresh --force"}];
+    const health=reportHealth({command:"models doctor",checks,strict:options.strict,json:options.json});
+    if(options.json){if(health.exitCode)process.exitCode=health.exitCode;return result;}
     console.log(terminalSection("Model catalogue"));
     console.log(terminalStatus(result.ok ? "ok" : "fail", "Model readiness",
       check?.summary ?? (result.ok ? "Available" : "Needs attention")));
@@ -923,7 +974,7 @@ async function commandModelsDoctor(options = {}) {
     } else {
       console.log("For capability, provenance and context-band details: pifrost models doctor --verbose");
     }
-    if (!result.ok) process.exitCode = 2;
+    if (health.exitCode) process.exitCode = health.exitCode;
     return result;
   }
   const result = printModelDoctor();
@@ -998,8 +1049,12 @@ async function chooseClientsInteractively(clients) {
     const result = [];
     for (const index of indexes) {
       const client = clients[index - 1];
-      const answer = (await rl.question(`Allowed tools for ${client.name} [*]: `)).trim();
-      result.push({ name: client.name, tools: answer ? splitCsv(answer) : ["*"] });
+      let answer="";
+      while(!answer){
+        answer=(await rl.question(`Allowed tools for ${client.name} (comma-separated, or type * for all): `)).trim();
+        if(!answer)console.log("Explicit selection required; wildcard access is never assumed.");
+      }
+      result.push({ name:client.name, tools:splitCsv(answer) });
     }
     return result;
   });
@@ -1023,6 +1078,9 @@ async function commandRepoInit(flags) {
   const available = await listMcpClients(url, managementKey);
   const names = splitCsv(flagString(flags, "clients"));
   const commonTools = splitCsv(flagString(flags, "tools"));
+  if(!process.stdin.isTTY && !clientFlagPresent && !virtualMcpFlagPresent){
+    throw cliUsageError("Non-interactive repository setup requires --clients and --tools, or --virtual-mcps.");
+  }
   const clients = clientFlagPresent
     ? resolveNamedClients(available, names, commonTools)
     : virtualMcpFlagPresent
@@ -1039,6 +1097,15 @@ async function commandRepoInit(flags) {
     );
   }
 
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Repository: "+repo.name,
+      "Direct clients: "+(clients?.map(c=>c.name+" ["+c.tools.join(", ")+"]").join("; ")??"unchanged"),
+      "Virtual MCP bundles: "+(desiredVirtualMcps?.map(c=>c.name).join(", ")??"unchanged"),
+      "Would configure repository Virtual Key, OMP MCP configuration and optionally matching Skills",
+    ]));return;
+  }
+  console.log("Operation: May change Bifrost Virtual Key grants and repository MCP settings");
   const vk = await upsertRepoVirtualKey({
     state,
     repo,
@@ -1111,14 +1178,19 @@ async function commandRepoStatus(snapshot, options = {}) {
     const grants = repoState.config?.mcpClients ?? [];
     const bundles = repoState.config?.virtualMcps ?? [];
     const skills = configuredSkillRows(repoState);
-    printHeader(`Repository: ${repoState.repo.name}`);
+    if(!options.json) printHeader(`Repository: ${repoState.repo.name}`);
     const checks = [
       {status:repoState.config?.virtualKeyId && repoState.secret?.mcpVirtualKey ? "ok" : "warn",
        label:"Repository Virtual Key", detail:repoState.secret?.mcpVirtualKey ? "Saved locally (value hidden)" : "Missing"},
       {status:existsSync(mcpPath) ? "ok" : "warn", label:"OMP MCP configuration",
        detail:existsSync(mcpPath) ? "File present" : "Missing"},
     ];
-    for (const item of checks) console.log(terminalStatus(item.status, item.label, item.detail));
+    const result=reportHealth({command:"repo status",checks:checks.map((check,i)=>({
+      id:i===0?"repo-key":"omp-mcp-config",...check,required:false,
+      action:"pifrost repo init"
+    })),strict:options.strict,json:options.json});
+    if(options.json){if(result.exitCode)process.exitCode=result.exitCode;return;}
+    for (const item of result.checks) console.log(terminalStatus(item.status, item.label, item.detail));
     console.log(terminalField("Direct MCP clients configured", grants.length));
     console.log(terminalField("Virtual MCP bundles configured", bundles.length));
     console.log(terminalField("Bifrost Skills configured", skills.length));
@@ -1126,7 +1198,7 @@ async function commandRepoStatus(snapshot, options = {}) {
     const actions = [];
     if (!repoState.config?.virtualKeyId || !repoState.secret?.mcpVirtualKey || !existsSync(mcpPath)) {
       actions.push("pifrost repo init");
-      process.exitCode = 2;
+      if(options.strict)process.exitCode=2;
     }
     actions.push("pifrost repo status --verbose");
     console.log(terminalNextSteps(actions));
@@ -1427,11 +1499,8 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
       if (skill.raw?.license) console.log(`  License: ${String(skill.raw.license).slice(0, 120)}`);
       console.log(`  Project location: .agents/skills/${skill.name}; no MCP grants change`);
       let choice = flags["install-matching-skills"] === true ? "y" : "n";
-      if (flags["install-matching-skills"] !== true && input.isTTY && output.isTTY) {
-        choice = await withPrompter(async (rl) =>
-          (await rl.question("Install Skill? [y/N/d=never suggest]: ")).trim().toLowerCase());
-      } else if (flags["install-matching-skills"] !== true) {
-        console.log("  Skipped (noninteractive; use --install-matching-skills to opt in)");
+      if(flags["install-matching-skills"] !== true){
+        console.log("  Read-only suggestion; use pifrost repo skills add "+skill.name+" to install.");
       }
       if (choice === "d") {
         const latest = normalizeMcpSkillDiscovery(loadState().config.repos?.[current.repo.id]?.mcpSkillDiscovery);
@@ -1461,7 +1530,7 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
   }
 }
 
-async function commandRepoSkillsList() {
+async function commandRepoSkillsList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const current = currentRepoState(state);
@@ -1472,7 +1541,9 @@ async function commandRepoSkillsList() {
       .map((item) => [item.name.toLowerCase(), item]),
   );
   printHeader(`Bifrost Skills (${available.length})`);
-  for (const skill of available.sort((a, b) => a.name.localeCompare(b.name))) {
+  const shown=listFilter(available.sort((a,b)=>a.name.localeCompare(b.name)),flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching Skills");
+  for (const skill of shown.items) {
     const selected = configured.get(skill.name.toLowerCase());
     const status = local.get(skill.name.toLowerCase());
     const compatibility = bifrostSkillCompatibility(skill.raw);
@@ -1502,6 +1573,12 @@ async function commandRepoSkillsAdd(name, flags = {}) {
   if (!compatibility.compatible) {
     throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
   }
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would install Skill "+summary.name+"@"+summary.version,
+      flags.force?"May overwrite locally modified managed files":"Would preserve locally modified managed files"
+    ]));return;
+  }
   const { bundle, installed } = await installRepoBifrostSkill(state, current, summary, { force: flags.force === true });
   console.log(`Installed Bifrost skill ${bundle.skill.name}@${bundle.skill.version}`);
   console.log(`OMP project skill: ${installed.path}`);
@@ -1514,6 +1591,12 @@ async function commandRepoSkillsRemove(name, flags = {}) {
   const configured = configuredSkillRows(current);
   const found = configured.find((item) => item.name.toLowerCase() === name.toLowerCase());
   if (!found) throw new Error(`Bifrost skill is not configured for this repo: ${name}`);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would remove managed Skill "+found.name+" from this repository",
+      "Would remove its local discovery link; upstream Skill remains unchanged"
+    ]));return;
+  }
   const removed = removeManagedBifrostSkill(current.repo.root, found.name, { force: flags.force === true });
   const next = configured.filter((item) => item.name.toLowerCase() !== found.name.toLowerCase());
   updateRepoState(state, current.repo.id, { bifrostSkills: next,
@@ -1535,6 +1618,12 @@ async function commandRepoSkillsSync(name, flags = {}) {
       : "No Bifrost skills are configured for this repo; use `pifrost repo skills add <name>`");
   }
   const available = await listBifrostSkills(url, managementKey);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      ...wanted.map(item=>"Would inspect/synchronise "+item.name),
+      flags.force?"May overwrite local modified managed files":"Modified managed files would be preserved"
+    ]));return;
+  }
   for (const summary of resolveBifrostSkillNames(available, wanted.map((item) => item.name))) {
     const compatibility = bifrostSkillCompatibility(summary.raw);
     if (!compatibility.compatible) {
@@ -1581,7 +1670,8 @@ async function commandRepoSkillSuggestions(flags = {}) {
       (compat && !compat.compatible ? ` incompatible=${compat.reason}` : "") +
       (status?.installedVersion && skill?.version !== status.installedVersion ? ` update=${skill.version}` : ""));
   }
-  await offerMatchingMcpSkills(active, flags);
+  if(flags["install-matching-skills"]) await offerMatchingMcpSkills(active, flags);
+  else console.log("Read-only suggestions. To install, use pifrost repo skills add <name> or explicitly --install-matching-skills.");
 }
 
 async function commandRepoSkillBind(clientName, skillName, flags = {}) {
@@ -1593,7 +1683,8 @@ async function commandRepoSkillBind(clientName, skillName, flags = {}) {
     mcpSkillDiscovery: setMcpSkillAlias(current.config?.mcpSkillDiscovery, client, skill.name),
   });
   console.log(`Bound ${client.name} -> ${skill.name} for repository Skill discovery; no grants changed.`);
-  await offerMatchingMcpSkills([client], flags);
+  if(flags["install-matching-skills"]) await offerMatchingMcpSkills([client], flags);
+  else console.log("Skill binding saved. No Skill was installed.");
 }
 
 async function commandRepoSkillUnbind(clientName) {
@@ -1621,12 +1712,14 @@ async function commandRepoSkillDismiss(clientName, dismissed) {
   console.log(`${dismissed ? "Dismissed" : "Restored"} suggestion for ${client.name} -> ${matched.skill.name}`);
 }
 
-async function commandRepoMcpList() {
+async function commandRepoMcpList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const clients = await listMcpClients(url, managementKey);
   printHeader(`Bifrost MCP clients (${clients.length})`);
-  for (const client of clients.sort((a, b) => a.name.localeCompare(b.name))) {
+  const shown=listFilter(clients.sort((a,b)=>a.name.localeCompare(b.name)),flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching MCP clients");
+  for (const client of shown.items) {
     const modes = [
       client.isCodeModeClient ? "code-mode" : undefined,
       client.toolsToAutoExecute?.length ? "agent-mode" : undefined,
@@ -1653,7 +1746,7 @@ async function requireRepoVirtualKey(state) {
   return { url, managementKey, current, vk };
 }
 
-async function commandRepoVirtualMcpList() {
+async function commandRepoVirtualMcpList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const current = currentRepoState(state);
@@ -1664,7 +1757,9 @@ async function commandRepoVirtualMcpList() {
       : [],
   );
   printHeader(`Bifrost Virtual MCPs (${virtualMcps.length})`);
-  for (const item of virtualMcps.sort((a, b) => a.name.localeCompare(b.name))) {
+  const shown=listFilter(virtualMcps.sort((a,b)=>a.name.localeCompare(b.name)),flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching Virtual MCP bundles");
+  for (const item of shown.items) {
     const flags = [
       assigned.has(Number(item.id)) ? "assigned" : undefined,
       item.enabled ? undefined : "disabled",
@@ -1683,6 +1778,10 @@ async function commandRepoVirtualMcpAdd(name, flags = {}) {
   const [found] = resolveVirtualMcpNames(available, [name]);
   const alreadyAssigned = virtualMcpsForVirtualKey(available, vk.id)
     .some((item) => Number(item.id) === Number(found.id));
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Would attach Virtual MCP bundle "+found.name+" to the repository key",
+    "Inherited tools are governed by Bifrost bundle settings"
+  ]));return;}
   await attachVirtualMcpToVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = [...new Set([
     ...virtualMcpsForVirtualKey(available, vk.id).map((item) => item.name),
@@ -1696,12 +1795,16 @@ async function commandRepoVirtualMcpAdd(name, flags = {}) {
   }
 }
 
-async function commandRepoVirtualMcpRemove(name) {
+async function commandRepoVirtualMcpRemove(name, flags = {}) {
   if (!name) throw new Error("Usage: pifrost repo vmcp remove <name>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
   const available = await listVirtualMcps(url, managementKey);
   const [found] = resolveVirtualMcpNames(available, [name]);
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Would detach Virtual MCP bundle "+found.name,
+    "Direct MCP grants and other bundles remain intact"
+  ]));return;}
   await detachVirtualMcpFromVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = virtualMcpsForVirtualKey(available, vk.id)
     .filter((item) => Number(item.id) !== Number(found.id))
@@ -1718,10 +1821,20 @@ async function commandRepoMcpAdd(clientName, flags) {
   const found = available.find((client) => client.name.toLowerCase() === clientName.toLowerCase());
   if (!found) throw new Error(`Unknown Bifrost MCP client: ${clientName}`);
   const tools = splitCsv(flagString(flags, "tools"));
+  if(tools.some(tool=>tool!=="*" && Array.isArray(found.tools) && found.tools.length>0 && !found.tools.includes(tool)))
+    throw cliUsageError("A tool is not present in this client's Bifrost inventory; inspect pifrost repo mcp list --filter "+found.name);
   const alreadyAssigned = virtualKeyMcpConfigs(vk)
     .some((item) => item.mcp_client_name.toLowerCase() === found.name.toLowerCase());
   const configs = virtualKeyMcpConfigs(vk).filter((item) => item.mcp_client_name !== found.name);
-  configs.push({ mcp_client_name: found.name, tools_to_execute: tools.length ? tools : ["*"] });
+  if(!tools.length)throw cliUsageError("An explicit --tools value is required; specify named tools or '*' intentionally.");
+  console.log(operationSummary(flags["dry-run"]?"Read-only preview":"Changes gateway MCP grants",[
+    "Client: "+found.name,
+    "New executable tool allow-list: "+tools.join(", "),
+    tools.includes("*")?"WARNING: wildcard permits every executable tool for this client":"Grant is limited to named tools",
+    "Bifrost continues to enforce its own executable and automatic tool policies",
+  ]));
+  if(flags["dry-run"])return;
+  configs.push({ mcp_client_name: found.name, tools_to_execute: tools });
   const updated = await updateVirtualKey(url, managementKey, vk.id, { mcp_configs: configs });
   const normalized = virtualKeyMcpConfigs(updated).map((item) => ({
     name: item.mcp_client_name,
@@ -1732,10 +1845,14 @@ async function commandRepoMcpAdd(clientName, flags) {
   if (!alreadyAssigned) await offerMatchingMcpSkills([found], flags);
 }
 
-async function commandRepoMcpRemove(clientName) {
+async function commandRepoMcpRemove(clientName, flags = {}) {
   if (!clientName) throw new Error("Usage: pifrost repo mcp remove <client>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",["Would remove MCP grant for "+clientName,
+      "Other MCP client and Virtual MCP grants are unchanged"]));return;
+  }
   const configs = virtualKeyMcpConfigs(vk).filter(
     (item) => item.mcp_client_name.toLowerCase() !== clientName.toLowerCase(),
   );
@@ -1748,7 +1865,7 @@ async function commandRepoMcpRemove(clientName) {
   console.log(`Removed ${clientName} from ${current.config.virtualKeyName}`);
 }
 
-async function commandRepoMcpInstructions(mode) {
+async function commandRepoMcpInstructions(mode, flags = {}) {
   const normalized = String(mode ?? "").trim().toLowerCase();
   if (!["on", "off", "default"].includes(normalized)) {
     throw new Error("Usage: pifrost repo mcp instructions <on|off|default>");
@@ -1758,6 +1875,9 @@ async function commandRepoMcpInstructions(mode) {
   const current = currentRepoState(state);
   if (!current.config?.virtualKeyId) throw new Error("Current repo is not initialized; run `pifrost repo init`");
 
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Would set OMP MCP server instructions to "+normalized,"Other MCP configuration remains unchanged"
+  ]));return;}
   let options;
   if (normalized === "default") {
     delete state.config.repos[current.repo.id].mcpInstructions;
@@ -1777,9 +1897,17 @@ async function commandRepoMcpInstructions(mode) {
   console.log(`Updated: ${file.path}`);
 }
 
-async function commandRepoRotateKey() {
+async function commandRepoRotateKey(flags = {}) {
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would rotate repository Virtual Key "+current.repo.name,
+      "The old key may stop working after Bifrost's grace period",
+      "A new key would be saved to the local secret store; restart OMP"
+    ]));return;
+  }
+  console.log("Operation: Changes Bifrost credentials and locally stored MCP secret");
   const rotated = await rotateVirtualKey(url, managementKey, vk.id);
   const value = rotated?.value;
   if (!value || typeof value !== "string") throw new Error("Bifrost rotate response did not include the new key value");
@@ -1794,9 +1922,17 @@ async function commandRepoReset(flags = {}) {
   const deleteRemote = flags["delete-remote"] === true;
   const recoverByName = flags["recover-by-name"] === true;
   const yes = flags.yes === true;
-
   if (recoverByName && !deleteRemote) {
     throw new Error("--recover-by-name is valid only with --delete-remote");
+  }
+  if (flags["dry-run"]) {
+    console.log(operationSummary("Read-only preview", [
+      "Repository: "+repo.name,
+      "Would remove Pifrost-managed repository state, MCP entry and installed managed Skills",
+      deleteRemote?"Would DELETE the remote repository Virtual Key (irreversible)":"Remote Virtual Key would be retained",
+      "Other OMP MCP entries remain unchanged",
+    ]));
+    return;
   }
 
   if (deleteRemote) {
@@ -1883,9 +2019,23 @@ async function researchSnapshot(includeLive = false) {
     research: current.config?.research ?? {}, liveTools, codeModeProbes, ompSearch: ompWebSearchDiagnostics(),
   }) };
 }
-async function commandRepoResearchStatus() {
+async function commandRepoResearchStatus(flags = {}) {
   const { diagnostics } = await researchSnapshot(true);
   printHeader("Bifrost MCP research providers");
+  if(!flags.verbose){
+    console.log("Preferred (guidance only): "+(diagnostics.preferred??"none"));
+    const ready=diagnostics.providers.filter(p=>p.webResearchReady).length;
+    console.log("Research-ready: "+ready+" of "+diagnostics.providers.length+" configured/discovered providers");
+    for(const provider of diagnostics.providers){
+      const state=provider.webResearchReady?"READY":provider.authorized?"PARTIAL":"UNVERIFIED";
+      console.log("  ["+state+"] "+provider.id+" via "+provider.client+" ("+provider.mode+")");
+      for(const warning of (provider.warnings??[]).slice(0,2))console.log("    "+safeUiText(warning));
+    }
+    console.log("Search path: "+(diagnostics.search.path??"unverified"));
+    console.log("Preferred is advisory: OMP owns actual tool selection and execution.");
+    console.log("For capability grants and tool names: pifrost repo research status --verbose");
+    return;
+  }
   console.log("Preferred (guidance): " + (diagnostics.preferred ?? "none"));
   for (const provider of diagnostics.providers) {
     console.log(provider.id + " [" + provider.client + "] profile=" + provider.profile + " mode=" + (provider.mode ?? "unknown") + " status=" + provider.status);
@@ -2106,7 +2256,7 @@ async function commandJudgeStatus() {
   console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
 }
 
-async function commandJudgeActivate() {
+async function commandJudgeActivate(flags = {}) {
   const selected = nativeJudgeSelection();
   if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest to explicitly opt into the native judge provider first");
   const runtime = judgeRuntimeConfig();
@@ -2125,6 +2275,13 @@ async function commandJudgeActivate() {
   if (models.status !== "ok") throw new Error("Cannot safely enable OMP judge namespace: " + (models.error ?? "enabledModels unreadable"));
   const roles = reconcilePifrostOmpSetting("modelRoles", existing.value, { judge: selected.selector });
   const enabled = reconcilePifrostOmpSetting("enabledModels", models.value, ["bifrost-judge/*"]);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would enable OMP judge namespace bifrost-judge/*",
+      "Would select "+selected.selector+" for the OMP judge role",
+      "Unrelated model roles and patterns remain unchanged"
+    ]));return;
+  }
   const backup = backupOmpConfig();
   runCommand("omp", ["config", "set", "enabledModels", JSON.stringify(enabled)]);
   runCommand("omp", ["config", "set", "modelRoles", JSON.stringify(roles)]);
@@ -2146,6 +2303,13 @@ async function commandJudgeProbe(flags = {}) {
 async function commandDoctor(flags = {}) {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
+    if(flags.json){
+      reportHealth({command:"doctor",json:true,checks:storedWarnings.map((detail,i)=>({
+        id:"stored-config-"+i,label:"Stored Pifrost configuration",detail,
+        status:"fail",required:true,action:"pifrost global setup"
+      }))});
+      process.exitCode=2;return;
+    }
     printHeader("Stored Pifrost configuration");
     for (const warning of storedWarnings) console.log(`WARN ${warning}`);
     console.log("Repair or rerun `pifrost global setup` before live diagnostics.");
@@ -2165,10 +2329,10 @@ async function commandDoctor(flags = {}) {
       { label:"OMP", status:commandExists("omp") ? "ok" : "fail",
         detail: commandExists("omp") ? `Installed (${getOmpVersion() ?? "version unknown"})` : "Not installed",
         action:"Install or update OMP, then rerun pifrost doctor." },
-      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup"),
-      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup"),
-      snapshotCheck("management", "Management API", snapshot, "pifrost global setup"),
-      snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose"),
+      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup", true),
+      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup", true),
+      snapshotCheck("management", "Management API", snapshot, "pifrost global setup", false),
+      snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose", false),
       {label:"Model catalogue", status:catalog.ok ? "ok" : "fail",
         detail:catalog.checks?.[0]?.summary ?? "Not verified",
         action:"pifrost models refresh --force"},
@@ -2207,9 +2371,9 @@ async function commandDoctor(flags = {}) {
       detail:`${storedWarnings.length} unreadable or invalid file(s)`,
       action:"pifrost global setup",
     });
-    console.log(renderHealthOverview(checks));
-    const problemCount = checks.filter(x => x.status === "fail" || x.status === "warn").length;
-    if (problemCount) process.exitCode = 2;
+    const result=reportHealth({command:"doctor",checks,strict:flags.strict,json:flags.json});
+    if(!flags.json) console.log(renderHealthOverview(result.checks));
+    if(result.exitCode) process.exitCode = result.exitCode;
     return;
   }
 
@@ -2246,16 +2410,17 @@ const COMMANDS = new Map([
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["judge status", () => commandJudgeStatus()],
-  ["judge activate", () => commandJudgeActivate()],
+  ["judge activate", (_args, flags) => commandJudgeActivate(flags)],
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
-  ["global configure-omp", () => {
+  ["global configure-omp", (_args, flags) => {
+    if(flags["dry-run"]){console.log(operationSummary("Read-only preview",["Would apply Pifrost-owned OMP configuration with backup"]));return;}
     const result = configureOmp();
     console.log(`Configured ${result.settings} OMP settings.`);
     if (result.backup) console.log(`Backup: ${result.backup}`);
   }],
-  ["routes list", () => commandRoutesList()],
+  ["routes list", (_args,flags) => commandRoutesList(flags)],
   ["routes diff", () => commandRoutesDiff()],
-  ["routes verify", () => commandRoutesVerify()],
+  ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
@@ -2265,21 +2430,21 @@ const COMMANDS = new Map([
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", (_args, flags) => commandRepoStatus(undefined, flags)],
-  ["repo research status", () => commandRepoResearchStatus()],
+  ["repo research status", (_args,flags) => commandRepoResearchStatus(flags)],
   ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
   ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
   ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
-  ["repo rotate-key", () => commandRepoRotateKey()],
+  ["repo rotate-key", (_args, flags) => commandRepoRotateKey(flags)],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
-  ["repo mcp list", () => commandRepoMcpList()],
+  ["repo mcp list", (_args,flags) => commandRepoMcpList(flags)],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
-  ["repo mcp remove", (args) => commandRepoMcpRemove(args[0])],
-  ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
-  ["repo vmcp list", () => commandRepoVirtualMcpList()],
+  ["repo mcp remove", (args, flags) => commandRepoMcpRemove(args[0], flags)],
+  ["repo mcp instructions", (args, flags) => commandRepoMcpInstructions(args[0], flags)],
+  ["repo vmcp list", (_args,flags) => commandRepoVirtualMcpList(flags)],
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
-  ["repo vmcp remove", (args) => commandRepoVirtualMcpRemove(args[0])],
-  ["repo skills list", () => commandRepoSkillsList()],
+  ["repo vmcp remove", (args, flags) => commandRepoVirtualMcpRemove(args[0], flags)],
+  ["repo skills list", (_args,flags) => commandRepoSkillsList(flags)],
   ["repo skills suggestions", (_args, flags) => commandRepoSkillSuggestions(flags)],
   ["repo skills bind", (args, flags) => commandRepoSkillBind(args[0], args[1], flags)],
   ["repo skills unbind", (args) => commandRepoSkillUnbind(args[0])],
@@ -2308,17 +2473,46 @@ async function main() {
     console.log(VERSION);
     return;
   }
-  if (flags.help || !one || one === "help") {
+  if (!one || one === "help") {
     process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }
 
   const resolved = resolveCommand(positional);
-  if (resolved) return resolved.handler(resolved.args, flags);
+  if (resolved) {
+    const name = positional.slice(0, positional.length - resolved.args.length).join(" ");
+    if (flags.help) {
+      process.stdout.write(commandUsage(name) + "\n");
+      return;
+    }
+    const definition = validateCliInvocation(name, resolved.args, flags);
+    if(["gateway-change","local-change"].includes(definition.operation)){
+      console.log("Operation: "+(flags["dry-run"]?"Read-only preview":operationLabel(definition.operation)));
+    }
+    if (definition.operation === "billed" && !flags.yes) {
+      console.log("Operation: " + operationLabel(definition.operation));
+      console.log("This command performs real provider calls and may incur charges.");
+    }
+    return resolved.handler(resolved.args, flags);
+  }
   throw Object.assign(new Error("Unknown command. Use pifrost help for the available commands."), { isUsage: true });
 }
 
 main().catch((error) => {
+  // Preserve a single parseable result even if health inspection cannot start.
+  if(process.argv.slice(2).includes("--json")){
+    console.log(JSON.stringify({
+      schemaVersion:1,
+      command:process.argv.slice(2).filter(x=>!x.startsWith("--")).slice(0,2).join(" "),
+      result:"FAILED",
+      counts:{ok:0,issues:1},
+      checks:[{id:"command-error",label:"Command failed",status:"fail",
+        required:true,detail:safeUiText(error instanceof Error?error.message:String(error)),
+        action:"pifrost doctor"}]
+    },null,2));
+    process.exitCode=error?.isUsage===true?1:2;
+    return;
+  }
   console.error(formatCliFailure(error, { isUsage: error?.isUsage === true }));
   process.exitCode = 1;
 });

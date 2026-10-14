@@ -1,3 +1,12 @@
+## 0.22.0 — 2026-10-14
+
+- CLI usability safety: central command schema for all 46 public/internal commands, strict argument and option validation, command-local `--help`, and operation classification. MCP allow-lists require an explicit `--tools` value; wildcard is never silently selected.
+- Consistent required vs optional checks, predictable `--strict` status exit codes and redacted versioned `--json` health reports for doctor, global status, model doctor and repo status.
+- Optional `--dry-run` previews for route sync/verification, repo reset and key rotation, MCP/Virtual MCP changes, OMP judge configuration, and managed Skill actions.
+- Skill discovery is read-only unless installation is explicitly requested. Enhanced inventory filters, explicit grant lists, and tool-access warnings.
+- Within OMP, `/pifrost trace` supports `last N`, `errors`, `role alias` and `verbose`, with concise summaries by default and existing evidence preserved in verbose view.
+- Diagnostics and CLI contract tests cover command discovery, syntax and safety. Bifrost continues to own policies, credentials, routing, key rotation and provider tools; OMP continues to own agent sessions.
+
 ## 0.21.0 — 2026-10-14
 
 - Terminal UX and accessibility: introduce a shared plain-text, no-ANSI renderer with explicit statuses, issues-first sorting, concise recovery commands and user-oriented quick help (`pifrost help --all` retains the full reference).
