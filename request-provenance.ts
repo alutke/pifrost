@@ -178,6 +178,7 @@ export function parsePifrostTraceOptions(text: string): PifrostTraceOptions {
 }
 export function formatPifrostRouteTraces(sessionId: string, options: PifrostTraceOptions = {}): string {
   const all = traces.get(sessionId) ?? [];
+  if (!all.length) return "Pifrost request trace: no requests recorded for this session.";
   const current = all.filter(item => (!options.errorsOnly || item.outcome !== "done")
     && (!options.role || item.logicalModel.toLowerCase() === options.role.toLowerCase()));
   if (!current.length) return "Pifrost request trace: no matching requests in this session.";
