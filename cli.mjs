@@ -2499,6 +2499,20 @@ async function main() {
 }
 
 main().catch((error) => {
+  // Preserve a single parseable result even if health inspection cannot start.
+  if(process.argv.slice(2).includes("--json")){
+    console.log(JSON.stringify({
+      schemaVersion:1,
+      command:process.argv.slice(2).filter(x=>!x.startsWith("--")).slice(0,2).join(" "),
+      result:"FAILED",
+      counts:{ok:0,issues:1},
+      checks:[{id:"command-error",label:"Command failed",status:"fail",
+        required:true,detail:safeUiText(error instanceof Error?error.message:String(error)),
+        action:"pifrost doctor"}]
+    },null,2));
+    process.exitCode=error?.isUsage===true?1:2;
+    return;
+  }
   console.error(formatCliFailure(error, { isUsage: error?.isUsage === true }));
   process.exitCode = 1;
 });
