@@ -159,7 +159,7 @@ export function formatPifrostSessionCosts(sessionId: string): string {
 export function formatPifrostRouteTraces(sessionId: string): string {
 	const current = traces.get(sessionId) ?? [];
 	if (!current.length) return "Pifrost routing trace: no requests recorded for this session.";
-	const lines = ["Pifrost routing trace (latest first):"];
+	const lines = ["Pifrost request trace (newest first; up to 10 requests)", "Gateway request details do not establish that a Bifrost routing rule matched.", ""];
 	for (const trace of [...current].reverse().slice(0, 10)) {
 		const served = trace.resolvedModel
 			? `${trace.provider ? `${trace.provider}/` : ""}${trace.resolvedModel}`
@@ -206,8 +206,18 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			].join(" ") : undefined,
 			`outcome=${trace.outcome}`,
 		].filter(Boolean);
-		lines.push(`  ${trace.logicalModel}: ${details.join(" ")}`);
+		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=)/u.test(item));
+		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
+		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
+		const reasoning = details.filter(item => item.startsWith("history-"));
+		lines.push(`  ${trace.logicalModel} - ${trace.outcome === "done" ? "completed" : "failed"}`);
+		lines.push(`    Model: served=${served}`);
+		lines.push(`    Routing: ${route.join(" ")}`);
+		if (gateway.length) lines.push(`    Gateway: ${gateway.join(" ")}`);
+		if (usage.length) lines.push(`    Usage: ${usage.join(" ")}`);
+		if (reasoning.length) lines.push(`    Reasoning cleanup: ${reasoning.join(" ")}`);
 		if (trace.failureClass) lines.push(`    Next: ${gatewayFailureAdvice(trace.failureClass)}`);
+		lines.push("");
 	}
 	return lines.join("\n");
 }
