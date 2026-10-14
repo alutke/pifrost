@@ -1029,6 +1029,23 @@ function commandRoutesExplain(input, flags = {}) {
   const explanation = explainRouteRequest(diagnostic, routeExplanationRequestFromFlags(flags));
   printHeader(`Route request: ${input}`);
   console.log(formatRouteExplanation(explanation));
+  const members = diagnostic.members ?? [];
+  const protocols = [...new Set(members.flatMap(item => item.protocols ?? []))];
+  if (protocols.includes("openai-responses")) {
+    const gatewayOwned = !cache.models.find(item => String(item.id).toLowerCase() === alias)?.pifrostDynamicRoute;
+    if (gatewayOwned) {
+      console.log("Runtime: Bifrost owns the original logical routing rule.");
+      console.log("  Ingress protocol is selected using the model catalog; only a definite");
+      console.log("  pre-output protocol error permits retry through another gateway ingress.");
+      console.log("  Pifrost never copies or executes Bifrost CEL, target weights, key pins or fallbacks.");
+      if (protocols.includes("openai-completions")) {
+        console.log("  WARN: mixed Chat/Responses members still need Bifrost conversion or");
+        console.log("  compatible fallback models for successful gateway-managed fallback.");
+      }
+    } else {
+      console.log("Runtime: verified Pifrost compatibility profile; ordered pre-output protocol groups.");
+    }
+  }
   console.log("Request simulation only: this does not invoke a Bifrost rule or establish route-counter attribution.");
   console.log("After an actual inference, inspect /pifrost trace and correlate its gateway request/trace ID with Bifrost Logs and Routes.");
 }

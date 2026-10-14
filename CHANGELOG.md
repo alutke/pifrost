@@ -1,3 +1,9 @@
+## 0.22.4 — 2026-10-14
+
+- Correct HTTP 400 `Model does not support this protocol` for Bifrost-managed `omp-*` aliases containing Responses-only models, such as OpenCode Go Muse Spark 1.3 Contributor. Select a compatible Bifrost ingress protocol using resolved member capabilities without rewriting the logical alias or original gateway policy.
+- Retry a second supported ingress only for explicit protocol rejection *before model output*. Do not retry unrelated errors, authentication failures, timeouts or partially streamed responses. Preserve Bifrost's authority over CEL, rule selection, scope, weights, key pins, fallbacks and provider credentials.
+- Extend route explanations for gateway-managed mixed Chat/Responses chains; warn when Bifrost fallback still requires supported gateway conversion or compatible fallback models. Regression tests cover Muse-first and reverse ordering, strict error matching, and output-commitment safety.
+
 ## 0.22.3 — 2026-10-14
 
 - Fix OMP `no-model` after `pifrost routes verify`: exclude only the verification timestamp from semantic model-cache identity; preserve changes to provider chains, pins, physical-model inclusion, policy fingerprint and unknown safety metadata as invalidation triggers.

@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.22.3
+0.22.4
 ```
 
 ## Architecture and ownership
@@ -82,7 +82,7 @@ For an exact, unconditional `omp-*` rule with all physical members request-compa
 
 For a simple synchronized context-aware route, Pifrost estimates context/output demand and excludes only established incompatibilities (context, images, tools, tool choice, reasoning, service tier and protocol). Compatible members retain their Bifrost order. Mixed Chat Completions and Responses or encoder-incompatible members may require separate contiguous attempts; Pifrost advances only on failures **before** any real text, thinking or tool output. Those compatibility requests address physical models and may not increment logical `omp-*` counters; `/pifrost trace` labels them accordingly.
 
-Context-dependent CEL, weighted, scoped, pinned, chained or ambiguous rules are **gateway-owned**. Only exact unconditional model predicates can be locally compiled into compatibility chains. Conservative reachability metadata covers every potentially selected target.
+Context-dependent CEL, weighted, scoped, pinned, chained or ambiguous rules are **gateway-owned**. Only exact unconditional model predicates can be locally compiled into physical compatibility chains. For non-compiled aliases, Pifrost may select the **Bifrost ingress protocol** using catalogued member capabilities (e.g. Responses-only Muse). Another known ingress is attempted only on explicit protocol rejection before generated output. All attempts keep the same logical alias; Bifrost re-evaluates the complete original rule. Pifrost never duplicates conditional CEL, weights, scopes, pins or physical fallbacks. A mixed-protocol fallback may still need gateway conversion or a compatible model configuration. Conservative reachability metadata covers every potentially selected target.
 
 ```bash
 pifrost routes list

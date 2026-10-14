@@ -122,7 +122,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.22.3
+0.22.4
 ```
 
 Bun also works:
@@ -237,7 +237,7 @@ The explanation uses the same shared eligibility engine as runtime prewalk: cont
 
 - **Normal path:** For a simple, synchronized, unconditional and wire-compatible `omp-*` route, Pifrost sends the **logical alias** to Bifrost. Its current routing rule controls physical providers, weights/keys and same-protocol fallback. Do not infer a rule match merely because Bifrost saw the alias.
 - **Compatibility exception:** For excluded members, incompatible encoders or mixed Chat/Responses APIs, Pifrost may issue ordered physical requests. This bypasses the logical Bifrost rule and is explicitly labelled in `/pifrost trace`; no retries occur after real model output begins.
-- **Governance:** Complex/weighted/scoped/conditional rules remain Bifrost-owned. Pifrost does not optimize routing for price, quality or quota.
+- **Governance:** Complex/weighted/scoped/conditional rules remain Bifrost-owned. Pifrost does not optimize routing for price, quality or quota. Bifrost-native aliases containing Responses-only members use a matching gateway ingress protocol; an alternate ingress is retried only after a specific pre-output protocol rejection. Each request keeps the same logical alias and is routed afresh by Bifrost. Mixed-protocol gateway fallbacks still require supported Bifrost protocol conversion or compatible fallback models.
 - **Freshness:** Physical compatibility paths require recent synchronized rule provenance (seven-day guard), but a recent timestamp alone does **not** prove no intervening changes. After editing rules, run `pifrost routes sync`, then restart OMP. `pifrost routes verify` independently checks the complete live rule fingerprint.
 - **Capabilities:** OMP-facing limits and modalities are conservative. Context-aware prewalk uses observed physical capabilities, output budget, tool/reasoning compatibility and wire protocol without reordering eligible members.
 
