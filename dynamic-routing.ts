@@ -3,6 +3,7 @@ import {
 	PIFROST_WIRE_PROTOCOL,
 	type PifrostWireProtocol,
 } from "./protocol-capability.ts";
+import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./routing-core.ts";
 import {
 	evaluateRouteMemberEligibility,
 	resolveRouteMemberProtocol,
@@ -577,8 +578,6 @@ export function canUseNativeBifrostRoute(profile: DynamicRouteProfile, plan: Dyn
  * arbitrarily stale local physical chain. Sync does not prevent drift within
  * this window; native pass-through is always preferred when possible.
  */
-export const MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS = 7 * 24 * 60 * 60_000;
-
 export function compatibilityRouteSnapshotError(
 	profile: DynamicRouteProfile,
 	now = Date.now(),
