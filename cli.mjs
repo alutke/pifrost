@@ -1791,9 +1791,10 @@ async function commandRepoMcpInstructions(mode) {
   console.log(`Updated: ${file.path}`);
 }
 
-async function commandRepoRotateKey() {
+async function commandRepoRotateKey(flags = {}) {
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  if (flags["dry-run"]) { console.log("Preview: would rotate this repository Virtual Key and update the saved local value. Active MCP sessions may require reconnecting. No changes made."); return; }
   const rotated = await rotateVirtualKey(url, managementKey, vk.id);
   const value = rotated?.value;
   if (!value || typeof value !== "string") throw new Error("Bifrost rotate response did not include the new key value");
@@ -2284,7 +2285,7 @@ const COMMANDS = new Map([
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
   ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
   ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
-  ["repo rotate-key", () => commandRepoRotateKey()],
+  ["repo rotate-key", (_args, flags) => commandRepoRotateKey(flags)],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
   ["repo mcp list", () => commandRepoMcpList()],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
