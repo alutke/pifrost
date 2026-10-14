@@ -205,7 +205,7 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 				`stream-no-continuation=${trace.reasoningHygiene.outputMarkerOnlyRetainedNoContinuation}`,
 			].join(" ") : undefined,
 			`outcome=${trace.outcome}`,
-		].filter(Boolean);
+		].filter((value): value is string => typeof value === "string" && value.length > 0);
 		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=)/u.test(item));
 		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
 		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
