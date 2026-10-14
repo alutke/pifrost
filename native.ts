@@ -73,6 +73,7 @@ import {
 	createModelAwareContextTokenizer,
 	estimateOmpContextInputTokens,
 } from "./context-estimator.ts";
+import { isCommittedModelOutput } from "./output-commitment.ts";
 import {
 	applyDynamicRouteProfiles,
 	canUseNativeBifrostRoute,
@@ -209,8 +210,7 @@ function bridgeBifrostUsageCostStream(
 			for await (const event of source) {
 				// Use real output deltas/completed tool calls, never stream-start or headers.
 				// Bifrost/OMP still own retry policy; this is diagnostic-only.
-				if (event.type === "text_delta" || event.type === "thinking_delta" ||
-					event.type === "toolcall_delta" || event.type === "toolcall_end") {
+				if (isCommittedModelOutput(event)) {
 					capture.outputStarted = true;
 				}
 				for (const emitted of reasoningFilter ? reasoningFilter.consume(event) : [event]) {
