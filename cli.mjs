@@ -25,6 +25,7 @@ import {
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
+import { parseCliArgs, validateCommand, commandUsage, operationDescription, COMMAND_SPEC } from "./command-contract.mjs";
 import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
 import {
   RESEARCH_PROFILES,
@@ -232,36 +233,6 @@ feature. Secrets are stored in ~/.config/pifrost/secrets.json with mode 0600.
 Repo .omp/mcp.json files contain no secret; they resolve the repo VK through
 '!pifrost secret repo-mcp --id ...' at connection time.
 `;
-
-function parseArgs(argv) {
-  const positional = [];
-  const flags = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === "--") {
-      positional.push(...argv.slice(i + 1));
-      break;
-    }
-    if (!arg.startsWith("--")) {
-      positional.push(arg);
-      continue;
-    }
-    const eq = arg.indexOf("=");
-    if (eq > 2) {
-      flags[arg.slice(2, eq)] = arg.slice(eq + 1);
-      continue;
-    }
-    const key = arg.slice(2);
-    const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
-      flags[key] = next;
-      i += 1;
-    } else {
-      flags[key] = true;
-    }
-  }
-  return { positional, flags };
-}
 
 function flagString(flags, name) {
   const value = flags[name];
@@ -2302,20 +2273,46 @@ function resolveCommand(positional) {
 }
 
 async function main() {
-  const { positional, flags } = parseArgs(process.argv.slice(2));
+  const { positional, flags } = parseCliArgs(process.argv.slice(2));
   const [one] = positional;
-  if (flags.version || one === "--version" || one === "version") {
+  if (flags.version || one === "version") {
     console.log(VERSION);
     return;
   }
-  if (flags.help || !one || one === "help") {
-    process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
+  if (!one || one === "help") {
+    const target = one === "help" ? positional.slice(1).join(" ") : "";
+    process.stdout.write(target ? commandUsage(target) + "\n" : flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }
-
   const resolved = resolveCommand(positional);
-  if (resolved) return resolved.handler(resolved.args, flags);
-  throw Object.assign(new Error("Unknown command. Use pifrost help for the available commands."), { isUsage: true });
+  if (!resolved) {
+    throw Object.assign(new Error("Unknown command. Run pifrost help --all for available commands."), { isUsage: true });
+  }
+  const name = positional.slice(0, positional.length - resolved.args.length).join(" ");
+  if (flags.help) {
+    process.stdout.write(commandUsage(name) + "\n");
+    return;
+  }
+  const spec = validateCommand(name, resolved.args, flags);
+  if (name === "secret repo-mcp") return resolved.handler(resolved.args, flags);
+  if (flags.json) {
+    const lines = [];
+    const oldLog = console.log;
+    try {
+      console.log = (...args) => { lines.push(args.map(String).join(" ")); };
+      await resolved.handler(resolved.args, flags);
+    } finally {
+      console.log = oldLog;
+    }
+    process.stdout.write(JSON.stringify({
+      schemaVersion: 1, command: name,
+      status: process.exitCode === 2 ? "failed" : "completed",
+      effect: spec.effect, exitCode: process.exitCode || 0,
+      output: lines.join("\n"),
+    }) + "\n");
+    return;
+  }
+  return resolved.handler(resolved.args, flags);
 }
 
 main().catch((error) => {
