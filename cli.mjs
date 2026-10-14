@@ -1012,8 +1012,12 @@ async function chooseClientsInteractively(clients) {
     const result = [];
     for (const index of indexes) {
       const client = clients[index - 1];
-      const answer = (await rl.question(`Allowed tools for ${client.name} [*]: `)).trim();
-      result.push({ name: client.name, tools: answer ? splitCsv(answer) : ["*"] });
+      let answer="";
+      while(!answer){
+        answer=(await rl.question(`Allowed tools for ${client.name} (comma-separated, or type * for all): `)).trim();
+        if(!answer)console.log("Explicit selection required; wildcard access is never assumed.");
+      }
+      result.push({ name:client.name, tools:splitCsv(answer) });
     }
     return result;
   });
@@ -1053,6 +1057,14 @@ async function commandRepoInit(flags) {
     );
   }
 
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Repository: "+repo.name,
+      "Direct clients: "+(clients?.map(c=>c.name+" ["+c.tools.join(", ")+"]").join("; ")??"unchanged"),
+      "Virtual MCP bundles: "+(desiredVirtualMcps?.map(c=>c.name).join(", ")??"unchanged"),
+      "Would configure repository Virtual Key, OMP MCP configuration and optionally matching Skills",
+    ]));return;
+  }
   const vk = await upsertRepoVirtualKey({
     state,
     repo,
@@ -1702,6 +1714,10 @@ async function commandRepoVirtualMcpAdd(name, flags = {}) {
   const [found] = resolveVirtualMcpNames(available, [name]);
   const alreadyAssigned = virtualMcpsForVirtualKey(available, vk.id)
     .some((item) => Number(item.id) === Number(found.id));
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Would attach Virtual MCP bundle "+found.name+" to the repository key",
+    "Inherited tools are governed by Bifrost bundle settings"
+  ]));return;}
   await attachVirtualMcpToVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = [...new Set([
     ...virtualMcpsForVirtualKey(available, vk.id).map((item) => item.name),
@@ -1715,12 +1731,16 @@ async function commandRepoVirtualMcpAdd(name, flags = {}) {
   }
 }
 
-async function commandRepoVirtualMcpRemove(name) {
+async function commandRepoVirtualMcpRemove(name, flags = {}) {
   if (!name) throw new Error("Usage: pifrost repo vmcp remove <name>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
   const available = await listVirtualMcps(url, managementKey);
   const [found] = resolveVirtualMcpNames(available, [name]);
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Would detach Virtual MCP bundle "+found.name,
+    "Direct MCP grants and other bundles remain intact"
+  ]));return;}
   await detachVirtualMcpFromVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = virtualMcpsForVirtualKey(available, vk.id)
     .filter((item) => Number(item.id) !== Number(found.id))
@@ -1740,7 +1760,15 @@ async function commandRepoMcpAdd(clientName, flags) {
   const alreadyAssigned = virtualKeyMcpConfigs(vk)
     .some((item) => item.mcp_client_name.toLowerCase() === found.name.toLowerCase());
   const configs = virtualKeyMcpConfigs(vk).filter((item) => item.mcp_client_name !== found.name);
-  configs.push({ mcp_client_name: found.name, tools_to_execute: tools.length ? tools : ["*"] });
+  if(!tools.length)throw cliUsageError("An explicit --tools value is required; specify named tools or '*' intentionally.");
+  console.log(operationSummary(flags["dry-run"]?"Read-only preview":"Changes gateway MCP grants",[
+    "Client: "+found.name,
+    "New executable tool allow-list: "+tools.join(", "),
+    tools.includes("*")?"WARNING: wildcard permits every executable tool for this client":"Grant is limited to named tools",
+    "Bifrost continues to enforce its own executable and automatic tool policies",
+  ]));
+  if(flags["dry-run"])return;
+  configs.push({ mcp_client_name: found.name, tools_to_execute: tools });
   const updated = await updateVirtualKey(url, managementKey, vk.id, { mcp_configs: configs });
   const normalized = virtualKeyMcpConfigs(updated).map((item) => ({
     name: item.mcp_client_name,
@@ -1751,10 +1779,14 @@ async function commandRepoMcpAdd(clientName, flags) {
   if (!alreadyAssigned) await offerMatchingMcpSkills([found], flags);
 }
 
-async function commandRepoMcpRemove(clientName) {
+async function commandRepoMcpRemove(clientName, flags = {}) {
   if (!clientName) throw new Error("Usage: pifrost repo mcp remove <client>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",["Would remove MCP grant for "+clientName,
+      "Other MCP client and Virtual MCP grants are unchanged"]));return;
+  }
   const configs = virtualKeyMcpConfigs(vk).filter(
     (item) => item.mcp_client_name.toLowerCase() !== clientName.toLowerCase(),
   );
@@ -1767,7 +1799,7 @@ async function commandRepoMcpRemove(clientName) {
   console.log(`Removed ${clientName} from ${current.config.virtualKeyName}`);
 }
 
-async function commandRepoMcpInstructions(mode) {
+async function commandRepoMcpInstructions(mode, flags = {}) {
   const normalized = String(mode ?? "").trim().toLowerCase();
   if (!["on", "off", "default"].includes(normalized)) {
     throw new Error("Usage: pifrost repo mcp instructions <on|off|default>");
@@ -1777,6 +1809,9 @@ async function commandRepoMcpInstructions(mode) {
   const current = currentRepoState(state);
   if (!current.config?.virtualKeyId) throw new Error("Current repo is not initialized; run `pifrost repo init`");
 
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Would set OMP MCP server instructions to "+normalized,"Other MCP configuration remains unchanged"
+  ]));return;}
   let options;
   if (normalized === "default") {
     delete state.config.repos[current.repo.id].mcpInstructions;
@@ -2318,11 +2353,11 @@ const COMMANDS = new Map([
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
   ["repo mcp list", () => commandRepoMcpList()],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
-  ["repo mcp remove", (args) => commandRepoMcpRemove(args[0])],
-  ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
+  ["repo mcp remove", (args, flags) => commandRepoMcpRemove(args[0], flags)],
+  ["repo mcp instructions", (args, flags) => commandRepoMcpInstructions(args[0], flags)],
   ["repo vmcp list", () => commandRepoVirtualMcpList()],
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
-  ["repo vmcp remove", (args) => commandRepoVirtualMcpRemove(args[0])],
+  ["repo vmcp remove", (args, flags) => commandRepoVirtualMcpRemove(args[0], flags)],
   ["repo skills list", () => commandRepoSkillsList()],
   ["repo skills suggestions", (_args, flags) => commandRepoSkillSuggestions(flags)],
   ["repo skills bind", (args, flags) => commandRepoSkillBind(args[0], args[1], flags)],
