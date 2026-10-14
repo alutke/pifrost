@@ -438,7 +438,7 @@ test("empty starts followed by tool-call completion prevent fallback", async () 
     const partial=assistant(attempt.primary,"openai-responses","stop");
     const failure=assistant(attempt.primary,"openai-responses","error");
     return eventStream([{type:"start",partial},{type:"toolcall_start",contentIndex:0,partial},
-      {type:"toolcall_end",contentIndex:0,toolCall:{type:"function",id:"call",name:"tool",arguments:{}},partial},
+      {type:"toolcall_end",contentIndex:0,toolCall:{type:"toolCall",id:"call",name:"tool",arguments:{}},partial},
       {type:"error",reason:"error",error:failure}]);
   });
   assert.equal(visited.length,1);
