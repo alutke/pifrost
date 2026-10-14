@@ -25,14 +25,15 @@ const bools = new Set([
   "no-mcp-instructions","install-matching-skills","no-skill-discovery",
 ]);
 const general = ["help"];
-const read = ["verbose","strict"];
+const read = ["verbose"];
+const healthRead = ["verbose","strict","json"];
 const filters = ["filter","limit"];
 const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
 // 46 registered commands. Source-of-truth for validation/help side effects.
 const rows = [
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes"],"local-change"],
-  ["global status",0,0,[...read,"json"],"read-only"],
+  ["global status",0,0,healthRead,"read-only"],
   ["global mcp-policy",0,0,read,"read-only"],
   ["global observability",0,0,["vk-id",...read],"read-only"],
   ["global configure-omp",0,0,["dry-run"],"local-change"],
@@ -47,10 +48,10 @@ const rows = [
   ["routes effective",0,0,read,"read-only"],
   ["routes explain",1,1,routeOptions,"read-only"],
   ["models refresh",0,0,["force"],"local-change"],
-  ["models doctor",0,0,[...read,"json"],"read-only"],
+  ["models doctor",0,0,healthRead,"read-only"],
   ["models kinds",0,0,read,"read-only"],
   ["repo init",0,0,["clients","tools","virtual-mcps","rotate-existing","no-mcp-instructions","install-matching-skills","no-skill-discovery","dry-run","yes"],"gateway-change"],
-  ["repo status",0,0,[...read,"json"],"read-only"],
+  ["repo status",0,0,healthRead,"read-only"],
   ["repo research status",0,0,read,"read-only"],
   ["repo research bind",2,2,["profile","search-tool","fetch-tool","crawl-tool","screenshot-tool"],"local-change"],
   ["repo research unbind",1,1,[],"local-change"],
@@ -75,7 +76,7 @@ const rows = [
   ["repo skills remove",1,1,["force","dry-run"],"local-change"],
   ["repo skills sync",0,1,["force","dry-run"],"local-change"],
   ["secret repo-mcp",0,0,["id"],"machine-secret"],
-  ["doctor",0,0,[...read,"json"],"read-only"],
+  ["doctor",0,0,healthRead,"read-only"],
 ];
 export const commandCatalog = new Map(rows.map(([name,min,max,options,operation]) => [name,{
   name,min,max,options:[...new Set([...general,...options])],
@@ -101,6 +102,10 @@ export function validateCliInvocation(name,args,flags) {
   }
   if(args.length < def.min || args.length > def.max)
     throw cliUsageError("Expected "+(def.min === def.max ? def.min : def.min+"–"+def.max)+" argument(s) for '"+name+"'. Use pifrost "+name+" --help.");
+  if(flags.json&&flags.verbose)
+    throw cliUsageError("--json and --verbose are separate display modes; choose one.");
+  if(flags.strict&&flags.verbose)
+    throw cliUsageError("Use --strict with the compact health check (without --verbose).");
   if(name==="repo mcp add" && !Object.hasOwn(flags,"tools"))
     throw cliUsageError("Specify allowed tools explicitly with --tools tool1,tool2 or --tools '*'. No default wildcard grant.");
   if(name==="repo init" && flags.clients !== undefined && flags.tools === undefined)
