@@ -55,7 +55,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
 			registerProvider(id: string, config: any) { registered.push({ id, config }); },
 			registerCommand() {},
 			on() {},
-		} as Parameters<typeof nativeExtension>[0];
+		} as unknown as Parameters<typeof nativeExtension>[0];
 		await nativeExtension(pi);
 		const provider = registered.find(value => value.id === "bifrost")?.config;
 		assert.ok(provider, "Bifrost provider must register");
@@ -69,7 +69,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
 		const pi2 = {
 			...pi,
 			registerProvider(id: string, config: any) { warmRegistered.push({ id, config }); },
-		} as Parameters<typeof nativeExtension>[0];
+		} as unknown as Parameters<typeof nativeExtension>[0];
 		await nativeExtension(pi2);
 		assert.deepEqual(warmRegistered.find(value => value.id === "bifrost")?.config.models?.map(
 			(item: { id: string }) => item.id
