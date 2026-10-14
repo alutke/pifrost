@@ -6,6 +6,7 @@ import {
 	applyBifrostResolvedModel,
 	bridgeBifrostUsageCostPayload,
 	bridgeBifrostUsageCostResponse,
+	clearUnverifiedNativeOrigin,
 	createBifrostCostBridgeFetch,
 } from "../bifrost-cost-bridge.ts";
 
@@ -106,6 +107,20 @@ test("applies captured Bifrost total to OMP-shaped parsed usage", () => {
 	assert.equal(usage.cost.output, 0.03);
 });
 
+
+test("native alias never treats encoder primary as actual Bifrost serving model", () => {
+	const incoming = { model: "physical/first", upstreamModel: "physical/first", upstreamProvider: "old-host" };
+	const cleaned = clearUnverifiedNativeOrigin(incoming, "omp-default");
+	assert.equal(cleaned.model, "omp-default");
+	assert.equal(cleaned.upstreamModel, undefined);
+	assert.equal(cleaned.upstreamProvider, undefined);
+	assert.equal(incoming.model, "physical/first", "do not mutate upstream event");
+	assert.deepEqual(applyBifrostResolvedModel(cleaned, {}), cleaned);
+	const confirmed = applyBifrostResolvedModel(cleaned, { resolvedModel: "physical/fallback", provider: "new-host" });
+	assert.equal(confirmed.upstreamModel, "physical/fallback");
+	assert.equal(confirmed.upstreamProvider, "new-host");
+	assert.equal(confirmed.model, "omp-default");
+});
 
 test("captures Bifrost routed identity and request provenance headers", async () => {
 	const capture: import("../bifrost-cost-bridge.ts").BifrostCostCapture = {};
