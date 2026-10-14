@@ -42,7 +42,7 @@ import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
 import {
-  compactCliHelp, formatCliFailure, renderHealthOverview, healthExitCode,
+  compactCliHelp, formatCliFailure, redactTerminalSecrets, renderHealthOverview, healthExitCode,
   terminalSection, terminalField, terminalStatus, terminalNextSteps, humanAge,
 } from "./terminal-presentation.mjs";
 
@@ -2431,7 +2431,7 @@ async function main() {
       schemaVersion: 1, command: name,
       status: process.exitCode === 2 ? "failed" : "completed",
       effect: spec.effect, exitCode: process.exitCode || 0,
-      output: lines.join("\n"),
+      output: redactTerminalSecrets(lines.join("\n")),
     }) + "\n");
     return;
   }
