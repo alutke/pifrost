@@ -2285,6 +2285,13 @@ async function commandJudgeProbe(flags = {}) {
 async function commandDoctor(flags = {}) {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
+    if(flags.json){
+      reportHealth({command:"doctor",json:true,checks:storedWarnings.map((detail,i)=>({
+        id:"stored-config-"+i,label:"Stored Pifrost configuration",detail,
+        status:"fail",required:true,action:"pifrost global setup"
+      }))});
+      process.exitCode=2;return;
+    }
     printHeader("Stored Pifrost configuration");
     for (const warning of storedWarnings) console.log(`WARN ${warning}`);
     console.log("Repair or rerun `pifrost global setup` before live diagnostics.");
