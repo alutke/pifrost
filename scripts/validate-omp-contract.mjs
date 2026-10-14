@@ -115,10 +115,10 @@ const CURRENT_SOURCES = [
     name: `OMP ${OMP_CURRENT_LABEL} dimension-aware image accounting`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/image-tokens.ts`,
     required: [
-      "estimateImageContentTokens",
+      "estimateImageTokens",
       "base64ImageSize",
       "UNKNOWN_SIZE",
-      "imageTokens(openAiWireRule()",
+      "openAiWireRule()",
     ],
   },
   {
@@ -161,6 +161,16 @@ const CURRENT_SOURCES = [
       'patch-budget 10000',
       'tokens 1120',
       'max-tokens 4784',
+    ],
+  },
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} authoritative physical tokenizer model policy`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/model-tokenizer.ts`,
+    required: [
+      "export function resolveModelTokenizer",
+      'return identity.class === "openai"',
+      '"o200k"',
+      '"claude-v5-sonnet"',
     ],
   },
   {
