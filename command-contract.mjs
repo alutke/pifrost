@@ -26,7 +26,7 @@ export const COMMAND_SPEC=Object.freeze({
 "models refresh":write("Refresh OMP models",0,0,{force:"boolean"}),
 "models doctor":view("Inspect model health"),
 "models kinds":view("Inspect model kinds"),
-"repo init":write("Configure repository Virtual Key and MCP",0,0,{clients:"string",tools:"string","allow-all-tools":"boolean","virtual-mcps":"string","no-mcp-instructions":"boolean","install-matching-skills":"boolean","no-skill-discovery":"boolean","rotate-existing":"boolean","dry-run":"boolean"},"Changes gateway access and local configuration"),
+"repo init":write("Configure repository Virtual Key and MCP",0,0,{clients:"string",tools:"string","allow-all-tools":"boolean","virtual-mcps":"string","no-mcp-instructions":"boolean","install-matching-skills":"boolean","no-skill-discovery":"boolean","rotate-existing":"boolean","dry-run":"boolean",yes:"boolean"},"Changes gateway access and local configuration"),
 "repo status":view("Inspect repository and MCP readiness"),
 "repo research status":view("Inspect research provider readiness"),
 "repo research bind":write("Bind research provider",2,2,{profile:"string","search-tool":"string","fetch-tool":"string","crawl-tool":"string","screenshot-tool":"string"}),
@@ -67,7 +67,9 @@ return ["Usage: pifrost "+name+(args?" "+args:"")+(s.max>s.min?" [argument]":"")
 export function parseCliArgs(argv){
 const positional=[],flags={};
 const kinds={help:"boolean","help-all":"boolean",version:"boolean",all:"boolean"};
-for(const s of Object.values(COMMAND_SPEC))Object.assign(kinds,s.flags);
+const selected=Object.keys(COMMAND_SPEC).sort((a,b)=>b.length-a.length)
+  .find(name=>name.split(" ").every((part,i)=>argv[i]===part));
+if(selected)Object.assign(kinds,COMMAND_SPEC[selected].flags);
 for(let i=0;i<argv.length;i++){
 const token=argv[i];
 if(token==="--"){positional.push(...argv.slice(i+1));break}
