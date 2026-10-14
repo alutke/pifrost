@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.23.0
+0.23.1
 ```
 
 ## Architecture and ownership
@@ -75,14 +75,6 @@ Health commands `doctor`, `global status`, `repo status` and `models doctor` sup
 Default aliases are `bifrost/omp-default`, `-smol`, `-task`, `-advisor`, `-slow`, `-plan`, `-designer`, `-vision`, `-commit` and `-tiny`. Create their physical routing rules in Bifrost. Keep OMP `retry.modelFallback: false` when Bifrost owns model fallback. OMP defines `extendedContext`, `compaction.modelThresholds`, effective context windows and session history. Pifrost's optional idle compact-before-skip invokes **OMP** compaction, and can be disabled with `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0`.
 
 Each OMP conversation's session ID is sent separately as `x-bf-session-id` to Bifrost and `x-bf-eh-x-opencode-session` for upstream OpenCode Go's `x-opencode-session` requirement. These are per-request forwarding headers, not global provider configuration. Attribution uses OMP agent identity for diagnostics only, never model preference or selection.
-
-## Automated route watcher (v0.23.0)
-
-The standalone CLI can poll Bifrost's management API using stored Basic or Bearer management credentials without exposing them to the OMP inference extension. This is opt-in: `pifrost routes watch enable` installs a persistent Linux systemd **user** service (default 60 seconds). `pifrost routes watch` runs in the foreground; `pifrost routes watch once` reconciles once; `pifrost routes watch status` reports status and last error code; `pifrost routes watch disable` stops and removes only the managed unit. Interval range: 15–3600 seconds. Re-enabling updates the managed unit and restarts it. On non-systemd platforms run the foreground watcher using your normal process supervisor. User-level systemd units may stop when a user logs out unless systemd lingering has been explicitly enabled by the administrator; Pifrost never changes that setting.
-
-Each iteration captures the full routing-rule fingerprint and derived aliases. On change, it short-debounces a second read, stages a fresh OMP catalogue against a temporary manifest (with management credentials stripped from its environment), verifies the cache schema, credentials fingerprint and semantic manifest fingerprint, re-reads the gateway policy, then publishes the manifest and cache. Atomic per-file renames, rollback on failed publication and an interprocess file lock protect against partial updates. Temporary failures back off exponentially (maximum 15 minutes), retain the last valid state and emit secret-free error codes. Manual `routes sync`/`routes verify` share the same lock.
-
-**Model-registration boundary:** Running OMP processes do not automatically load new provider registrations or compatibility profiles. Watch status flags when an OMP restart is required. The watcher never changes Bifrost routing rules or credentials and never copies gateway-only conditions, weightings or pins into an OMP policy.
 
 ## Routing and provenance
 

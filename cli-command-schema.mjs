@@ -16,7 +16,7 @@ const values = {
   "screenshot-tool":"Screenshot tool name", "vk-id":"Virtual Key management ID",
   "id":"Internal repository identifier", "filter":"Case-insensitive name filter",
   "limit":"Maximum displayed entries", "role":"OMP logical role",
-  "last":"Recent request count", "interval":"Polling frequency in seconds (15..3600)",
+  "last":"Recent request count",
 };
 const bools = new Set([
   "help","all","version","verbose","strict","json","dry-run","yes","skip-test",
@@ -29,7 +29,7 @@ const read = ["verbose"];
 const healthRead = ["verbose","strict","json"];
 const filters = ["filter","limit"];
 const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
-// 51 registered commands. Source-of-truth for validation/help side effects.
+// 46 registered commands. Source-of-truth for validation/help side effects.
 const rows = [
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
@@ -44,11 +44,6 @@ const rows = [
   ["routes diff",0,0,read,"read-only"],
   ["routes verify",0,0,["dry-run",...read],"local-change"],
   ["routes sync",0,0,["no-refresh","dry-run",...read],"local-change"],
-  ["routes watch",0,0,["interval"],"local-change"],
-  ["routes watch once",0,0,[],"local-change"],
-  ["routes watch enable",0,0,["interval","dry-run"],"local-change"],
-  ["routes watch disable",0,0,[],"local-change"],
-  ["routes watch status",0,0,[],"read-only"],
   ["routes diagnose",0,0,read,"read-only"],
   ["routes effective",0,0,read,"read-only"],
   ["routes explain",1,1,routeOptions,"read-only"],

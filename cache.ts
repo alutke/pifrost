@@ -18,7 +18,6 @@ import type {
 	PifrostCatalog,
 } from "./index.ts";
 import { CATALOG_CACHE_SCHEMA_VERSION } from "./cache-schema.ts";
-import { semanticAliasFingerprint, inferenceKeyFingerprint } from "./route-cache-identity.mjs";
 
 export { CATALOG_CACHE_SCHEMA_VERSION };
 export const DEFAULT_CACHE_MAX_AGE_MS = 30 * 24 * 60 * 60_000;
@@ -88,7 +87,10 @@ function canonical(value: unknown): unknown {
  * so new policy metadata fails closed rather than reusing stale models.
  */
 export function aliasConfigFingerprint(aliasConfig?: PifrostAliasConfig): string {
-	return semanticAliasFingerprint(aliasConfig);
+	if (!aliasConfig) return sha256(JSON.stringify(null));
+	const relevant = { ...aliasConfig };
+	delete relevant.synchronizedAt;
+	return sha256(JSON.stringify(canonical(relevant)));
 }
 
 /** Accept a genuinely matching v0.22.2 cache once, without a forced cold start
@@ -99,7 +101,7 @@ function legacyAliasConfigFingerprint(aliasConfig?: PifrostAliasConfig): string 
 }
 
 export function virtualKeyFingerprint(virtualKey?: string): string {
-	return inferenceKeyFingerprint(virtualKey);
+	return sha256(nonEmpty(virtualKey) ?? "");
 }
 
 function finiteNonNegative(value: unknown): value is number {

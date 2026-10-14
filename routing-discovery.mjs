@@ -66,29 +66,16 @@ async function fetchRoutingPages(base, path, headers) {
   while (true) {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
     const body = await requestJson(`${base}${path}?${query}`, { headers });
-    const recognized = Array.isArray(body) ||
-      [["rules"], ["routing_rules"], ["items"], ["data"], ["data", "rules"],
-       ["data", "routing_rules"], ["data", "items"], ["result", "rules"],
-       ["result", "routing_rules"], ["result", "items"]]
-        .some(keys => nestedArray(body, keys) !== undefined);
-    if (!recognized) throw new Error("Unrecognized Bifrost routing response shape; refusing partial synchronization");
     const page = extractRoutingRules(body);
     const signature = JSON.stringify(page.map((rule) => rule?.id ?? rule?.name ?? rule));
-    if (seenPages.has(signature)) {
-      throw new Error("Repeated routing page detected; refusing incomplete rule snapshot");
-    }
+    if (seenPages.has(signature)) break;
     seenPages.add(signature);
     rules.push(...page);
     shapes.push(bodyShape(body));
 
     const total = totalCount(body);
     if (total !== undefined && rules.length >= total) break;
-    if (page.length === 0 || page.length < limit) {
-      if (total !== undefined && rules.length < total) {
-        throw new Error("Bifrost routing pagination ended before reported total; refusing incomplete snapshot");
-      }
-      break;
-    }
+    if (page.length === 0 || page.length < limit) break;
 
     offset += page.length;
     if (offset > 100_000) throw new Error(`Refusing excessive routing pagination from ${path}`);
