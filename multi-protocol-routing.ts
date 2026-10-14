@@ -7,6 +7,9 @@ import type {
 
 import { isCommittedModelOutput, isUncommittedBlockEvent } from "./output-commitment.ts";
 
+import type { AliasDiagnostic } from "./index.ts";
+import type { PifrostWireProtocol } from "./protocol-capability.ts";
+
 import type {
 	DynamicRouteAttempt,
 	DynamicRouteMemberProfile,
@@ -184,6 +187,36 @@ function logicalEvent(
 	}
 }
 
+/** Do not implement physical model routing here. This is only ingress protocol selection
+ * for a *logical alias* that Bifrost will route using its original live rules.
+ */
+export type GatewayWireProtocol = Extract<PifrostWireProtocol, "openai-completions" | "openai-responses">;
+
+export function gatewayProtocolOrder(diagnostic: AliasDiagnostic | undefined): readonly GatewayWireProtocol[] | undefined {
+	const members = diagnostic?.members?.filter(item => item.status === "resolved");
+	if (!members?.length) return undefined;
+	const available = members.map(item => item.protocols ?? []);
+	if (!available.some(protocols => protocols.includes("openai-responses"))) return undefined;
+	const first = available[0]!;
+	const firstProtocol: GatewayWireProtocol = first.includes("openai-responses") && !first.includes("openai-completions")
+		? "openai-responses" : "openai-completions";
+	if (!available.some(protocols => protocols.includes("openai-completions"))) return ["openai-responses"];
+	return firstProtocol === "openai-responses"
+		? ["openai-responses", "openai-completions"]
+		: ["openai-completions", "openai-responses"];
+}
+
+/** Require an explicit error from the gateway; never retry generic failures,
+ * quota, auth, timeouts, or failures after output was committed.
+ */
+export function isGatewayProtocolRejection(value: unknown): boolean {
+	const message = typeof value === "string" ? value
+		: value instanceof Error ? value.message
+		: value && typeof value === "object" && "errorMessage" in value
+			? String(value.errorMessage ?? "") : "";
+	return /model does not support (?:this |the )?protocol|unsupported (?:wire )?protocol|protocol (?:is )?not supported/iu.test(message);
+}
+
 export interface PifrostAttemptStream extends AsyncIterable<AssistantMessageEvent> {
 	readonly hasPendingLocalWork?: boolean;
 }
@@ -210,6 +243,7 @@ export async function runPifrostProtocolPlan(
 	plan: DynamicRoutePlan,
 	outer: PifrostProtocolOutput,
 	dispatch: PifrostAttemptDispatcher,
+	options: { retryPreOutputError?: (error: unknown) => boolean } = {},
 ): Promise<void> {
 	let lastErrorEvent: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
 	const thrown: unknown[] = [];
@@ -220,6 +254,10 @@ export async function runPifrostProtocolPlan(
 		try {
 			inner = dispatch(attempt, attemptIndex);
 		} catch (error) {
+			if (options.retryPreOutputError && !options.retryPreOutputError(error)) {
+				outer.fail(error);
+				return;
+			}
 			thrown.push(error);
 			continue;
 		}
@@ -242,6 +280,12 @@ export async function runPifrostProtocolPlan(
 				if (!committed && event.type === "error") {
 					if (event.reason === "aborted") {
 						if (startEvent) outer.push(startEvent);
+						outer.push(event);
+						return;
+					}
+					if (options.retryPreOutputError && !options.retryPreOutputError(event.error)) {
+						if (startEvent) outer.push(startEvent);
+						for (const pending of pendingBlockEvents) outer.push(pending);
 						outer.push(event);
 						return;
 					}
@@ -271,6 +315,10 @@ export async function runPifrostProtocolPlan(
 			}
 		} catch (error) {
 			if (committed) {
+				outer.fail(error);
+				return;
+			}
+			if (options.retryPreOutputError && !options.retryPreOutputError(error)) {
 				outer.fail(error);
 				return;
 			}
