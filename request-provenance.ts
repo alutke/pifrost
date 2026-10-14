@@ -156,11 +156,57 @@ export function formatPifrostSessionCosts(sessionId: string): string {
   return lines.join("\n");
 }
 
-export function formatPifrostRouteTraces(sessionId: string): string {
-	const current = traces.get(sessionId) ?? [];
+export interface PifrostTraceDisplayOptions {
+  last?: number;
+  errorsOnly?: boolean;
+  role?: string;
+  compact?: boolean;
+}
+export function parsePifrostTraceOptions(args: string): PifrostTraceDisplayOptions {
+  const tokens = args.trim() ? args.trim().split(/\s+/u) : [];
+  const result: PifrostTraceDisplayOptions = {compact:true};
+  for(let i=0;i<tokens.length;i++){
+    const value=tokens[i].toLowerCase();
+    if(value==="verbose")result.compact=false;
+    else if(value==="errors")result.errorsOnly=true;
+    else if(value==="last"){
+      const n=Number(tokens[++i]);
+      if(!Number.isInteger(n)||n<1||n>20)throw new Error("Trace last must be between 1 and 20");
+      result.last=n;
+    }else if(value==="role"){
+      const name=tokens[++i];
+      if(!name||!/^[a-z0-9_.-]{1,64}$/iu.test(name))throw new Error("Trace role requires an OMP role or alias");
+      result.role=name;
+    }else throw new Error("Usage: /pifrost trace [last N] [errors] [role alias] [verbose]");
+  }
+  return result;
+}
+
+export function formatPifrostRouteTraces(sessionId: string, options: PifrostTraceDisplayOptions = {}): string {
+	const current = (traces.get(sessionId) ?? []).filter(item =>
+    (!options.errorsOnly || item.outcome !== "done") &&
+    (!options.role || item.logicalModel === options.role || item.logicalModel === "omp-"+options.role));
 	if (!current.length) return "Pifrost routing trace: no requests recorded for this session.";
-	const lines = ["Pifrost request trace (newest first; up to 10 requests)", "Gateway request details do not establish that a Bifrost routing rule matched.", ""];
-	for (const trace of [...current].reverse().slice(0, 10)) {
+	const shown=Math.min(options.last??10,20);
+	const lines = ["Pifrost request trace (newest first; up to "+shown+" requests)", "Gateway request details do not establish that a Bifrost routing rule matched.", ""];
+	for (const trace of [...current].reverse().slice(0, shown)) {
+    if(options.compact){
+      const served=trace.resolvedModel
+        ? (trace.provider?trace.provider+"/":"")+trace.resolvedModel
+        : "not gateway-confirmed";
+      lines.push("  "+trace.logicalModel+" - "+(trace.outcome==="done"?"Completed":"Failed"));
+      lines.push("    Model: "+served);
+      lines.push("    Route: "+(trace.routeMode??"unverified")+
+        (trace.isFallback||((trace.fallbackIndex??0)>0)?" (fallback attempted)":""));
+      lines.push("    Cost: "+(money(trace.totalCost)??"unknown")+
+        (trace.upstreamLatencyMs===undefined?"":"; upstream "+Math.round(trace.upstreamLatencyMs)+" ms"));
+      if(trace.failureClass)lines.push("    Issue: "+trace.failureClass+
+        (gatewayFailureAdvice(trace.failureClass)?" - "+gatewayFailureAdvice(trace.failureClass):""));
+      else if(trace.outcome!=="done")lines.push("    Issue: no gateway failure classification available");
+      lines.push("    More detail: /pifrost trace verbose");
+      lines.push("");
+      continue;
+    }
 		const served = trace.resolvedModel
 			? `${trace.provider ? `${trace.provider}/` : ""}${trace.resolvedModel}`
 			: trace.outcome === "done" ? trace.requestedPrimary + " (not gateway-confirmed)" : "unverified";
