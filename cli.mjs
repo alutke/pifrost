@@ -569,6 +569,7 @@ function snapshotCheck(id, label, snapshot, action, required = false) {
   }
   return {
     label, required,
+    id: ({health:"GATEWAY_UNAVAILABLE",inference:"INFERENCE_UNAVAILABLE",management:"MANAGEMENT_UNVERIFIED",routing:"ROUTE_POLICY_UNVERIFIED"})[id],
     status: required ? "fail" : item?.skipped ? "unknown" : "warn",
     detail: item?.skipped ? "Not configured or not checked" : "Could not verify",
     action,
@@ -2201,14 +2202,14 @@ async function commandDoctor(flags = {}) {
   if (!flags.verbose) {
     const catalog = printModelDoctor(process.env, { log() {} });
     const checks = [
-      { label:"OMP", status:commandExists("omp") ? "ok" : "fail",
+      { label:"OMP", id:"OMP_INSTALL_MISSING", required:true, status:commandExists("omp") ? "ok" : "fail",
         detail: commandExists("omp") ? `Installed (${getOmpVersion() ?? "version unknown"})` : "Not installed",
         action:"Install or update OMP, then rerun pifrost doctor." },
       snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup", true),
       snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup", true),
       snapshotCheck("management", "Management API", snapshot, "pifrost global setup"),
       snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose"),
-      {label:"Model catalogue", status:catalog.ok ? "ok" : "fail",
+      {label:"Model catalogue",id:"MODEL_CATALOG_UNRESOLVED",required:true,status:catalog.ok ? "ok" : "fail",
         detail:catalog.checks?.[0]?.summary ?? "Not verified",
         action:"pifrost models refresh --force"},
     ];
