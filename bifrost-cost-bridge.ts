@@ -11,6 +11,8 @@ export interface BifrostCostCapture {
 	traceId?: string;
 	/** Gateway error-only classification; no raw error body or tokens are retained. */
 	httpStatus?: number;
+	/** Captured from actual model stream deltas; not a retry instruction. */
+	outputStarted?: boolean;
 	failureClass?: GatewayFailureClass;
 	retryAfterSeconds?: number;
 	cacheHit?: boolean;
