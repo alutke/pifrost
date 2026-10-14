@@ -94,6 +94,9 @@ import {
 	createPifrostNativeRouteModelSpec,
 	pifrostAttemptMaxTokens,
 	pifrostDirectMaxTokens,
+	gatewayProtocolOrder,
+	isGatewayProtocolRejection,
+	type GatewayWireProtocol,
 	normalizePifrostReasoningOptions,
 	shouldOmitOpaqueReasoningSummary,
 	runPifrostProtocolPlan,
@@ -142,9 +145,17 @@ installOmpCatalogRuntime({
 });
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
+let runtimeGatewayProtocols = new Map<string, readonly GatewayWireProtocol[]>();
 
-function installDynamicRouteProfiles(models: readonly import("./index.ts").BifrostProviderModel[]): void {
+function installDynamicRouteProfiles(
+	models: readonly import("./index.ts").BifrostProviderModel[],
+	diagnostics: readonly AliasDiagnostic[] = [],
+): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
+	runtimeGatewayProtocols = new Map(
+		diagnostics.map(item => [item.id.toLowerCase(), gatewayProtocolOrder(item)] as const)
+			.filter((entry): entry is readonly [string, readonly GatewayWireProtocol[]] => entry[1] !== undefined),
+	);
 }
 
 const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
@@ -554,65 +565,166 @@ function streamPifrostOpenAI(
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}
 
-	// Direct aliases and physical models always go to Bifrost unchanged. A
-	// catalog refresh mid-request must never install a second physical-routing
-	// decision at the final fetch boundary.
+	// Unknown or opaque Bifrost rule semantics never authorize copied physical
+	// fallback chains. Protocol selection changes only the gateway ingress;
+	// each request carries the exact original logical alias to Bifrost.
+	const protocolOrder = runtimeGatewayProtocols.get(model.id.toLowerCase());
+	const streamChat = (attemptIndex = 0) => {
 	const directPhysical = physicalPolicyIdentity(model.id);
-	const transportModel = buildPifrostTransportModel({
-		...model,
-		...(directPhysical ? { id: directPhysical.id, provider: directPhysical.provider, requestModelId: directPhysical.requestModelId } : {}),
-		api: "openai-completions",
-		compat: model.compatConfig,
-	} as ModelSpec<"openai-completions">);
-	const costCapture: BifrostCostCapture = {};
-	const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
-	const upstreamOnPayload = options?.onPayload;
-	const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
-	const directHygieneCounters = newReasoningHygieneCounters();
-	const directReasoningFilter = new ResponsesReasoningPrefixFilter(directHygieneCounters, true);
-	const directUpstreamOnSseEvent = options?.onSseEvent;
-	const streamOptions: OpenAICompletionsOptions = {
-		...options,
-		apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
-		maxTokens: pifrostDirectMaxTokens(options?.maxTokens, model.maxTokens),
-		headers: pifrostSessionHeaders(options?.headers, sessionId),
-		reasoning: resolvePifrostReasoningEffort(model, options),
-		disableReasoning: options?.disableReasoning,
-		toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),
-		serviceTier: options?.serviceTier,
-		openrouterVariant: options?.openrouterVariant,
-		maxTokensExplicit: rawOptions?.maxTokens !== undefined,
-		promptCache: options?.promptCache,
-		onPayload: async (payload, requestModel, signal) => {
-			const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
-			const bridged = betweenToolsThinking
-				? bridgePifrostPayload(upstream, { betweenToolsThinking: true })
-				: upstream;
-			const hygiene = normalizeCompletionsReplay(bridged);
-			directHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
-			directHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
-			directHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
-			return hygiene.payload;
-		},
-		onSseEvent: (event, requestModel) => {
-			observeReasoningSse(directHygieneCounters, event);
-			try { directUpstreamOnSseEvent?.(event, requestModel); } catch {}
-		},
-		fetch: baseFetch,
+		const transportModel = buildPifrostTransportModel({
+			...model,
+			...(directPhysical ? { id: directPhysical.id, provider: directPhysical.provider, requestModelId: directPhysical.requestModelId } : {}),
+			api: "openai-completions",
+			compat: model.compatConfig,
+		} as ModelSpec<"openai-completions">);
+		const costCapture: BifrostCostCapture = {};
+		const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
+		const upstreamOnPayload = options?.onPayload;
+		const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
+		const directHygieneCounters = newReasoningHygieneCounters();
+		const directReasoningFilter = new ResponsesReasoningPrefixFilter(directHygieneCounters, true);
+		const directUpstreamOnSseEvent = options?.onSseEvent;
+		const streamOptions: OpenAICompletionsOptions = {
+			...options,
+			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
+			maxTokens: pifrostDirectMaxTokens(options?.maxTokens, model.maxTokens),
+			headers: {
+				...pifrostSessionHeaders(options?.headers, sessionId),
+				...(protocolOrder ? {
+					"x-pifrost-logical-model": model.id,
+					"x-pifrost-route-mode": "bifrost-direct",
+					"x-pifrost-route-protocol": "openai-completions",
+					"x-pifrost-route-attempt": String(attemptIndex + 1),
+				} : {}),
+			},
+			reasoning: resolvePifrostReasoningEffort(model, options),
+			disableReasoning: options?.disableReasoning,
+			toolChoice: mapPifrostOpenAIToolChoice(options?.toolChoice),
+			serviceTier: options?.serviceTier,
+			openrouterVariant: options?.openrouterVariant,
+			maxTokensExplicit: rawOptions?.maxTokens !== undefined,
+			promptCache: options?.promptCache,
+			onPayload: async (payload, requestModel, signal) => {
+				const upstream = upstreamOnPayload ? (await upstreamOnPayload(payload, requestModel, signal)) ?? payload : payload;
+				const bridged = betweenToolsThinking
+					? bridgePifrostPayload(upstream, { betweenToolsThinking: true })
+					: upstream;
+				const hygiene = normalizeCompletionsReplay(bridged);
+				directHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+				directHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
+				directHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
+				return hygiene.payload;
+			},
+			onSseEvent: (event, requestModel) => {
+				observeReasoningSse(directHygieneCounters, event);
+				try { directUpstreamOnSseEvent?.(event, requestModel); } catch {}
+			},
+			fetch: baseFetch,
+		};
+		return bridgeBifrostUsageCostStream(
+			streamOpenAICompletions(transportModel, context, streamOptions),
+			costCapture,
+			(outcome) => recordBifrostCaptureTrace(sessionId, {
+				logicalModel: model.id,
+				routeMode: "bifrost-direct",
+				protocol: "openai-completions",
+				attempt: attemptIndex + 1,
+				requestedPrimary: model.id,
+				outcome,
+			}, costCapture, directHygieneCounters),
+			directReasoningFilter,
+		);
 	};
-	return bridgeBifrostUsageCostStream(
-		streamOpenAICompletions(transportModel, context, streamOptions),
-		costCapture,
-		(outcome) => recordBifrostCaptureTrace(sessionId, {
-			logicalModel: model.id,
-			routeMode: "bifrost-direct",
-			protocol: "openai-completions",
-			attempt: 1,
-			requestedPrimary: model.id,
-			outcome,
-		}, costCapture, directHygieneCounters),
-		directReasoningFilter,
-	);
+
+	if (!protocolOrder?.length || (protocolOrder.length === 1 && protocolOrder[0] === "openai-completions")) {
+		return streamChat();
+	}
+	const streamResponses = (attemptIndex: number) => {
+		const transportModel = buildPifrostTransportModel({
+			...model, api: "openai-responses", compat: model.compatConfig,
+		} as ModelSpec<"openai-responses">);
+		const capture: BifrostCostCapture = {};
+		const fetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, capture);
+		const counters = newReasoningHygieneCounters();
+		const filter = new ResponsesReasoningPrefixFilter(counters, true);
+		const previousPayload = options?.onPayload;
+		const previousSse = options?.onSseEvent;
+		const deferredTools = deferredToolNames(context.tools);
+		const responseOptions: OpenAIResponsesOptions = {
+			...options,
+			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
+			maxTokens: pifrostDirectMaxTokens(options?.maxTokens, model.maxTokens),
+			headers: {
+				...pifrostSessionHeaders(options?.headers, sessionId),
+				"x-pifrost-logical-model": model.id,
+				"x-pifrost-route-mode": "bifrost-direct",
+				"x-pifrost-route-protocol": "openai-responses",
+				"x-pifrost-route-attempt": String(attemptIndex + 1),
+			},
+			reasoning: resolvePifrostReasoningEffort(model, options),
+			...(shouldOmitOpaqueReasoningSummary(model.id) ? { reasoningSummary: null } : {}),
+			disableReasoning: options?.disableReasoning,
+			toolChoice: options?.toolChoice,
+			serviceTier: options?.serviceTier,
+			openrouterVariant: options?.openrouterVariant,
+			maxTokensExplicit: rawOptions?.maxTokens !== undefined,
+			promptCache: options?.promptCache,
+			statefulResponses: false,
+			onPayload: async (payload, requestModel, signal) => {
+				const upstream = previousPayload ? (await previousPayload(payload, requestModel, signal)) ?? payload : payload;
+				const bridged = bridgePifrostPayload(upstream, {
+					deferredTools, enableToolSearch: deferredTools.size > 0,
+				});
+				const hygiene = normalizeResponsesReplay(bridged, {
+					allowSyntheticReasoningRemoval: mayOmitSyntheticReasoning(transportModel.compat, model.id),
+				});
+				counters.replayRemoved = hygiene.removedVisiblePlaceholders;
+				counters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
+				counters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
+				counters.replayProseRewritten = hygiene.rewrittenProseMessages;
+				counters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
+				counters.replayStructuredRetained = hygiene.retainedReasoningItems;
+				return hygiene.payload;
+			},
+			onSseEvent: (event, requestModel) => {
+				observeReasoningSse(counters, event);
+				try { previousSse?.(event, requestModel); } catch {}
+			},
+			fetch,
+		};
+		return bridgeBifrostUsageCostStream(
+			streamOpenAIResponses(transportModel as Model<"openai-responses">, context, responseOptions),
+			capture,
+			(outcome) => recordBifrostCaptureTrace(sessionId, {
+				logicalModel: model.id,
+				routeMode: "bifrost-direct",
+				protocol: "openai-responses",
+				attempt: attemptIndex + 1,
+				requestedPrimary: model.id,
+				outcome,
+			}, capture, counters),
+			filter,
+		);
+	};
+
+	// This is a gateway-ingress plan, NOT a local routing plan. All attempts
+	// name model.id; Bifrost owns the physical model, scope and fallback policy.
+	const plan: DynamicRoutePlan = {
+		logicalModel: model.id,
+		estimatedInputTokens: 0,
+		outputReserveTokens: 0,
+		outputReserveExplicit: false,
+		requiredContextTokens: 0,
+		attempts: protocolOrder.map(protocol => ({ protocol, primary: model.id, fallbacks: [], members: [] })),
+		excluded: [],
+	};
+	const outer = new AssistantMessageEventStream();
+	void runPifrostProtocolPlan(
+		model, plan, outer,
+		(attempt, index) => attempt.protocol === "openai-responses" ? streamResponses(index) : streamChat(index),
+		{ retryPreOutputError: isGatewayProtocolRejection },
+	).catch(error => outer.fail(error));
+	return outer;
 }
 
 function positiveEnvMilliseconds(name: string, fallback: number): number {
@@ -680,7 +792,7 @@ async function fetchFreshCatalog(
 			(reference) => liveById.get(reference.trim().toLowerCase()),
 		);
 	}
-	installDynamicRouteProfiles(catalog.models);
+	installDynamicRouteProfiles(catalog.models, catalog.diagnostics);
 	writeCatalogCache(catalog, { config: liveConfig, aliasConfig: aliasSource.config });
 	return catalog;
 }
@@ -772,7 +884,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		const startupCache = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 		if (startupCache) {
 			diagnostics = startupCache.diagnostics;
-			installDynamicRouteProfiles(startupCache.models);
+			installDynamicRouteProfiles(startupCache.models, startupCache.diagnostics);
 		}
 
 		const refresh = (resolvedApiKey?: string): Promise<PifrostCatalog> => {
@@ -864,7 +976,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached && !forceRefreshRequested()) {
 					diagnostics = cached.diagnostics;
-					installDynamicRouteProfiles(cached.models);
+					installDynamicRouteProfiles(cached.models, cached.diagnostics);
 					if (!cacheIsFresh(cached, refreshIntervalMs)) scheduleBackgroundRefresh(resolvedApiKey);
 					return cached.models;
 				}

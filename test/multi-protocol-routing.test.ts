@@ -4,6 +4,7 @@ import test from "node:test";
 import type { AssistantMessage, AssistantMessageEvent, Model } from "@oh-my-pi/pi-ai";
 
 import type { DynamicRoutePlan } from "../dynamic-routing.ts";
+import type { AliasDiagnostic } from "../index.ts";
 import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
@@ -13,6 +14,8 @@ import {
 	normalizePifrostReasoningOptions,
 	physicalPolicyIdentity,
 	shouldOmitOpaqueReasoningSummary,
+	gatewayProtocolOrder,
+	isGatewayProtocolRejection,
 	runPifrostProtocolPlan,
 	type PifrostAttemptStream,
 	type PifrostProtocolOutput,
@@ -443,4 +446,112 @@ test("empty starts followed by tool-call completion prevent fallback", async () 
   });
   assert.equal(visited.length,1);
   assert.deepEqual(collected.events.map(e=>e.type),["start","toolcall_start","toolcall_end","error"]);
+});
+
+function gatewayPlan(model: Model, first: "openai-completions" | "openai-responses"): DynamicRoutePlan {
+	const second: "openai-completions" | "openai-responses" = first === "openai-responses" ? "openai-completions" : "openai-responses";
+	const protocols: Array<"openai-completions" | "openai-responses"> = [first, second];
+	return {
+		logicalModel: model.id, estimatedInputTokens: 0,
+		outputReserveTokens: 0, outputReserveExplicit: false, requiredContextTokens: 0, excluded: [],
+		attempts: protocols.map(protocol => ({
+			protocol, primary: model.id, fallbacks: [], members: [],
+		})),
+	};
+}
+
+test("Muse-first Advisor and reversed routes select the right Bifrost ingress without copying targets", () => {
+	const advisor: AliasDiagnostic = {
+		id: "omp-advisor", name: "OMP Advisor", chain: ["opencode-go/muse-spark-1.3-contributor", "Xiaomi MIMO/mimo-v2.6-flash"],
+		resolved: [], unresolved: [], image: true, reasoning: true, reasoningEfforts: [], tools: true,
+		members: [
+			{ reference: "opencode-go/muse-spark-1.3-contributor", status: "resolved", protocols: ["openai-responses"] },
+			{ reference: "Xiaomi MIMO/mimo-v2.6-flash", status: "resolved", protocols: ["openai-completions"] },
+		],
+	};
+	assert.deepEqual(gatewayProtocolOrder(advisor), ["openai-responses", "openai-completions"]);
+	assert.deepEqual(gatewayProtocolOrder({ ...advisor, members: [...advisor.members!].reverse() }),
+		["openai-completions", "openai-responses"]);
+	assert.deepEqual(gatewayProtocolOrder({ ...advisor, members: [advisor.members![0]!] }), ["openai-responses"]);
+	assert.equal(gatewayProtocolOrder({ ...advisor, members: [advisor.members![1]!] }), undefined);
+	assert.equal(gatewayProtocolOrder(undefined), undefined);
+});
+
+test("gateway protocol rejection retries the same logical alias once before output", async () => {
+	const logical = logicalModel();
+	const collected = outputCollector();
+	const invoked: string[] = [];
+	await runPifrostProtocolPlan(logical, gatewayPlan(logical, "openai-responses"), collected.output, attempt => {
+		invoked.push(attempt.protocol + ":" + attempt.primary);
+		if (attempt.protocol === "openai-completions") return successfulAttempt(logical.id, "openai-completions");
+		const error = assistant(logical.id, "openai-responses", "error");
+		error.errorMessage = "400 Model does not support this protocol.";
+		return eventStream([
+			{ type: "start", partial: assistant(logical.id, "openai-responses", "stop") },
+			{ type: "error", reason: "error", error },
+		]);
+	}, { retryPreOutputError: isGatewayProtocolRejection });
+	assert.deepEqual(invoked, ["openai-responses:" + logical.id, "openai-completions:" + logical.id]);
+	assert.equal(collected.failure(), undefined);
+	assert.deepEqual(collected.events.map(item => item.type), ["start", "done"]);
+	assert.equal(collected.events.at(-1)?.type, "done");
+});
+
+test("gateway ingress does not retry authentication, quota or generic errors", async () => {
+	const logical = logicalModel();
+	for (const failure of ["401 invalid virtual key", "429 rate limited", "504 idle timeout", "400 invalid request"]) {
+		const collected = outputCollector();
+		const invoked: string[] = [];
+		await runPifrostProtocolPlan(logical, gatewayPlan(logical, "openai-responses"), collected.output, attempt => {
+			invoked.push(attempt.protocol);
+			const error = assistant(logical.id, "openai-responses", "error");
+			error.errorMessage = failure;
+			return eventStream([{ type: "error", reason: "error", error }]);
+		}, { retryPreOutputError: isGatewayProtocolRejection });
+		assert.deepEqual(invoked, ["openai-responses"]);
+		assert.equal(collected.events.at(-1)?.type, "error");
+		assert.equal(collected.failure(), undefined);
+	}
+	assert.equal(isGatewayProtocolRejection("Model does not support this protocol."), true);
+	assert.equal(isGatewayProtocolRejection("403 forbidden"), false);
+});
+
+test("gateway ingress never replays once a model emitted visible text", async () => {
+	const logical = logicalModel();
+	const collected = outputCollector();
+	const invoked: string[] = [];
+	await runPifrostProtocolPlan(logical, gatewayPlan(logical, "openai-responses"), collected.output, attempt => {
+		invoked.push(attempt.protocol);
+		const partial = assistant(logical.id, "openai-responses", "stop");
+		const error = assistant(logical.id, "openai-responses", "error");
+		error.errorMessage = "400 Model does not support this protocol.";
+		return eventStream([
+			{ type: "start", partial },
+			{ type: "text_delta", contentIndex: 0, delta: "partial", partial },
+			{ type: "error", reason: "error", error },
+		]);
+	}, { retryPreOutputError: isGatewayProtocolRejection });
+	assert.deepEqual(invoked, ["openai-responses"]);
+	assert.deepEqual(collected.events.map(item => item.type), ["start", "text_delta", "error"]);
+});
+
+test("a thrown protocol error may retry but a generic thrown error cannot", async () => {
+	const logical = logicalModel();
+	const matching = outputCollector();
+	const invoked: string[] = [];
+	await runPifrostProtocolPlan(logical, gatewayPlan(logical, "openai-completions"), matching.output, attempt => {
+		invoked.push(attempt.protocol);
+		if (attempt.protocol === "openai-completions") throw new Error("Model does not support this protocol.");
+		return successfulAttempt(logical.id, "openai-responses");
+	}, { retryPreOutputError: isGatewayProtocolRejection });
+	assert.deepEqual(invoked, ["openai-completions", "openai-responses"]);
+	assert.deepEqual(matching.events.map(item => item.type), ["start", "done"]);
+	const generic = outputCollector();
+	const genericInvoked: string[] = [];
+	await runPifrostProtocolPlan(logical, gatewayPlan(logical, "openai-completions"), generic.output, attempt => {
+		genericInvoked.push(attempt.protocol);
+		throw new Error("Gateway offline");
+	}, { retryPreOutputError: isGatewayProtocolRejection });
+	assert.deepEqual(genericInvoked, ["openai-completions"]);
+	assert.match(String(generic.failure()), /Gateway offline/u);
 });
