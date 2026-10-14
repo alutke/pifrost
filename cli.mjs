@@ -1677,6 +1677,7 @@ async function commandRepoVirtualMcpAdd(name, flags = {}) {
   const [found] = resolveVirtualMcpNames(available, [name]);
   const alreadyAssigned = virtualMcpsForVirtualKey(available, vk.id)
     .some((item) => Number(item.id) === Number(found.id));
+  if (flags["dry-run"]) { console.log("Preview: would attach Virtual MCP " + found.name + ". Existing direct grants remain unchanged."); return; }
   await attachVirtualMcpToVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = [...new Set([
     ...virtualMcpsForVirtualKey(available, vk.id).map((item) => item.name),
@@ -1690,12 +1691,13 @@ async function commandRepoVirtualMcpAdd(name, flags = {}) {
   }
 }
 
-async function commandRepoVirtualMcpRemove(name) {
+async function commandRepoVirtualMcpRemove(name, flags = {}) {
   if (!name) throw new Error("Usage: pifrost repo vmcp remove <name>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
   const available = await listVirtualMcps(url, managementKey);
   const [found] = resolveVirtualMcpNames(available, [name]);
+  if (flags["dry-run"]) { console.log("Preview: would detach Virtual MCP " + found.name + ". Independent direct grants may remain."); return; }
   await detachVirtualMcpFromVirtualKey(url, managementKey, found.id, vk.id);
   const liveNames = virtualMcpsForVirtualKey(available, vk.id)
     .filter((item) => Number(item.id) !== Number(found.id))
@@ -2302,7 +2304,7 @@ const COMMANDS = new Map([
   ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
   ["repo vmcp list", () => commandRepoVirtualMcpList()],
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
-  ["repo vmcp remove", (args) => commandRepoVirtualMcpRemove(args[0])],
+  ["repo vmcp remove", (args, flags) => commandRepoVirtualMcpRemove(args[0], flags)],
   ["repo skills list", () => commandRepoSkillsList()],
   ["repo skills suggestions", (_args, flags) => commandRepoSkillSuggestions(flags)],
   ["repo skills bind", (args, flags) => commandRepoSkillBind(args[0], args[1], flags)],
