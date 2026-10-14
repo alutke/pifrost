@@ -544,6 +544,14 @@ async function commandGlobalSetup(flags) {
     managementMode === "setup" ? setupToken : managementApiKey,
   );
 
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would save Bifrost connection configuration and protected credentials",
+      "Would test inference/management access unless --skip-test",
+      flags["skip-omp"]?"Would leave OMP settings unchanged":"Would configure Pifrost-owned OMP settings with backup",
+      "Secret values will not be printed"
+    ]));return;
+  }
   if (!flags["skip-test"]) {
     process.stdout.write("Testing inference connection... ");
     const inference = await testInference({ url, apiKey, virtualKey });
@@ -778,6 +786,14 @@ async function commandGlobalStatus(snapshot, options = {}) {
 
 async function commandInit(flags) {
   printHeader("Pifrost first-time setup");
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would install/update the Pifrost OMP extension",
+      "Would configure Bifrost connection and management credentials",
+      "Would sync routes and refresh model catalogue where available",
+      "Would configure Pifrost-owned OMP settings; no changes made"
+    ]));return;
+  }
   if (!commandExists("omp")) throw new Error("OMP is required but `omp` is not on PATH");
   console.log("Installing/updating Pifrost OMP extension...");
   installOmpPlugin();
@@ -1805,6 +1821,8 @@ async function commandRepoMcpAdd(clientName, flags) {
   const found = available.find((client) => client.name.toLowerCase() === clientName.toLowerCase());
   if (!found) throw new Error(`Unknown Bifrost MCP client: ${clientName}`);
   const tools = splitCsv(flagString(flags, "tools"));
+  if(tools.some(tool=>tool!=="*" && Array.isArray(found.tools) && found.tools.length>0 && !found.tools.includes(tool)))
+    throw cliUsageError("A tool is not present in this client's Bifrost inventory; inspect pifrost repo mcp list --filter "+found.name);
   const alreadyAssigned = virtualKeyMcpConfigs(vk)
     .some((item) => item.mcp_client_name.toLowerCase() === found.name.toLowerCase());
   const configs = virtualKeyMcpConfigs(vk).filter((item) => item.mcp_client_name !== found.name);
