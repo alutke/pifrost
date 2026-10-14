@@ -72,6 +72,8 @@ import {
 } from "./context-estimator.ts";
 import {
 	applyDynamicRouteProfiles,
+	canUseNativeBifrostRoute,
+	compatibilityRouteSnapshotError,
 	createDynamicRoutingFetch,
 	extractDynamicRouteProfiles,
 	planDynamicRouteAttempts,
@@ -85,6 +87,7 @@ import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
 	createPifrostMemberModelSpec,
+	createPifrostNativeRouteModelSpec,
 	pifrostAttemptMaxTokens,
 	pifrostDirectMaxTokens,
 	normalizePifrostReasoningOptions,
@@ -343,6 +346,21 @@ function streamDynamicPifrostRoute(
 		compatibilityByMember,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
+	const nativeGatewayRoute = canUseNativeBifrostRoute(profile, plan);
+	if (!nativeGatewayRoute) {
+		const stale = compatibilityRouteSnapshotError(profile);
+		if (stale) throw new Error(stale);
+	}
+	const routeMode = nativeGatewayRoute ? "bifrost-native" : "pifrost-compatibility";
+	const exceptionReason = nativeGatewayRoute ? undefined
+		: plan.excluded.length ? "member-eligibility"
+		: plan.attempts.length > 1 ? "wire-protocol-or-encoder-boundary"
+		: "request-contract-exception";
+	// Native requests keep the logical alias and never send a copied fallback
+	// list. The original Bifrost rule and its *live* membership remain authoritative.
+	const executionPlan: DynamicRoutePlan = nativeGatewayRoute
+		? { ...plan, attempts: [{ ...plan.attempts[0]!, primary: plan.logicalModel, fallbacks: [] }] }
+		: plan;
 	// Non-actionable compatibility boundaries are reported with each session trace,
 	// not written to stderr for every model call (which corrupts OMP's TUI).
 	const compatibilityBoundaryCount = plan.compatibilityBreaks?.length ?? 0;
@@ -350,11 +368,14 @@ function streamDynamicPifrostRoute(
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
 
-	void runPifrostProtocolPlan(model, plan, outer, (attempt, attemptIndex) => {
+	void runPifrostProtocolPlan(model, executionPlan, outer, (attempt, attemptIndex) => {
 		const costCapture: BifrostCostCapture = {};
 		const baseFetch = createBifrostCostBridgeFetch(underlyingFetch, costCapture);
-		const transportModel = buildPifrostTransportModel(createPifrostAttemptModelSpec(model, attempt));
-		const headers = pifrostAttemptHeaders(options?.headers, sessionId, plan, attempt, attemptIndex);
+		const transportModel = buildPifrostTransportModel(nativeGatewayRoute
+			? createPifrostNativeRouteModelSpec(model, attempt)
+			: createPifrostAttemptModelSpec(model, attempt));
+		const headers = pifrostAttemptHeaders(options?.headers, sessionId, executionPlan, attempt, attemptIndex);
+		headers["x-pifrost-route-mode"] = routeMode;
 		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
 		if (attempt.protocol === "openai-responses") {
 			const upstreamOnPayload = options?.onPayload;
@@ -419,6 +440,8 @@ function streamDynamicPifrostRoute(
 				costCapture,
 				(outcome) => recordBifrostCaptureTrace(sessionId, {
 					logicalModel: plan.logicalModel,
+					routeMode,
+					...(exceptionReason ? { exceptionReason } : {}),
 					protocol: attempt.protocol,
 					attempt: attemptIndex + 1,
 					requestedPrimary: attempt.primary,
@@ -471,6 +494,8 @@ function streamDynamicPifrostRoute(
 			costCapture,
 			(outcome) => recordBifrostCaptureTrace(sessionId, {
 				logicalModel: plan.logicalModel,
+				routeMode,
+				...(exceptionReason ? { exceptionReason } : {}),
 				protocol: attempt.protocol,
 				attempt: attemptIndex + 1,
 				requestedPrimary: attempt.primary,
@@ -561,6 +586,7 @@ function streamPifrostOpenAI(
 		costCapture,
 		(outcome) => recordBifrostCaptureTrace(sessionId, {
 			logicalModel: model.id,
+			routeMode: "bifrost-direct",
 			protocol: "openai-completions",
 			attempt: 1,
 			requestedPrimary: model.id,
