@@ -42,7 +42,19 @@ test("Bifrost 2.2.6 compatibility reports stable Chat-to-Responses configuration
   assert.equal(conversion?.status, "supported");
   assert.equal(conversion?.optional, true);
   assert.match(conversion?.detail ?? "", /convert_chat_to_responses=enabled/u);
-  assert.match(conversion?.detail ?? "", /not released by Bifrost 2\.2\.6/u);
+  assert.match(conversion?.detail ?? "", /not available before Bifrost 2\.3\.0/u);
+});
+
+test("Bifrost 2.3 TTFT and reasoning adapter are gateway-owned, never enabled by Pifrost", async () => {
+  const results = await bifrostCompatibilityMatrix({
+    url: "http://bifrost:8180/v1", version: "2.3.0",
+    managementAuth: { mode: "basic", username: "admin", password: "secret" },
+    virtualKey: "sk-bf-test",
+    probes: healthyProbes({ convert_chat_to_responses: true, force_reasoning_only_models_to_responses: true }),
+  });
+  assert.equal(results.find(item => item.id === "bifrost-route-ttft-timeout")?.status, "supported");
+  assert.match(results.find(item => item.id === "bifrost-route-ttft-timeout")?.detail ?? "", /per-rule enablement.*not verified/u);
+  assert.match(results.find(item => item.id === "bifrost-chat-responses-conversion")?.detail ?? "", /reasoning-with-tools adapter=enabled/u);
 });
 
 test("newer reasoning-to-Responses compatibility flag is surfaced without Pifrost taking ownership", async () => {
