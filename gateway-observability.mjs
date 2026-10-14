@@ -47,6 +47,7 @@ export function summarizeGatewayPrivacy(gateway, virtualKey) {
   const root = object(gateway);
   const cfg = object(root?.client_config) ?? object(root?.clientConfig)
     ?? object(object(root?.data)?.client_config);
+  const enabled = boolean(cfg?.enable_logging);
   const globalDisabled = boolean(cfg?.disable_content_logging);
   const overridesAllowed = boolean(cfg?.allow_per_request_content_storage_override);
   const retainedHidden = boolean(cfg?.retain_content_in_object_storage);
@@ -56,6 +57,7 @@ export function summarizeGatewayPrivacy(gateway, virtualKey) {
   const keyOverride = boolean(key?.disable_content_logging);
   const effectiveDisabled = key === undefined ? undefined : keyOverride ?? globalDisabled;
   return {
+    loggingEnabled: value(enabled),
     global: value(globalDisabled),
     perRequestOverride: value(overridesAllowed),
     hiddenObjectStorage: value(retainedHidden),
@@ -71,7 +73,8 @@ export function formatGatewayPrivacy(gateway, virtualKey) {
   const p = summarizeGatewayPrivacy(gateway, virtualKey);
   const lines = [
     "Bifrost content privacy (configuration only; read-only):",
-    `  global content logging: ${p.global === "enabled" ? "disabled" : p.global === "disabled" ? "enabled" : "not reported"}`,
+    `  global log store enabled: ${p.loggingEnabled}`,
+    `  global log-store content policy: ${p.global === "enabled" ? "disabled" : p.global === "disabled" ? "enabled" : "not reported"}`,
     `  per-request content storage override: ${p.perRequestOverride}`,
     `  hidden object-storage retention: ${p.hiddenObjectStorage}`,
     `  log retention days: ${p.retentionDays ?? "not reported"}`,
@@ -79,6 +82,7 @@ export function formatGatewayPrivacy(gateway, virtualKey) {
     `  configured logging default for inspected Virtual Key: ${p.effective}`,
   ];
   if (!p.vkInspected) lines.push("  To inspect a specific key without disclosing its value, supply --vk-id <management-id>.");
+  lines.push("  External observability connectors: unverified (each has independent content-export settings).");
   lines.push("  Per-request overrides, log metadata, hidden object copies and other retention policies may still apply. Configuration does not prove deletion.");
   return lines.join("\n");
 }
