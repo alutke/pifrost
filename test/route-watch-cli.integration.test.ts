@@ -62,9 +62,9 @@ fs.appendFileSync(${JSON.stringify(marker)}, "refresh\\n");
       fallbacks:["Xiaomi MIMO/mimo-v2.6-flash"]
     }], total_count:1 }));
   });
-  await new Promise(resolve => server.listen(0,"127.0.0.1",resolve));
+  await new Promise<void>(resolve => server.listen(0,"127.0.0.1",resolve));
   t.after(async () => {
-    await new Promise(resolve => server.close(resolve));
+    await new Promise<void>(resolve => server.close(() => resolve()));
   });
   const address = server.address();
   if (!address || typeof address === "string") throw Error("missing server address");
@@ -80,7 +80,7 @@ fs.appendFileSync(${JSON.stringify(marker)}, "refresh\\n");
     BIFROST_ADMIN_PASSWORD:"test-password",
     PATH:`${bin}:${process.env.PATH}`,
   };
-  const cli = async (...args) => runFile(process.execPath, ["cli.mjs",...args],
+  const cli = async (...args: string[]) => runFile(process.execPath, ["cli.mjs",...args],
     { cwd:process.cwd(), env, timeout:25_000 });
   const first = await cli("routes","watch","once");
   assert.match(first.stdout,/Updated 1 Bifrost routes/u);
@@ -110,7 +110,7 @@ fs.appendFileSync(${JSON.stringify(marker)}, "refresh\\n");
   assert.doesNotMatch(first.stdout+first.stderr+changed.stdout+changed.stderr,/test-password|sk-bf-secret-vk/u);
 });
 
-async function BunlessExists(path) {
+async function BunlessExists(path: string) {
   const fs = await import("node:fs");
   return fs.existsSync(path);
 }
