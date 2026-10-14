@@ -125,7 +125,8 @@ const CURRENT_SOURCES = [
     name: `OMP ${OMP_CURRENT_LABEL} OpenAI image-policy parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/openai.kdl`,
     required: [
-      'revision ">=5.6 <10"',
+      'revision ">=5.6 <6.2"',
+      'revision ">=6.2 <10"',
       'models "*gpt-6-astra*"',
       'multiplier 1.2',
       'patch-budget 2500',
