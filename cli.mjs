@@ -1810,6 +1810,15 @@ async function commandRepoReset(flags = {}) {
   const recoverByName = flags["recover-by-name"] === true;
   const yes = flags.yes === true;
 
+  if (flags["dry-run"]) {
+    printHeader("Reset preview");
+    console.log("Repository: " + repo.name);
+    console.log("Would remove local Pifrost state, managed Skills and its MCP configuration entry.");
+    console.log("Managed Skills: " + configuredSkillRows({ config: repoConfig }).map(item=>item.name).join(", "));
+    console.log("Remote Virtual Key: " + (deleteRemote ? "would be removed after identity checks" : "would be kept"));
+    console.log("No changes have been made.");
+    return;
+  }
   if (recoverByName && !deleteRemote) {
     throw new Error("--recover-by-name is valid only with --delete-remote");
   }
