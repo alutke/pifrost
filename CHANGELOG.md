@@ -1,3 +1,13 @@
+## 0.22.0 — 2026-10-14
+
+- Implement UX A-D recommendations for the Pifrost terminal and OMP integration: strict typed argument validation and context help across 46 CLI commands.
+- Prevent implicit wildcard MCP grants. Direct MCP additions require explicit tools or `--allow-all-tools`; scripted repo initialization likewise requires a deliberate scope. Display permissions before changes and support `--dry-run` previews for setup, route state, repository reset, key rotation, direct/virtual MCP and managed Skill actions.
+- Separate required failures from optional or unverified diagnostic states and implement consistent syntax/runtime/strict exit statuses. Add stable health finding IDs and plain-text wrapping.
+- Make Skill suggestions read-only by default; retain explicit opt-in for installations. Shorten route, MCP client, research and Skill inventories while preserving verbose detail.
+- Add contextual CLI help, a schema-versioned read-only JSON output envelope, secret-safe terminal error handling, and a fail-closed secret-input path when echo cannot be disabled.
+- Add `/pifrost help` and concise filtered OMP traces (`last N`, `errors`, `role`, `verbose`). Expose billed probe warnings and key-rotation reconnect guidance.
+- Expand tests for all command contracts, wildcard grants, terminal formatting, failure codes and JSON, preserving Bifrost/OMP routing and governance ownership.
+
 ## 0.21.0 — 2026-10-14
 
 - Terminal UX and accessibility: introduce a shared plain-text, no-ANSI renderer with explicit statuses, issues-first sorting, concise recovery commands and user-oriented quick help (`pifrost help --all` retains the full reference).
