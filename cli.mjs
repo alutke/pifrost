@@ -1505,6 +1505,7 @@ async function commandRepoSkillsAdd(name, flags = {}) {
   if (!compatibility.compatible) {
     throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
   }
+  if (flags["dry-run"]) { console.log("Preview: would install " + summary.name + ". No files changed."); return; }
   const { bundle, installed } = await installRepoBifrostSkill(state, current, summary, { force: flags.force === true });
   console.log(`Installed Bifrost skill ${bundle.skill.name}@${bundle.skill.version}`);
   console.log(`OMP project skill: ${installed.path}`);
@@ -1517,6 +1518,7 @@ async function commandRepoSkillsRemove(name, flags = {}) {
   const configured = configuredSkillRows(current);
   const found = configured.find((item) => item.name.toLowerCase() === name.toLowerCase());
   if (!found) throw new Error(`Bifrost skill is not configured for this repo: ${name}`);
+  if (flags["dry-run"]) { console.log("Preview: would remove managed Skill " + found.name + ". No files changed."); return; }
   const removed = removeManagedBifrostSkill(current.repo.root, found.name, { force: flags.force === true });
   const next = configured.filter((item) => item.name.toLowerCase() !== found.name.toLowerCase());
   updateRepoState(state, current.repo.id, { bifrostSkills: next,
@@ -1538,6 +1540,7 @@ async function commandRepoSkillsSync(name, flags = {}) {
       : "No Bifrost skills are configured for this repo; use `pifrost repo skills add <name>`");
   }
   const available = await listBifrostSkills(url, managementKey);
+  if (flags["dry-run"]) { console.log("Preview: would update " + wanted.length + " configured Skill(s). No files changed."); return; }
   for (const summary of resolveBifrostSkillNames(available, wanted.map((item) => item.name))) {
     const compatibility = bifrostSkillCompatibility(summary.raw);
     if (!compatibility.compatible) {
@@ -1584,7 +1587,8 @@ async function commandRepoSkillSuggestions(flags = {}) {
       (compat && !compat.compatible ? ` incompatible=${compat.reason}` : "") +
       (status?.installedVersion && skill?.version !== status.installedVersion ? ` update=${skill.version}` : ""));
   }
-  await offerMatchingMcpSkills(active, flags);
+  if (flags["install-matching-skills"]) await offerMatchingMcpSkills(active, flags);
+  else console.log("Suggestions are read-only. Use pifrost repo skills add <name> to install a chosen Skill.");
 }
 
 async function commandRepoSkillBind(clientName, skillName, flags = {}) {
