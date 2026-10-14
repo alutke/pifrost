@@ -4,7 +4,7 @@ Pifrost is derived from [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam
 
 The upstream project is MIT licensed. Its MIT license text is retained in `LICENSE`.
 
-Pifrost adds routing-alias capability synthesis, conservative capability-envelope calculation, alias diagnostics, and OhMyPi-oriented configuration.
+Pifrost adds conservative routing-alias metadata, protocol/compatibility preflight, request provenance, OMP configuration, management diagnostics and repository-scoped Bifrost MCP/Skills integration. Bifrost remains the execution and governance authority.
 
 The `/pifrost doctor` concept was inspired by the diagnostics approach in [`the-matt-moo/pi-bifrost`](https://github.com/the-matt-moo/pi-bifrost); no prompt-routing implementation from that project is incorporated here.
 

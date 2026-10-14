@@ -1,3 +1,9 @@
+## 0.22.1 — 2026-10-14
+
+- Consolidate current user guidance and the technical reference around the CLI's 46-command source of truth; remove duplicated release-by-release explanations and obsolete migration instructions from the active guides.
+- Correct the DonSeTch MCP contract pin to v4.7.4, document explicit tool grants, and clarify route-attribution, pre-output failover, judge activation, privacy, cost and live-verification boundaries.
+- Preserve prior release history and MIT attribution; refresh cross-links, setup examples, release references and troubleshooting. No runtime routing, provider, MCP permissions or security behaviour changes.
+
 ## 0.22.0 — 2026-10-14
 
 - CLI usability safety: central command schema for all 46 public/internal commands, strict argument and option validation, command-local `--help`, and operation classification. MCP allow-lists require an explicit `--tools` value; wildcard is never silently selected.

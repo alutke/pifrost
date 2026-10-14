@@ -1,4 +1,6 @@
-# Pifrost Research Provider Framework (0.11)
+# Research providers through Bifrost MCP
+
+This guide documents Pifrost's integration, not a DonSeTch deployment manual. Start with the [README](../README.md) or [reference](REFERENCE.md).
 
 ## Ownership and limitations
 
@@ -10,12 +12,12 @@ Pifrost does **not** install, start, query directly, proxy or retry DonSeTch/Hou
 
 ## Deploy and configure
 
-Install and operate DonSeTch independently using its official project guidance. Its documented local HTTP endpoint is `donsetch mcp --http --port 8765` at `http://localhost:8765/mcp`. If Bifrost runs on another host, configure a privately reachable endpoint and `DONSETCH_HTTP_TOKEN` plus Bifrost-side credentials; use network controls as appropriate.
+Install and operate DonSeTch independently using its official project guidance. Consult the deployed DonSeTch version for its MCP HTTP command, listening address and authentication; do not assume a container's localhost is reachable from Bifrost. If Bifrost runs on another host, configure a privately reachable endpoint and `DONSETCH_HTTP_TOKEN` plus Bifrost-side credentials; use network controls as appropriate.
 
 Once the upstream DonSeTch MCP client has been registered *in Bifrost*:
 
 ```sh
-pifrost repo mcp add donsetch --tools '*'
+pifrost repo mcp add donsetch --tools 'web_search,web_fetch,web_crawl,web_screenshot'
 pifrost repo research bind ds donsetch --profile donsetch
 pifrost repo research prefer ds
 pifrost repo research status
@@ -44,7 +46,7 @@ Classic MCP checks directly exposed Bifrost tools. Code Mode inspects `listToolF
 
 ## DonSeTch-specific behavior
 
-DonSeTch v4.7.0 exposes `web_search`, `web_fetch`, `web_crawl` and `web_screenshot`. MCP results may fold the state envelope into a leading `[meta] { JSON }` text block. Application-level errors may be `ok:false` while MCP `isError:false`; Pifrost's result classifier examines the envelope for diagnostic correctness and preserves original content and citations.
+The pinned DonSeTch v4.7.4 MCP contract exposes `web_search`, `web_fetch`, `web_crawl` and `web_screenshot`. MCP results may fold the state envelope into a leading `[meta] { JSON }` text block. Application-level errors may be `ok:false` while MCP `isError:false`; Pifrost's result classifier examines the envelope for diagnostic correctness and preserves original content and citations.
 
 DonSeTch `S…` result handles and `L…` link handles are stateful. Use the same upstream instance for follow-up handle fetches or use original URLs across instances. Pifrost does not store, translate or load balance handles. DonSeTch itself manages its internal search backends and ranking.
 
@@ -56,6 +58,6 @@ Existing Bifrost MCP versions can flatten upstream ImageContent into encoded tex
 
 Bifrost retains all client credentials and authorization state. Pifrost's non-loopback HTTP credential diagnosis remains **warning-only in doctor**; no opt-in, block or switch is introduced. DonSeTch is separately deployed and **AGPL-3.0**: review applicable network-use/redistribution obligations for its modified or hosted code. Hound was MIT and remains supported for migration continuity.
 
-Required CI pins DonSeTch's release MCP contract at v4.7.0. A separate scheduled advisory canary follows DonSeTch master; unstable unreleased changes do not gate ordinary releases. Hound's legacy compatibility tests remain. No automatic cross-provider failover or additional MCP proxy has been introduced.
+Required CI pins DonSeTch's release MCP contract at v4.7.4. A separate scheduled advisory canary follows DonSeTch master; unstable unreleased changes do not gate ordinary releases. Hound's legacy compatibility tests remain. No automatic cross-provider failover or additional MCP proxy has been introduced.
 
 Restart OMP after changing screenshot mappings: the extension intentionally captures its trusted screenshot-tool allow-list when loaded. The preferred-provider guidance is refreshed before each new agent turn.

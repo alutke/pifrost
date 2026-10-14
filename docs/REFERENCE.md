@@ -1,1654 +1,222 @@
 # Pifrost technical reference
 
-> This is the detailed technical/reference documentation retained from the original README. For installation and normal use, start with the [main README](../README.md).
-
-Pifrost is a native **OhMyPi 18** provider and terminal control plane for **Maxim Bifrost**.
-
-It has two responsibilities:
-
-1. expose Bifrost routing aliases such as `omp-default`, `omp-slow`, `omp-plan`, and `omp-vision` to OMP with conservative capability metadata; and
-2. configure and operate the OMP ↔ Bifrost integration from a normal terminal, including global inference credentials, OMP model roles, route synchronization, model-cache refresh, and repository-specific MCP Virtual Keys.
-
-Pifrost is derived from [`lxdlam/pi-bifrost-provider`](https://github.com/lxdlam/pi-bifrost-provider), but uses the current OMP 18 native provider API.
-
-> **Upstream-first compatibility principle:** Prefer current, versioned upstream OhMyPi/Bifrost behaviour over copied implementations. Pifrost owns capability and protocol translation, verified provenance, safe diagnostics and repository MCP bindings only. Every compatibility workaround needs evidence, regression tests, ownership and removal criteria. Never duplicate OMP agent/session authority or Bifrost provider ordering, gateway fallback, credentials, queues or MCP execution.
-
-### Release A — compatibility exception register
-
-These entries are owned by the **Pifrost integration boundary**, not by a replacement upstream agent or router. Revalidate on every packaged OMP upgrade or supported Bifrost gateway upgrade.
-
-| Boundary | Evidence / regression | Revalidation or removal condition |
-| --- | --- | --- |
-| Bundled OMP transport and capability rules | Pinned `@oh-my-pi/*` 18.10.4, OMP upstream contract canaries, current/minimum loader checks, and `test/transport-model.bun.ts` | Revalidate with every packaged OMP upgrade; drop local policy exceptions only when the stable OMP API handles the equivalent physical model contract |
-| Gateway-confirmed physical provenance | Bifrost 2.2.6 routed-response headers; `test/bifrost-cost-bridge.test.ts` and `test/multi-protocol-routing.test.ts` | Prefer a future stable OMP physical-origin contract when available; until then preserve separate `upstreamModel`/`upstreamProvider` metadata without rewriting OMP's logical provider, session or history |
-| Historical reasoning-marker hygiene | Exact synthetic-marker fixtures in `test/reasoning-replay.test.ts` and `test/reasoning-stream.test.ts`; signed/opaque content is retained | Remove each narrow workaround after a versioned OMP fix demonstrably passes the corresponding regression; never guess that a newer OMP binary fixes Pifrost's separately bundled transport |
-| Wire-incompatible fallback split | `test/dynamic-routing.test.ts` and `test/multi-protocol-routing.test.ts` verify Bifrost route order, authenticated requests, and no retry after output | Retire the split only if Bifrost and OMP expose a stable native protocol-aware retry contract with the same at-most-once output guarantee |
-
-**Verification boundary:** CI exercises deterministic Chat/Responses, provenance, tool-argument and fallback fixtures, package installation and pinned upstream contracts. Run `npm run smoke:transport` separately against a **real Bifrost gateway** with `BIFROST_URL`, `BIFROST_VIRTUAL_KEY`, `PIFROST_CONFORMANCE_CHAT_MODEL` and `PIFROST_CONFORMANCE_RESPONSES_MODEL`. To test forced tool arguments, also set `PIFROST_CONFORMANCE_TOOL_MODEL`. To require Bifrost 2.2.6+ physical provenance, set `PIFROST_CONFORMANCE_REQUIRE_PROVENANCE=1`. The opt-in runner tests gateway streaming; it does not by itself prove every OMP-to-Pifrost application flow or every physical provider.
-
-> **Bifrost OSS:** scoped management API keys are an Enterprise feature. Bifrost OSS management endpoints use the configured dashboard/admin username and password over HTTP Basic auth. Pifrost supports OSS Basic auth and Enterprise Bearer/scoped-key auth separately. On fresh Bifrost 2.2.6+ instances, Pifrost also detects the first-time setup lock; `--setup-token` / `BIFROST_SETUP_TOKEN` is accepted only as ephemeral bootstrap authentication and is never persisted.
-
----
-
-## Contents
-
-- [Architecture](#architecture)
-- [Requirements](#requirements)
-- [Installation and upgrade](#installation-and-upgrade)
-- [First-time setup](#first-time-setup)
-- [Global configuration](#global-configuration)
-- [OMP configuration](#omp-configuration)
-- [OMP agent attribution](#omp-agent-attribution)
-- [Routing aliases](#routing-aliases)
-- [Model metadata and startup cache](#model-metadata-and-startup-cache)
-- [Time-of-day pricing diagnostics](#time-of-day-pricing-diagnostics)
-- [Upstream compatibility doctor](#upstream-compatibility-doctor)
-- [Bifrost Skills → OMP Skills bridge](#bifrost-skills--omp-skills-bridge)
-- [Repository-specific MCP](#repository-specific-mcp)
-- [Repository reset and cleanup](#repository-reset-and-cleanup)
-- [Credential and security model](#credential-and-security-model)
-- [CLI reference](#cli-reference)
-- [Configuration files](#configuration-files)
-- [Troubleshooting](#troubleshooting)
-- [Development](#development)
-
----
-
-### Release B — upstream-owned governance and context
-
-- **OMP settings:** Reconcile only Pifrost-managed role and provider preferences into OMP's effective settings. CLI setup uses read-before-write through `omp config get --json` and the interactive command uses OMP's approval-aware `cfg://` read/write path. Both reject unreadable mappings or arrays rather than discarding user roles, presets or namespaces. Pifrost does not write OMP YAML itself.
-- **Injected MCP tools:** Bifrost main supports provider-level `injected_tools.web_search` references (`mcp_client_name`, `tool_name`), executed server-side. `pifrost global mcp-policy` and `pifrost doctor` display only names and drift from the **redacted** management `GET /api/providers` response and MCP client metadata. This is configuration visibility, not a promise of executable tool grants, downstream policy or provider availability. Absent `injected_tools` on older gateways means **unknown**, not disabled. Pifrost does not advertise injected tools in OMP's client tool list or replace Bifrost's executor.
-- **Context ownership:** OMP defines `extendedContext`, `compaction.modelThresholds`, effective windows, experimental context management and compaction methods. Pifrost does not write or copy these policies. Doctor surfaces the OMP settings where readable. Optional compact-before-skip uses OMP's reported `getContextUsage()` window and invokes OMP `compact()` only when idle and an otherwise eligible smaller physical route member would be excluded. Invalid/overflowed windows are left to OMP's recovery. Set `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0` to disable the independent proactive scheduler, including when the user's OMP compaction is disabled.
-- **Research compatibility:** DonSeTch remains a separate upstream MCP provider. Pinned v4.7.4 canary verifies `tools/list` and `[meta]` result shape; no DonSeTch code is copied.
-
-All governance diagnostics are read-only and deliberately redact provider internals.
-
-### Release C — versioned native Decisions / OMP model-kind contract
-
-**Stable upstream contracts inspected:**
-- OMP 18.8.9/18.9.0 `pi.registerProvider` exposes typed `kind: "judge"` models under the built-in `api: "typesafe"`. `TypeSafeJudge` itself implements `Judge`, typed response parsing, retries and credentials; OMP's `ChainJudge` owns candidate selection, cache, session usage and concurrency. Native HTTP request is `POST {baseUrl}/v1/systemone` with fields `state`, `model`, `questions` and `type: "noul" | "choice" | "score"`.
-- Bifrost `transports/v2.2.6` exposes `POST /typesafe/v1/systemone` and `GET /typesafe/v1/models`, a native TypeSafe shape (typed answers under `type` and `noul`/`choice`/`score`). Its separate `POST /v1/decisions` uses `kind` and `value`; it is **not** interchangeable with OMP's TypeSafe transport.
-- The isolated `bifrost-judge` registration maps the **stable native** TypeSafe API directly to Bifrost, not the incompatible canonical Decisions schema. Pifrost does not create a custom HTTP-to-judge service or global fetch interception.
-
-**Opt-in/ownership:** `PIFROST_NATIVE_JUDGE_MODEL=jev-latest` registers one native provider, with the configured inference Virtual Key; requires a modern `sk-bf-*` key. No role changes happen automatically, preserving OMP's existing `modelRoles.judge` and judge chain. Explicit `pifrost judge activate` calls OMP's schema-aware config command after read-before-write validation of `modelRoles` **and** `enabledModels` and a successful Bifrost native model-list GET. Activation appends `bifrost-judge/*` to the enabled-model namespace without disabling existing model patterns. If native registration is invalid, Pifrost reports the reason without disabling its main chat provider. Per-session attribution, typed decoding, retries, model choice, physical routing and billing remain with OMP/Bifrost.
-
-**Model kinds:** `pifrost models kinds` reports a live, VK-scoped read-only gateway inventory by kind, separating unknown legacy model metadata from declared non-chat. The `bifrost` chat provider filters explicitly non-chat kinds and non-chat-only method catalogs. Unrecognised kinds fail closed; unsupported new model kinds are **not** registered through fake Chat/Responses endpoints. OMP's image, TTS, STT, embedding, rerank, search and video APIs remain upstream responsibilities.
-
-**Verification and retirement:** Deterministic no-secret tests cover opt-in gating, native/Decisions wire-shape separation, read-only discovery, opt-in paid probes, malformed responses and chat-kind filtering. The Bifrost native TypeSafe contract should be revalidated on supported gateway upgrades and when OMP adds a stable direct Bifrost Decisions API. Retire this provider mapping if OMP supplies native `/v1/decisions` support with equivalent per-session attribution and permission semantics. Live inference, actual VK governance and hosted provider availability cannot be established by CI fixtures.
-
-## Architecture
-
-Pifrost deliberately does **not** become a second prompt router. Bifrost remains the authority for provider selection and fallback.
-
-```text
-OMP
- │
- │ bifrost/omp-default
- │ bifrost/omp-slow
- │ bifrost/omp-plan
- │ ...
- ▼
-Pifrost OMP provider
- │
- │ Pifrost OpenAI Chat Completions transport
- │ Authorization: Bearer <inference API key>
- │ x-bf-vk: <global inference Virtual Key>
- │ x-bf-session-id: <OMP session id>
- │ User-Agent: pifrost/<version> OMP
- │ x-bf-eh-user-agent: pifrost/<version> OMP
- │ x-bf-eh-x-opencode-session: <OMP session id>
- ▼
-Bifrost /v1
- │
- ├─ routing rules
- ├─ provider fallback
- ├─ provider credentials
- └─ physical model providers
-```
-
-For each inference request, OMP supplies a stable conversation `sessionId`. Pifrost sends that value directly as `x-bf-session-id`, which lets Bifrost keep session-aware routing plus provider/key affinity on the same eligible route/key across turns. The same value is also sent as `x-bf-eh-x-opencode-session`; Bifrost strips the `x-bf-eh-` prefix and the selected upstream receives `x-opencode-session`, satisfying OpenCode Go's separate per-conversation session requirement. Both headers are constructed per request, so Pifrost does not mutate shared provider headers. Pifrost also forwards its explicit client identity upstream as `x-bf-eh-user-agent`.
-
-
-The management/control-plane path is separate:
-
-```text
-pifrost CLI
- │
- ├─ Bifrost OSS
- │    Authorization: Basic base64(admin_username:admin_password)
- │
- └─ Bifrost Enterprise
-      Authorization: Bearer <scoped management API key>
- │
- ▼
-Bifrost /api/*
- │
- ├─ routing rules
- ├─ Virtual Keys
- └─ MCP client metadata
-```
-
-Repository MCP access is separate again:
-
-```text
-<repo>/.omp/mcp.json
- │
- │ x-bf-vk: !pifrost secret repo-mcp --id <repo-id>
- ▼
-Pifrost local secret store
- │
- │ dedicated repository MCP Virtual Key
- ▼
-Bifrost /mcp
- │
- ├─ direct MCP client/tool grants on the repo VK
- └─ named Virtual MCP bundles attached to the repo VK
-```
-
-The intended identity separation is:
-
-```text
-Global LLM inference  -> global inference VK
-Bifrost administration -> OSS admin Basic auth OR Enterprise API key
-Repository MCP access -> one dedicated MCP VK per repository
-```
-
-Do not reuse a repository MCP VK as the global inference VK.
-
-### 0.22.0 — full terminal command semantics and accessibility
-
-Pifrost CLI operations declare validated arguments and flags, side-effect class (read-only, local or gateway mutation, paid probe, or internal machine-secret output), and contextual help. `--tools` must be explicitly provided when granting MCP permissions; wildcard grants are not inferred from omissions.
-
-Read-only health commands `doctor`, `global status`, `repo status`, and `models doctor` support `--json` with schemaVersion 1, and `--strict` for warning-as-error automation. Exit code 2 indicates failed required checks (or strict warnings), whereas syntax failures use exit code 1. Machine-secret output remains raw and unaffected.
-
-Where supported, `--dry-run` enumerates intended actions without writes. Use `pifrost routes sync --dry-run` and `pifrost repo reset --dry-run --delete-remote` before modifying policy or credentials. Direct Skills suggestions never automatically install files. Inventory list commands accept `--filter` and `--limit`.
-
-`/pifrost trace` supports a compact default, plus `last N`, `errors`, `role alias` and `verbose` modifiers; it never implies that observing a logical Bifrost request proves a CEL match.
-
-### 0.21.0 — terminal output and accessibility
-
-Pifrost presents a task-oriented quick help screen by default; `pifrost help --all` retains all commands and flags. The renderer is plain-text-first with explicit [OK]/[WARN]/[FAIL]/[UNKNOWN] labels, no ANSI escape codes, and consistent next-step commands. Quick `doctor`, `global status`, `repo status`, and `models doctor` views prioritise problems; `--verbose` retains the earlier detailed output. The compact views do not assert that configured MCP grants or eligibility imply successful live execution.
-
-`pifrost routes explain` now labels requests as previews, explains exclusion per candidate and points to real Bifrost routing evidence. OMP `/pifrost doctor` is concise, while `/pifrost doctor verbose` contains capability provenance and agent attribution. OMP `/pifrost trace` groups routing, gateway and usage instead of printing one opaque line per attempt. Terminal errors are short and redact common bearer/API tokens; neither help nor diagnostics echo unknown command arguments.
-
-The report formatting is a presentation-only change. Management APIs, Bifrost/OMP ownership, OMP config approval, stored credential semantics and exit codes remain unchanged.
-
-### 0.20.0 — cross-release policy, failover and reporting hardening
-
-Only exact unconditional OMP model-alias predicates are locally compilable. Query/condition-builder rules, CEL with additional predicates, scoped/pinned rules, and rule chains stay gateway-owned. The production inference adapter does not permit a late fetch-time fallback rewrite.
-
-The same generated-output predicate controls inter-attempt retry gating and provenance: empty block opening events do not commit content; actual text, thinking, image or completed tool-call output does. Buffered empty events are discarded on pre-output failure, and emitted before the first substantive event on success.
-
-Full Bifrost routing-rule inventory hashing detects changes invisible to alias-membership diff. `pifrost routes verify` reads the live policy using CLI management auth, fails on drift and refreshes a matching snapshot verification timestamp. This action requires an OMP restart before cached profiles use the new verification; credentials remain control-plane only. Until Bifrost exposes an inference-visible signed route revision, physical compatibility exceptions remain subject to the seven-day fail-closed guard. Hashes are evidence of equality only when actually refreshed against the live gateway.
-
-Gateway costs display unknown rather than zero when no total is reported and label partial sums explicitly. Privacy diagnostics distinguish global log-store enablement and per-VK content-default inheritance; external connector exports are unverified unless separately inspected. Mock HTTP gateway tests verify the shape and routing boundary but do not assert live Bifrost behaviour.
-
-### 0.19.0 — selective, read-only observability
-
-`pifrost global observability` reads Bifrost's complexity-analyzer configuration, redacted provider inventory and MCP client metadata. It reports a known `classifier` mode (keywords/decision/semantic), identifier-only provider/model selectors, semantic/LLM fallback and session-stickiness settings, but neither runs classification nor asserts readiness or model selection. Research-tool detection is limited to provider-injected MCP names with web/search/fetch/crawl/browse/research semantics. Bifrost execution and Virtual Key grants remain unverified and unchanged.
-
-`pifrost global observability --vk-id <management-id>` also reads **that** Virtual Key's management metadata. Its nullable `disable_content_logging` is treated as inherit/true/false and combined with `client_config.disable_content_logging` for a *configured default only*. This is not an inference that hidden object copies, log metadata or per-request overrides were disabled. Without a readable key or global config, the selected-key default remains **unverified**. No secret/value, prompt, raw management document or log content is rendered.
-
-In OMP, `/pifrost costs` sums only authoritative per-attempt gateway cost totals retained in the bounded in-memory session trace (up to 20 attempts). It groups by OMP logical alias, reports number of attempts with/without cost and cache/fallback counts. Unknown costs are never presented as zero; the sum excludes unreported costs and is not Bifrost's full billing ledger. Session trace state is dropped on shutdown. No new persistent tracking or background polling is added.
-
-### 0.18.0 — gateway reliability and attribution
-
-`/pifrost trace` reports gateway response status and sanitized request/trace identifiers. It classifies authentication (401), authorization (403), budget/rate allowance (402/429), timeouts (408/504), upstream failures (5xx), and invalid requests (remaining 4xx) without parsing arbitrary provider response bodies or inventing upstream error reasons. `Retry-After` is bounded to one day, advisory-only, and does not change OMP or Bifrost retry policy.
-
-Cache-hit and gateway-requested alias are separate evidence. A matching `x-bifrost-routing-info-requested-model` establishes only that the logical alias reached Bifrost, **not** that a specific routing rule matched; use Bifrost route counters or request logs to establish rule execution. Compatibility physical attempts explicitly lack logical-route attribution. Output-started evidence comes from streamed text/thinking/tool-call deltas before the terminal event; it never permits post-output replay. Failed attempts without Bifrost-confirmed physical origin display `served=unverified`, not the local configured primary.
-
-### 0.17.0 — upstream 18.10.4 / 2.3.0 compatibility migration
-
-**Installer support boundary:** the compiled OMP 18.4.8 installer fails on a clean GitHub installation of Pifrost with the 18.10.4 OMP catalog because it does not resolve the now-required `@oh-my-pi/pi-utils` package. A linked local extension smoke test is insufficient to certify the standalone GitHub install. Pifrost v0.17.0 therefore requires the compiled OMP **18.10.4+** installer, which is checked through the clean GitHub release workflow. Users unable to upgrade OMP should stay on Pifrost **v0.16.0**. This is a deliberate and documented minimum-version increase, not a silent skip of a failing CI gate.
-
-Pinned OMP packages and their lockfile are updated as a set. The 18.10.4 catalog resolves physical wire policy; the 18.10.4 OMP runtime retains agent/session history, model-specific replay, compaction and tokenisation responsibility. Pifrost's request-time estimation is an exception guard over heterogeneous Bifrost routes, not a competing OMP context engine. Pifrost still needs to decode gateway cost/provenance and remove narrowly evidenced synthetic stream/history markers; these can only be removed on a tested upstream-equivalent path.
-
-Gateway-native Bifrost 2.3 reasoning-aware Chat-to-Responses conversion, per-target first-token deadlines and retry classification remain gateway policies, never automatic Pifrost settings. The Bifrost 2.3 `injected_tools` array and earlier `web_search` object forms are both diagnosed without enabling/executing tools.
-
-Retirement condition for individual Pifrost workarounds: verified OMP replay/tokenisation and Bifrost provider contracts, regression tests against real Chat/Responses mixed chains and a successful gateway comparison including signed reasoning and tool-call continuation. No blanket removal on version string alone.
-
-### 0.16.0 — native rule execution and compatibility exceptions
-
-When a synchronized simple global rule has a single wire-compatible Chat group and no excluded route members, Pifrost sends the logical `omp-*` request identifier to Bifrost, retaining the first physical member's OMP wire serialization contract. The gateway's live rule owns target ordering, pinned provider keys and fallbacks. Pifrost sends **no** client-side `fallbacks` override in this mode.
-
-For incompatible requests, Pifrost still prefilters unsafe members and executes ordered protocol/encoder groups, never replaying after output begins. The physical request bypasses the original `omp-*` rule, and is labeled `pifrost-compatibility` in the session trace. A local compatibility chain is accepted only with a recent (seven-day) management-plane `pifrost routes sync` timestamp. Neither the timestamp nor model-catalog refresh proves that the live rule has not changed; operators must sync after every rule change and restart OMP. For stronger runtime guarantees, a future Bifrost native candidate-eligibility API would avoid any physical override.
-
-Trace fields distinguish Pifrost execution mode from gateway-reported requested/resolved models. The gateway's `x-bifrost-routing-info-requested-model` is evidence of what reached Bifrost, not proof that a specific CEL rule matched; confirm rule counters/logs for that claim.
-
-### Request routing provenance
-
-Bifrost 2.2.6 exposes routed identity on successful responses through `x-bifrost-*` headers. Pifrost captures the actual provider/model, fallback index, request type and upstream latency without changing routing. Newer Bifrost builds that emit `x-bifrost-request-id` are picked up automatically. Inside an OMP session, `/pifrost trace` displays the latest ten requests for that session together with Pifrost's logical alias/protocol attempt and the authoritative Bifrost cost when present. Each trace also records `wire-boundaries=N boundary-retry=pre-output-only` when physical model encoders require a compatibility split. Non-actionable compatibility notices and replay-cleanup counts are not emitted to stderr during inference; the latter remain visible in the existing trace counters. This preserves the physical wire guard and keeps OMP settings and TUI operations quiet. Trace state is in-memory only and is discarded when the OMP session shuts down.
-
-
-New Pifrost repository MCP keys on Bifrost 2.x are explicitly created with `allow_all_providers: false` and no provider configs, making the intended MCP-only posture explicit. Existing repository keys are not silently rewritten, because that could destroy operator-managed governance.
-
----
-
-### Bifrost 2.x feature ownership
-
-Pifrost integrates the Bifrost features that affect the OMP boundary: Virtual-Key auth/governance, routing metadata, complexity-routing awareness, model capability discovery, MCP gateway access and diagnostics, version/health detection, and quota reporting.
-
-Features that are transparent gateway responsibilities remain owned by Bifrost and require no duplicate Pifrost implementation: provider adapters, semantic caching, request/response logging, OpenTelemetry, cost accounting, guardrails, fallback execution, batch handling, storage backends, and Bifrost's own dashboard/configuration. Pifrost should observe those contracts where relevant, not become a second Bifrost.
-
-Pifrost 0.7 projects `service_tier` only through capability-safe routes. The logical alias advertises only service tiers common to every known route member; context-aware prewalk additionally removes a physical member when it cannot honor the specific requested tier. Bifrost still owns provider/model selection among the remaining compatible members. Pifrost does not invent a provider family or choose a faster physical model itself.
-
----
-
-## Why Pifrost derives alias metadata
-
-A Bifrost route may expose a logical model such as:
-
-```text
-omp-slow
-  -> openai/gpt-5.6-luna
-  -> CommandCode GOAT/deepseek/deepseek-v4-pro
-  -> deepseek/deepseek-v4-pro
-```
-
-OMP only sees `bifrost/omp-slow`. Pifrost therefore calculates a conservative capability envelope across every route member:
-
-- `contextWindow` = minimum safe context window across the chain
-- `maxTokens` = minimum safe output limit
-- image input = enabled only when every member supports images
-- reasoning = enabled only when every member supports reasoning
-- explicit thinking efforts = intersection of published effort levels
-- tool support = true only when every member advertises tool support
-- deferred Tool Search and between-tools thinking = enabled only when every known member can preserve the semantic contract
-- service tiers = intersection of tiers exposed by every known member
-- pricing status = preserved when uniform; reported as variable when the route mixes pricing semantics
-- displayed token cost = conservative maximum across route members
-
-If a route member cannot be resolved safely, Pifrost withholds the alias instead of fabricating metadata.
-
-### Capability discovery and model identity
-
-Pifrost includes one narrowly scoped free-entitlement exception for `CommandCode GOAT/meituan/LongCat-2.0:free`. The live Bifrost inventory currently exposes that route without authoritative limits, while the upstream LongCat-2.0 contract publishes a 1M context window, 131,072 maximum output tokens, text input, reasoning and native tool calling. Pifrost uses those verified limits only for that exact CommandCode GOAT SKU. It does not generalize them to OpenRouter or other `:free` model identifiers.
-
-
-Pifrost resolves capability facts per field rather than assuming one source is complete. The normal trust order is:
-
-1. rich, explicit metadata returned by the live Bifrost `/v1/models` inventory;
-2. the Bifrost public pricing/model-parameter datasheets;
-3. an equivalent canonical model-family row in those datasheets;
-4. a narrowly scoped vendor-backed capability override for a known upstream omission; and
-5. conservative catalog fallback when the model identity and capability are safe to establish.
-
-Transport-compatibility axes are handled more carefully. Pifrost resolves transport policy through its pinned, validated OMP policy snapshot injected at the extension boundary, plus explicit Pifrost compatibility patches, rather than inferring policy by intersecting generic catalogue rows. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host. That runtime policy outranks the generic Bifrost datasheet for semantic compatibility such as whether reasoning and tools may coexist. OMP expresses this particular axis as `disableReasoningWithTools`; Pifrost translates it to its positive `supportsReasoningWithTools` capability before prewalk. Explicit live Bifrost capability metadata still outranks both. Unknown or unmapped provider identities fall back to Bifrost metadata rather than receiving a permissive guess.
-
-Diagnostics preserve origin as `live`, `omp-provider-policy`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback` for each route member and capability.
-
-The generic compatibility defaults used for a sparse physical `/v1/models` entry (`128K` context / `8K` output) are **not** accepted as authoritative route limits. A configured route member that is temporarily absent from `/v1/models` may receive a metadata-only identity anchor, but that anchor carries no trusted capabilities. Pifrost still withholds the logical alias unless safe context and output limits can be established from a stronger source.
-
-Model identity matching tolerates provider/aggregator prefix changes, mixed capitalization, and explicitly known entitlement aliases such as the current Ox Alpha spellings. It does not blindly strip arbitrary `-free` suffixes, and it rejects ambiguous vendor-qualified matches rather than assuming two same-tailed model names are identical.
-
-### Doctor 2.0 and route explanations
-
-Pifrost persists the resolved capability surface of each physical route member, not only the conservative logical alias envelope. This lets the standalone CLI explain compatibility without becoming the policy router.
-
-`pifrost routes effective` reads OMP's effective `modelRoles` and joins each Pifrost selector to its cached Bifrost alias and physical members. The output includes the catalogue timestamp and age; a stale snapshot is explicitly marked because it may no longer match live Bifrost membership. `pifrost doctor` includes the same provenance/freshness information.
-
-`pifrost routes explain <role|alias>` accepts hypothetical request constraints such as `--input-tokens`, `--output-tokens`, `--image`, `--tools`, `--reasoning`, `--tool-search`, `--between-tools`, `--tool-choice` and `--service-tier`. Runtime prewalk and the CLI call the same dependency-free eligibility evaluator, so the reported exclusions cannot drift from the routing implementation.
-
-Between-tools thinking is intentionally not a hard Pifrost exclusion. Bifrost 2.2.4+ rewrites unsupported `between_tools` fallbacks to a compatible disabled/adaptive form; Pifrost therefore keeps those members in the configured chain and reports the downgrade as a notice.
-
-Routing ownership is explicit:
-
-- **OMP** owns agent/tool orchestration and native web-search orchestration.
-- **Pifrost** owns capability/protocol compatibility prefiltering and may cross protocol groups only when an earlier group fails before emitting model output.
-- **Bifrost** owns provider/model ordering, credentials, physical policy routing, same-protocol fallbacks and governance.
-
-Pifrost preserves the relative order of all surviving Bifrost members and never reorders them for quality, cost, quota, availability preference or provider preference.
-
-Pifrost's optional compact-before-skip coordinator is route preservation, not a replacement for OMP compaction policy. OMP owns normal automatic compaction, including 18.8.5+ per-model thresholds and 18.8.6+ cache-aware pruning. Pifrost calls OMP's own `compact()` only when a smaller physical fallback is about to become context-ineligible; set `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0` to disable that extra preservation step.
-
-### Provider-neutral Bifrost MCP research diagnostics (v0.11)
-
-Pifrost now exposes DonSeTch and generic research MCP capabilities independent of Hound. See [Research providers](RESEARCH_PROVIDERS.md) for provider mappings, Classic and Code Mode metadata inspection, authorization, DonSeTch result envelopes, screenshot safety and explicit live probes. OMP owns tool selection; Bifrost owns MCP execution.
-
-### Historical Hound and MCP presentation diagnostics
-
-Hound remains an external repository-scoped Bifrost MCP client. Pifrost does not own its process lifecycle, browser runtime, HTTP endpoint, search engines, BYOK keys, proxy pool or cache policy.
-
-The flow remains:
-
-```text
-OMP/model
-   │
-   ▼
-repository .omp/mcp.json + repo Virtual Key
-   │
-   ▼
-Bifrost MCP gateway
-   │
-   ▼
-Hound / master-fetch
-```
-
-Pifrost recognizes the six supported Hound tools: `mcp_smart_search`, `mcp_smart_fetch`, `mcp_smart_crawl`, `mcp_screenshot`, `cache_clear` and `version`. Management-side recognition uses the discovered tool contract rather than requiring the client to be literally named `hound`.
-
-There are two live verification paths:
-
-1. **Classic MCP.** Repository-key-scoped Bifrost `tools/list` exposes the Hound tools directly. Pifrost normalizes Bifrost client prefixes back to canonical Hound names.
-2. **Bifrost Code Mode.** A code-mode Hound client intentionally disappears from the raw tool list and Bifrost exposes `listToolFiles`, `readToolFile`, `getToolDocs` and `executeToolCode` instead. Pifrost verifies those four meta-tools, calls `listToolFiles`, then uses `readToolFile` to confirm the Hound binding and exact repository-visible Hound functions. The probe supports both Bifrost server-level and tool-level Code Mode binding.
-
-The Code Mode probe is deliberately non-destructive. It never invokes Hound search/fetch/crawl/screenshot, never launches Hound's browser and never makes an Internet research request. Nested Hound calls remain governed by Bifrost's repository Virtual Key and its `tools_to_execute` policy. Pifrost distinguishes an explicit empty execution list from an older management response where the execution-policy field is absent; only an explicit denial makes the corresponding Hound capability uncallable.
-
-Capability reporting is derived rather than binary:
-
-- `searchReady`: search is available.
-- `webResearchReady`: search + fetch are available.
-- `deepResearchReady`: search + fetch + crawl are available.
-- `screenshotCallable`: the screenshot tool can be invoked.
-- `visualWebReady`: screenshot content is either natively preserved or safely rehydrated from a directly exposed Hound screenshot result.
-- `visualWebConditional`: a Code Mode screenshot tool is callable, but nested image provenance is insufficient for safe rehydration.
-- `contractComplete`: all six Hound tools are repository-visible.
-- `administrativeComplete`: cache + version support are repository-visible.
-
-This distinction prevents missing `cache_clear` or `version` from making a complete research surface look unusable, and prevents search-only access from being described as deep research.
-
-#### Screenshot transport limitation
-
-The current supported Bifrost MCP implementation converts upstream MCP `ImageContent` into text shaped like `[Image Response: <base64>, MIME: image/png]`. Pifrost installs a compatibility bridge at OMP's `tool_result` boundary, but only for directly exposed Hound `mcp_screenshot` tools. The marker must pass MIME allowlisting, canonical Base64 validation, image magic-byte validation, per-image limits, aggregate decoded-byte limits and per-result image-count limits. Existing native image blocks are untouched, so a future Bifrost rich-content fix naturally bypasses the bridge.
-
-When the active OMP model genuinely sends image input on its wire transport, the recovered screenshot is passed through directly. For a text-only active model, Pifrost resolves only OMP's configured `@vision` role and runs a bounded no-tools one-shot analysis. Fallback routing belongs inside that role's Pifrost/Bifrost route; Pifrost does not scan unrelated models for an opportunistic image-capable fallback.
-
-Bifrost Code Mode remains **conditional**, not multimodal-ready: the outer `executeToolCode` result has already lost trustworthy nested-tool provenance, so Pifrost deliberately does not reinterpret image-looking text from Code Mode as an image. Fixing native image-block passthrough belongs in Bifrost; Pifrost does not add a direct-Hound bypass because that would weaken repository Virtual Key governance.
-
-OMP's native `modelRoles.web` and `retry.fallbackChains.web` remain independent from Hound. An unset OMP web role is still distinguished from OMP being unavailable or its config being unreadable. Pifrost reports availability and does not choose the tool/model route.
-
-OMP MCP `discoverable` presentation, Bifrost Code Mode and provider-side `defer_loading`/Tool Search are also separate mechanisms. Pifrost reports the live gateway surface and approximate eager schema footprint without conflating those features.
-
-The release CI pins the Hound contract to **v12.4.1 / commit `1dab81b7fc03721688cfb7775fc1222c7f9805ba`**. Current Hound `master` is checked separately by a scheduled upstream canary so upstream drift remains visible without making unrelated Pifrost releases non-reproducible.
-
-### Effective thinking display
-
-Pifrost stores the pre-normalization provider catalog. OMP 18 may subsequently derive a thinking-control surface for sparse reasoning models. `pifrost models doctor` and `pifrost doctor` report the **OMP-effective** result:
-
-```text
-source=explicit     -> Pifrost published the effort ladder directly
-source=omp-derived  -> OMP derives the effective ladder from the sparse model metadata
-```
-
-For example, a sparse OpenAI-compatible reasoning alias can appear as:
-
-```text
-thinking=minimal,low,medium,high source=omp-derived
-```
-
-while a route with a known explicit intersection may show:
-
-```text
-thinking=high,max source=explicit
-```
-
----
-
-## Requirements
-
-- Node.js **22.19 or later**
-- OhMyPi **18.10.4 or later** for Pifrost v0.17.0 installation
-- Pifrost's packaged OMP policy/catalog snapshot is **18.10.4**; evidence-backed compatibility patches must be revalidated whenever this snapshot advances. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host. Packaged library compatibility and host executable compatibility are validated separately.
-- Maxim Bifrost **2.2.4 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
-- a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
-- optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
-- outbound HTTPS access to `getbifrost.ai` when refreshing public capability metadata
-
-For route synchronization and repository MCP automation, Pifrost also needs management authentication:
-
-- **Bifrost OSS:** dashboard/admin username and password
-- **Bifrost Enterprise:** optionally, a scoped management API key
-
-### Transport-security warning
-
-HTTP Basic auth is encoding, not encryption. If Bifrost is exposed over plain `http://`, the admin credential is recoverable by an observer who can inspect that traffic.
-
-Prefer localhost, a tightly controlled private network, or TLS/HTTPS in front of Bifrost. `pifrost doctor` emits a warning when inference or management credentials are configured for a non-loopback plain-HTTP endpoint. The warning is intentionally diagnostic-only: there is no block, override switch or runtime behavior change.
-
----
-
-## Installation and upgrade
-
-### Install the terminal CLI
-
-```bash
-npm install --global github:alutke/pifrost
-hash -r
-pifrost --version
-```
+Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start with the [README](../README.md) for first installation and normal use; consult the [changelog](../CHANGELOG.md) for historical release notes. Command flags, positional arguments and side effects are defined by `cli-command-schema.mjs` and exposed with `pifrost <command> --help`.
 
 Expected for this release:
 
 ```text
-0.22.0
+0.22.1
 ```
 
-Bun can also install the package globally:
+## Architecture and ownership
 
-```bash
-bun add --global github:alutke/pifrost
-hash -r
-pifrost --version
+```text
+OhMyPi agent/session & model roles
+    -> Pifrost provider: capabilities, transport compatibility, request evidence
+    -> Bifrost /v1: routing, provider credentials, quotas, fallback, usage and costs
+    -> physical providers
+
+Pifrost terminal CLI -> Bifrost /api: management, route synchronization, MCP grants
+OMP project MCP config -> dedicated repo Virtual Key -> Bifrost MCP gateway
 ```
 
-### Install/update the OMP extension
+**Never make Pifrost a second policy router or agent runtime.** Bifrost owns provider/model ordering, key selection, retry governance, gateway logging and execution of MCP tools. OMP owns sessions, history, agent orchestration, compaction and judgment. Pifrost implements only the tested integration boundary: model metadata, semantic token estimates, compatibility preflight, native transport delegation, provenance and configuration.
 
-```bash
-omp install --force github:alutke/pifrost
-```
+Prefer a stable upstream contract to copied behaviour. Retain compatibility exceptions only with a reproducible defect or contract gap, a regression test and a revalidation/removal condition. CI fixtures prove protocol handling, not live-provider availability or actual gateway rule hits.
 
-### Normal upgrade sequence
+## Requirements
+
+- Node.js **22.19+** and OMP **18.10.4+** for clean GitHub plugin installation.
+- Packaged OMP packages and policy snapshot: **18.10.4**. Later OMP hosts may work but require compatibility verification; Pifrost's pinned snapshot does not automatically advance with the host.
+- Bifrost **2.2.4+** with Chat Completions; the Responses endpoint is also needed for Responses members. CI exercises pinned Bifrost **2.3.0** contracts and relevant earlier compatibility.
+- Global inference Virtual Key able to access the configured physical models, plus separately scoped Bifrost management credentials for synchronization and repository operations.
+- Network access for live Bifrost model discovery and optional public datasheets. Some smoke tests explicitly incur provider charges.
+
+## Installation and upgrade
 
 ```bash
 npm install --global github:alutke/pifrost
 hash -r
 omp install --force github:alutke/pifrost
 pifrost --version
-pifrost routes sync
+pifrost init                       # first-time interactive setup only
+pifrost routes sync               # after Bifrost rule changes / upgrades
 pifrost doctor
 ```
 
-### Upgrading from 0.5.x to 0.6.0
+For existing installations, omit `pifrost init` unless reconfiguring. Run `pifrost global setup` to edit inference or management credentials, and `pifrost global configure-omp --dry-run` to preview role updates. Restart OMP after route synchronization, verification or a model-catalog change. Never assume `models refresh` has fetched new routing rules.
 
-0.6.0 is a performance, robustness and architecture release. It does **not** change the Pifrost configuration schema, Bifrost routing ownership, repository MCP grants or alias semantics.
+The GitHub release is published **only after** main-branch CI passes; the workflow reads the package version and matching dated changelog heading.
 
-- Existing `~/.config/pifrost/` config/secrets and repository associations remain compatible.
-- Run the normal upgrade sequence, then `pifrost doctor`. No manual route or MCP migration is required.
-- Model-reference and exact-route-member lookup are more efficient but preserve the existing conservative ambiguity rules.
-- `pifrost doctor` now shares one concurrent read-only Bifrost snapshot across global/compatibility/repository diagnostics, reducing repeated management/inference calls.
-- Generic JSON HTTP responses are bounded; abnormally large control-plane responses now fail explicitly rather than consuming unbounded memory.
-- Bifrost Skill attachments stream directly into a confined staging tree. Existing Pifrost-owned installed Skills remain compatible and are refreshed normally with `pifrost repo skills sync`.
-- Skill installation/removal now refuses symlinked managed paths. Replace any intentionally symlinked `.agents`/Skill directory with a real repository directory before syncing.
-- Local config/secret writes use exclusive atomic temporary files and fsync-before-rename.
-- Agent attribution remains process-local observability only, but its aggregate identity cardinality is now bounded.
+## CLI semantics and command groups
 
-### Upgrading from 0.4.x to 0.5.0
+`pifrost help` is the concise starting point; `pifrost help --all` enumerates all 46 registered commands and `pifrost <command> --help` describes exact supported options and side effects. The examples below are intentionally not a duplicated flag schema.
 
-0.5.0 keeps the existing Pifrost config/secrets format compatible, but raises the tested OMP boundary and adds several opt-in surfaces.
+| Task | Commands |
+| --- | --- |
+| Global setup and inspection | `init`, `global setup`, `global status`, `global configure-omp`, `global mcp-policy`, `global observability` |
+| Route operations | `routes list`, `routes diff`, `routes verify`, `routes sync`, `routes diagnose`, `routes effective`, `routes explain <role>` |
+| Model discovery | `models refresh`, `models doctor`, `models kinds` |
+| Judge | `judge status`, `judge activate`, `judge probe` |
+| Repository | `repo init`, `repo status`, `repo rotate-key`, `repo reset` |
+| MCP grants | `repo mcp list/add/remove/instructions`, `repo vmcp list/add/remove` |
+| Research | `repo research status/bind/unbind/prefer/probe` |
+| Skills | `repo skills list/suggestions/bind/unbind/dismiss/undismiss/add/remove/sync` |
+| Health | `doctor`, `--version` |
 
-- Historical note: Pifrost 0.5.0 supported OMP 18.3.2+. Current Pifrost v0.17.0 requires OMP 18.10.4+ for reliable GitHub extension installation.
-- Bifrost **2.0.0+** remains the minimum gateway baseline; **2.2.3+** is recommended for the complete 0.5.0 feature set (session affinity, pinned fallbacks, structured quota provenance, time-of-day pricing diagnostics and the Skills bridge).
-- Run `pifrost routes sync` after upgrade. The model catalogue cache schema is now v5 and refreshes old cached metadata automatically.
-- Request-scoped `x-bf-session-id` affinity is automatic; no new route configuration is required.
-- Existing repository MCP grants and Virtual MCP assignments are preserved. MCP server instructions remain at their previous explicit/default setting.
-- Bifrost Skills are **opt-in** per repository; upgrading does not install a skill or grant an MCP/tool permission.
-- `pifrost global configure-omp` remains the bootstrap/recovery path. Interactive OMP configuration changes now use OMP's approval-aware `cfg://` path.
-- Finish with `pifrost doctor` and review any `UNAVAILABLE`, `INACCESSIBLE` or `DRIFT` compatibility entries before relying on the corresponding feature.
+The internal `secret repo-mcp --id <id>` command resolves an MCP credential for OMP and is **not** a user-facing diagnostic. Do not capture or paste its output.
 
-### Read-only live 0.6 smoke check
+Health commands `doctor`, `global status`, `repo status` and `models doctor` support `--verbose`, redacted `--json` (schemaVersion 1) and `--strict`. Required failures return exit **2**; `--strict` also promotes warnings to failures; invalid syntax exits **1**. Use `--dry-run` only on commands advertising it. Inventory commands accept `--filter` and `--limit` where offered. Never assume an omitted `--tools` grants all tools; wildcard `'*'` must be deliberate.
 
-For a configured Bifrost 2.2.3+ instance, the release includes an explicit read-only smoke test. It does not create/update routing rules, Virtual Keys, MCP assignments, Skills or other Bifrost configuration.
+## OMP configuration and sessions
 
-OSS management auth:
+`pifrost global configure-omp` merges Pifrost's role values into OMP's existing `modelRoles`, without replacing unrelated roles such as `judge`, `web` or `memory`. It preserves other configured enabled namespaces and provider ordering. If OMP configuration cannot be read safely, refuse to replace the unknown collection. In-session `/pifrost config` uses OMP's approved `cfg://` access; writes follow its normal approval rules.
 
-```bash
-export BIFROST_URL='http://127.0.0.1:8180/v1'
-export BIFROST_VIRTUAL_KEY='sk-bf-...'
-export BIFROST_ADMIN_USERNAME='admin'
-export BIFROST_ADMIN_PASSWORD='...'
-# optional when inference uses a separate Bearer credential:
-export BIFROST_API_KEY='...'
+Default aliases are `bifrost/omp-default`, `-smol`, `-task`, `-advisor`, `-slow`, `-plan`, `-designer`, `-vision`, `-commit` and `-tiny`. Create their physical routing rules in Bifrost. Keep OMP `retry.modelFallback: false` when Bifrost owns model fallback. OMP defines `extendedContext`, `compaction.modelThresholds`, effective context windows and session history. Pifrost's optional idle compact-before-skip invokes **OMP** compaction, and can be disabled with `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0`.
 
-npm run smoke:live
-```
+Each OMP conversation's session ID is sent separately as `x-bf-session-id` to Bifrost and `x-bf-eh-x-opencode-session` for upstream OpenCode Go's `x-opencode-session` requirement. These are per-request forwarding headers, not global provider configuration. Attribution uses OMP agent identity for diagnostics only, never model preference or selection.
 
-Enterprise management auth can use `BIFROST_MANAGEMENT_API_KEY` instead of the admin username/password. The smoke checks health/version, inference model visibility, quota response shape, routing reads, MCP-client discovery, Virtual MCP discovery and Skills discovery using GET/self-service operations only.
+## Routing and provenance
 
----
+For an exact, unconditional `omp-*` rule with all physical members request-compatible on a shared Chat wire contract, Pifrost sends the **logical alias** unchanged to Bifrost. It does not send a duplicated fallback list; Bifrost runs its live rule, selecting keys, models and same-protocol fallbacks. Receiving an alias does **not** prove that a particular CEL rule matched: confirm Bifrost routing metrics or request logs.
 
-## First-time setup
+For a simple synchronized context-aware route, Pifrost estimates context/output demand and excludes only established incompatibilities (context, images, tools, tool choice, reasoning, service tier and protocol). Compatible members retain their Bifrost order. Mixed Chat Completions and Responses or encoder-incompatible members may require separate contiguous attempts; Pifrost advances only on failures **before** any real text, thinking or tool output. Those compatibility requests address physical models and may not increment logical `omp-*` counters; `/pifrost trace` labels them accordingly.
 
-### Bifrost OSS
-
-Run:
-
-```bash
-pifrost init
-```
-
-The wizard asks for:
-
-```text
-Bifrost URL
-Inference API/Bearer key (optional on Bifrost 2.x)
-Global inference Virtual Key
-Configure management auth? -> Yes
-Management auth mode        -> basic
-Bifrost admin username
-Bifrost admin password
-```
-
-Example Bifrost URL:
-
-```text
-http://192.168.1.221:8180/v1
-```
-
-On Bifrost 2.x, the inference API/Bearer key may be left blank when the global Virtual Key is an `sk-bf-*` key. Pifrost still sends `x-bf-vk` for governance identity; when a separate Bearer credential is configured it is preserved.
-
-Pifrost then:
-
-1. installs/updates the OMP extension;
-2. validates `/v1/models` with the inference identity;
-3. validates the management API using Basic auth;
-4. stores durable configuration under `~/.config/pifrost/`;
-5. applies the recommended OMP settings;
-6. reads live `omp-*` routing rules;
-7. writes `~/.omp/agent/pifrost.aliases.json`; and
-8. performs a network-backed model refresh to seed the startup catalog.
-
-### Bifrost Enterprise
-
-Use Bearer/scoped management auth:
-
-```bash
-pifrost global setup \
-  --url 'https://bifrost.example.com/v1' \
-  --api-key "$BIFROST_API_KEY" \
-  --virtual-key "$BIFROST_VIRTUAL_KEY" \
-  --management-auth bearer \
-  --management-key "$BIFROST_MANAGEMENT_API_KEY" \
-  --yes
-```
-
----
-
-## Global configuration
-
-### Interactive
-
-```bash
-pifrost global setup
-```
-
-Existing secrets are not printed. The setup can be rerun safely.
-
-### OSS non-interactive
-
-Prefer environment variables for admin credentials in automation:
-
-```bash
-export BIFROST_ADMIN_USERNAME='admin'
-export BIFROST_ADMIN_PASSWORD='...'
-
-pifrost global setup \
-  --url 'http://192.168.1.221:8180/v1' \
-  --api-key "$BIFROST_API_KEY" \
-  --virtual-key "$BIFROST_VIRTUAL_KEY" \
-  --management-auth basic \
-  --yes
-```
-
-Relevant flags:
-
-```text
---url <url>
---api-key <key>
---virtual-key <key>
---management-auth <basic|bearer>
---management-username <username>
---management-password <password>
---management-key <enterprise-key>
---skip-omp
---skip-test
---yes
-```
-
-### Verify
-
-```bash
-pifrost global status
-```
-
-A healthy OSS setup includes:
-
-```text
-Inference connection:   OK (... models)
-Management auth:        basic (OSS admin credentials)
-Admin username:         set
-Admin password:         set
-Management connection:  OK
-```
-
----
-
-## OMP configuration
-
-Apply the recommended OMP settings with:
-
-```bash
-pifrost global configure-omp
-```
-
-Pifrost uses OMP's schema-aware CLI and backs up the previous global config. This remains the bootstrap/recovery path. Inside an interactive OMP session, Pifrost now uses OMP's native `cfg://` protocol so reads show the **effective value and provenance** and writes retain OMP's normal approval flow.
-
-The effective settings are equivalent to:
-
-```yaml
-modelProviderOrder:
-  - bifrost
-
-enabledModels:
-  - bifrost/*
-
-modelRoles:
-  default: bifrost/omp-default
-  smol: bifrost/omp-smol
-  task: bifrost/omp-task
-  advisor: bifrost/omp-advisor
-  slow: bifrost/omp-slow
-  plan: bifrost/omp-plan
-  designer: bifrost/omp-designer
-  vision: bifrost/omp-vision
-  commit: bifrost/omp-commit
-  tiny: bifrost/omp-tiny
-
-retry:
-  modelFallback: false
-
-task:
-  enableEffort: true
-  enableLsp: true
-```
-
-`retry.modelFallback` should remain `false` when Bifrost owns provider/model fallback.
-
-### Interactive `cfg://` integration
-
-Within the top-level OMP TUI:
-
-```text
-/pifrost config
-/pifrost config status
-```
-
-shows the Pifrost-owned settings with their current OMP provenance, such as `global config`, `project config`, `environment variable`, or `session override`.
-
-Apply the recommended Pifrost profile as **session-only overrides**:
-
-```text
-/pifrost config apply
-```
-
-OMP's own `cfg://` approval host authorizes each change. After an approved session change, Pifrost offers to persist the same profile; persistent writes still go through a second OMP approval step.
-
-Apply directly to the global OMP config (still approval-gated by OMP):
-
-```text
-/pifrost config apply save
-```
-
-Individual Pifrost-owned settings can be changed with JSON values:
-
-```text
-/pifrost config set retry.modelFallback false
-/pifrost config set modelRoles {"advisor":"bifrost/omp-advisor"}
-/pifrost config save task.enableLsp true
-```
-
-The bridge is intentionally limited to Pifrost-owned settings. For other OMP settings, use the canonical `cfg://` surface directly. Pifrost refuses cfg writes from subagents and headless/RPC sessions, and refuses to operate if the active OMP settings cwd does not match the command session.
-
-`/pifrost doctor` also includes this effective-value/provenance view when run from the interactive top-level OMP session.
-
----
-
-## OMP agent attribution
-
-Pifrost uses OMP 18.3.2's `ctx.agent` identity strictly for observability. It does **not** use agent name, depth or parentage to select a model or alter Bifrost routing.
-
-The extension binds the OMP session id already used for `x-bf-session-id` to:
-
-```text
-kind:     main | sub
-id:       Main | 0-Explore | 1-Task | ...
-name:     main | explore | task | advisor | ...
-depth:    task nesting depth
-parentId: spawning agent id, when present
-```
-
-Each Pifrost inference records the logical route requested by OMP. `/pifrost doctor` therefore includes process-local attribution such as:
-
-```text
-OMP agent attribution:
-  current: main [main] id=Main depth=0
-  current routes: omp-default=12
-  active sessions: 3
-  process usage:
-    task [sub] -> omp-task: 74 request(s)
-    main [main] -> omp-default: 31 request(s)
-    advisor [sub] -> omp-advisor: 18 request(s)
-```
-
-Attribution is in-memory only. Active session bindings are capped and are removed on OMP `session_shutdown`; aggregate counters survive only for the lifetime of the OMP process. If an inference races ahead of `session_start`, Pifrost temporarily holds the request under the session id and backfills it when `ctx.agent` becomes available.
-
-No extra provider/model routing policy, retry policy or fallback policy is inferred from agent identity.
-
----
-
-## Routing aliases
-
-### List live routes
+Context-dependent CEL, weighted, scoped, pinned, chained or ambiguous rules are **gateway-owned**. Only exact unconditional model predicates can be locally compiled into compatibility chains. Conservative reachability metadata covers every potentially selected target.
 
 ```bash
 pifrost routes list
-```
-
-### Diagnose Bifrost routing discovery
-
-```bash
-pifrost global status
-pifrost routes list
-```
-
-Pifrost's routing reader probes the canonical `/api/routing/rules` surface and falls back to the compatibility `/api/governance/routing-rules` surface where required. `global status` reports the discovered 2.x routing features and `routes list` shows the effective `omp-*` routes.
-
-### Compare live routes with the local manifest
-
-```bash
 pifrost routes diff
-```
-
-Exit status:
-
-```text
-0 = in sync
-2 = differences found
-1 = operational/configuration error
-```
-
-### Synchronize
-
-```bash
+pifrost routes sync --dry-run
 pifrost routes sync
+pifrost routes verify             # recheck full live rule fingerprint
+pifrost routes effective          # cached OMP role-to-chain view, with timestamp
+pifrost routes explain plan --input-tokens 120000 --output-tokens 16000 --tools --reasoning
 ```
 
-This:
+`routes explain` is a **preview**, not an execution test. `routes sync` writes the local manifest and complete policy fingerprint, then refreshes the model catalogue unless disabled. `routes verify` authenticates against the management API and updates verification evidence only for an unchanged full policy. The seven-day physical-compatibility guard fails closed for absent/expired provenance, but **neither** a recent sync nor a local hash proves that Bifrost rules have not since changed. Sync after edits and restart OMP.
 
-1. reads the live enabled Bifrost routing rules;
-2. derives the `omp-*` chains;
-3. backs up the old manifest;
-4. writes `~/.omp/agent/pifrost.aliases.json`; and
-5. refreshes the model catalog.
+## Model capabilities and transport
 
-Skip the final model refresh when required:
+A logical alias exposes conservative common capability limits (output/context where necessary; images, tools, reasoning, thinking levels, deferred Tool Search, service tiers and safe costs). Simple request-aware routes can expose more context when prewalk establishes that the request fits a particular candidate. Unresolved physical capability limits cannot be invented from permissive defaults.
+
+Capability provenance is field-specific: live Bifrost metadata, published Bifrost datasheets, provider-qualified OMP runtime/catalog policies, narrowly verified exceptions, then conservative fallback. Protocol method support is **provider-qualified**; a similarly named model on another gateway provider need not share OpenAI Chat/Responses serialization or reasoning replay rules. Pifrost uses the packaged OMP policy snapshot and specific tested exceptions when OMP does not expose a public physical-model policy resolver.
+
+Context estimates use OMP-aligned semantic messages, tokenizer families and image-size rules; opaque replay/signature content is retained. Usage anchors apply only to the same confirmed physical model. Avoid speculative cleanup of synthetic DeepSeek reasoning replay or signed/encrypted history; narrowly defined, tested compatibility workarounds may be required for tool continuation.
+
+`pifrost models refresh --force` refreshes cached model facts. `pifrost models doctor --verbose` explains provenance. Catalogue and manifest freshness are separate. Cost and time-of-day pricing observations come from Bifrost metadata; missing monetary totals are **unknown**, not free.
+
+## Observability and troubleshooting
 
 ```bash
-pifrost routes sync --no-refresh
+pifrost doctor
+pifrost doctor --verbose
+pifrost global status
+pifrost global observability
+pifrost global observability --vk-id <management-id>
+pifrost global mcp-policy
 ```
 
-Pifrost does not modify the Bifrost routing rules themselves.
+Within OMP, `/pifrost doctor` and `/pifrost doctor verbose` show readiness; `/pifrost trace` supports `last N`, `errors`, `role alias` and `verbose`. `/pifrost costs` reports only the bounded session's **gateway-reported subtotal**, with unknown-cost coverage. It is not an invoice.
 
-### Bifrost 2.x routing semantics
+Traces distinguish logical alias, actual gateway-requested model, confirmed served provider/model, compatibility bypass, fallback, cache-hit, sanitized request IDs and error categories. Unsuccessful upstream attempts without gateway physical-origin evidence remain unverified. A gateway-requested alias alone is **not** proof of a matched rule or a new upstream call.
 
-Bifrost 2.x routing is richer than a single ordered fallback list. Rules can be scoped to global, customer, team, Virtual Key or user traffic; contain weighted targets; use priority; reference the complexity analyzer; and opt into `chain_rule` re-evaluation.
+Observability reports inspect configured complexity classifier, provider-injected research tools and optional Virtual Key content-logging defaults; they do **not** confirm tool execution, actual retention/deletion, compliance or permissions. Gateway/provider failures and `Retry-After` information are diagnostic, not automatic key rotation or custom retry policy.
 
-Pifrost keeps Bifrost as the runtime routing authority. For OMP metadata it computes a **conservative reachability envelope**:
+## Judgment and model kinds
 
-- multiple enabled rules for the same `omp-*` logical model are unioned rather than allowing the last rule to overwrite earlier scopes;
-- weighted targets and fallbacks are all included because any of them can serve the request;
-- a chained alias includes a conservative downstream routing closure;
-- OMP then receives the minimum safe context/output and the intersection of portable image/reasoning/tool capabilities across that envelope.
+`PIFROST_NATIVE_JUDGE_MODEL=jev-latest` opts in `bifrost-judge/jev-latest` via the Bifrost **TypeSafe** `/typesafe/v1/systemone` contract. The separately exposed `/v1/decisions` endpoint is **not** wire-compatible with OMP's judge API. `pifrost judge status` checks readiness; `judge activate --dry-run` previews the OMP judge-role and enabled-model merge; `judge activate` applies it explicitly. `judge probe` makes a potentially billable request. OMP still owns typed judgment, model choice, scheduling and session usage.
 
-This may deliberately under-advertise a highly scoped route. It must never over-advertise a capability that a valid Bifrost 2.x fallback cannot satisfy.
+`pifrost models kinds` lists reported Bifrost model kinds without pretending image, audio, embedding, video or other non-chat models are Chat Completions models. Unknown non-chat kinds are not force-registered as chat.
 
-Bifrost persists session-aware routing/complexity decisions and provider/key affinity from `x-bf-session-id`. Pifrost's custom OMP transport receives `rawOptions.sessionId` for each inference request and projects it into that header at request time. The header is therefore isolated per request rather than stored on the shared provider registration, avoiding cross-session races while enabling Bifrost's session behavior automatically for Pifrost inference traffic. Pifrost also detects and reports session-enabled complexity configuration.
+## Repository MCP and Virtual Keys
 
-`pifrost global status` / `pifrost doctor` also report the number of enabled rules, scopes, weighted/chained rules and complexity-based rules, plus whether the complexity-analyzer configuration surface is available.
-
----
-
-## Time-of-day pricing diagnostics
-
-Pifrost preserves Bifrost's released time-of-day pricing fields from the pricing datasheet:
-
-```text
-off_peak_cost_multiplier
-peak_hours.timezone
-peak_hours.windows[].days/start/end
-```
-
-Base token rates remain the peak rates, exactly as Bifrost defines them. Pifrost evaluates the current band only for diagnostics; it does **not** rewrite route order, choose a cheaper provider, or change the price metadata OMP uses for the logical alias.
-
-`/pifrost doctor` shows pricing per reachable route member instead of inventing one effective price for a heterogeneous `omp-*` alias:
-
-```text
-resolved deepseek/deepseek-v4-flash -> deepseek/deepseek-v4-flash
-  pricing band=off-peak source=bifrost-datasheet:deepseek/deepseek-v4-flash multiplier=0.5x
-  schedule=Mon-Fri 01:00-04:00; Mon-Fri 06:00-10:00 UTC
-  peak(input/output)=$0.44/$1.32 per 1M current(input/output)=$0.22/$0.66 per 1M
-```
-
-The evaluator mirrors Bifrost's semantics: Go weekday numbering (Sunday=0), IANA timezones, half-open `[start,end)` windows, midnight wrapping, `24:00` as an end-of-day marker, and fail-closed peak pricing for malformed schedules. The displayed band is evaluated when the doctor report is rendered, so a cached catalog does not freeze an old peak/off-peak state.
-
-The public datasheet identifies catalogue pricing. Scoped custom-pricing overrides remain Bifrost-owned and may change the final billed rate.
-
-At inference time, Bifrost 2.2.x may return its authoritative nested request-cost breakdown in `usage.cost`, including `total_cost`. Pifrost captures that total while streaming the response, preserves the original nested breakdown on the compatibility payload as `pifrost_bifrost_cost`, and applies the authoritative total to OMP's parsed usage event. This post-parse step is required because OMP only trusts scalar provider-reported cost automatically for selected native gateway providers, not the logical `bifrost` provider. The translation is opportunistic: when Bifrost does not emit a nested cost object, OMP's normal catalogue estimate remains unchanged. Pifrost does not recalculate Bifrost's service-tier, long-context, cache, custom-price or ancillary-cost rules itself.
-
----
-
-## Model metadata and startup cache
-
-The non-secret last-known-good catalog is stored at:
-
-```text
-~/.omp/agent/pifrost.catalog.json
-```
-
-Its identity is bound to:
-
-- normalized Bifrost URL
-- a one-way fingerprint of the global inference VK
-- a fingerprint of the alias manifest
-
-Changing one of those invalidates the cache. Resolver/schema upgrades can also invalidate older cache formats so stale capability assumptions are not carried across releases.
-
-### Why it exists
-
-Without a synchronous local catalog, OMP can start before network-backed Bifrost discovery finishes and initially show `no-model`. The local catalog allows aliases to register immediately at startup.
-
-### Refresh
+From a project root:
 
 ```bash
-pifrost models refresh --force
+pifrost repo init
+pifrost repo status
+pifrost repo mcp list
+pifrost repo mcp add donsetch --tools 'web_search,web_fetch'
+pifrost repo mcp remove donsetch
+pifrost repo vmcp list
+pifrost repo vmcp add 'Development Tools'
+pifrost repo mcp instructions off
+pifrost repo rotate-key --dry-run
+pifrost repo reset --dry-run --delete-remote
 ```
 
-Equivalent low-level form:
+One project receives one dedicated Bifrost MCP Virtual Key, separate from inference. The CLI configures explicit direct client/tool grants or named Virtual MCP bundles and writes `<repo>/.omp/mcp.json` with a header using `!pifrost secret repo-mcp --id <repo-id>`. The raw key stays in the local Pifrost secret store, not the project JSON. `--tools '*'` grants all current executable tools only when explicitly provided; never treat a grant as proof of live execution or Code Mode availability.
 
-```bash
-PIFROST_FORCE_REFRESH=1 omp models refresh
-```
+`repo reset` removes Pifrost's local project integration and managed assets without deleting the remote key. `repo reset --delete-remote` removes the exact remote key **before** local state, with destructive confirmation; `--yes` suppresses the prompt only when intentional. `--recover-by-name` with remote deletion attempts tightly scoped orphan recovery. Rotation is always explicit.
 
-### Diagnose
-
-```bash
-pifrost models doctor
-```
-
-The report includes context, maximum output, effective thinking levels, image support, and thinking origin. Route diagnostics also show how each member was resolved and the per-capability source (`live`, `bifrost-datasheet`, `canonical-family`, `vendor-override`, or `fallback`) so an unresolved route can explain what evidence was missing.
-
-### Bifrost 2.x usage and governance in OMP
-
-Pifrost registers OMP's native usage provider against Bifrost's self-service:
-
-```text
-GET /api/governance/virtual-keys/quota
-```
-
-The request is authenticated with the configured global Virtual Key; admin credentials are not passed into the OMP extension. Where configured in Bifrost, OMP can display:
-
-- Virtual Key budget consumption;
-- token and request rate-limit windows;
-- provider-scoped budget/rate limits; and
-- model-scoped budget/rate limits.
-
-Bifrost 2.2.3+ also returns structured governance provenance for externally managed quota rows. Pifrost preserves the returned `source_type`, `source_id` and `source_name` in the OMP usage report's `metadata.governanceSources` map and adds a human-readable per-limit note. Direct Virtual Key, provider-config and model-config limits are tagged separately rather than being presented as inherited governance. External limits with the same budget/rate-limit ID remain distinct by source instead of being accidentally deduplicated.
-
-`pifrost global status` / `pifrost doctor` now list the observed governance sources, for example:
-
-```text
-Governance sources:
-  Access Profile "Engineering" [ap-eng]
-  Direct provider config: deepseek
-  Direct model config: deepseek/deepseek-v4-pro
-```
-
-This is read-only. Pifrost does not change Bifrost budgets, access profiles, provider/model allow-lists or rate limits.
-
----
-
-## Upstream compatibility doctor
-
-`pifrost doctor` includes a live upstream feature matrix. Version checks establish the minimum contract; non-mutating API probes then verify the live path where Bifrost exposes a discoverable endpoint.
-
-```text
-Upstream compatibility
-OMP version:             18.10.4 (minimum 18.10.4; validated through 18.10.4)
-OMP policy snapshot:     18.10.4 + narrow Pifrost compatibility patches
-  [TESTED CURRENT] installed 18.10.4 matches the current validated release
-  [OK] Pifrost OMP baseline >=18.10.4 — available in OMP 18.10.4
-  [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.6
-  [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.6
-  [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.6
-  [OK] OMP model presets >=18.4.5 — available in OMP 18.8.6
-Bifrost version:         2.2.6 (minimum 2.2.4; validated through 2.2.6)
-  [TESTED CURRENT] installed 2.2.6 matches the current validated release
-  [OK] First-time setup lock >=2.2.6 — setup complete; dashboard auth=enabled, inference auth=enforced
-  [OK] Chat→Responses compatibility adapter >=2.2.6 — convert_chat_to_responses=enabled; reasoning-with-tools adapter=not released by Bifrost 2.2.6
-  [OK] Virtual MCPs >=2.2.0 — live API contract verified
-  [OK] Bifrost Skills >=2.2.0 — live Skills API contract verified
-  [OK] Session affinity >=2.2.2 — version contract satisfied; inference path reachable
-  [OK] Pinned routing fallbacks >=2.2.3 — version contract satisfied; routing API verified
-  [OK] Quota SourceRef provenance >=2.2.3 — live quota contract verified
-  [OK] Deferred Tool Search >=2.2.4 — available in Bifrost 2.2.6
-  [OK] Between-tools thinking >=2.2.4 — available in Bifrost 2.2.6
-  [OK] Service-tier capability metadata >=2.2.4 — available in Bifrost 2.2.6
-Compatibility summary:  OK
-```
-
-Feature probes use **OK**, **UNAVAILABLE** (installed version predates the feature), **INACCESSIBLE** (credentials/configuration/live path prevent verification), and **DRIFT** (the version should support the feature but the live contract shape is incompatible). The version envelope is reported separately as **TESTED CURRENT**, **SUPPORTED**, **NEWER THAN VALIDATED**, or **UNSUPPORTED**. A newer-than-validated installation is advisory rather than an automatic failure.
-
-Release CI validates pinned OMP and Bifrost release contracts only. Scheduled upstream canaries separately check OMP `main` and Bifrost `dev`, including the image-tokenization constants mirrored by Pifrost, opaque replay-token accounting, Bifrost request-id provenance, reasoning-only Chat→Responses conversion and bounded Code Mode. Unreleased upstream code therefore cannot randomly break an otherwise reproducible Pifrost release.
-
-Session affinity has no read-only discovery endpoint, so its check combines the Bifrost >=2.2.2 contract with a live inference-path probe. Pinned fallbacks similarly combine the >=2.2.3 contract with the routing API and validate object fallback shape when such fallbacks are present. The doctor never creates, edits or deletes Bifrost configuration.
-
----
+Repository instructions may be set to `on`, `off` or `default`. Management/client permission diagnostics are read-only and report unverified status when grants or gateway tools cannot be established.
 
 ## Bifrost Skills → OMP Skills bridge
 
-Bifrost 2.2.x can store and serve Agent Skills. Pifrost can opt individual Bifrost skills into a repository and materialize them in OMP's native project skill location:
-
-```text
-<repo>/.agents/skills/<skill-name>/SKILL.md
-```
-
-No separate skill runtime is introduced. Once installed, OMP discovers the skill through its normal project-level `.agent/.agents` Skills provider.
-
-List what Bifrost currently publishes:
-
 ```bash
 pifrost repo skills list
-```
-
-Install one skill into the current repository:
-
-```bash
-pifrost repo skills add release-notes
-```
-
-Refresh one or all configured skills to the versions Bifrost is currently serving:
-
-```bash
-pifrost repo skills sync release-notes
+pifrost repo skills add <name>
 pifrost repo skills sync
+pifrost repo skills remove <name>
 ```
 
-Remove a Pifrost-managed copy:
-
-```bash
-pifrost repo skills remove release-notes
-```
-
-Pifrost stores the selected **skill name** as the portable identity, with the observed Bifrost id/version recorded as provenance. Every installed directory contains a separate `.pifrost-bifrost-skill.json` ownership marker. Updates are staged and swapped atomically; removal refuses to delete a directory that does not carry a valid Pifrost marker.
-
-Before installation Pifrost checks common OMP project/user skill locations, OMP Skillshare manifests, and skills shipped by installed OMP npm/link plugins for an existing skill with the same name. A collision fails closed instead of silently overriding or shadowing the authored or packaged skill.
-
-Bifrost's `allowed_tools` field is deliberately not bridged in this release. OMP 18.3 loads arbitrary skill frontmatter but does not enforce Bifrost's per-skill tool allow-list as an execution policy. A Bifrost skill with non-empty `allowed_tools` is therefore marked **incompatible** and installation is refused rather than weakening its policy.
-
-Attached Bifrost skill files are fetched through Bifrost's released generic serving endpoint. Paths are revalidated locally; absolute paths, traversal components and malformed relative paths are rejected before anything is written.
-
-Skills remain independent from MCP governance: adding a skill never grants an MCP client, Virtual MCP, tool, provider key, route or model. `pifrost repo status` and `pifrost doctor` show the Bifrost source, installed/upstream versions, missing/collision state, upstream id and compatibility result.
-
----
+Compatible Bifrost Agent Skills are explicitly installed into `<repo>/.agents/skills/<name>/`. Pifrost owns only skill directories with its marker, stages updates, refuses path traversal/collisions and tracks content hashes to protect local edits. Modified managed files require `--force` on supported changes. Bifrost Skill `allowed_tools` cannot safely be enforced by the packaged OMP Skill loader, so restricted skills are refused rather than silently broadening permissions. Installing a Skill **does not grant MCP permissions**.
 
 ## Automatic MCP-to-Skill discovery
 
-The repository CLI offers matching Bifrost Agent Skills when an MCP client is
-explicitly selected during `repo init`, even if previously granted. Newly added
-direct MCP clients and the members of selected Virtual MCPs are also checked.
-This is an **advisory control-plane integration**, not runtime tool invocation.
+Selecting an MCP client or Virtual MCP in `repo init` / `repo mcp add` / `repo vmcp add` can offer an exact-name compatible Skill. Matching is case-insensitive; stable client IDs, explicit per-repo `repo skills bind <client> <skill>` aliases and dismissals handle renames/opt-outs. An interactive offer defaults to **No**. `--yes` does **not** authorize installation; only `--install-matching-skills` or `repo skills add` does. Use `repo skills suggestions` for read-only inspection. MCP grants survive a declined/failed Skill offer; removing a client does not silently delete a previously installed Skill.
 
-- `repo init`, `repo mcp add`, and `repo vmcp add` first complete their
-  existing Bifrost MCP grants, then look for matching Skills. Failure to list
-  Skills, decline, or failure to install never rolls back a valid MCP grant.
-- Match the **exact normalized client name** case-insensitively; punctuation
-  is not normalised and matches are rejected if multiple Bifrost Skills share
-  the same normalised name. The only exception is an explicit per-repository
-  alias created through `pifrost repo skills bind <client> <skill>`. The
-  association keys by Bifrost client ID, surviving display-name changes.
-- `--install-matching-skills` explicitly authorizes non-interactive installation;
-  `--yes` never does. In an interactive terminal, consent defaults to No.
-  The prompt also accepts `d` to persist a per-repository dismissal (undone
-  through `repo skills undismiss`). `--no-skill-discovery` disables the
-  post-grant advisory phase.
-- `repo init` offers missing Skills for **explicitly selected** MCP clients,
-  even when they were previously granted; already installed or dismissed Skills
-  do not cause repeat prompts. `repo skills suggestions` lists all currently
-  effective clients including Virtual MCP members. Existing managed Skills are
-  never automatically updated, even with unattended installation consent.
-- All installations flow through the existing `fetchBifrostSkillBundle` and
-  `installBifrostSkillBundle` APIs. Permission restrictions, file validation,
-  collision rejection, staged writes and ownership markers remain authoritative.
-  Pifrost does not grant extra MCP tools or execute any MCP tool during discovery.
-- For schema-v2 Pifrost ownership markers, SHA-256 hashes of the managed payload
-  detect local edits, new files and unsafe entries. Updating/removing modified
-  content requires an explicit `--force`. Schema-v1 markers remain supported
-  as `unverified` (hashes cannot be reconstructed retroactively).
-- Repository configuration records per-repo aliases, dismissals and links as
-  `mcpSkillDiscovery`, strictly metadata—not a Bifrost policy or runtime
-  instruction. `repo status` and `doctor` report orphaned source clients,
-  missing local Skills, upstream renames or vanished Skill IDs. Removal of an
-  MCP **never removes its Skill**. Removing a Pifrost-managed Skill removes only
-  its local provenance links.
+## Research providers
 
-For a Virtual MCP, the selection's concrete `tools[].mcpClientId` references
-must resolve to enabled Bifrost MCP clients with callable tool grants. No
-automatic match is attempted against the arbitrary Virtual MCP bundle name.
+DonSeTch and other research backends are separate Bifrost MCP clients; OMP chooses tools, Bifrost executes and governs them, and Pifrost diagnoses bindings and bounded results. `repo research bind` / `prefer` update local identity/guidance only; they do not force a search or configure automatic fallback. A `repo research probe` explicitly performs a read-only sample search that may consume upstream quota. DonSeTch stateful handles require the same upstream instance for subsequent retrieval. See the [research-provider guide](RESEARCH_PROVIDERS.md) for examples, screenshot limits and tested versions.
 
----
+## Security and configuration
 
-## Repository-specific MCP
+| Identity | Credential / location | Owner |
+| --- | --- | --- |
+| Global inference | `x-bf-vk` inference Virtual Key; optional `Authorization: Bearer` | OMP provider to Bifrost |
+| Administration | OSS Basic username/password or Enterprise scoped management key | **CLI only**, never OMP inference |
+| Repository MCP | dedicated project-scoped `x-bf-vk` | OMP MCP gateway config using local resolver |
 
-Each repository gets its own Bifrost MCP Virtual Key. Access can come from direct MCP client/tool grants, named Bifrost Virtual MCP bundles, or both. Pifrost stores Virtual MCP **names** in local state for portability and resolves those names to Bifrost's numeric Virtual MCP IDs only when it attaches/detaches the repo VK.
+`~/.config/pifrost/config.json` and `~/.config/pifrost/secrets.json` have private filesystem permissions (`0600`), **not encryption at rest**. Routing manifest: `~/.omp/agent/pifrost.aliases.json`; startup model cache: `~/.omp/agent/pifrost.catalog.json`; MCP config: `<repo>/.omp/mcp.json`. Environment variables include `BIFROST_URL`, `BIFROST_API_KEY`, `BIFROST_VIRTUAL_KEY`, `PIFROST_CONFIG_DIR`, `PIFROST_ALIASES`, `BIFROST_MANAGEMENT_AUTH_MODE`, `BIFROST_ADMIN_USERNAME`, `BIFROST_ADMIN_PASSWORD`, `BIFROST_MANAGEMENT_API_KEY`.
 
-### List available Bifrost MCP clients
-
-From any configured repo:
-
-```bash
-pifrost repo mcp list
-```
-
-Example:
-
-```text
-n8n      state=connected  tools=34
-railway  state=connected  tools=30
-```
-
-On Bifrost 2.x, Pifrost also surfaces MCP-client-global capabilities such as connection/auth type, per-user OAuth/headers or token exchange, Code Mode, Agent Mode auto-execute tools, endpoint slug and session stickiness. Repository Virtual Keys continue to control only **which MCP clients/tools the repository may execute**. Pifrost deliberately does not rewrite an MCP client's global auth, Code Mode or Agent Mode configuration when assigning it to a repo.
-
-Pifrost 0.7 also reports the effective MCP instruction path: per-client upstream instructions and byte caps where Bifrost exposes them, plus Virtual MCP `instructions` and `instructions_mode`. For web research, Pifrost treats Hound as a Bifrost-hosted MCP backend rather than a logical model. If the effective repository policy exposes Hound's canonical MCP tools, `pifrost repo status` reports search/fetch/crawl/screenshot/cache/version visibility and any missing tools. OMP's own `web_search` role remains separately owned by OMP.
-
-### Interactive initialization
-
-```bash
-cd /path/to/repo
-pifrost repo init
-```
-
-Pifrost:
-
-1. identifies the Git root and sanitized `origin` identity;
-2. creates a stable local repo ID;
-3. lists the current Bifrost MCP clients;
-4. asks which clients/tools should be exposed;
-5. creates or updates `omp-<repo>-mcp` in Bifrost;
-6. stores the raw repo VK only in `~/.config/pifrost/secrets.json`;
-7. writes/merges `<repo>/.omp/mcp.json`; and
-8. tests Bifrost `/mcp` with the repo key.
-
-### Non-interactive initialization
-
-One direct client with all its exposed tools:
-
-```bash
-pifrost repo init --clients railway --tools '*'
-```
-
-Multiple direct clients:
-
-```bash
-pifrost repo init --clients n8n,railway --tools '*'
-```
-
-Virtual MCP bundles can be assigned without duplicating their underlying client/tool lists:
-
-```bash
-pifrost repo init --virtual-mcps 'Development Tools,Infrastructure'
-```
-
-Direct grants and Virtual MCPs can be combined:
-
-```bash
-pifrost repo init --clients railway --tools get-logs --virtual-mcps 'Development Tools'
-```
-
-When `--virtual-mcps` is supplied without `--clients`, an existing repo's direct MCP grants are preserved. On a new repo this creates an MCP-only VK with no direct client grants. Supplying `--virtual-mcps=` explicitly removes all direct Virtual MCP attachments while leaving direct MCP grants unchanged.
-
-### Generated repo config
-
-Pifrost does not put the raw VK in the repository. It generates command indirection:
-
-```json
-{
-  "$schema": "https://raw.githubusercontent.com/can1357/oh-my-pi/main/packages/coding-agent/src/config/mcp-schema.json",
-  "mcpServers": {
-    "bifrost": {
-      "type": "http",
-      "url": "http://bifrost.lan:8180/mcp",
-      "timeout": 120000,
-      "headers": {
-        "x-bf-vk": "!pifrost secret repo-mcp --id myrepo-a1b2c3d4e5"
-      }
-    }
-  }
-}
-```
-
-OMP executes the local `!pifrost secret ...` command and uses stdout as the MCP header value.
-
-### MCP server instructions
-
-OMP 18.3.2 can keep an MCP server's tools active while omitting that server's `initialize.instructions` text from the system prompt. Pifrost exposes this only for its generated `bifrost` server entry; unrelated MCP servers in the same `.omp/mcp.json` are left unchanged.
-
-To opt out during repo initialization:
-
-```bash
-pifrost repo init --clients railway --no-mcp-instructions
-```
-
-For an existing repo:
-
-```bash
-pifrost repo mcp instructions off
-```
-
-Re-enable explicitly, or return to OMP's default behavior:
-
-```bash
-pifrost repo mcp instructions on
-pifrost repo mcp instructions default
-```
-
-The generated entry then contains `"instructions": false`. This does **not** disable Bifrost MCP tools, change the repo Virtual Key, or alter Bifrost's MCP permissions; it only controls whether OMP injects Bifrost's server-provided instructions into prompts. Existing repos remain unchanged unless the flag or command is used.
-
-### Status
-
-```bash
-pifrost repo status
-```
-
-A healthy repo reports:
-
-```text
-Virtual Key id:   <uuid>
-Virtual Key name: omp-<repo>-mcp
-Repo secret:      set
-MCP instructions: disabled
-MCP initialize:   HTTP 200 OK
-Direct MCP grants: railway[*]
-Virtual MCPs:     Development Tools
-Live Virtual MCPs: Development Tools
-Effective MCP tools:
-  railway[*] via direct+virtual:Development Tools
-```
-
-The effective-policy view mirrors Bifrost's union semantics: direct grants and enabled Virtual MCP grants are unioned per client, `*` wins, and an explicitly configured client prevents an `allow_by_default` client policy from reopening tools. Disabled Virtual MCPs and disabled/unresolvable clients are reported but do not appear as effective tools.
-
-### Add a client
-
-```bash
-pifrost repo mcp add railway --tools '*'
-```
-
-Restrict tools when appropriate:
-
-```bash
-pifrost repo mcp add railway --tools list-projects,list-services,get-logs
-```
-
-### Remove a client
-
-```bash
-pifrost repo mcp remove railway
-```
-
-### Manage Virtual MCP bundles
-
-List Virtual MCPs and see which are attached to the current repo VK:
-
-```bash
-pifrost repo vmcp list
-```
-
-Attach or detach a named bundle:
-
-```bash
-pifrost repo vmcp add 'Development Tools'
-pifrost repo vmcp remove 'Development Tools'
-```
-
-The repo continues to connect to Bifrost's plain `/mcp` endpoint. That endpoint exposes the whole-key union of direct grants plus all attached Virtual MCP bundles; Pifrost does not need to create a separate OMP MCP server entry per bundle.
-
-### Rotate the repo VK
-
-```bash
-pifrost repo rotate-key
-```
-
-Rotation is explicit. Pifrost does not silently rotate an existing key just because its raw value is unavailable locally.
-
----
-
-## Repository reset and cleanup
-
-Since Pifrost 0.2.5, both a **local-only reset** and a **full reset including the Bifrost Virtual Key** are supported.
-
-### Local-only reset
-
-```bash
-pifrost repo reset
-```
-
-This is backward-compatible behavior. It:
-
-- removes any Pifrost-owned bridged Bifrost Skill directories from `<repo>/.agents/skills/`;
-- removes the Pifrost repo association from the local config/secret store; and
-- removes only the generated `bifrost` entry from `<repo>/.omp/mcp.json`.
-
-It refuses to delete a colliding/non-Pifrost-owned skill directory and deliberately leaves the Bifrost Virtual Key intact.
-
-### Full reset including the remote Bifrost VK
-
-```bash
-pifrost repo reset --delete-remote
-```
-
-Pifrost displays the exact stored VK name/id and requires:
-
-```text
-Type DELETE to permanently remove this Virtual Key:
-```
-
-Only after remote deletion succeeds does Pifrost remove local state.
-
-This ordering is deliberate: a management/API failure cannot silently remove the local association and orphan the remote key again.
-
-### Non-interactive full reset
-
-For deliberate automation:
-
-```bash
-pifrost repo reset --delete-remote --yes
-```
-
-`--yes` bypasses the interactive `DELETE` prompt. It should be treated as a destructive flag.
-
-### Recovery when local state was already removed
-
-If an older/manual cleanup removed the local repo association before deleting the remote Pifrost VK, the normal full reset cannot know the remote id. Pifrost will refuse to guess:
-
-```text
-Current repo has no stored Bifrost Virtual Key id
-```
-
-Use the explicit recovery mode:
-
-```bash
-pifrost repo reset --delete-remote --recover-by-name
-```
-
-or, for scripted cleanup:
-
-```bash
-pifrost repo reset --delete-remote --recover-by-name --yes
-```
-
-Recovery is intentionally narrow:
-
-- it calculates the canonical key name `omp-<repo>-mcp`;
-- it accepts only an **exact** name match;
-- it does not delete fuzzy/near matches such as `omp-<repo>-mcp-old`;
-- it refuses deletion when duplicate exact names make the target ambiguous; and
-- if the exact key is already absent, that is treated as the desired remote end-state and local cleanup can proceed.
-
-### HTTP 404 behavior
-
-If Bifrost returns `404 Virtual key not found` during a stored-id reset, Pifrost treats that as idempotent success: the remote key is already absent, so local cleanup continues.
-
-### Other management errors
-
-For authentication, transport, server, or validation failures, Pifrost stops and leaves the local repo state/config untouched.
-
----
-
-### Effective MCP execution policy
-
-For Bifrost 2.2.5+, `tools_to_execute` is the hard invocation allow-list and `tools_to_auto_execute` is the approval-free subset. `pifrost repo status` reports the intersection of repository Virtual Key grants with those client policies per tool. A wildcard in `tools_to_auto_execute` is called out as a warning because every executable tool becomes approval-free. Pifrost reports this policy but never widens or mutates it.
-
-## Credential and security model
-
-Pifrost separates four credential classes.
-
-### Inference API/Bearer key
-
-Used by the OMP provider:
-
-```text
-Authorization: Bearer <inference API key>
-```
-
-### Global inference Virtual Key
-
-Used for Bifrost inference governance:
-
-```text
-x-bf-vk: <global inference VK>
-```
-
-### Management authentication
-
-Bifrost OSS:
-
-```text
-Authorization: Basic base64(admin_username:admin_password)
-```
-
-Bifrost Enterprise:
-
-```text
-Authorization: Bearer <scoped management API key>
-```
-
-Management credentials are standalone-CLI-only and are not exposed to the OMP provider runtime.
-
-### Repository MCP Virtual Keys
-
-Each repo gets a separate key such as:
-
-```text
-omp-homelab-mcp
-omp-dockeddeals-mcp
-```
-
-Repo keys are created with MCP assignments and no broad provider configuration.
-
-### Local storage permissions
-
-Pifrost writes:
-
-```text
-~/.config/pifrost/config.json
-~/.config/pifrost/secrets.json
-```
-
-with mode `0600` and creates the configuration directory privately.
-
-`0600` is filesystem access control, not encryption at rest.
-
----
-
-## CLI reference
-
-| Command | Purpose |
-| --- | --- |
-| `pifrost init` | Guided first-time setup and OMP extension install/update |
-| `pifrost global setup` | Configure inference and management credentials |
-| `pifrost global status` | Validate global config and connectivity |
-| `pifrost global configure-omp` | Apply recommended OMP provider/model-role settings |
-| `pifrost routes list` | Show live Bifrost `omp-*` routes |
-| `pifrost routes diff` | Compare live routes with the local alias manifest |
-| `pifrost routes sync` | Rebuild the local alias manifest and refresh models |
-| `pifrost models refresh --force` | Perform live model/datasheet discovery |
-| `pifrost models doctor` | Inspect effective cached model capabilities |
-| `pifrost repo init` | Create/update repo-specific MCP governance and config |
-| `pifrost repo status` | Validate the current repo MCP integration |
-| `pifrost repo mcp list` | List Bifrost MCP clients/tools |
-| `pifrost repo mcp add <client>` | Add an MCP client/tool allow-list to the repo VK |
-| `pifrost repo mcp remove <client>` | Remove an MCP client from the repo VK |
-| `pifrost repo mcp instructions <on\|off\|default>` | Control OMP injection of Bifrost MCP server instructions for this repo |
-| `pifrost repo vmcp list` | List Bifrost Virtual MCP bundles and current-repo assignment |
-| `pifrost repo vmcp add <name>` | Attach a named Virtual MCP bundle to the repo VK |
-| `pifrost repo vmcp remove <name>` | Detach a named Virtual MCP bundle from the repo VK |
-| `pifrost repo skills list` | List Bifrost Skills and current repo install/compatibility state |
-| `pifrost repo skills add <name>` | Install one compatible Bifrost Skill into OMP's project skill path |
-| `pifrost repo skills remove <name>` | Remove one Pifrost-owned bridged skill from the repo |
-| `pifrost repo skills sync [name]` | Refresh one/all configured Bifrost Skills to the currently served versions |
-| `pifrost repo rotate-key` | Explicitly rotate the repo MCP VK |
-| `pifrost repo reset` | Remove local repo integration only |
-| `pifrost repo reset --delete-remote` | Delete the stored remote repo VK, then local integration |
-| `pifrost repo reset --delete-remote --recover-by-name` | Recover an orphaned canonical repo VK by exact name, then delete it |
-| `pifrost doctor` | Run global, model, current-repo, and routing diagnostics |
-| `pifrost secret repo-mcp --id <id>` | Internal repo-key resolver used by OMP MCP headers |
-| `pifrost --version` | Show installed Pifrost version |
-
-### Repo-reset flags
-
-```text
---delete-remote   delete the Bifrost repo VK before local cleanup
---recover-by-name explicitly recover an orphaned canonical repo VK by exact name
---yes             bypass destructive confirmation (automation only)
-```
-
-`--recover-by-name` is valid only with `--delete-remote`.
-
----
-
-## Configuration files
-
-### Pifrost global files
-
-```text
-~/.config/pifrost/config.json
-~/.config/pifrost/secrets.json
-```
-
-### Alias manifest
-
-```text
-~/.omp/agent/pifrost.aliases.json
-```
-
-### Startup catalog
-
-```text
-~/.omp/agent/pifrost.catalog.json
-```
-
-The startup catalog is non-secret.
-
-### Repository MCP config
-
-```text
-<repo>/.omp/mcp.json
-```
-
-The generated Pifrost Bifrost entry contains command indirection rather than the raw repo VK.
-
-### Inference precedence
-
-```text
-OMP CLI flag
-  -> environment variable
-  -> ~/.config/pifrost store
-```
-
-Relevant inference environment variables:
-
-```text
-BIFROST_URL
-BIFROST_API_KEY
-BIFROST_VIRTUAL_KEY
-PIFROST_ALIASES
-PIFROST_CONFIG_DIR
-```
-
-### Management precedence
-
-```text
-explicit global-setup flags
-  -> management environment variables
-  -> ~/.config/pifrost store
-```
-
-Management environment variables:
-
-```text
-BIFROST_MANAGEMENT_AUTH_MODE=basic|bearer
-BIFROST_ADMIN_USERNAME
-BIFROST_ADMIN_PASSWORD
-BIFROST_MANAGEMENT_API_KEY
-```
-
----
-
-## OpenRouter through Bifrost
-
-Pifrost treats OpenRouter as a Bifrost-owned upstream, not as a second client-side transport. Route members such as `openrouter/vendor/model` therefore remain ordinary Bifrost targets while Pifrost advertises a conservative OMP capability envelope.
-
-Because Pifrost actually runs inside OMP/pi, it also forwards the originating harness attribution through Bifrost using `x-bf-eh-http-referer: https://pi.dev/` and `x-bf-eh-x-title: pi`. Bifrost strips the escape prefix and OpenRouter receives `HTTP-Referer` / `X-Title`. This is required by OpenRouter free endpoints that gate access to recognised agentic harnesses, such as `thinkingmachines/inkling:free`. Pifrost keeps its own versioned `User-Agent`; it does not spoof a pi user agent. If Bifrost is configured with a dynamic-header allowlist, both escaped attribution headers must be permitted.
-
-Pifrost adds provider-qualified OpenRouter catalog fallback, explicit handling for OpenRouter routing variants (`:nitro`, `:floor`, `:online`, `:exacto`, `:extended`), and tool/reasoning compatibility projection from Bifrost's model-parameters datasheet. Routing variants may inherit the base model's capability metadata; billing/entitlement variants such as `:free` deliberately may not. A free route must have its own live or datasheet limits so Pifrost never silently borrows a paid SKU's larger context/output envelope.
-
-Bifrost remains responsible for provider credentials, provider selection/fallback, request translation and provider-specific parameter dropping. Pifrost does not inject an OpenRouter API key or emulate OpenRouter routing client-side.
-
-## Dynamic context-aware Bifrost routes
-
-Pifrost removes the weakest-context-member ceiling for simple Bifrost logical routes. After `pifrost routes sync`, aliases backed by one global, terminal, unweighted routing rule are marked `context-aware`. Pifrost advertises the largest context window available anywhere in that route while keeping the route-wide safe minimum output ceiling.
-
-At request time Pifrost estimates prompt demand with a conservative safety allowance, reserves the requested output budget, and prewalks the synced physical route chain. Eligibility covers context/output capacity, image input, tools/tool-choice, reasoning-with-tools and **wire protocol support**. Pifrost then partitions the eligible route into contiguous protocol groups without changing route order.
-
-Pifrost natively executes two OpenAI-family wire transports: `openai-responses` and `openai-completions`. Each group is dispatched through OMP's own native transport for that protocol. Adjacent members that share a protocol stay together and are supplied to Bifrost using its native top-level `fallbacks` array, so Bifrost remains responsible for credentials, governance, accounting, provider retries and same-protocol failover. If an entire group fails before producing model output, Pifrost advances to the next protocol group. The initial stream-start envelope is buffered during this decision. Once any real text, thinking or tool output is emitted, cross-protocol replay is forbidden to avoid duplicate or contradictory assistant output.
-
-The original logical role remains the OMP-facing model identity. Pifrost records the selected physical member as the upstream model and sends route diagnostics such as `x-pifrost-logical-model`, `x-pifrost-route-protocol`, `x-pifrost-route-attempt` and `x-pifrost-route-primary` to Bifrost.
-
-Protocol is provider-qualified. Pifrost can therefore treat `opencode-go/muse-spark-1.3-contributor` as OpenAI Responses-only while independently treating a similarly named model on another provider according to that provider's transport contract. Protocol provenance is resolved in this order: authoritative live Bifrost `supported_methods`; OMP's compiled provider `api-routes` policy (`apiRouteFor`), which is provider-qualified and covers gateway-only ids absent from the static bundle; Bifrost model-parameter `supported_endpoints`; provider-qualified bundled catalog metadata; then narrowly scoped verified hints. Provider-specific route policy intentionally outranks generic family datasheet matches so a Chat-capable sibling provider cannot make a Responses-only OpenCode Go route appear Chat-compatible. Unknown protocol metadata retains the historical Chat-compatible default unless another established capability excludes it.
-
-For example, `Responses Muse 1M -> Chat CommandCode 1M -> Chat DeepSeek 1.048M` becomes two attempts: Muse first through Bifrost `/v1/responses`, followed only on a pre-output failure by one Chat attempt whose Bifrost fallback chain is CommandCode then DeepSeek. For OpenCode Go, Pifrost presents the bare upstream model identity to OMP's provider-policy resolver while retaining the full `opencode-go/...` reference as `requestModelId` for Bifrost. This preserves OMP's OpenCode-specific Responses replay/tool/reasoning semantics without bypassing Bifrost. Prewalk remains active for eligible `context-aware` routes even when all members have equal context windows, because protocol/tool/image compatibility can still differ.
-
-Request-time context sizing on the native OMP path follows OMP's semantic token-accounting model rather than `JSON.stringify()` size. Pifrost computes a separate semantic prompt estimate for each physical route candidate. When OMP's policy resolves a tokenizer family, text fragments use the matching explicitly packaged `pi-natives` tokenizer; unknown families fall back to the local byte estimator with a 10% disagreement margin. Image blocks use OMP-aligned model/dimension-aware image-token rules. A trustworthy provider usage report can anchor the established prefix only when its recorded physical upstream model matches the candidate being evaluated; cross-provider/fallback usage is not reused. Without a valid anchor, Pifrost counts system prompt text, active/inactive tool schemas and semantic message content. OMP-internal metadata such as timestamps, usage objects, routing/provider payloads and tool-result `details` is deliberately excluded because it is not model prompt content. The older serialized-body estimator remains only as a fallback for non-native/final-wire paths.
-
-Reasoning-with-tools and reasoning-with-`tool_choice` are distinct compatibility dimensions. Bifrost's `supports_reasoning_with_tool_calls` controls whether reasoning can coexist with an offered tool set. OMP's `disableReasoningOnToolChoice` controls a narrower wire-policy case: reasoning must be suppressed when a `tool_choice` selector is actually serialized. Tool definitions alone do not trigger that selector rule. Pifrost carries both properties independently through enrichment, alias synthesis and runtime prewalk.
-
-OMP normally serializes the model's output ceiling even when the caller did not explicitly request that many tokens. Pifrost preserves OMP's `maxTokensExplicit` intent across its custom transport so diagnostics can distinguish an explicit output request from the implicit model-default ceiling. The serialized ceiling still participates in context safety because it remains the provider-visible maximum for that turn. If every member is excluded, the error includes each member and its concrete exclusion reasons rather than presenting a generic capacity-only message.
-
-Dynamic compilation is deliberately disabled for scope-specific, weighted, chained, complexity, budget, quota, header or parameter-dependent rules because bypassing those logical rules could change Bifrost semantics. It is also disabled whenever a Bifrost routing target or fallback pins a provider key: Pifrost records the pin for diagnostics but leaves execution of the pinned chain entirely to Bifrost rather than flattening it into a client-side string fallback list. Those aliases continue to use the static weakest-member envelope.
-
-Run `pifrost doctor` after syncing to inspect route-member protocol provenance together with `dynamic-context=<static>-><advertised>` and the derived context bands.
+Plain HTTP on a non-loopback address can expose credentials, especially OSS Basic auth. `pifrost doctor` reports **warning-only**; it neither bypasses nor blocks connection. Prefer loopback, private networking or TLS. Never paste a raw Virtual Key or the `secret repo-mcp` resolver output into diagnostics.
 
 ## Troubleshooting
 
-### OpenCode Go returns `MissingSessionID`
-
-Pifrost forwards OMP's per-conversation session id to Bifrost as `x-bf-session-id` for Bifrost session affinity and separately as `x-bf-eh-x-opencode-session` for OpenCode Go. It also forwards `pifrost/<version> OMP` with `x-bf-eh-user-agent`. Dynamic OpenCode Go attempts use OMP's native OpenCode provider policy and the correct Chat or Responses transport while retaining Bifrost as the HTTP/authentication hop. If Bifrost has a non-empty client header allowlist, it must permit the dynamic extra-header names; otherwise Bifrost will drop the OpenCode forwarding header before provider dispatch and OpenCode Go will reject the request.
-
-The two session headers deliberately have different consumers: `x-bf-session-id` is consumed by Bifrost itself for routing/provider-key affinity, while the escaped OpenCode header is forwarded to the selected OpenCode Go upstream.
-
-
-### `pifrost --version` is old
-
-```bash
-npm install --global github:alutke/pifrost
-hash -r
-omp install --force github:alutke/pifrost
-pifrost --version
-```
-
-### Bifrost OSS management returns 401
-
-Rerun:
-
-```bash
-pifrost global setup
-```
-
-Choose `basic` and use the active Bifrost dashboard/admin credentials.
-
 ### OMP starts with `no-model`
 
-```bash
-pifrost global status
-pifrost models refresh --force
-pifrost models doctor
-omp models bifrost
-```
+Run `pifrost global status`, `pifrost routes sync`, `pifrost models refresh --force`, `pifrost models doctor` and `omp models bifrost`. Restart OMP after updating profiles.
 
-Verify `~/.omp/agent/pifrost.catalog.json` exists and contains the aliases.
+### OpenCode Go returns `MissingSessionID`
 
-### Route commands show zero aliases
+Pifrost forwards `x-bf-session-id` and `x-bf-eh-x-opencode-session` per turn. Check Bifrost forwarding-header allowlists and inspect the request trace without logging the session credential or prompt.
 
-```bash
-pifrost global status
-pifrost routes list
-```
+### Bifrost management returns 401
 
-Pifrost checks the canonical routing endpoint and its compatibility fallback. Use the global routing summary to confirm management access/features, then compare the live route list before running `pifrost routes sync`.
+For Bifrost OSS, rerun `pifrost global setup` using management mode `basic` and the current Bifrost dashboard credentials; inference keys are not admin credentials.
 
-### MCP shows `virtual key required`
+### MCP reports `virtual key required` or `virtual key not found`
 
-The MCP request did not contain a usable VK. A Pifrost-managed repo should contain:
+Check `pifrost repo status`, project `.omp/mcp.json`, repo association and Virtual Key permission. Reinitialize with `pifrost repo init` or rotate explicitly with `pifrost repo rotate-key`; do not reuse the global inference key. Check direct/Virtual MCP grants and actual tool availability separately.
 
-```json
-"x-bf-vk": "!pifrost secret repo-mcp --id ..."
-```
+### Route counters show no `omp-*` hits
 
-Check:
-
-```bash
-pifrost repo status
-```
-
-### MCP shows `virtual key not found`
-
-The request contains a VK but Bifrost no longer recognizes the value. Reinitialize or explicitly rotate:
-
-```bash
-pifrost repo init
-# or
-pifrost repo rotate-key
-```
-
-### Repo init finds an old remote key whose raw value is unavailable
-
-Pifrost deliberately does not rotate it silently. If it is an obsolete repo integration and you want a clean recreation, use:
-
-```bash
-pifrost repo reset --delete-remote --recover-by-name
-pifrost repo init --clients <client> --tools '*'
-```
-
-For an intentionally scripted clean recreation:
-
-```bash
-pifrost repo reset --delete-remote --recover-by-name --yes
-pifrost repo init --clients railway --tools '*'
-```
-
-### `repo reset --delete-remote` says no stored VK id
-
-Local Pifrost state was probably removed earlier. If you deliberately want Pifrost to look up the exact canonical key name, add:
-
-```bash
---recover-by-name
-```
-
-Pifrost will not use fuzzy matching and will refuse ambiguous duplicates.
-
-### Full reset fails with HTTP 500/401/etc.
-
-Pifrost intentionally leaves local repo state intact when requested remote deletion fails. Fix management connectivity/authentication and rerun the reset.
-
-### OAuth MCP clients
-
-Pifrost manages Bifrost-side VK/tool assignment and OMP configuration. It cannot bypass upstream OAuth consent. OAuth MCP servers can still require a browser authorization and callback flow.
-
----
+Use `/pifrost trace verbose` to distinguish `bifrost-native` logical requests from `pifrost-compatibility` physical bypasses. Correlate returned Bifrost request IDs with the **Bifrost route dashboard/logs**. The CLI's `routes explain` output is a preview and not routing proof.
 
 ## Development
 
 ```bash
-npm install
+npm ci
 npm run check
 npm test
-node scripts/validate-public-datasheets.mjs
-npx tsx scripts/validate-current-routing.ts
+npm run release:check
+npm run smoke:transport       # optional; requires live gateway/model credentials, may incur cost
 ```
 
-The control plane is intentionally split by responsibility: `routing-core.ts` owns pure routing semantics, `http-client.mjs` owns bounded/cancellable HTTP transport, and `doctor-probes.mjs` owns the concurrent read-only diagnostic snapshot. The single `cli.mjs` command registry orchestrates those domain services rather than maintaining parallel dispatch or repository implementations.
-
-CI validates:
-
-- TypeScript compilation
-- standalone Node CLI syntax
-- unit/CLI tests
-- public Bifrost datasheet coverage
-- current OMP routing envelopes
-- loading through the released OMP 18.3.2 CLI/plugin loader
-- current Bifrost 2.0/current-2.x routing, governance and MCP contract canaries
-
-Management credentials and raw VK values must never be added to provider runtime configuration, model catalogs, route manifests, diagnostics, or committed test fixtures.
-
----
+Main-branch CI also checks pinned Bifrost, OMP, DonSeTch and legacy Hound contracts, public datasheets, GitHub installs and compiled OMP host compatibility. Release workflow publishes only from **successful CI on current main SHA** with the matching package/lock/changelog version. The pinned tests and mock Bifrost gateway do not substitute for deployment tests of actual routing counters, quotas or billable model/provider features.
 
 ## Attribution
 
-Pifrost is derived from `lxdlam/pi-bifrost-provider` under the MIT license. See [NOTICE.md](NOTICE.md) and [LICENSE](LICENSE).
-
-### Physical request compatibility (v0.12.3)
-
-Pifrost creates physical Chat/Responses policies for every provider-qualified Bifrost route (including unrecognised third-party provider namespaces). Physical requests retain the original route's `requestModelId` but never inherit the logical alias's reasoning or tool dialect. A logical route remains a conservative selection envelope, not a physical adapter policy.
-
-For a dynamic route, native OMP builds a request-compatibility signature for each eligible provider and model. Adjacent members can share a Bifrost-managed same-protocol fallback request only if their provider, identity, reasoning replay, tool and role fields, and relevant wire policy agree. Differing or unknown signatures create a distinct pre-output attempt in the configured route order. No retries occur after model text, thinking or tool output. A stderr diagnostic reports each split without leaking request content. Bifrost remains authoritative for ordering, credentials, quotas and compatible same-protocol fallbacks.
-
-Verified hard output-limit exceptions are stored in `endpoint-contracts.ts` with upstream evidence, not inferred for other entitlements. Actual output limits remain the lower of confirmed and live capabilities. Cache schema v18 invalidates earlier capability policy snapshots.
-
-Do not delete synthetic DeepSeek reasoning replay placeholders: some DeepSeek-compatible adapters require non-empty replay content. Pifrost's exact CommandCode DeepSeek V4.1 summary-omission workaround is transport-only. For production provider verification, use Bifrost request logs and run representative reasoning-on/off, tools, multi-turn history, compaction, and fallback tests; the repository's automated provider matrix is an offline compatibility test, **not** a claim of live access to every external provider.
+This project is derived from [pi-bifrost-provider](https://github.com/lxdlam/pi-bifrost-provider). See [NOTICE](../NOTICE.md) and [MIT license](../LICENSE). The [changelog](../CHANGELOG.md) records historical compatibility decisions and migration notes.
