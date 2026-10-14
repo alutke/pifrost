@@ -8,9 +8,11 @@ import { resolveOpenAIRequestSetup } from "@oh-my-pi/pi-ai/providers/openai-shar
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { physicalPolicyIdentity, physicalRequestContractKey } from "../request-compatibility.ts";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
+import { resolveModelTokenizer } from "@oh-my-pi/pi-catalog/model-tokenizer";
 import {
 	buildPifrostTransportModel,
 	installPifrostModelPolicyResolver,
+	installPifrostModelTokenizerResolver,
 	resolvePifrostReasoningWithToolsPolicy,
 } from "../transport-model.ts";
 import { resolveRouteReasoningWithToolsPolicy } from "../datasheet.ts";
@@ -19,6 +21,7 @@ import pifrostProvider from "../native.ts";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
+installPifrostModelTokenizerResolver((modelId, provider) => resolveModelTokenizer(modelId, provider));
 
 function requestProjection(model: Model) {
 	return {
