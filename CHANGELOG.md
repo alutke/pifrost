@@ -1,3 +1,10 @@
+## 0.18.0 — 2026-10-14
+
+- Release C: extend gateway-owned request provenance with sanitised Bifrost trace IDs, HTTP status, error category, bounded Retry-After hints, cache-hit metadata and pre/post-output evidence in `/pifrost trace`.
+- Distinguish Bifrost receiving an `omp-*` logical alias from a proven routing-rule match. Report physical-model compatibility bypasses explicitly and never infer the served model on an unsuccessful attempt without gateway evidence.
+- Classify 401 credential/rotation, 403 permissions, 402/429 quota or rate-limit, 408/504 timeout, and other upstream/client errors with read-only investigation guidance. No policy routing, retries, key rotation, credential mutation or execution changes.
+- Add targeted tests for classification, parsing bounds, gateway headers, cache attribution, route evidence and secret non-disclosure.
+
 ## 0.17.0 — 2026-10-14
 
 - Release B: upgrade all five direct OMP packages from 18.8.9 to the unified 18.10.4 release, regenerate and commit the canonical npm lockfile, and update both the packaged CLI and verified 18.10.4 binary CI gates. Require OMP 18.10.4 for clean GitHub installation.
