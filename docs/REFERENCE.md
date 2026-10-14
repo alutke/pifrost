@@ -155,6 +155,14 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.17.0 — upstream 18.10.4 / 2.3.0 compatibility migration
+
+Pinned OMP packages and their lockfile are updated as a set. The 18.10.4 catalog resolves physical wire policy; the 18.10.4 OMP runtime retains agent/session history, model-specific replay, compaction and tokenisation responsibility. Pifrost's request-time estimation is an exception guard over heterogeneous Bifrost routes, not a competing OMP context engine. Pifrost still needs to decode gateway cost/provenance and remove narrowly evidenced synthetic stream/history markers; these can only be removed on a tested upstream-equivalent path.
+
+Gateway-native Bifrost 2.3 reasoning-aware Chat-to-Responses conversion, per-target first-token deadlines and retry classification remain gateway policies, never automatic Pifrost settings. The Bifrost 2.3 `injected_tools` array and earlier `web_search` object forms are both diagnosed without enabling/executing tools.
+
+Retirement condition for individual Pifrost workarounds: verified OMP replay/tokenisation and Bifrost provider contracts, regression tests against real Chat/Responses mixed chains and a successful gateway comparison including signed reasoning and tool-call continuation. No blanket removal on version string alone.
+
 ### 0.16.0 — native rule execution and compatibility exceptions
 
 When a synchronized simple global rule has a single wire-compatible Chat group and no excluded route members, Pifrost sends the logical `omp-*` request identifier to Bifrost, retaining the first physical member's OMP wire serialization contract. The gateway's live rule owns target ordering, pinned provider keys and fallbacks. Pifrost sends **no** client-side `fallbacks` override in this mode.
@@ -367,7 +375,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.16.0
+0.17.0
 ```
 
 Bun can also install the package globally:
