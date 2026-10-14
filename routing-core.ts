@@ -218,6 +218,9 @@ export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: s
 		JSON.stringify(rule.conditions ?? ""),
 	].filter(Boolean).join(" ").toLowerCase();
 	for (const identifier of DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS) {
+		// An exact request.model equality is equivalent to an alias match;
+		// all other request-dependent expressions failed exactAliasPredicate above.
+		if (identifier === "request") continue;
 		if (new RegExp(`\\b${identifier}\\b`, "u").test(conditionText)) return false;
 	}
 	return true;
