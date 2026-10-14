@@ -819,7 +819,9 @@ async function commandRoutesSync(flags = {}) {
       `Bifrost returned ${rules.length} routing rule(s), but none could be derived as omp-* aliases (${sourceSummary}). Run \`pifrost routes diagnose\` for details.`,
     );
   }
-  const result = writeAliasManifest(manifest);
+  // A local exception route must carry provenance of an actual management API
+  // read. Model-catalog refresh alone does not refresh Bifrost rule membership.
+  const result = writeAliasManifest({ ...manifest, synchronizedAt: new Date().toISOString() });
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
   if (!flags["no-refresh"]) await commandModelsRefresh({ force: true });
