@@ -122,7 +122,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.22.4
+0.23.0
 ```
 
 Bun also works:
@@ -268,11 +268,29 @@ Inside OMP: `/pifrost doctor`, `/pifrost doctor verbose`, `/pifrost trace`, `/pi
 | <code>pifrost routes list</code> | You want to see the live <code>omp-*</code> routes |
 | <code>pifrost routes diff</code> | You changed routing and want to see local drift |
 | <code>pifrost routes sync</code> | You want OMP aliases/catalogue refreshed from Bifrost |
+| <code>pifrost routes watch enable</code> | Install and start opt-in automatic synchronization (Linux systemd user service) |
+| <code>pifrost routes watch status</code> | Check last verification, service health and whether OMP must restart |
 | <code>pifrost models refresh --force</code> | Model metadata is stale or incomplete |
 | <code>pifrost models doctor</code> | You want to inspect the capabilities OMP will actually see |
 | <code>pifrost global configure-omp</code> | You want to reapply Pifrost's recommended OMP settings |
 | <code>pifrost repo init</code> | You want Bifrost MCP access for the current repository |
 | <code>pifrost repo status</code> | You want to verify the current repository's MCP/Skills state |
+
+### Automatic Bifrost route detection (opt-in)
+
+Pifrost v0.23.0 adds a native control-plane watcher. On **Linux with systemd --user**, enable it once:
+
+```bash
+pifrost routes watch enable             # installs/starts the user service; 60-second polling
+pifrost routes watch status             # last check, fingerprint, service status
+journalctl --user -u pifrost-route-watch.service -f
+```
+
+The watcher uses stored management credentials from `pifrost global setup` and keeps them **out of OMP**. It compares the complete Bifrost rule policy, debounces changes, stages/validates the new model catalogue and atomically replaces each local file. A changed policy is rechecked after staging; partial responses, outages and changed-during-stage snapshots are rejected without overwriting valid routing. Unchanged routes do not trigger model refreshes.
+
+Use `pifrost routes watch once` for a one-off reconciliation or `pifrost routes watch --interval 60` for foreground monitoring on another service manager. Override the service interval with `pifrost routes watch enable --interval 120` (15–3600 seconds). Stop/remove only the managed unit with `pifrost routes watch disable`. Re-running `enable` updates its interval and restarts the unit. A systemd **user** service runs while the user manager exists; if you need polling when logged out, enable user lingering separately with your operating system's `loginctl` administration (Pifrost does not alter lingering automatically).
+
+**In-session limitation:** OMP's registered model and compatibility metadata are not hot-reloaded. Already-running sessions should be restarted after a detected change; new OMP processes pick up the synchronized catalogue. This is not a Bifrost routing or credential mutation.
 
 Run <code>pifrost --help</code> for the complete CLI surface.
 
