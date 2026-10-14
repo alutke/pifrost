@@ -98,6 +98,25 @@ export function createPifrostAttemptModelSpec(
 	return createPifrostMemberModelSpec(logicalModel, primary, attempt.protocol, attempt.fallbacks);
 }
 
+/**
+ * Preserve the exact first physical model's OMP wire policy, but send the
+ * original logical alias to Bifrost. Crucially do NOT include a client-side
+ * fallbacks array: Bifrost must execute the live rule, its target/key pins,
+ * and its configured fallback chain, rather than our cached copy.
+ */
+export function createPifrostNativeRouteModelSpec(
+	logicalModel: Model,
+	attempt: DynamicRouteAttempt,
+): ModelSpec<"openai-completions"> {
+	if (attempt.protocol !== "openai-completions" || !attempt.members.length) {
+		throw new Error("Native Bifrost rule passthrough requires a compatible Chat route");
+	}
+	return {
+		...createPifrostMemberModelSpec(logicalModel, attempt.members[0]!, "openai-completions"),
+		requestModelId: logicalModel.id,
+	} as ModelSpec<"openai-completions">;
+}
+
 export function bifrostAttemptExtraBody(attempt: DynamicRouteAttempt): Record<string, unknown> | undefined {
 	return attempt.protocol === "openai-responses" && attempt.fallbacks.length
 		? { fallbacks: [...attempt.fallbacks] }
