@@ -914,7 +914,7 @@ async function commandModelsDoctor(options = {}) {
     console.log(terminalSection("Model catalogue"));
     console.log(terminalStatus(result.ok ? "ok" : "fail", "Model readiness",
       check?.summary ?? (result.ok ? "Available" : "Needs attention")));
-    if (issues) {
+    if (!result.ok) {
       for (const item of result.unresolved.slice(0, 8)) {
         console.log(`  - ${item.id}: ${item.unresolved.join(", ")}`);
       }
