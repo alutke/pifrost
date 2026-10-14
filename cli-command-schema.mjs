@@ -31,8 +31,8 @@ const filters = ["filter","limit"];
 const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
 // 46 registered commands. Source-of-truth for validation/help side effects.
 const rows = [
-  ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes"],"local-change"],
-  ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes"],"local-change"],
+  ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
+  ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global status",0,0,healthRead,"read-only"],
   ["global mcp-policy",0,0,read,"read-only"],
   ["global observability",0,0,["vk-id",...read],"read-only"],
