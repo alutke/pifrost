@@ -448,7 +448,7 @@ async function commandGlobalSetup(flags) {
   if (secretFlags.some(name => flagString(flags, name))) {
     console.error("[WARN] Supplying credentials as command-line arguments can expose them in shell history or process lists. Use environment variables or hidden interactive input.");
   }
-  const nonInteractive = Boolean(flags.yes) || (!process.stdin.isTTY && !flagString(flags, "url"));
+  const nonInteractive = Boolean(flags.yes || flags["dry-run"]) || (!process.stdin.isTTY && !flagString(flags, "url"));
   if (!nonInteractive) {
     await withPrompter(async (rl) => {
       url = await ask(rl, "Bifrost URL", url ?? "http://127.0.0.1:8180/v1");
@@ -515,6 +515,15 @@ async function commandGlobalSetup(flags) {
     managementMode === "setup" ? setupToken : managementApiKey,
   );
 
+  if (flags["dry-run"]) {
+    printHeader("Global setup preview");
+    console.log("Gateway: " + url);
+    console.log("Inference Virtual Key: " + (virtualKey ? "provided (value hidden)" : "missing"));
+    console.log("Management auth: " + (managementMode || "not configured"));
+    console.log("OMP settings: " + (flags["skip-omp"] ? "unchanged" : "would be updated"));
+    console.log("No connectivity tests, file writes or OMP changes performed.");
+    return;
+  }
   if (!flags["skip-test"]) {
     process.stdout.write("Testing inference connection... ");
     const inference = await testInference({ url, apiKey, virtualKey });
@@ -743,6 +752,7 @@ async function commandGlobalStatus(snapshot, options = {}) {
 }
 
 async function commandInit(flags) {
+  if (flags["dry-run"]) return commandGlobalSetup(flags);
   printHeader("Pifrost first-time setup");
   if (!commandExists("omp")) throw new Error("OMP is required but `omp` is not on PATH");
   console.log("Installing/updating Pifrost OMP extension...");
@@ -1849,6 +1859,7 @@ async function commandRepoRotateKey(flags = {}) {
   if (!value || typeof value !== "string") throw new Error("Bifrost rotate response did not include the new key value");
   updateRepoState(state, current.repo.id, {}, { mcpVirtualKey: value });
   console.log(`Rotated MCP Virtual Key for ${current.repo.name}; local secret store updated.`);
+  console.log("Next: restart or reconnect MCP sessions so they pick up the new credential.");
 }
 
 async function commandRepoReset(flags = {}) {
@@ -2030,6 +2041,7 @@ async function commandRepoResearchProbe(id) {
     : target.profile === "hound"
       ? { query }
       : { query };
+  console.log("Operation: live MCP search request (may incur provider charges).");
   const result = await callMcpGatewayTool(url, current.secret.mcpVirtualKey, selected.gatewayName, args, { timeoutMs: 20000 });
   const status = classifyResearchResult(result, target.profile);
   console.log("Live research probe through Bifrost MCP " + target.client + ": " + (status.ok === false ? "FAIL" : status.ok === true ? "OK" : "INDETERMINATE"));
@@ -2215,6 +2227,7 @@ async function commandJudgeActivate() {
 }
 
 async function commandJudgeProbe(flags = {}) {
+  console.log("Operation: live native judge inference (may incur provider charges).");
   const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true });
   console.log("Bifrost " + result.kind + " judgment conformance: OK");
   console.log("  model: " + result.model);
@@ -2428,7 +2441,7 @@ main().catch((error) => {
   const message = formatCliFailure(error, { isUsage: error?.isUsage === true });
   if (process.argv.includes("--json")) {
     process.stdout.write(JSON.stringify({
-      schemaVersion:1, command:process.argv.slice(2).filter(a=>!a.startsWith("--")).slice(0,3).join(" "),
+      schemaVersion:1, command:"unavailable",
       status:"failed", exitCode:code, error:{code:error?.isUsage ? "INVALID_COMMAND" : "COMMAND_FAILED",message},
     }) + "\n");
   } else console.error(message);
