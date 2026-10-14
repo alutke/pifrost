@@ -1476,7 +1476,7 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
   }
 }
 
-async function commandRepoSkillsList() {
+async function commandRepoSkillsList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const current = currentRepoState(state);
@@ -1486,8 +1486,21 @@ async function commandRepoSkillsList() {
     repoBifrostSkillStatus(current.repo.root, [...configured.values()])
       .map((item) => [item.name.toLowerCase(), item]),
   );
-  printHeader(`Bifrost Skills (${available.length})`);
-  for (const skill of available.sort((a, b) => a.name.localeCompare(b.name))) {
+  const listed = available.sort((a, b) => a.name.localeCompare(b.name));
+  const updates = listed.filter(skill => {
+    const installed=local.get(skill.name.toLowerCase());
+    return installed?.installedVersion && installed.installedVersion !== skill.version;
+  });
+  printHeader("Bifrost Skills (" + available.length + ")");
+  console.log("Configured: " + configured.size + "; updates available: " + updates.length);
+  for (const skill of listed.slice(0, flags.verbose ? Infinity : 15)) {
+    if (!flags.verbose) {
+      const item=local.get(skill.name.toLowerCase());
+      const state=item?.state ?? "available";
+      console.log("  "+skill.name+" @ "+skill.version+" - "+state
+        +(item?.installedVersion && item.installedVersion!==skill.version ? " [UPDATE]" : ""));
+      continue;
+    }
     const selected = configured.get(skill.name.toLowerCase());
     const status = local.get(skill.name.toLowerCase());
     const compatibility = bifrostSkillCompatibility(skill.raw);
@@ -1505,6 +1518,7 @@ async function commandRepoSkillsList() {
     if (skill.description) console.log(`  ${skill.description}`);
   }
   if (!available.length) console.log("No Bifrost skills are currently published.");
+  if (!flags.verbose && available.length > 15) console.log("  ... and " + (available.length - 15) + " more; use --verbose.");
 }
 
 async function commandRepoSkillsAdd(name, flags = {}) {
@@ -1942,18 +1956,25 @@ async function researchSnapshot(includeLive = false) {
     research: current.config?.research ?? {}, liveTools, codeModeProbes, ompSearch: ompWebSearchDiagnostics(),
   }) };
 }
-async function commandRepoResearchStatus() {
-  const { diagnostics } = await researchSnapshot(true);
+async function commandRepoResearchStatus(flags = {}) {
+  const { diagnostics } = await researchSnapshot(Boolean(flags.verbose));
   printHeader("Bifrost MCP research providers");
-  console.log("Preferred (guidance): " + (diagnostics.preferred ?? "none"));
-  for (const provider of diagnostics.providers) {
+  console.log("Preferred (guidance only): " + (diagnostics.preferred ?? "none"));
+  console.log("Found " + diagnostics.providers.length + " providers; readiness is "
+    + (flags.verbose ? "based on live MCP metadata" : "from saved configuration only") + ".");
+  for (const provider of diagnostics.providers.slice(0,flags.verbose ? Infinity : 15)) {
+    if (!flags.verbose) {
+      console.log("  " + provider.id + ": " + provider.status + " (" + provider.mode + "); " + provider.client);
+      continue;
+    }
     console.log(provider.id + " [" + provider.client + "] profile=" + provider.profile + " mode=" + (provider.mode ?? "unknown") + " status=" + provider.status);
     for (const [cap, entry] of Object.entries(provider.capabilities ?? {})) {
       if (entry.tool) console.log("  " + cap + ": " + entry.tool + " granted=" + entry.granted + " executable=" + String(entry.executable) + " visible=" + String(entry.visible) + (entry.gatewayName ? " gateway=" + entry.gatewayName : entry.visibilityReason ? " reason=" + entry.visibilityReason : ""));
     }
   }
   console.log("Search path: " + diagnostics.search.path);
-  console.log("No MCP requests are rerouted or automatically failed over by Pifrost.");
+  if (!flags.verbose) console.log("Next: pifrost repo research status --verbose (live gateway metadata)");
+  console.log("Preference is guidance only; no MCP requests are automatically rerouted by Pifrost.");
 }
 async function commandRepoResearchBind(id, name, flags) {
   if (!id || !name) throw Error("Usage: pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name]");
@@ -2323,7 +2344,7 @@ const COMMANDS = new Map([
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", (_args, flags) => commandRepoStatus(undefined, flags)],
-  ["repo research status", () => commandRepoResearchStatus()],
+  ["repo research status", (_args, flags) => commandRepoResearchStatus(flags)],
   ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
   ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
@@ -2337,7 +2358,7 @@ const COMMANDS = new Map([
   ["repo vmcp list", () => commandRepoVirtualMcpList()],
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
   ["repo vmcp remove", (args, flags) => commandRepoVirtualMcpRemove(args[0], flags)],
-  ["repo skills list", () => commandRepoSkillsList()],
+  ["repo skills list", (_args, flags) => commandRepoSkillsList(flags)],
   ["repo skills suggestions", (_args, flags) => commandRepoSkillSuggestions(flags)],
   ["repo skills bind", (args, flags) => commandRepoSkillBind(args[0], args[1], flags)],
   ["repo skills unbind", (args) => commandRepoSkillUnbind(args[0])],
