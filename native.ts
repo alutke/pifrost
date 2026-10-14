@@ -24,6 +24,7 @@ import { installPifrostTextTokenCounter } from "./omp-context-policy.ts";
 import {
 	applyBifrostAuthoritativeCost,
 	applyBifrostResolvedModel,
+	clearUnverifiedNativeOrigin,
 	createBifrostCostBridgeFetch,
 	type BifrostCostCapture,
 } from "./bifrost-cost-bridge.ts";
@@ -157,9 +158,7 @@ function messageWithBifrostCost(
 	// A native logical rule may serve a different physical model than Pifrost's
 	// cached primary. Without gateway-confirmed provenance, the OMP transport's
 	// selected encoder is NOT evidence of the upstream provider/model.
-	const safeMessage = logicalAlias
-		? { ...message, model: logicalAlias, upstreamModel: undefined, upstreamProvider: undefined }
-		: message;
+	const safeMessage = logicalAlias ? clearUnverifiedNativeOrigin(message, logicalAlias) : message;
 	const withIdentity = applyBifrostResolvedModel(safeMessage, capture);
 	return {
 		...withIdentity,
