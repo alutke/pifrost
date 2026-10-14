@@ -119,6 +119,43 @@ export function gatewayRouteEvidence(trace: Pick<PifrostRouteTrace, "routeMode" 
     : "alias-mismatch (check routing configuration)";
 }
 
+/** Only gateway-reported monetary totals count. No Pifrost price estimates.
+ * This is an in-memory, bounded OMP session view, not a Bifrost invoice.
+ * Missing gateway usage remains unknown, never silently counted as $0. */
+export function formatPifrostSessionCosts(sessionId: string): string {
+  const current = traces.get(sessionId) ?? [];
+  if (!current.length) return "Pifrost session costs: no requests recorded for this session.";
+  const byRole = new Map<string, { attempts: number; reported: number; total: number; fallbacks: number; cacheHits: number }>();
+  let reported = 0;
+  let total = 0;
+  let cacheKnown = 0;
+  for (const entry of current) {
+    const item = byRole.get(entry.logicalModel) ?? { attempts: 0, reported: 0, total: 0, fallbacks: 0, cacheHits: 0 };
+    item.attempts++;
+    if (entry.isFallback || (entry.fallbackIndex ?? 0) > 0) item.fallbacks++;
+    if (entry.cacheHit !== undefined) cacheKnown++;
+    if (entry.cacheHit === true) item.cacheHits++;
+    const amount = entry.totalCost;
+    if (typeof amount === "number" && Number.isFinite(amount) && amount >= 0) {
+      item.total += amount;
+      item.reported++;
+      total += amount;
+      reported++;
+    }
+    byRole.set(entry.logicalModel, item);
+  }
+  const lines = [
+    `Pifrost session gateway costs (last ${current.length} attempts; memory-only):`,
+    `  reported=${reported}/${current.length} total-reported=${money(total) ?? "$0.000000"} (USD; missing costs excluded, not zero)`,
+  ];
+  for (const [alias, v] of [...byRole].sort(([a], [b]) => a.localeCompare(b))) {
+    lines.push(`  ${alias}: reported=${v.reported}/${v.attempts} cost=${money(v.total) ?? "$0.000000"} fallbacks=${v.fallbacks} cache-hits=${v.cacheHits}`);
+  }
+  lines.push(`  cache-metadata=${cacheKnown}/${current.length}; unreported means unknown`);
+  lines.push("  Gateway reporting only; not provider invoices or rule counters. Retry/failover attempts may each incur charges.");
+  return lines.join("\n");
+}
+
 export function formatPifrostRouteTraces(sessionId: string): string {
 	const current = traces.get(sessionId) ?? [];
 	if (!current.length) return "Pifrost routing trace: no requests recorded for this session.";
