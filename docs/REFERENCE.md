@@ -19,7 +19,7 @@ These entries are owned by the **Pifrost integration boundary**, not by a replac
 
 | Boundary | Evidence / regression | Revalidation or removal condition |
 | --- | --- | --- |
-| Bundled OMP transport and capability rules | Pinned `@oh-my-pi/*` 18.8.9, OMP upstream contract canaries, current/minimum loader checks, and `test/transport-model.bun.ts` | Revalidate with every packaged OMP upgrade; drop local policy exceptions only when the stable OMP API handles the equivalent physical model contract |
+| Bundled OMP transport and capability rules | Pinned `@oh-my-pi/*` 18.10.4, OMP upstream contract canaries, current/minimum loader checks, and `test/transport-model.bun.ts` | Revalidate with every packaged OMP upgrade; drop local policy exceptions only when the stable OMP API handles the equivalent physical model contract |
 | Gateway-confirmed physical provenance | Bifrost 2.2.6 routed-response headers; `test/bifrost-cost-bridge.test.ts` and `test/multi-protocol-routing.test.ts` | Prefer a future stable OMP physical-origin contract when available; until then preserve separate `upstreamModel`/`upstreamProvider` metadata without rewriting OMP's logical provider, session or history |
 | Historical reasoning-marker hygiene | Exact synthetic-marker fixtures in `test/reasoning-replay.test.ts` and `test/reasoning-stream.test.ts`; signed/opaque content is retained | Remove each narrow workaround after a versioned OMP fix demonstrably passes the corresponding regression; never guess that a newer OMP binary fixes Pifrost's separately bundled transport |
 | Wire-incompatible fallback split | `test/dynamic-routing.test.ts` and `test/multi-protocol-routing.test.ts` verify Bifrost route order, authenticated requests, and no retry after output | Retire the split only if Bifrost and OMP expose a stable native protocol-aware retry contract with the same at-most-once output guarantee |
@@ -156,6 +156,8 @@ Repository MCP access -> one dedicated MCP VK per repository
 Do not reuse a repository MCP VK as the global inference VK.
 
 ### 0.17.0 — upstream 18.10.4 / 2.3.0 compatibility migration
+
+**Installer support boundary:** the compiled OMP 18.4.8 installer fails on a clean GitHub installation of Pifrost with the 18.10.4 OMP catalog because it does not resolve the now-required `@oh-my-pi/pi-utils` package. A linked local extension smoke test is insufficient to certify the standalone GitHub install. Pifrost v0.17.0 therefore requires the compiled OMP **18.10.4+** installer, which is checked through the clean GitHub release workflow. Users unable to upgrade OMP should stay on Pifrost **v0.16.0**. This is a deliberate and documented minimum-version increase, not a silent skip of a failing CI gate.
 
 Pinned OMP packages and their lockfile are updated as a set. The 18.10.4 catalog resolves physical wire policy; the 18.10.4 OMP runtime retains agent/session history, model-specific replay, compaction and tokenisation responsibility. Pifrost's request-time estimation is an exception guard over heterogeneous Bifrost routes, not a competing OMP context engine. Pifrost still needs to decode gateway cost/provenance and remove narrowly evidenced synthetic stream/history markers; these can only be removed on a tested upstream-equivalent path.
 
@@ -342,8 +344,8 @@ thinking=high,max source=explicit
 ## Requirements
 
 - Node.js **22.19 or later**
-- OhMyPi **18.4.5 or later** in the 18.x line
-- Pifrost's packaged OMP policy/catalog snapshot is **18.8.9**; evidence-backed compatibility patches must be revalidated whenever this snapshot advances. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host. Packaged library compatibility and host executable compatibility are validated separately.
+- OhMyPi **18.10.4 or later** for Pifrost v0.17.0 installation
+- Pifrost's packaged OMP policy/catalog snapshot is **18.10.4**; evidence-backed compatibility patches must be revalidated whenever this snapshot advances. OMP does not currently expose a public extension API for resolving arbitrary physical-model policy directly from the running host. Packaged library compatibility and host executable compatibility are validated separately.
 - Maxim Bifrost **2.2.4 or later** with the OpenAI-compatible Chat Completions endpoint enabled, plus the Responses endpoint for routes that contain Responses-only members
 - a global Bifrost inference Virtual Key that can see the physical models in the `omp-*` routes
 - optionally, a separate Bifrost inference API/Bearer credential; Bifrost 2.x `sk-bf-*` Virtual Keys can authenticate inference directly
@@ -421,7 +423,7 @@ pifrost doctor
 
 0.5.0 keeps the existing Pifrost config/secrets format compatible, but raises the tested OMP boundary and adds several opt-in surfaces.
 
-- OMP **18.3.2+** is now the tested baseline. Reinstall/update the OMP extension after upgrading Pifrost.
+- Historical note: Pifrost 0.5.0 supported OMP 18.3.2+. Current Pifrost v0.17.0 requires OMP 18.10.4+ for reliable GitHub extension installation.
 - Bifrost **2.0.0+** remains the minimum gateway baseline; **2.2.3+** is recommended for the complete 0.5.0 feature set (session affinity, pinned fallbacks, structured quota provenance, time-of-day pricing diagnostics and the Skills bridge).
 - Run `pifrost routes sync` after upgrade. The model catalogue cache schema is now v5 and refreshes old cached metadata automatically.
 - Request-scoped `x-bf-session-id` affinity is automatic; no new route configuration is required.
@@ -857,10 +859,10 @@ This is read-only. Pifrost does not change Bifrost budgets, access profiles, pro
 
 ```text
 Upstream compatibility
-OMP version:             18.8.6 (minimum 18.4.5; validated through 18.8.6)
-OMP policy snapshot:     18.4.5 + Pifrost compatibility patches
-  [TESTED CURRENT] installed 18.8.6 matches the current validated release
-  [OK] Pifrost OMP baseline >=18.4.5 — available in OMP 18.8.6
+OMP version:             18.10.4 (minimum 18.10.4; validated through 18.10.4)
+OMP policy snapshot:     18.10.4 + narrow Pifrost compatibility patches
+  [TESTED CURRENT] installed 18.10.4 matches the current validated release
+  [OK] Pifrost OMP baseline >=18.10.4 — available in OMP 18.10.4
   [OK] MCP instructions:false >=18.3.1 — available in OMP 18.8.6
   [OK] cfg:// protocol >=18.3.1 — available in OMP 18.8.6
   [OK] OMP 18.4 model capability metadata >=18.4.5 — available in OMP 18.8.6
