@@ -57,6 +57,20 @@ test("Bifrost 2.3 TTFT and reasoning adapter are gateway-owned, never enabled by
   assert.match(results.find(item => item.id === "bifrost-chat-responses-conversion")?.detail ?? "", /reasoning-with-tools adapter=enabled/u);
 });
 
+test("Bifrost 2.3 gateway rotation grace is read-only and never exposes credentials", async () => {
+  const probes = healthyProbes({ convert_chat_to_responses: true });
+  probes.gateway.value.client_config.vk_rotation_cooldown = "5m";
+  const results = await bifrostCompatibilityMatrix({
+    url: "http://bifrost:8180/v1", version: "2.3.0",
+    managementAuth: { mode: "basic", username: "admin", password: "secret" },
+    virtualKey: "sk-bf-test", probes,
+  });
+  const rotation = results.find(item => item.id === "bifrost-vk-rotation");
+  assert.equal(rotation?.status, "supported");
+  assert.match(rotation?.detail ?? "", /rotation grace=5m/u);
+  assert.doesNotMatch(JSON.stringify(rotation), /sk-bf-test|secret/u);
+});
+
 test("newer reasoning-to-Responses compatibility flag is surfaced without Pifrost taking ownership", async () => {
   const results = await bifrostCompatibilityMatrix({
     url: "http://bifrost:8180/v1",

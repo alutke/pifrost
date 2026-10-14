@@ -155,6 +155,12 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.18.0 — gateway reliability and attribution
+
+`/pifrost trace` reports gateway response status and sanitized request/trace identifiers. It classifies authentication (401), authorization (403), budget/rate allowance (402/429), timeouts (408/504), upstream failures (5xx), and invalid requests (remaining 4xx) without parsing arbitrary provider response bodies or inventing upstream error reasons. `Retry-After` is bounded to one day, advisory-only, and does not change OMP or Bifrost retry policy.
+
+Cache-hit and gateway-requested alias are separate evidence. A matching `x-bifrost-routing-info-requested-model` establishes only that the logical alias reached Bifrost, **not** that a specific routing rule matched; use Bifrost route counters or request logs to establish rule execution. Compatibility physical attempts explicitly lack logical-route attribution. Output-started evidence comes from streamed text/thinking/tool-call deltas before the terminal event; it never permits post-output replay. Failed attempts without Bifrost-confirmed physical origin display `served=unverified`, not the local configured primary.
+
 ### 0.17.0 — upstream 18.10.4 / 2.3.0 compatibility migration
 
 **Installer support boundary:** the compiled OMP 18.4.8 installer fails on a clean GitHub installation of Pifrost with the 18.10.4 OMP catalog because it does not resolve the now-required `@oh-my-pi/pi-utils` package. A linked local extension smoke test is insufficient to certify the standalone GitHub install. Pifrost v0.17.0 therefore requires the compiled OMP **18.10.4+** installer, which is checked through the clean GitHub release workflow. Users unable to upgrade OMP should stay on Pifrost **v0.16.0**. This is a deliberate and documented minimum-version increase, not a silent skip of a failing CI gate.
@@ -377,7 +383,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.17.0
+0.18.0
 ```
 
 Bun can also install the package globally:

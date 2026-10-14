@@ -1,5 +1,6 @@
 import type { BifrostCostCapture } from "./bifrost-cost-bridge.ts";
 import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
+import { gatewayFailureAdvice, type GatewayFailureClass } from "./gateway-reliability.ts";
 
 export interface PifrostRouteTrace {
 	timestamp: number;
@@ -14,6 +15,13 @@ export interface PifrostRouteTrace {
 	/** Same-protocol physical wire splits: crossing them is pre-output-only. */
 	compatibilityBoundaryCount?: number;
 	requestId?: string;
+	traceId?: string;
+	httpStatus?: number;
+	failureClass?: GatewayFailureClass;
+	retryAfterSeconds?: number;
+	outputStarted?: boolean;
+	cacheHit?: boolean;
+	cacheHitType?: string;
 	requestedModel?: string;
 	requestedProvider?: string;
 	provider?: string;
@@ -68,6 +76,13 @@ export function recordBifrostCaptureTrace(
 	return recordPifrostRouteTrace(sessionId, {
 		...base,
 		...(capture.requestId ? { requestId: capture.requestId } : {}),
+		...(capture.traceId ? { traceId: capture.traceId } : {}),
+		...(capture.httpStatus !== undefined ? { httpStatus: capture.httpStatus } : {}),
+		...(capture.failureClass ? { failureClass: capture.failureClass } : {}),
+		...(capture.retryAfterSeconds !== undefined ? { retryAfterSeconds: capture.retryAfterSeconds } : {}),
+		...(capture.outputStarted !== undefined ? { outputStarted: capture.outputStarted } : {}),
+		...(capture.cacheHit !== undefined ? { cacheHit: capture.cacheHit } : {}),
+		...(capture.cacheHitType ? { cacheHitType: capture.cacheHitType } : {}),
 		...(capture.requestedModel ? { requestedModel: capture.requestedModel } : {}),
 		...(capture.requestedProvider ? { requestedProvider: capture.requestedProvider } : {}),
 		...(capture.provider ? { provider: capture.provider } : {}),
@@ -92,6 +107,18 @@ function money(value: number | undefined): string | undefined {
 	return value === undefined ? undefined : `$${value.toFixed(value >= 0.01 ? 4 : 6)}`;
 }
 
+/** Gateway headers prove a request alias, NOT a matched routing rule.
+ * Bifrost Routes counters remain the rule-match source of truth. */
+export function gatewayRouteEvidence(trace: Pick<PifrostRouteTrace, "routeMode" | "logicalModel" | "requestedModel">): string | undefined {
+  if (trace.routeMode === "pifrost-compatibility") return "physical-request (route counters not expected)";
+  if (trace.routeMode !== "bifrost-native") return undefined;
+  if (!trace.requestedModel) return "unverified (gateway alias header absent)";
+  const requested = trace.requestedModel.toLowerCase().replace(/^bifrost\//u, "");
+  return requested === trace.logicalModel.toLowerCase()
+    ? "alias-requested (rule match unverified)"
+    : "alias-mismatch (check routing configuration)";
+}
+
 export function formatPifrostRouteTraces(sessionId: string): string {
 	const current = traces.get(sessionId) ?? [];
 	if (!current.length) return "Pifrost routing trace: no requests recorded for this session.";
@@ -99,7 +126,7 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 	for (const trace of [...current].reverse().slice(0, 10)) {
 		const served = trace.resolvedModel
 			? `${trace.provider ? `${trace.provider}/` : ""}${trace.resolvedModel}`
-			: trace.requestedPrimary;
+			: trace.outcome === "done" ? trace.requestedPrimary + " (not gateway-confirmed)" : "unverified";
 		const details = [
 			`attempt=${trace.attempt}`,
 			trace.routeMode ? `route-mode=${trace.routeMode}` : undefined,
@@ -107,6 +134,7 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			`protocol=${trace.protocol}`,
 			`requested=${trace.requestedPrimary}`,
 			trace.requestedModel ? `gateway-request=${trace.requestedProvider ? `${trace.requestedProvider}/` : ""}${trace.requestedModel}` : undefined,
+			gatewayRouteEvidence(trace) ? `route-evidence=${gatewayRouteEvidence(trace)}` : undefined,
 			trace.compatibilityBoundaryCount
 				? `wire-boundaries=${trace.compatibilityBoundaryCount} boundary-retry=pre-output-only`
 				: undefined,
@@ -117,6 +145,13 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 					? "fallback=yes"
 					: "fallback=no",
 			trace.requestId ? `request-id=${trace.requestId}` : undefined,
+			trace.traceId ? `trace-id=${trace.traceId}` : undefined,
+			trace.httpStatus !== undefined ? `http=${trace.httpStatus}` : undefined,
+			trace.failureClass ? `failure=${trace.failureClass}` : undefined,
+			trace.retryAfterSeconds !== undefined ? `retry-after=${trace.retryAfterSeconds}s (gateway advisory only)` : undefined,
+			trace.outputStarted !== undefined ? `output-started=${trace.outputStarted ? "yes" : "no"}` : undefined,
+			trace.cacheHit !== undefined ? `cache-hit=${trace.cacheHit ? "yes" : "no"}` : undefined,
+			trace.cacheHitType ? `cache-type=${trace.cacheHitType}` : undefined,
 			trace.upstreamLatencyMs !== undefined ? `upstream=${trace.upstreamLatencyMs.toFixed(1)}ms` : undefined,
 			money(trace.totalCost) ? `cost=${money(trace.totalCost)}` : undefined,
 			trace.reasoningHygiene ? [
@@ -135,6 +170,7 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			`outcome=${trace.outcome}`,
 		].filter(Boolean);
 		lines.push(`  ${trace.logicalModel}: ${details.join(" ")}`);
+		if (trace.failureClass) lines.push(`    Next: ${gatewayFailureAdvice(trace.failureClass)}`);
 	}
 	return lines.join("\n");
 }

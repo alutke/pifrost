@@ -1,3 +1,5 @@
+import { classifyGatewayHttpStatus, parseGatewayRetryAfter, safeGatewayHeaderToken, type GatewayFailureClass } from "./gateway-reliability.ts";
+
 function finiteNonNegative(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
@@ -6,6 +8,15 @@ export interface BifrostCostCapture {
 	total?: number;
 	breakdown?: Record<string, unknown>;
 	requestId?: string;
+	traceId?: string;
+	/** Gateway error-only classification; no raw error body or tokens are retained. */
+	httpStatus?: number;
+	/** Captured from actual model stream deltas; not a retry instruction. */
+	outputStarted?: boolean;
+	failureClass?: GatewayFailureClass;
+	retryAfterSeconds?: number;
+	cacheHit?: boolean;
+	cacheHitType?: string;
 	/** Original logical route as observed by Bifrost 2.3+, not client metadata. */
 	requestedModel?: string;
 	requestedProvider?: string;
@@ -141,9 +152,22 @@ function nonEmptyHeader(headers: Headers, name: string): string | undefined {
 	return value || undefined;
 }
 
-function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture): void {
+function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture, status?: number): void {
 	if (!capture) return;
-	capture.requestId = nonEmptyHeader(headers, "x-bifrost-request-id") ?? capture.requestId;
+	capture.requestId = safeGatewayHeaderToken(headers.get("x-bifrost-request-id")) ?? capture.requestId;
+	const traceId = safeGatewayHeaderToken(headers.get("x-bifrost-trace-id"));
+	if (traceId) capture.traceId = traceId;
+	const classified = status === undefined ? undefined : classifyGatewayHttpStatus(status);
+	if (classified && status !== undefined) {
+		capture.httpStatus = status;
+		capture.failureClass = classified;
+		const retryAfter = parseGatewayRetryAfter(headers.get("retry-after"));
+		if (retryAfter !== undefined) capture.retryAfterSeconds = retryAfter;
+	}
+	const cacheHit = headers.get("x-bifrost-cache-hit");
+	if (cacheHit === "true" || cacheHit === "false") capture.cacheHit = cacheHit === "true";
+	const cacheHitType = safeGatewayHeaderToken(headers.get("x-bifrost-cache-hit-type"), 64);
+	if (cacheHitType) capture.cacheHitType = cacheHitType;
 	capture.requestedModel = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-model") ?? capture.requestedModel;
 	capture.requestedProvider = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-provider") ?? capture.requestedProvider;
 	capture.provider =
@@ -184,7 +208,7 @@ export async function bridgeBifrostUsageCostResponse(
 	response: Response,
 	capture?: BifrostCostCapture,
 ): Promise<Response> {
-	captureBifrostHeaders(response.headers, capture);
+	captureBifrostHeaders(response.headers, capture, response.status);
 	if (!response.body) return response;
 	const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
 

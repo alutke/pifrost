@@ -193,6 +193,7 @@ test("compatibility doctor verifies Bifrost feature paths without mutating confi
       ["bifrost-setup-lock", "unavailable"],
       ["bifrost-chat-responses-conversion", "unavailable"],
       ["bifrost-route-ttft-timeout", "unavailable"],
+      ["bifrost-vk-rotation", "unavailable"],
       ["bifrost-virtual-mcp", "supported"],
       ["bifrost-skills", "supported"],
       ["bifrost-session-affinity", "supported"],

@@ -291,6 +291,16 @@ const SOURCES = [
     required: ["ForceReasoningOnlyModelsToResponses", "reasoning_with_tool_calls", "converting request to"],
   },
   {
+    name: "Bifrost 2.3.0 VK rotation grace configuration",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/framework/configstore/clientconfig.go`,
+    required: ['json:"vk_rotation_cooldown,omitempty"', "VKRotationCooldown"],
+  },
+  {
+    name: "Bifrost 2.3.0 VK rotation API and key lifetime",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/transports/bifrost-http/handlers/virtualkeyrotation.go`,
+    required: ["VKRotationCooldown", "PreviousValueExpiresAt", "RotateVirtualKey"],
+  },
+  {
     name: "Bifrost 2.3.0 provider injected-tool list",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/framework/configstore/clientconfig.go`,
     required: ["InjectedTools", 'json:"injected_tools,omitempty"'],
