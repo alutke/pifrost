@@ -241,13 +241,14 @@ test("once a Responses attempt emits model output Pifrost never replays on Chat"
 		return eventStream([
 			{ type: "start", partial },
 			{ type: "thinking_start", contentIndex: 0, partial },
+			{ type: "thinking_delta", contentIndex: 0, delta: "generated", partial },
 			{ type: "error", reason: "error", error },
 		]);
 	});
 
 	assert.equal(collected.failure(), undefined);
 	assert.deepEqual(dispatched, ["openai-responses"]);
-	assert.deepEqual(collected.events.map((event) => event.type), ["start", "thinking_start", "error"]);
+	assert.deepEqual(collected.events.map((event) => event.type), ["start", "thinking_start", "thinking_delta", "error"]);
 	const error = collected.events.at(-1);
 	assert.equal(error?.type, "error");
 	if (error?.type === "error") {
@@ -348,10 +349,11 @@ test("same-protocol incompatible fallback cannot replay after first reasoning ou
 		const failure=assistant(a.primary,"openai-responses","error");
 		failure.errorMessage="upstream failure after reasoning";
 		return eventStream([{type:"start",partial},{type:"thinking_start",contentIndex:0,partial},
+			{type:"thinking_delta",contentIndex:0,delta:"progress",partial},
 			{type:"error",reason:"error",error:failure}]);
 	});
 	assert.deepEqual(visited,[m1.reference]);
-	assert.deepEqual(collected.events.map(e=>e.type),["start","thinking_start","error"]);
+	assert.deepEqual(collected.events.map(e=>e.type),["start","thinking_start","thinking_delta","error"]);
 });
 
 
@@ -405,4 +407,40 @@ test("logical alias mapping preserves actual physical origin after cross-protoco
 	assert.equal(terminal.message.upstreamProvider, "deepseek");
 	assert.equal(terminal.message.upstreamModel, "deepseek-v4");
 	assert.deepEqual(received.map((e) => e.type), ["start", "done"]);
+});
+
+
+test("empty text/thinking starts and zero-length deltas do not prevent fallback", async () => {
+  const logical=logicalModel(), route=plan(), visited:string[]=[];
+  const collected=outputCollector();
+  await runPifrostProtocolPlan(logical,route,collected.output,attempt=>{
+    visited.push(attempt.primary);
+    if(attempt.protocol==="openai-completions") return successfulAttempt(attempt.primary,"openai-completions");
+    const partial=assistant(attempt.primary,"openai-responses","stop");
+    partial.content=[{type:"thinking",thinking:""}];
+    const failure=assistant(attempt.primary,"openai-responses","error");
+    return eventStream([
+      {type:"start",partial},
+      {type:"thinking_start",contentIndex:0,partial},
+      {type:"thinking_delta",contentIndex:0,delta:"",partial},
+      {type:"error",reason:"error",error:failure}
+    ]);
+  });
+  assert.equal(visited.length,2);
+  assert.deepEqual(collected.events.map(e=>e.type),["start","done"]);
+});
+
+test("empty starts followed by tool-call completion prevent fallback", async () => {
+  const logical=logicalModel(), route=plan(), visited:string[]=[];
+  const collected=outputCollector();
+  await runPifrostProtocolPlan(logical,route,collected.output,attempt=>{
+    visited.push(attempt.primary);
+    const partial=assistant(attempt.primary,"openai-responses","stop");
+    const failure=assistant(attempt.primary,"openai-responses","error");
+    return eventStream([{type:"start",partial},{type:"toolcall_start",contentIndex:0,partial},
+      {type:"toolcall_end",contentIndex:0,toolCall:{type:"function",id:"call",name:"tool",arguments:{}},partial},
+      {type:"error",reason:"error",error:failure}]);
+  });
+  assert.equal(visited.length,1);
+  assert.deepEqual(collected.events.map(e=>e.type),["start","toolcall_start","toolcall_end","error"]);
 });
