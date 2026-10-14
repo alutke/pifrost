@@ -579,6 +579,23 @@ async function commandGlobalSetup(flags) {
   }
 }
 
+function snapshotCheck(id, label, snapshot, action) {
+  const item = snapshot?.[id];
+  if (item?.ok) {
+    const detail = id === "inference" && Number.isFinite(item.value?.models)
+      ? `${item.value.models} models visible`
+      : id === "routing" && Array.isArray(item.value) ? `${item.value.length} routing rules`
+      : "Connection verified";
+    return { label, status:"ok", detail };
+  }
+  return {
+    label,
+    status: item?.skipped ? "unknown" : "warn",
+    detail: item?.skipped ? "Not configured or not checked" : "Could not verify",
+    action,
+  };
+}
+
 async function commandGlobalStatus(snapshot, options = {}) {
   if (!options.verbose) {
     const state = loadState();
@@ -2100,7 +2117,7 @@ async function commandJudgeProbe(flags = {}) {
   console.log("  this was an explicitly requested inference request; normal judgments remain OMP-owned");
 }
 
-async function commandDoctor() {
+async function commandDoctor(flags = {}) {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
     printHeader("Stored Pifrost configuration");
@@ -2116,13 +2133,43 @@ async function commandDoctor() {
   const snapshot = await collectDoctorSnapshot({ runtime, managementAuth });
 
   const transportWarnings = bifrostCredentialTransportWarnings(runtime, managementAuth);
+  if (!flags.verbose) {
+    const catalog = printModelDoctor(process.env, { log() {} });
+    const checks = [
+      { label:"OMP", status:commandExists("omp") ? "ok" : "fail",
+        detail: commandExists("omp") ? `Installed (${getOmpVersion() ?? "version unknown"})` : "Not installed",
+        action:"Install or update OMP, then rerun pifrost doctor." },
+      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup"),
+      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup"),
+      snapshotCheck("management", "Management API", snapshot, "pifrost global setup"),
+      snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose"),
+      {label:"Model catalogue", status:catalog.ok ? "ok" : "fail",
+        detail:catalog.checks?.[0]?.summary ?? "Not verified",
+        action:"pifrost models refresh --force"},
+    ];
+    if (transportWarnings.length) checks.push({
+      label:"Transport security",status:"warn",
+      detail:`${transportWarnings.length} warning(s) - see verbose report`,
+      action:"pifrost doctor --verbose",
+    });
+    if (storedWarnings.length) checks.push({
+      label:"Stored configuration",status:"fail",
+      detail:`${storedWarnings.length} unreadable or invalid file(s)`,
+      action:"pifrost global setup",
+    });
+    console.log(renderHealthOverview(checks));
+    const problemCount = checks.filter(x => x.status === "fail" || x.status === "warn").length;
+    if (problemCount) process.exitCode = 2;
+    return;
+  }
+
   if (transportWarnings.length) {
     printHeader("Transport security");
     for (const warning of transportWarnings) console.log(`WARN ${warning}`);
     console.log("");
   }
 
-  await commandGlobalStatus(snapshot);
+  await commandGlobalStatus(snapshot, { verbose:true });
   console.log("");
   await commandGlobalMcpPolicy(snapshot);
   console.log("");
@@ -2130,7 +2177,7 @@ async function commandDoctor() {
   console.log("");
   await commandCompatibilityDoctor(snapshot);
   console.log("");
-  await commandModelsDoctor();
+  await commandModelsDoctor({ verbose:true });
   console.log("");
   commandRoutesEffective();
   try {
