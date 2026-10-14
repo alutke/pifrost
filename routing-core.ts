@@ -184,6 +184,391 @@ function structuredQueryFields(value: unknown, result = new Set<string>(), depth
 	return result;
 }
 
+/** Only an unconditional alias match can be re-issued as a physical request.
+ * Opaque CEL, request_type and query-builder extras MUST stay gateway-owned. */
+function exactAliasPredicate(rule: AnyRecord, aliasId: string): boolean {
+  const raw = nonEmpty(rule.cel_expression) ?? nonEmpty(rule.celExpression);
+  if (rule.query != null || rule.conditions != null) return false;
+  if (!raw) return true; // Rule name itself is the alias; no extra condition.
+  const expression = raw.trim().replace(/^\((.*)\)$/us, "$1").trim();
+  const escaped = aliasId.replace(/[.*+?^${()}|[\]\\]/gu, "\\export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: string): boolean {");
+  const literal = `(?:"${escaped}"|'${escaped}')`;
+  return new RegExp(`^(?:request\\.)?model\\s*==\\s*${literal}export const MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS = 7 * 24 * 60 * 60_000;
+
+type AnyRecord = Record<string, any>;
+
+export interface RoutingPin {
+	source: "target" | "fallback";
+	reference?: string;
+	keyId?: string;
+	providerKeyName?: string;
+}
+
+export interface RoutingFeatureSummary {
+	enabledRules: number;
+	scopes: string[];
+	chainRules: number;
+	weightedRules: number;
+	complexityRules: number;
+	pinnedRules: number;
+	multiScopeAliases: number;
+}
+
+export interface DerivedAlias {
+	name: string;
+	chain: string[];
+	routingPins?: RoutingPin[];
+	dynamicRouting?: {
+		mode: "context-aware";
+		source: "bifrost-simple-rule";
+	};
+}
+
+export interface DerivedAliasManifest {
+	includePhysicalModels: false;
+	aliases: Record<string, DerivedAlias>;
+}
+
+function nonEmpty(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed || undefined;
+}
+
+function unique<T>(values: Array<T | undefined>): T[] {
+	return [...new Set(values.filter((value): value is T => value !== undefined))];
+}
+
+function aliasFromText(value: unknown): string | undefined {
+	const text = nonEmpty(value);
+	if (!text) return undefined;
+	const exact = text.match(/^(omp-[A-Za-z0-9._-]+)$/u);
+	if (exact) return exact[1];
+	return text.match(/(?:^|["'\s/:=,(])(omp-[A-Za-z0-9._-]+)(?=$|["'\s),])/u)?.[1];
+}
+
+function aliasFromStructuredQuery(value: unknown, depth = 0): string | undefined {
+	if (depth > 20 || value == null) return undefined;
+	if (typeof value === "string") return aliasFromText(value);
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			const found = aliasFromStructuredQuery(item, depth + 1);
+			if (found) return found;
+		}
+		return undefined;
+	}
+	if (typeof value === "object") {
+		const record = value as AnyRecord;
+		const direct = aliasFromStructuredQuery(record.value, depth + 1);
+		if (direct) return direct;
+		for (const [key, item] of Object.entries(record)) {
+			if (key === "value") continue;
+			const found = aliasFromStructuredQuery(item, depth + 1);
+			if (found) return found;
+		}
+	}
+	return undefined;
+}
+
+export function aliasIdFromRule(rule: AnyRecord | undefined): string | undefined {
+	if (!rule) return undefined;
+	for (const candidate of [rule.name, rule.alias, rule.logical_model, rule.logicalModel]) {
+		const found = aliasFromText(candidate);
+		if (found) return found;
+	}
+	const expression = aliasFromText(rule.cel_expression) ?? aliasFromText(rule.celExpression);
+	if (expression) return expression;
+	return aliasFromStructuredQuery(rule.query) ?? aliasFromStructuredQuery(rule.conditions);
+}
+
+export function targetReference(target: AnyRecord | undefined): string | undefined {
+	const model = nonEmpty(target?.model) ?? nonEmpty(target?.model_id) ?? nonEmpty(target?.modelId);
+	if (!model) return undefined;
+	const provider = nonEmpty(target?.provider) ?? nonEmpty(target?.provider_name) ?? nonEmpty(target?.providerName);
+	if (!provider) return model;
+	if (model.toLowerCase().startsWith(`${provider.toLowerCase()}/`)) return model;
+	return `${provider}/${model}`;
+}
+
+function fallbackReference(fallback: unknown): string | undefined {
+	if (typeof fallback === "string") return nonEmpty(fallback);
+	return targetReference(fallback as AnyRecord | undefined);
+}
+
+function rawRuleTargets(rule: AnyRecord): AnyRecord[] {
+	return Array.isArray(rule.targets)
+		? rule.targets
+		: Array.isArray(rule.routing_targets)
+			? rule.routing_targets
+			: [];
+}
+
+function routingPin(entry: AnyRecord | undefined, source: RoutingPin["source"]): RoutingPin | undefined {
+	if (!entry || typeof entry !== "object") return undefined;
+	const keyId = nonEmpty(entry.key_id) ?? nonEmpty(entry.keyId);
+	const providerKeyName = nonEmpty(entry.provider_key_name) ?? nonEmpty(entry.providerKeyName);
+	if (!keyId && !providerKeyName) return undefined;
+	const reference = targetReference(entry);
+	return {
+		source,
+		...(reference ? { reference } : {}),
+		...(keyId ? { keyId } : {}),
+		...(providerKeyName ? { providerKeyName } : {}),
+	};
+}
+
+export function routingRulePins(rule: AnyRecord | undefined): RoutingPin[] {
+	if (!rule) return [];
+	const targetPins = rawRuleTargets(rule).map((entry) => routingPin(entry, "target"));
+	const fallbacks = Array.isArray(rule.fallbacks)
+		? rule.fallbacks
+		: Array.isArray(rule.fallback_models)
+			? rule.fallback_models
+			: [];
+	const fallbackPins = fallbacks.map((entry: unknown) => routingPin(entry as AnyRecord, "fallback"));
+	const result = new Map<string, RoutingPin>();
+	for (const pin of [...targetPins, ...fallbackPins]) {
+		if (pin) result.set(JSON.stringify(pin), pin);
+	}
+	return [...result.values()];
+}
+
+export function routingRuleMembers(rule: AnyRecord | undefined): string[] {
+	if (!rule) return [];
+	const targets = [...rawRuleTargets(rule)].sort(
+		(left, right) => Number(right?.weight ?? 0) - Number(left?.weight ?? 0),
+	);
+	const fallbacks = Array.isArray(rule.fallbacks)
+		? rule.fallbacks
+		: Array.isArray(rule.fallback_models)
+			? rule.fallback_models
+			: [];
+	return unique([
+		...targets.map(targetReference),
+		...fallbacks.map((fallback: unknown) => fallbackReference(fallback)),
+	]);
+}
+
+const DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS = Object.freeze([
+	"headers",
+	"params",
+	"budget_used",
+	"tokens_used",
+	"complexity_tier",
+	"virtual_key_id",
+	"virtual_key_name",
+	"user_id",
+	"team_id",
+	"team_name",
+	"customer_id",
+	"customer_name",
+	"provider",
+	"request",
+]);
+
+function structuredQueryFields(value: unknown, result = new Set<string>(), depth = 0): Set<string> {
+	if (depth > 20 || value == null) return result;
+	if (Array.isArray(value)) {
+		for (const item of value) structuredQueryFields(item, result, depth + 1);
+		return result;
+	}
+	if (typeof value !== "object") return result;
+	const record = value as AnyRecord;
+	if (typeof record.field === "string") result.add(record.field.toLowerCase());
+	for (const item of Object.values(record)) structuredQueryFields(item, result, depth + 1);
+	return result;
+}
+
+, "iu").test(expression) ||
+    new RegExp(`^${literal}\\s*==\\s*(?:request\\.)?modelexport const MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS = 7 * 24 * 60 * 60_000;
+
+type AnyRecord = Record<string, any>;
+
+export interface RoutingPin {
+	source: "target" | "fallback";
+	reference?: string;
+	keyId?: string;
+	providerKeyName?: string;
+}
+
+export interface RoutingFeatureSummary {
+	enabledRules: number;
+	scopes: string[];
+	chainRules: number;
+	weightedRules: number;
+	complexityRules: number;
+	pinnedRules: number;
+	multiScopeAliases: number;
+}
+
+export interface DerivedAlias {
+	name: string;
+	chain: string[];
+	routingPins?: RoutingPin[];
+	dynamicRouting?: {
+		mode: "context-aware";
+		source: "bifrost-simple-rule";
+	};
+}
+
+export interface DerivedAliasManifest {
+	includePhysicalModels: false;
+	aliases: Record<string, DerivedAlias>;
+}
+
+function nonEmpty(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+	const trimmed = value.trim();
+	return trimmed || undefined;
+}
+
+function unique<T>(values: Array<T | undefined>): T[] {
+	return [...new Set(values.filter((value): value is T => value !== undefined))];
+}
+
+function aliasFromText(value: unknown): string | undefined {
+	const text = nonEmpty(value);
+	if (!text) return undefined;
+	const exact = text.match(/^(omp-[A-Za-z0-9._-]+)$/u);
+	if (exact) return exact[1];
+	return text.match(/(?:^|["'\s/:=,(])(omp-[A-Za-z0-9._-]+)(?=$|["'\s),])/u)?.[1];
+}
+
+function aliasFromStructuredQuery(value: unknown, depth = 0): string | undefined {
+	if (depth > 20 || value == null) return undefined;
+	if (typeof value === "string") return aliasFromText(value);
+	if (Array.isArray(value)) {
+		for (const item of value) {
+			const found = aliasFromStructuredQuery(item, depth + 1);
+			if (found) return found;
+		}
+		return undefined;
+	}
+	if (typeof value === "object") {
+		const record = value as AnyRecord;
+		const direct = aliasFromStructuredQuery(record.value, depth + 1);
+		if (direct) return direct;
+		for (const [key, item] of Object.entries(record)) {
+			if (key === "value") continue;
+			const found = aliasFromStructuredQuery(item, depth + 1);
+			if (found) return found;
+		}
+	}
+	return undefined;
+}
+
+export function aliasIdFromRule(rule: AnyRecord | undefined): string | undefined {
+	if (!rule) return undefined;
+	for (const candidate of [rule.name, rule.alias, rule.logical_model, rule.logicalModel]) {
+		const found = aliasFromText(candidate);
+		if (found) return found;
+	}
+	const expression = aliasFromText(rule.cel_expression) ?? aliasFromText(rule.celExpression);
+	if (expression) return expression;
+	return aliasFromStructuredQuery(rule.query) ?? aliasFromStructuredQuery(rule.conditions);
+}
+
+export function targetReference(target: AnyRecord | undefined): string | undefined {
+	const model = nonEmpty(target?.model) ?? nonEmpty(target?.model_id) ?? nonEmpty(target?.modelId);
+	if (!model) return undefined;
+	const provider = nonEmpty(target?.provider) ?? nonEmpty(target?.provider_name) ?? nonEmpty(target?.providerName);
+	if (!provider) return model;
+	if (model.toLowerCase().startsWith(`${provider.toLowerCase()}/`)) return model;
+	return `${provider}/${model}`;
+}
+
+function fallbackReference(fallback: unknown): string | undefined {
+	if (typeof fallback === "string") return nonEmpty(fallback);
+	return targetReference(fallback as AnyRecord | undefined);
+}
+
+function rawRuleTargets(rule: AnyRecord): AnyRecord[] {
+	return Array.isArray(rule.targets)
+		? rule.targets
+		: Array.isArray(rule.routing_targets)
+			? rule.routing_targets
+			: [];
+}
+
+function routingPin(entry: AnyRecord | undefined, source: RoutingPin["source"]): RoutingPin | undefined {
+	if (!entry || typeof entry !== "object") return undefined;
+	const keyId = nonEmpty(entry.key_id) ?? nonEmpty(entry.keyId);
+	const providerKeyName = nonEmpty(entry.provider_key_name) ?? nonEmpty(entry.providerKeyName);
+	if (!keyId && !providerKeyName) return undefined;
+	const reference = targetReference(entry);
+	return {
+		source,
+		...(reference ? { reference } : {}),
+		...(keyId ? { keyId } : {}),
+		...(providerKeyName ? { providerKeyName } : {}),
+	};
+}
+
+export function routingRulePins(rule: AnyRecord | undefined): RoutingPin[] {
+	if (!rule) return [];
+	const targetPins = rawRuleTargets(rule).map((entry) => routingPin(entry, "target"));
+	const fallbacks = Array.isArray(rule.fallbacks)
+		? rule.fallbacks
+		: Array.isArray(rule.fallback_models)
+			? rule.fallback_models
+			: [];
+	const fallbackPins = fallbacks.map((entry: unknown) => routingPin(entry as AnyRecord, "fallback"));
+	const result = new Map<string, RoutingPin>();
+	for (const pin of [...targetPins, ...fallbackPins]) {
+		if (pin) result.set(JSON.stringify(pin), pin);
+	}
+	return [...result.values()];
+}
+
+export function routingRuleMembers(rule: AnyRecord | undefined): string[] {
+	if (!rule) return [];
+	const targets = [...rawRuleTargets(rule)].sort(
+		(left, right) => Number(right?.weight ?? 0) - Number(left?.weight ?? 0),
+	);
+	const fallbacks = Array.isArray(rule.fallbacks)
+		? rule.fallbacks
+		: Array.isArray(rule.fallback_models)
+			? rule.fallback_models
+			: [];
+	return unique([
+		...targets.map(targetReference),
+		...fallbacks.map((fallback: unknown) => fallbackReference(fallback)),
+	]);
+}
+
+const DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS = Object.freeze([
+	"headers",
+	"params",
+	"budget_used",
+	"tokens_used",
+	"complexity_tier",
+	"virtual_key_id",
+	"virtual_key_name",
+	"user_id",
+	"team_id",
+	"team_name",
+	"customer_id",
+	"customer_name",
+	"provider",
+	"request",
+]);
+
+function structuredQueryFields(value: unknown, result = new Set<string>(), depth = 0): Set<string> {
+	if (depth > 20 || value == null) return result;
+	if (Array.isArray(value)) {
+		for (const item of value) structuredQueryFields(item, result, depth + 1);
+		return result;
+	}
+	if (typeof value !== "object") return result;
+	const record = value as AnyRecord;
+	if (typeof record.field === "string") result.add(record.field.toLowerCase());
+	for (const item of Object.values(record)) structuredQueryFields(item, result, depth + 1);
+	return result;
+}
+
+, "iu").test(expression);
+}
+
 export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: string): boolean {
 	if (!rule || rule.enabled === false || aliasIdFromRule(rule) !== aliasId) return false;
 	const scope = (nonEmpty(rule.scope) ?? "global").toLowerCase();
@@ -191,6 +576,7 @@ export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: s
 	if (scope !== "global" || scopeId) return false;
 	if (rule.chain_rule === true || rule.chainRule === true) return false;
 	if (routingRulePins(rule).length > 0) return false;
+	if (!exactAliasPredicate(rule, aliasId)) return false;
 	if (rawRuleTargets(rule).length !== 1 || !targetReference(rawRuleTargets(rule)[0])) return false;
 
 	const fields = new Set([
