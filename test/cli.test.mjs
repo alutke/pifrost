@@ -127,6 +127,7 @@ test("derives omp aliases from routing-rule names, weighted targets and fallback
       "omp-plan": {
         name: "omp-plan",
         chain: ["openai/gpt-test"],
+        dynamicRouting: { mode: "context-aware", source: "bifrost-simple-rule" },
       },
     },
   });
