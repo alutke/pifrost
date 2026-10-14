@@ -25,7 +25,7 @@ test("actual pifrost routes sync/verify/diff detects condition-only changes with
   try {
     const addr=server.address();
     if(!addr||typeof addr==="string") throw new Error("no listener");
-    const env={...process.env,PIFROST_CONFIG_DIR:home,BIFROST_URL:`http://127.0.0.1:${addr.port}/v1`,
+    const env={...process.env,PIFROST_CONFIG_DIR:home,PIFROST_ALIASES:resolve(home,"aliases.json"),BIFROST_URL:`http://127.0.0.1:${addr.port}/v1`,
       BIFROST_VIRTUAL_KEY:"sk-bf-test", BIFROST_MANAGEMENT_AUTH_MODE:"basic",
       BIFROST_ADMIN_USERNAME:"test-admin", BIFROST_ADMIN_PASSWORD:"test-password"};
     const run=async(...args:string[])=>exec(process.execPath,["cli.mjs",...args],{
