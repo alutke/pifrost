@@ -171,6 +171,8 @@ export interface PifrostAliasDefinition {
 
 export interface PifrostAliasConfig {
 	includePhysicalModels?: boolean;
+	/** Timestamp of the last management-plane route sync; not a live-rule guarantee. */
+	synchronizedAt?: string;
 	aliases: Record<string, PifrostAliasDefinition | string[]>;
 }
 
