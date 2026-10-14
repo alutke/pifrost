@@ -908,7 +908,7 @@ export function formatDoctorSummary(diagnostics: readonly AliasDiagnostic[], ali
   if (affected.length > 8) lines.push(`  ... and ${affected.length - 8} more affected aliases`);
   lines.push("");
   if (affected.length) lines.push("Next: run /pifrost refresh; then restart OMP if the catalog changes.");
-  else lines.push("For individual model details: use /pifrost doctor verbose.");
+  lines.push(affected.length ? "For the full diagnostic report: /pifrost doctor verbose." : "For individual model details: use /pifrost doctor verbose.");
   if (aliasPath) lines.push("  Configuration loaded from the Pifrost alias manifest.");
   lines.push("Routing eligibility is evaluated again for each request.");
   return lines.join("\n");
