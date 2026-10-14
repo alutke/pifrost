@@ -674,6 +674,9 @@ export function ompCompatibilityMatrix(version) {
     feature("omp-cfg-protocol", "cfg:// protocol", "18.3.1", "cfg:// integration is unavailable"),
     feature("omp-modern-model-metadata", "OMP 18.4 model capability metadata", "18.4.5", "Service tiers, pricing status and current model-role semantics cannot be trusted"),
     feature("omp-model-presets", "OMP model presets", "18.4.5", "OMP-owned model preset workflows are unavailable"),
+    feature("omp-native-replay-accounting", "OMP physical-model-aware reasoning and replay token accounting", "18.10.3", "Retain Pifrost's conservative gateway-side estimate and compatibility tests"),
+    feature("omp-cross-model-compaction", "OMP cross-model reasoning-free compaction", "18.10.4", "OMP may reject model-switch reasoning histories; preserve Pifrost safeguards"),
+    feature("omp-plan-review-hooks", "OMP extension plan review hooks", "18.10.4", "Optional upstream functionality; Pifrost does not take over orchestration"),
   ];
 }
 
@@ -825,7 +828,9 @@ export async function bifrostCompatibilityMatrix({
       }
       const reasoningAdapter = typeof compat.force_reasoning_only_models_to_responses === "boolean"
         ? `; reasoning-with-tools adapter=${compat.force_reasoning_only_models_to_responses ? "enabled" : "disabled"}`
-        : "; reasoning-with-tools adapter=not released by Bifrost 2.2.6";
+        : versionAtLeast(installedVersion, "2.3.0") === true
+          ? "; reasoning-with-tools adapter=unreported (verify Bifrost compat config)"
+          : "; reasoning-with-tools adapter=not available before Bifrost 2.3.0";
       results.push({
         id: "bifrost-chat-responses-conversion",
         label: "Chat→Responses compatibility adapter",
@@ -846,6 +851,22 @@ export async function bifrostCompatibilityMatrix({
       });
     }
   }
+
+  // Bifrost 2.3 adds a routing-target first-token timeout; this is a
+  // version capability, not evidence that any rule actually enables it.
+  const ttftBase = featureUnavailable(
+    "bifrost-route-ttft-timeout",
+    "Bifrost per-target first-token deadline",
+    "2.3.0",
+    installedVersion,
+    "Route TTFT deadlines unavailable; legacy gateway timeout policy applies",
+  );
+  results.push(ttftBase
+    ? { ...ttftBase, optional: true }
+    : { id: "bifrost-route-ttft-timeout", label: "Bifrost per-target first-token deadline",
+        minimum: "2.3.0", status: "supported",
+        detail: "version supports ttft_timeout_ms; per-rule enablement is gateway-owned and not verified",
+        optional: true });
 
   const virtualMcpBase = featureUnavailable(
     "bifrost-virtual-mcp",
