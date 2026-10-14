@@ -187,20 +187,33 @@ export async function stageRouteCatalog(manifest, env = process.env, refresh = r
       commit() {
         mkdirSync(dirname(paths.catalog), { recursive: true, mode: 0o700 });
         const backup = join(temp, "old-catalog.json");
+        const manifestBackup = join(temp, "old-aliases.json");
         const hadCatalog = existsSync(paths.catalog);
+        const hadManifest = existsSync(paths.manifest);
         if (hadCatalog) copyFileSync(paths.catalog, backup);
+        if (hadManifest) copyFileSync(paths.manifest, manifestBackup);
         let manifestWritten = false;
         try {
           writeAliasManifest(manifest, env);
           manifestWritten = true;
-          // Both files use safe atomic replacement; cache fingerprint fails
-          // closed if a reader runs between their individual renames.
+          // Both files are replaced atomically one at a time. Readers between
+          // renames fail closed on the mismatched fingerprint; a failed second
+          // rename restores the previous valid manifest and cache.
           renameSync(stagedCache, paths.catalog);
         } catch (error) {
-          if (manifestWritten) throw error;
+          if (manifestWritten) {
+            try {
+              if (hadManifest) renameSync(manifestBackup, paths.manifest);
+              else rmSync(paths.manifest, { force: true });
+              if (hadCatalog) copyFileSync(backup, paths.catalog);
+              else rmSync(paths.catalog, { force: true });
+            } catch {
+              throw new RouteWatchError("catalog-rollback-failed");
+            }
+          }
           throw error;
         }
-        return { backup, hadCatalog };
+        return { hadCatalog, hadManifest };
       },
       cleanup() { rmSync(temp, { recursive: true, force: true }); },
     };
@@ -228,7 +241,7 @@ export async function reconcileRoutesOnce({ capture, stage = stageRouteCatalog,
       || diffAliases(local, first.manifest).length > 0;
     if (!changed) {
       const result = { status: "unchanged", fingerprint: first.policyFingerprint.slice(0, 12),
-        lastCheckedAt: new Date().toISOString() };
+        lastCheckedAt: new Date().toISOString(), lastError: null, failures: 0 };
       status(result, env);
       return result;
     }
@@ -256,10 +269,10 @@ export async function reconcileRoutesOnce({ capture, stage = stageRouteCatalog,
       }
       // If another manual sync won between capture and commit, lock access
       // prevents merging incompatible local state.
-      const result = staged.commit();
+      staged.commit();
       const reply = { status: "updated", fingerprint: second.policyFingerprint.slice(0, 12),
         routes: Object.keys(next.aliases).length, lastCheckedAt: new Date().toISOString(),
-        lastChangedAt: new Date().toISOString(), restartRequired: true };
+        lastChangedAt: new Date().toISOString(), restartRequired: true, lastError: null, failures: 0 };
       status(reply, env);
       return reply;
     } catch (error) {
