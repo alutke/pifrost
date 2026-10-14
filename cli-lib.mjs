@@ -868,6 +868,50 @@ export async function bifrostCompatibilityMatrix({
         detail: "version supports ttft_timeout_ms; per-rule enablement is gateway-owned and not verified",
         optional: true });
 
+  // Read-only Virtual Key rotation readiness. Never rotate or print credentials.
+  // The gateway owns grace periods, previous-value expiry and policy enforcement.
+  const rotationBase = featureUnavailable(
+    "bifrost-vk-rotation",
+    "Virtual Key rotation grace policy",
+    "2.3.0",
+    installedVersion,
+    "Rotation grace policy is unavailable or not validated on this version",
+  );
+  if (rotationBase) results.push({ ...rotationBase, optional: true });
+  else if (!managementAuth) {
+    results.push({
+      id: "bifrost-vk-rotation", label: "Virtual Key rotation grace policy",
+      minimum: "2.3.0", status: "inaccessible",
+      detail: "management authentication required to inspect gateway rotation policy; no keys read",
+      optional: true,
+    });
+  } else {
+    const endpoint = "/api/config";
+    try {
+      const gateway = await compatibilityProbeValue(probes, "gateway", () => getBifrostConfig(url, managementAuth));
+      const client = bifrostClientConfigShape(gateway);
+      const raw = client.vk_rotation_cooldown;
+      const value = typeof raw === "string" ? raw.trim()
+        : typeof raw === "number" && Number.isFinite(raw) && raw === 0 ? "0" : undefined;
+      const valid = value !== undefined && (/^0$/u.test(value) || /^\\d+(?:ns|us|ms|s|m|h)$/u.test(value));
+      results.push({
+        id: "bifrost-vk-rotation", label: "Virtual Key rotation grace policy",
+        minimum: "2.3.0", status: "supported",
+        detail: valid ? `gateway-owned rotation grace=${value}; no VK state or credentials modified`
+          : "gateway supports rotation; grace policy not exposed in readable configuration",
+        optional: true,
+      });
+    } catch (error) {
+      results.push({
+        id: "bifrost-vk-rotation", label: "Virtual Key rotation grace policy",
+        minimum: "2.3.0",
+        ...compatibilityHttpFailure(error, "2.3.0", installedVersion, endpoint),
+        impact: "Read-only rotation policy unavailable; Pifrost never rotates credentials",
+        optional: true,
+      });
+    }
+  }
+
   const virtualMcpBase = featureUnavailable(
     "bifrost-virtual-mcp",
     "Virtual MCPs",
