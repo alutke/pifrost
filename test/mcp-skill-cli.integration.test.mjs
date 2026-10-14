@@ -115,7 +115,7 @@ async function fixture(run) {
 
 test("direct MCP assignment does not install Skills without explicit unattended consent", async () => {
   await fixture(async ({ run, work, counters, vk }) => {
-    const first = await run("repo", "mcp", "add", "donsetch", "--allow-all-tools", "--yes");
+    const first = await run("repo", "mcp", "add", "donsetch", "--allow-all-tools");
     assert.equal(first.code, 0, first.stderr + first.stdout);
     assert.match(first.stdout, /Suggestion only/u);
     assert.equal(existsSync(join(work, ".agents/skills/donsetch")), false);
