@@ -997,8 +997,16 @@ async function chooseClientsInteractively(clients) {
     const result = [];
     for (const index of indexes) {
       const client = clients[index - 1];
-      const answer = (await rl.question(`Allowed tools for ${client.name} [*]: `)).trim();
-      result.push({ name: client.name, tools: answer ? splitCsv(answer) : ["*"] });
+      let answer;
+      while (!answer) {
+        answer = (await rl.question("Allowed tools for " + client.name + " (comma-separated names or explicit *): ")).trim();
+        if (!answer) console.log("An explicit tool selection is required.");
+      }
+      const tools = splitCsv(answer);
+      if (tools.includes("*") && !(await confirm(rl, "Grant ALL tools to " + client.name + "?", false))) {
+        throw new Error("Wildcard grant was not approved. No repository configuration was changed.");
+      }
+      result.push({ name: client.name, tools });
     }
     return result;
   });
@@ -1438,13 +1446,8 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
       console.log(`  Bifrost Skill id=${skill.id} files=${skill.fileCount} version=${skill.version}`);
       if (skill.raw?.license) console.log(`  License: ${String(skill.raw.license).slice(0, 120)}`);
       console.log(`  Project location: .agents/skills/${skill.name}; no MCP grants change`);
-      let choice = flags["install-matching-skills"] === true ? "y" : "n";
-      if (flags["install-matching-skills"] !== true && input.isTTY && output.isTTY) {
-        choice = await withPrompter(async (rl) =>
-          (await rl.question("Install Skill? [y/N/d=never suggest]: ")).trim().toLowerCase());
-      } else if (flags["install-matching-skills"] !== true) {
-        console.log("  Skipped (noninteractive; use --install-matching-skills to opt in)");
-      }
+      const choice = flags["install-matching-skills"] === true ? "y" : "n";
+      if (choice === "n") console.log("  Suggestion only. Install with pifrost repo skills add " + skill.name + "; use repo skills dismiss " + client.name + " to hide.");
       if (choice === "d") {
         const latest = normalizeMcpSkillDiscovery(loadState().config.repos?.[current.repo.id]?.mcpSkillDiscovery);
         updateRepoState(loadState(), current.repo.id, {
