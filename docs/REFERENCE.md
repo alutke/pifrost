@@ -59,10 +59,10 @@ The GitHub release is published **only after** main-branch CI passes; the workfl
 | Model discovery | `models refresh`, `models doctor`, `models kinds` |
 | Judge | `judge status`, `judge activate`, `judge probe` |
 | Repository | `repo init`, `repo status`, `repo rotate-key`, `repo reset` |
-| MCP grants | `repo mcp list/add/remove/instructions`, `repo vmcp list/add/remove` |
-| Research | `repo research status/bind/unbind/prefer/probe` |
-| Skills | `repo skills list/suggestions/bind/unbind/dismiss/undismiss/add/remove/sync` |
-| Health | `doctor`, `--version` |
+| MCP grants | `repo mcp list`, `repo mcp add`, `repo mcp remove`, `repo mcp instructions`; `repo vmcp list`, `repo vmcp add`, `repo vmcp remove` |
+| Research | `repo research status`, `repo research bind`, `repo research unbind`, `repo research prefer`, `repo research probe` |
+| Skills | `repo skills list`, `repo skills suggestions`, `repo skills bind`, `repo skills unbind`, `repo skills dismiss`, `repo skills undismiss`, `repo skills add`, `repo skills remove`, `repo skills sync` |
+| Health | `doctor`, `pifrost --version`; internal `secret repo-mcp` is documented separately |
 
 The internal `secret repo-mcp --id <id>` command resolves an MCP credential for OMP and is **not** a user-facing diagnostic. Do not capture or paste its output.
 
