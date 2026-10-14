@@ -189,7 +189,7 @@ function structuredQueryFields(value: unknown, result = new Set<string>(), depth
 function exactAliasPredicate(rule: AnyRecord, aliasId: string): boolean {
   if (rule.query != null || rule.conditions != null) return false;
   const text = nonEmpty(rule.cel_expression) ?? nonEmpty(rule.celExpression);
-  if (!text) return true;
+  if (!text) return false; // A matching display name is not an executable rule predicate.
   const expression = text.trim().replace(/^\((.*)\)$/us, "$1").trim();
   const lhs = expression.match(/^(?:request\.)?model\s*==\s*([\x27"])(omp-[\w.-]+)\1$/iu);
   const rhs = expression.match(/^([\x27"])(omp-[\w.-]+)\1\s*==\s*(?:request\.)?model$/iu);
