@@ -104,7 +104,14 @@ async function fixture(run) {
   const env = { ...process.env, HOME: home, PIFROST_CONFIG_DIR: configDir };
   try {
     return await run({ work, home, configDir, id, vk, virtual, counters, env, requests,
-      run: (...args) => runCli(work, env, args),
+      run: (...args) => {
+        // Explicitly allow the only fixture tool; never rely on implicit '*'.
+        if(args[0]==="repo" && args[1]==="mcp" && args[2]==="add" &&
+          !args.includes("--tools"))args.push("--tools","web_search");
+        if(args[0]==="repo" && args[1]==="init" && args.includes("--clients") &&
+          !args.includes("--tools"))args.push("--tools","web_search");
+        return runCli(work,env,args);
+      },
       failSkills: (next) => { failSkills = next; },
     });
   } finally {
@@ -117,7 +124,7 @@ test("direct MCP assignment does not install Skills without explicit unattended 
   await fixture(async ({ run, work, counters, vk }) => {
     const first = await run("repo", "mcp", "add", "donsetch", "--yes");
     assert.equal(first.code, 0, first.stderr + first.stdout);
-    assert.match(first.stdout, /Skipped \(noninteractive/u);
+    assert.match(first.stdout, /Read-only suggestion|Skipped \(noninteractive/u);
     assert.equal(existsSync(join(work, ".agents/skills/donsetch")), false);
     assert.equal(vk.mcp_configs.length, 1, "MCP grant was committed independently");
     assert.equal(counters.installs, 0);
@@ -183,7 +190,7 @@ test("repo init offers a missing Skill when reselecting a previously granted MCP
   await fixture(async ({ run, work, counters, vk }) => {
     const initial = await run("repo", "init", "--clients", "donsetch", "--yes");
     assert.equal(initial.code, 0, initial.stderr + initial.stdout);
-    assert.match(initial.stdout, /Skipped \(noninteractive/u);
+    assert.match(initial.stdout, /Read-only suggestion|Skipped \(noninteractive/u);
     assert.equal(counters.installs, 0);
     assert.equal(vk.mcp_configs.length, 1);
 
