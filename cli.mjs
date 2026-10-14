@@ -24,6 +24,7 @@ import {
   routeExplanationRequestFromFlags,
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
+import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
 import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
 import {
   RESEARCH_PROFILES,
@@ -148,6 +149,7 @@ Usage:
   pifrost judge probe [--decisions]         Billed opt-in System One or canonical Decisions conformance
   pifrost routes list
   pifrost routes diff
+  pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
   pifrost routes sync [--no-refresh]
   pifrost routes diagnose
   pifrost routes effective
@@ -748,6 +750,7 @@ async function routingSnapshot() {
   return {
     ...discovered,
     manifest: deriveAliasesRobust(discovered.rules),
+    policyFingerprint: routePolicyFingerprint(discovered.rules),
   };
 }
 
@@ -791,11 +794,20 @@ async function commandRoutesDiagnose() {
 }
 
 async function commandRoutesDiff() {
-  const { manifest: remote } = await routingSnapshot();
+  const { manifest: remote, policyFingerprint } = await routingSnapshot();
   const local = loadAliasManifest();
   const differences = diffAliases(local, remote);
+  const drift = routePolicyDrift(local.policyFingerprint, policyFingerprint);
+  if (drift !== "verified-match") {
+    console.log(`Bifrost policy fingerprint: ${drift}; model chains alone do not establish routing-policy parity.`);
+  }
+  if (!differences.length && drift === "verified-match") {
+    console.log("Routes are in sync (full gateway rule-policy fingerprint matches).");
+    return;
+  }
   if (!differences.length) {
-    console.log("Routes are in sync.");
+    console.log("Route members match, but routing conditions/pins/metadata may have changed. Run `pifrost routes sync` after review.");
+    process.exitCode = 2;
     return;
   }
   printHeader(`Route differences (${differences.length})`);
@@ -811,8 +823,29 @@ async function commandRoutesDiff() {
   process.exitCode = 2;
 }
 
+async function commandRoutesVerify() {
+  const { policyFingerprint, manifest } = await routingSnapshot();
+  const local = loadAliasManifest();
+  const status = routePolicyDrift(local.policyFingerprint, policyFingerprint);
+  printHeader("Bifrost live rule-policy verification");
+  if (status !== "verified-match") {
+    console.log(`Policy ${status}: local and gateway rule configurations are not verified equal. Run pifrost routes diff, then pifrost routes sync and restart OMP.`);
+    process.exitCode = 2;
+    return;
+  }
+  if (diffAliases(local, manifest).length > 0) {
+    console.log("Alias membership drift despite matching policy digest; refusing to refresh.");
+    process.exitCode = 2;
+    return;
+  }
+  const stamp = new Date().toISOString();
+  const result = writeAliasManifest({ ...local, synchronizedAt: stamp, policyFingerprint });
+  console.log(`Verified full Bifrost rule policy unchanged; refreshed local verification at ${stamp}.`);
+  console.log(`Manifest: ${result.path}; restart OMP to refresh active compatibility profiles.`);
+}
+
 async function commandRoutesSync(flags = {}) {
-  const { manifest, rules, diagnostics } = await routingSnapshot();
+  const { manifest, rules, diagnostics, policyFingerprint } = await routingSnapshot();
   const count = Object.keys(manifest.aliases).length;
   if (!count) {
     const sourceSummary = diagnostics
@@ -824,7 +857,7 @@ async function commandRoutesSync(flags = {}) {
   }
   // A local exception route must carry provenance of an actual management API
   // read. Model-catalog refresh alone does not refresh Bifrost rule membership.
-  const result = writeAliasManifest({ ...manifest, synchronizedAt: new Date().toISOString() });
+  const result = writeAliasManifest({ ...manifest, synchronizedAt: new Date().toISOString(), policyFingerprint });
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
   if (!flags["no-refresh"]) await commandModelsRefresh({ force: true });
@@ -872,7 +905,7 @@ function commandRoutesEffective() {
     if (!Number.isFinite(syncedAt) || age < -60_000 || age > MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS) {
       console.log("WARN local compatibility routes need a recent rule sync: run `pifrost routes sync` and restart OMP. Model metadata refresh does not update Bifrost routing rules.");
     } else {
-      console.log(`Bifrost rule sync: ${manifest.synchronizedAt} (snapshot only; resync after any route changes)`);
+      console.log(`Bifrost rule sync: ${manifest.synchronizedAt} (fingerprint=${typeof manifest.policyFingerprint === "string" ? manifest.policyFingerprint.slice(0, 12) : "legacy-unverified"}; verify with pifrost routes verify)`);
     }
   }
   console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
@@ -2087,6 +2120,7 @@ const COMMANDS = new Map([
   }],
   ["routes list", () => commandRoutesList()],
   ["routes diff", () => commandRoutesDiff()],
+  ["routes verify", () => commandRoutesVerify()],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],

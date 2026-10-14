@@ -73,11 +73,11 @@ import {
 	createModelAwareContextTokenizer,
 	estimateOmpContextInputTokens,
 } from "./context-estimator.ts";
+import { isCommittedModelOutput } from "./output-commitment.ts";
 import {
 	applyDynamicRouteProfiles,
 	canUseNativeBifrostRoute,
 	compatibilityRouteSnapshotError,
-	createDynamicRoutingFetch,
 	extractDynamicRouteProfiles,
 	planDynamicRouteAttempts,
 	resolveDynamicMemberProtocolForRequest,
@@ -209,8 +209,7 @@ function bridgeBifrostUsageCostStream(
 			for await (const event of source) {
 				// Use real output deltas/completed tool calls, never stream-start or headers.
 				// Bifrost/OMP still own retry policy; this is diagnostic-only.
-				if (event.type === "text_delta" || event.type === "thinking_delta" ||
-					event.type === "toolcall_delta" || event.type === "toolcall_end") {
+				if (isCommittedModelOutput(event)) {
 					capture.outputStarted = true;
 				}
 				for (const emitted of reasoningFilter ? reasoningFilter.consume(event) : [event]) {
@@ -553,9 +552,9 @@ function streamPifrostOpenAI(
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}
 
-	// Non-dynamic aliases and physical models retain the long-standing Chat
-	// transport. The fetch wrapper is kept as a no-op-compatible guard for
-	// callers that install a route profile between model selection and dispatch.
+	// Direct aliases and physical models always go to Bifrost unchanged. A
+	// catalog refresh mid-request must never install a second physical-routing
+	// decision at the final fetch boundary.
 	const directPhysical = physicalPolicyIdentity(model.id);
 	const transportModel = buildPifrostTransportModel({
 		...model,
@@ -597,9 +596,7 @@ function streamPifrostOpenAI(
 			observeReasoningSse(directHygieneCounters, event);
 			try { directUpstreamOnSseEvent?.(event, requestModel); } catch {}
 		},
-		fetch: createDynamicRoutingFetch(baseFetch, runtimeDynamicRoutes, {
-			outputCapExplicit: rawOptions?.maxTokens !== undefined,
-		}),
+		fetch: baseFetch,
 	};
 	return bridgeBifrostUsageCostStream(
 		streamOpenAICompletions(transportModel, context, streamOptions),

@@ -154,6 +154,24 @@ if (!/statefulResponses\s*:\s*false/u.test(native)) {
   errors.push("Pifrost dynamic Responses must remain stateless across heterogeneous Bifrost fallback routes");
 }
 
+// Cross-release hardening invariants: no late client-side rewrite, one
+// generated-output commitment contract, and provably exact alias lowering.
+const routingCore = readFileSync(resolve(root, "routing-core.ts"), "utf8");
+const attemptRunner = readFileSync(resolve(root, "multi-protocol-routing.ts"), "utf8");
+if (native.includes("createDynamicRoutingFetch(")) {
+  errors.push("Native inference must not install the unsafe late physical request rewrite");
+}
+if (!routingCore.includes("exactAliasPredicate(rule, aliasId)")) {
+  errors.push("Physical route lowering requires an exact alias predicate");
+}
+if (!native.includes("isCommittedModelOutput(event)") ||
+    !attemptRunner.includes("isCommittedModelOutput(event)")) {
+  errors.push("Failover commitment and trace output evidence must use the same model-output predicate");
+}
+if (!readFileSync(resolve(root, "cli.mjs"), "utf8").includes("routePolicyDrift(local.policyFingerprint, policyFingerprint)")) {
+  errors.push("Control-plane route drift detection must compare full rule-policy fingerprints");
+}
+
 if (errors.length) {
   for (const error of errors) console.error(`architecture: ${error}`);
   process.exit(1);

@@ -146,10 +146,10 @@ export function formatPifrostSessionCosts(sessionId: string): string {
   }
   const lines = [
     `Pifrost session gateway costs (last ${current.length} attempts; memory-only):`,
-    `  reported=${reported}/${current.length} total-reported=${money(total) ?? "$0.000000"} (USD; missing costs excluded, not zero)`,
+    `  reported=${reported}/${current.length} reported-subtotal=${reported ? money(total) : "unknown"} (USD; missing costs excluded, not zero)`,
   ];
   for (const [alias, v] of [...byRole].sort(([a], [b]) => a.localeCompare(b))) {
-    lines.push(`  ${alias}: reported=${v.reported}/${v.attempts} cost=${money(v.total) ?? "$0.000000"} fallbacks=${v.fallbacks} cache-hits=${v.cacheHits}`);
+    lines.push(`  ${alias}: reported=${v.reported}/${v.attempts} ${v.reported ? "reported-subtotal=" + money(v.total) : "cost=unknown"} fallbacks=${v.fallbacks} cache-hits=${v.cacheHits}`);
   }
   lines.push(`  cache-metadata=${cacheKnown}/${current.length}; unreported means unknown`);
   lines.push("  Gateway reporting only; not provider invoices or rule counters. Retry/failover attempts may each incur charges.");

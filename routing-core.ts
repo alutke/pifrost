@@ -184,6 +184,17 @@ function structuredQueryFields(value: unknown, result = new Set<string>(), depth
 	return result;
 }
 
+/** Physical compatibility dispatch may not evaluate opaque gateway CEL.
+ * Only an unconditional model-alias equality is safe to lower. */
+function exactAliasPredicate(rule: AnyRecord, aliasId: string): boolean {
+  if (rule.query != null || rule.conditions != null) return false;
+  const text = nonEmpty(rule.cel_expression) ?? nonEmpty(rule.celExpression);
+  if (!text) return false; // A matching display name is not an executable rule predicate.
+  const expression = text.trim().replace(/^\((.*)\)$/us, "$1").trim();
+  const lhs = expression.match(/^(?:request\.)?model\s*==\s*([\x27"])(omp-[\w.-]+)\1$/iu);
+  const rhs = expression.match(/^([\x27"])(omp-[\w.-]+)\1\s*==\s*(?:request\.)?model$/iu);
+  return (lhs?.[2] ?? rhs?.[2])?.toLowerCase() === aliasId.toLowerCase();
+}
 export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: string): boolean {
 	if (!rule || rule.enabled === false || aliasIdFromRule(rule) !== aliasId) return false;
 	const scope = (nonEmpty(rule.scope) ?? "global").toLowerCase();
@@ -191,6 +202,7 @@ export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: s
 	if (scope !== "global" || scopeId) return false;
 	if (rule.chain_rule === true || rule.chainRule === true) return false;
 	if (routingRulePins(rule).length > 0) return false;
+	if (!exactAliasPredicate(rule, aliasId)) return false;
 	if (rawRuleTargets(rule).length !== 1 || !targetReference(rawRuleTargets(rule)[0])) return false;
 
 	const fields = new Set([
@@ -206,6 +218,9 @@ export function isContextDynamicRuleSafe(rule: AnyRecord | undefined, aliasId: s
 		JSON.stringify(rule.conditions ?? ""),
 	].filter(Boolean).join(" ").toLowerCase();
 	for (const identifier of DYNAMIC_ROUTING_FORBIDDEN_IDENTIFIERS) {
+		// An exact request.model equality is equivalent to an alias match;
+		// all other request-dependent expressions failed exactAliasPredicate above.
+		if (identifier === "request") continue;
 		if (new RegExp(`\\b${identifier}\\b`, "u").test(conditionText)) return false;
 	}
 	return true;

@@ -155,6 +155,16 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.20.0 — cross-release policy, failover and reporting hardening
+
+Only exact unconditional OMP model-alias predicates are locally compilable. Query/condition-builder rules, CEL with additional predicates, scoped/pinned rules, and rule chains stay gateway-owned. The production inference adapter does not permit a late fetch-time fallback rewrite.
+
+The same generated-output predicate controls inter-attempt retry gating and provenance: empty block opening events do not commit content; actual text, thinking, image or completed tool-call output does. Buffered empty events are discarded on pre-output failure, and emitted before the first substantive event on success.
+
+Full Bifrost routing-rule inventory hashing detects changes invisible to alias-membership diff. `pifrost routes verify` reads the live policy using CLI management auth, fails on drift and refreshes a matching snapshot verification timestamp. This action requires an OMP restart before cached profiles use the new verification; credentials remain control-plane only. Until Bifrost exposes an inference-visible signed route revision, physical compatibility exceptions remain subject to the seven-day fail-closed guard. Hashes are evidence of equality only when actually refreshed against the live gateway.
+
+Gateway costs display unknown rather than zero when no total is reported and label partial sums explicitly. Privacy diagnostics distinguish global log-store enablement and per-VK content-default inheritance; external connector exports are unverified unless separately inspected. Mock HTTP gateway tests verify the shape and routing boundary but do not assert live Bifrost behaviour.
+
 ### 0.19.0 — selective, read-only observability
 
 `pifrost global observability` reads Bifrost's complexity-analyzer configuration, redacted provider inventory and MCP client metadata. It reports a known `classifier` mode (keywords/decision/semantic), identifier-only provider/model selectors, semantic/LLM fallback and session-stickiness settings, but neither runs classification nor asserts readiness or model selection. Research-tool detection is limited to provider-injected MCP names with web/search/fetch/crawl/browse/research semantics. Bifrost execution and Virtual Key grants remain unverified and unchanged.
@@ -391,7 +401,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.19.0
+0.20.0
 ```
 
 Bun can also install the package globally:

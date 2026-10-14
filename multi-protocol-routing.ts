@@ -5,6 +5,8 @@ import type {
 	ModelSpec,
 } from "@oh-my-pi/pi-ai";
 
+import { isCommittedModelOutput, isUncommittedBlockEvent } from "./output-commitment.ts";
+
 import type {
 	DynamicRouteAttempt,
 	DynamicRouteMemberProfile,
@@ -228,6 +230,7 @@ export async function runPifrostProtocolPlan(
 				: undefined,
 		);
 		let startEvent: AssistantMessageEvent | undefined;
+		const pendingBlockEvents: AssistantMessageEvent[] = [];
 		let committed = false;
 		try {
 			for await (const rawEvent of inner) {
@@ -247,12 +250,21 @@ export async function runPifrostProtocolPlan(
 				}
 				if (!committed && event.type === "done") {
 					if (startEvent) outer.push(startEvent);
+					for (const pending of pendingBlockEvents) outer.push(pending);
 					outer.push(event);
 					return;
+				}
+				if (!committed && isUncommittedBlockEvent(event) && !isCommittedModelOutput(event)) {
+					// Empty block starts/deltas are not generated content. Buffer them
+					// until something material is produced, so failure can fall through
+					// without exposing a partial logical assistant message.
+					pendingBlockEvents.push(event);
+					continue;
 				}
 				if (!committed) {
 					committed = true;
 					if (startEvent) outer.push(startEvent);
+					for (const pending of pendingBlockEvents) outer.push(pending);
 				}
 				outer.push(event);
 				if (event.type === "done" || event.type === "error") return;

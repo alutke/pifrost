@@ -1,3 +1,14 @@
+## 0.20.0 — 2026-10-14
+
+- Cross-release hardening: restrict context-aware alias compilation to exact unconditional CEL model matches; opaque request/CEL conditions stay entirely gateway-owned.
+- Remove direct-inference late physical route rewrite so the requested logical route cannot bypass Pifrost's prewalk/snapshot guards during a concurrent refresh.
+- Share real generated-content commitment across fallback runner and request traces; buffer empty OMP block-open events so pre-content errors can fall through safely, while reasoning/tool output remains terminal for fallback.
+- Fingerprint the **full** Bifrost routing policy independently of alias-chain membership. `pifrost routes diff` flags CEL/weights/pins-only drift; `pifrost routes verify` uses management-authenticated revalidation to refresh unchanged snapshots. Physical compatibility remains fail-closed when snapshots cannot be verified; management credentials stay outside the OMP runtime.
+- Separate Bifrost global log-store enablement, per-VK log content defaults, hidden object storage and unverified external connector exports; never infer privacy from missing data.
+- Present missing/partial gateway cost data as unknown/reported-subtotal, never incorrectly as free usage.
+- Add end-to-end loopback HTTP Bifrost-shaped mock gateway tests for logical alias, served-model provenance and cost, plus exact-CEL/fingerprint and empty-stream failover regression tests.
+- Existing OMP 18.10.4 and Bifrost 2.3.0 public contracts remain supported. This hardening release does not add an execution engine or override Bifrost governance.
+
 ## 0.19.0 — 2026-10-14
 
 - Release D: add explicit, read-only `pifrost global observability [--vk-id <management-id>]` for Bifrost complexity classifier configuration, provider-injected web research tool visibility and selected Virtual Key content-logging posture.
