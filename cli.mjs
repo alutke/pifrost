@@ -244,7 +244,7 @@ function parseArgs(argv) {
     const key=eq>2?token.slice(2,eq):token.slice(2);
     if(!isKnownFlag(key))throw cliUsageError("Unknown option --"+key+". Use the command's --help.");
     if(Object.hasOwn(flags,key))throw cliUsageError("Option --"+key+" was provided more than once.");
-    if(flagRequiresValue(key)){
+    if(flagRequiresValue(key, positional.slice(0,2).join(" "))){
       const value=eq>2?token.slice(eq+1):argv[++i];
       if(!value || value.startsWith("--"))throw cliUsageError("Option --"+key+" requires a value.");
       flags[key]=value;
