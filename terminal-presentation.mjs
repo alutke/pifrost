@@ -111,12 +111,14 @@ export function compactCliHelp(version) {
     "",
   ].join("\n");
 }
-export function formatCliFailure(error, { isUsage = false } = {}) {
-  // Avoid echoing arbitrary input arguments (which may contain secrets).
-  const message = cleanDisplay(error?.message ?? error)
+export function redactTerminalSecrets(input) {
+  return String(input)
     .replace(/\bsk-[a-zA-Z0-9_-]{8,}\b/gu, "[redacted]")
     .replace(/\bBearer\s+[^\s]+/giu, "Bearer [redacted]")
     .replace(/([?&](?:api_key|token|password|virtual_key)=)[^\s&]+/giu, "$1[redacted]");
+}
+export function formatCliFailure(error, { isUsage = false } = {}) {
+  const message = redactTerminalSecrets(cleanDisplay(error?.message ?? error));
   const result = ["Pifrost could not complete the command.", `Reason: ${message}`];
   if (isUsage) result.push("Next: run pifrost help or pifrost help --all for syntax.");
   else if (/timeout|timed out/iu.test(message)) result.push("Next: check gateway connectivity with pifrost global status.");
