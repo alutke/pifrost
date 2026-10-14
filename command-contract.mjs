@@ -5,7 +5,7 @@
 const common = {verbose:"boolean",strict:"boolean",json:"boolean"};
 const view=(summary,min=0,max=min,flags={})=>({summary,min,max,flags:{...common,...flags},effect:"Read-only"});
 const write=(summary,min=0,max=min,flags={},effect="Changes local configuration")=>({summary,min,max,flags,effect});
-const setupFlags={url:"string","api-key":"string","virtual-key":"string","management-auth":"string","management-username":"string","management-password":"string","management-key":"string","setup-token":"string","skip-omp":"boolean","skip-test":"boolean",yes:"boolean"};
+const setupFlags={url:"string","api-key":"string","virtual-key":"string","management-auth":"string","management-username":"string","management-password":"string","management-key":"string","setup-token":"string","skip-omp":"boolean","skip-test":"boolean",yes:"boolean","dry-run":"boolean"};
 export const COMMAND_SPEC=Object.freeze({
 "init":write("Install and configure Pifrost",0,0,setupFlags,"Changes local and gateway configuration"),
 "global setup":write("Configure gateway credentials and OMP settings",0,0,setupFlags),
