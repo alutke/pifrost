@@ -120,6 +120,7 @@ import {
 } from "./agent-attribution.ts";
 import {
 	formatPifrostRouteTraces,
+	formatPifrostSessionCosts,
 	recordBifrostCaptureTrace,
 	releasePifrostRouteTraces,
 } from "./request-provenance.ts";
@@ -899,6 +900,11 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				});
 			};
 
+			if (command === "costs") {
+				ctx.ui.notify(formatPifrostSessionCosts(ctx.sessionManager.getSessionId()), "info");
+				return;
+			}
+
 			if (command === "trace") {
 				ctx.ui.notify(formatPifrostRouteTraces(ctx.sessionManager.getSessionId()), "info");
 				return;
@@ -970,7 +976,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor | /pifrost trace | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost doctor | /pifrost trace | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
