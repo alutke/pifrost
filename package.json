@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -49,6 +49,7 @@
     "omp-profile-merge.mjs",
     "omp-profile-merge.d.mts",
     "provider-tool-policy.mjs",
+    "gateway-observability.mjs",
     "judge-bridge.mjs",
     "judge-bridge.d.mts",
     "judge-control.mjs",
