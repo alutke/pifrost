@@ -788,10 +788,14 @@ async function routingSnapshot() {
   };
 }
 
-async function commandRoutesList() {
+async function commandRoutesList(flags = {}) {
   const { manifest } = await routingSnapshot();
   printHeader(`Bifrost OMP routes (${Object.keys(manifest.aliases).length})`);
-  for (const [id, definition] of Object.entries(manifest.aliases).sort(([a], [b]) => a.localeCompare(b))) {
+  const aliases=Object.entries(manifest.aliases).sort(([a],[b])=>a.localeCompare(b))
+    .map(([name,definition])=>({name,definition}));
+  const shown=listFilter(aliases,flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching routes");
+  for (const {name:id,definition} of shown.items) {
     console.log(id);
     const pins = Array.isArray(definition.routingPins) ? definition.routingPins : [];
     definition.chain.forEach((member, index) => {
@@ -1489,7 +1493,7 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
   }
 }
 
-async function commandRepoSkillsList() {
+async function commandRepoSkillsList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const current = currentRepoState(state);
@@ -1500,7 +1504,9 @@ async function commandRepoSkillsList() {
       .map((item) => [item.name.toLowerCase(), item]),
   );
   printHeader(`Bifrost Skills (${available.length})`);
-  for (const skill of available.sort((a, b) => a.name.localeCompare(b.name))) {
+  const shown=listFilter(available.sort((a,b)=>a.name.localeCompare(b.name)),flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching Skills");
+  for (const skill of shown.items) {
     const selected = configured.get(skill.name.toLowerCase());
     const status = local.get(skill.name.toLowerCase());
     const compatibility = bifrostSkillCompatibility(skill.raw);
@@ -1669,12 +1675,14 @@ async function commandRepoSkillDismiss(clientName, dismissed) {
   console.log(`${dismissed ? "Dismissed" : "Restored"} suggestion for ${client.name} -> ${matched.skill.name}`);
 }
 
-async function commandRepoMcpList() {
+async function commandRepoMcpList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const clients = await listMcpClients(url, managementKey);
   printHeader(`Bifrost MCP clients (${clients.length})`);
-  for (const client of clients.sort((a, b) => a.name.localeCompare(b.name))) {
+  const shown=listFilter(clients.sort((a,b)=>a.name.localeCompare(b.name)),flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching MCP clients");
+  for (const client of shown.items) {
     const modes = [
       client.isCodeModeClient ? "code-mode" : undefined,
       client.toolsToAutoExecute?.length ? "agent-mode" : undefined,
@@ -1701,7 +1709,7 @@ async function requireRepoVirtualKey(state) {
   return { url, managementKey, current, vk };
 }
 
-async function commandRepoVirtualMcpList() {
+async function commandRepoVirtualMcpList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const current = currentRepoState(state);
@@ -1712,7 +1720,9 @@ async function commandRepoVirtualMcpList() {
       : [],
   );
   printHeader(`Bifrost Virtual MCPs (${virtualMcps.length})`);
-  for (const item of virtualMcps.sort((a, b) => a.name.localeCompare(b.name))) {
+  const shown=listFilter(virtualMcps.sort((a,b)=>a.name.localeCompare(b.name)),flags);
+  console.log("Showing "+shown.items.length+" of "+shown.total+" matching Virtual MCP bundles");
+  for (const item of shown.items) {
     const flags = [
       assigned.has(Number(item.id)) ? "assigned" : undefined,
       item.enabled ? undefined : "disabled",
@@ -2349,7 +2359,7 @@ const COMMANDS = new Map([
     console.log(`Configured ${result.settings} OMP settings.`);
     if (result.backup) console.log(`Backup: ${result.backup}`);
   }],
-  ["routes list", () => commandRoutesList()],
+  ["routes list", (_args,flags) => commandRoutesList(flags)],
   ["routes diff", () => commandRoutesDiff()],
   ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
@@ -2368,14 +2378,14 @@ const COMMANDS = new Map([
   ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
   ["repo rotate-key", (_args, flags) => commandRepoRotateKey(flags)],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
-  ["repo mcp list", () => commandRepoMcpList()],
+  ["repo mcp list", (_args,flags) => commandRepoMcpList(flags)],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
   ["repo mcp remove", (args, flags) => commandRepoMcpRemove(args[0], flags)],
   ["repo mcp instructions", (args, flags) => commandRepoMcpInstructions(args[0], flags)],
-  ["repo vmcp list", () => commandRepoVirtualMcpList()],
+  ["repo vmcp list", (_args,flags) => commandRepoVirtualMcpList(flags)],
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
   ["repo vmcp remove", (args, flags) => commandRepoVirtualMcpRemove(args[0], flags)],
-  ["repo skills list", () => commandRepoSkillsList()],
+  ["repo skills list", (_args,flags) => commandRepoSkillsList(flags)],
   ["repo skills suggestions", (_args, flags) => commandRepoSkillSuggestions(flags)],
   ["repo skills bind", (args, flags) => commandRepoSkillBind(args[0], args[1], flags)],
   ["repo skills unbind", (args) => commandRepoSkillUnbind(args[0])],
