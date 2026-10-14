@@ -1,3 +1,10 @@
+## 0.16.0 — 2026-10-14
+
+- Release A: restore Bifrost-native `omp-*` inference routing when all simple-rule members are request-compatible and share a single Chat/encoder contract. Preserve the physical primary's OMP wire policy, send the original logical model, and omit any locally copied `fallbacks` override; Bifrost owns live target/key ordering, same-protocol fallback and route counters.
+- Retain a restricted Pifrost compatibility adapter only when member exclusions, Responses transport or physical encoder boundaries require it. Fail closed on missing/expired (seven-day) synchronized rule provenance rather than silently executing arbitrarily stale physical route chains; require a new `pifrost routes sync` after changing rules and an OMP restart.
+- Capture Bifrost 2.3 requested model/provider headers as gateway-owned provenance, show native/direct/exception execution paths, exception reason, request ID, served provider/model, fallback and cost in `/pifrost trace`.
+- Add native rule eligibility, wire-model alias, no-explicit-fallback, snapshot guard, provenance and architectural-regression tests. No changes to OMP orchestration, Bifrost credentials or MCP execution. Live Bifrost route-counter verification remains a deployment integration gate.
+
 ## 0.15.2 — 2026-10-11
 
 - Stop writing routine physical wire fallback-boundary notices to stderr for every model request, preventing repeated warnings and literal escaped newline output in OMP's terminal during settings and memory operations. Preserve the ordered, pre-output-only transport compatibility guard without relaxing fallback behaviour.
