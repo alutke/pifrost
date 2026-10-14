@@ -144,6 +144,8 @@ function nonEmptyHeader(headers: Headers, name: string): string | undefined {
 function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture): void {
 	if (!capture) return;
 	capture.requestId = nonEmptyHeader(headers, "x-bifrost-request-id") ?? capture.requestId;
+	capture.requestedModel = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-model") ?? capture.requestedModel;
+	capture.requestedProvider = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-provider") ?? capture.requestedProvider;
 	capture.provider =
 		nonEmptyHeader(headers, "x-bifrost-routing-info-provider") ??
 		nonEmptyHeader(headers, "x-bifrost-provider") ??
