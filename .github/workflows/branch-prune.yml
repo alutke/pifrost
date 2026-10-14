@@ -44,29 +44,7 @@ jobs:
             exit 1
           fi
           cat > expected-refs.txt <<'EXPECTED'
-          docs/audit-0.22.1 a69d98795bce22670ebd7be489a8b9fd63f4e946
-          feat/release-a-upstream-compat 2642746822ae8638506a461468ae3be57a368b75
-          feat/release-b-governance-0140 e1538dfea589409cb2061f1348b3d26949f6193e
-          feat/release-c-native-judge-0150 3aa7a2f31cc1b7560a670def831a2bf1ec219521
-          feature/request-contracts-0123 9b0cf5320b06d0f17a002939b4f1a4edfa3e570e
-          fix/bifrost-vk-auth-v0124 7575f3b9a112685a46b8f2aa89bf1ccd4f7acc85
-          fix/omp-terminal-diagnostics-v0152 408276a458445c85cd986bf6e030b492ce10fe42
-          fix/optional-reasoning-0151 2cf42804b942631711e4d9756ff766077dca2102
-          fix/reasoning-and-token-contracts-0.12.2 30645ee40c89a8a9440dabed4f32f18b11021762
-          fix/reasoning-history-stream-diagnostics-v0126 50bebe1ad357f36f354ae01359f94fcf09bb72e2
-          fix/reasoning-nested-stream-v0127 c7ddba0cbdb17324bcd01708c9f7e8bc3e021e46
-          fix/release-a-provenance-audit-0131 d8233798bd4ab63440b968918c70716126fb736a
-          fix/research-gateway-skill-offers-v0.12.1 fe7c1b819f50245f3e66ba7b06e4e6b078d35b6a
-          fix/synthetic-reasoning-replay-v0125 260542e435aeb4ff9f191f05a5e74a6a2f85f77c
-          hardening-routing-observability-v0.20.0 45a02732e1ed61c87daa1dfdca95357c34de83c1
-          hotfix-release-b-legacy-installer 768eb75a3aa58db98cd5b44ff0ae316943e0dde0
-          release-a-native-routing 6d86c9a616d05f795ff64764f21da943b511e615
-          release-b-upstream-compat 39ceef79241e8b53f1fb01a9173faafefbae2b07
-          release-c-gateway-reliability 66442e3781d719946f6b499f61783ff136c655c8
-          release-d-selective-observability 8d83ee4cb26ee548559583a7b693dd9744d927e2
-          terminal-readability-v0.21.0 5576fec27db1e64bf0581ba7f3aec456239f77c1
-          ux-a-d-terminal-workflows-v0.22.0 8f1399a03630ab5fb8b3dacf34421bd5cba8f5fd
-          ux-command-safety-and-accessibility-v0.22.0 5c5848f3542c9b62ae628dbf0414dbe6fc373f04
+          fix/gateway-protocol-boundaries-v0.22.4 bf5e932437491d4671fa502ef7143719a67a3510
           EXPECTED
           LC_ALL=C sort -o expected-refs.txt expected-refs.txt
           git ls-remote --heads origin | awk '$2 != "refs/heads/main" {sub(/^refs\/heads\//, "", $2); print $2 " " $1}' | LC_ALL=C sort > observed-refs.txt
