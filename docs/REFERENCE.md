@@ -155,6 +155,18 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.22.0 — terminal command contract and UX hardening
+
+- **Grammar and least privilege:** a per-command option schema validates booleans, valued flags, integer parameters, unknown/duplicate flags, and argument counts before execution. `repo mcp add` and scripted `repo init --clients` cannot silently widen a grant to all tools. `--allow-all-tools` is an explicit widening operation; `--tools tool1,tool2` requests a named allow-list. Gateway MCP execution/auto-execution remains Bifrost-owned.
+- **Exit code convention:** syntax and argument errors return 1; required check failures and runtime command errors return 2; success and optional advisories return 0, unless `--strict` requests a nonzero result for any unverified/warning check. Optional management APIs are not equivalent to failed required inference.
+- **Machine output:** selected read-only commands accept `--json` with `schemaVersion:1`, `command`, `effect`, `status`, `exitCode` and `output` (human diagnostics as text). Runtime errors return `error:{code,message}`. This is an envelope, not a guarantee of a fully structured Bifrost response. `secret repo-mcp` must retain raw secret stdout and never emits JSON.
+- **Preview semantics:** `--dry-run` is supported for global setup/init, route verification/synchronization, repository initialization/reset/key rotation, direct/virtual MCP assignments and managed Skill changes. Preview neither updates gateway policy nor local files. `routes verify` without dry-run still writes a refreshed verification timestamp.
+- **Privacy:** interactive secret prompts fail closed where echo cannot be disabled, and argv credentials produce a warning without printing values. Prefer environment variables for unattended/Windows setup; do not put keys in shell history. Diagnostic errors redact common tokens.
+- **Operational visibility:** read-only Skills suggestions, concise MCP/Skills/research lists, explicit live-versus-configured states and stable diagnostic identifiers. Technical details remain available with `--verbose`.
+- **OMP interface:** `/pifrost help`, concise `/pifrost trace [last N] [errors] [role omp-ROLE]` and `/pifrost trace verbose` for full gateway evidence. These are bounded in-memory traces, not persisted request logs.
+
+Command options should be documented with `pifrost help COMMAND` or `pifrost COMMAND --help`. Some commands are intentionally local configuration operations rather than pure read-only checks; never infer Bifrost routing-rule execution from a saved route manifest.
+
 ### 0.21.0 — terminal output and accessibility
 
 Pifrost presents a task-oriented quick help screen by default; `pifrost help --all` retains all commands and flags. The renderer is plain-text-first with explicit [OK]/[WARN]/[FAIL]/[UNKNOWN] labels, no ANSI escape codes, and consistent next-step commands. Quick `doctor`, `global status`, `repo status`, and `models doctor` views prioritise problems; `--verbose` retains the earlier detailed output. The compact views do not assert that configured MCP grants or eligibility imply successful live execution.
@@ -409,7 +421,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.21.0
+0.22.0
 ```
 
 Bun can also install the package globally:
