@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.21.0
+0.22.0
 ```
 
 Bun also works:
@@ -254,6 +254,25 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### CLI safety and usability: 0.22.0
+
+Pifrost now validates each of its registered CLI commands **before** it reads or changes local or remote state. `pifrost repo mcp add CLIENT` requires `--tools tool1,tool2` or the explicit `--allow-all-tools` switch. Similarly, scripted `pifrost repo init --clients CLIENT` requires a selected tool scope; wildcard grants are no longer implicit. A typo, missing flag value or invalid option fails with short contextual help. Use `pifrost COMMAND --help` or `pifrost help COMMAND` for focused help.
+
+`pifrost doctor` and `pifrost global status` distinguish required failures from optional warnings. A failed required check exits 2; syntax errors exit 1; warnings/unknown checks exit 0 by default and exit 2 with `--strict`. Read-only commands support `--json` (schema v1, status, exitCode and output text); this is for scripts and does not expose a credential helper. `pifrost secret repo-mcp` remains machine-only.
+
+Use `--dry-run` to preview `global setup`, `init`, `routes sync`, `routes verify`, `repo init`, `repo reset`, `repo rotate-key`, `repo mcp add/remove`, `repo vmcp add/remove`, and `repo skills add/remove/sync` before changes. Actual operations remain explicit. `repo skills suggestions` is read-only unless `--install-matching-skills` is supplied. The CLI warns when secrets are supplied in argv; interactive prompts fail closed when input echo cannot be disabled. For Windows secure setup, provide supported environment variables rather than typing secrets in a visible prompt.
+
+Large `routes list` and `repo mcp list` inventories support `--filter TEXT`, `--limit N`, and `--verbose`; Skill and research status views lead with concise readiness. In OMP, use `/pifrost trace last 5 errors`, `/pifrost trace role omp-default`, or `/pifrost trace verbose` for full headers and reasoning counters. `/pifrost help` lists the OMP commands. Probe commands explicitly warn about potential billed requests.
+
+Example least-privilege grant:
+
+~~~bash
+pifrost repo mcp add donsetch --tools web_search,web_fetch --dry-run
+pifrost repo mcp add donsetch --tools web_search,web_fetch
+~~~
+
+For explicit all-tool consent use `--allow-all-tools` instead of `--tools '*'`. These are gateway access changes; they do not prove the tools can execute until verified against Bifrost.
+
 ### Terminal readability and accessibility: 0.21.0
 
 The default terminal experience is now intentionally concise and plain-text-first, with no reliance on colour, emoji, animation or TTY features. Use `pifrost help` for a task-oriented starter guide and `pifrost help --all` for the complete command reference. Unknown commands display a short recovery hint rather than the entire help page.
@@ -313,9 +332,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.21.0
+npm install --global github:alutke/pifrost#v0.22.0
 hash -r
-omp install --force github:alutke/pifrost#v0.21.0
+omp install --force github:alutke/pifrost#v0.22.0
 pifrost routes sync
 pifrost doctor
 ~~~
