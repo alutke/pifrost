@@ -909,6 +909,11 @@ async function commandModelsDoctor(options = {}) {
     const result = printModelDoctor(process.env, { log() {} });
     const check = result.checks?.[0];
     const issues = (result.unresolved ?? []).length;
+    const checks=[{id:"model-catalogue",label:"Model readiness",status:result.ok?"ok":"fail",
+      required:true,detail:check?.summary ?? (result.ok?"Available":"Needs attention"),
+      action:"pifrost models refresh --force"}];
+    const health=reportHealth({command:"models doctor",checks,strict:options.strict,json:options.json});
+    if(options.json){if(health.exitCode)process.exitCode=health.exitCode;return result;}
     console.log(terminalSection("Model catalogue"));
     console.log(terminalStatus(result.ok ? "ok" : "fail", "Model readiness",
       check?.summary ?? (result.ok ? "Available" : "Needs attention")));
@@ -921,7 +926,7 @@ async function commandModelsDoctor(options = {}) {
     } else {
       console.log("For capability, provenance and context-band details: pifrost models doctor --verbose");
     }
-    if (!result.ok) process.exitCode = 2;
+    if (health.exitCode) process.exitCode = health.exitCode;
     return result;
   }
   const result = printModelDoctor();
@@ -1109,14 +1114,19 @@ async function commandRepoStatus(snapshot, options = {}) {
     const grants = repoState.config?.mcpClients ?? [];
     const bundles = repoState.config?.virtualMcps ?? [];
     const skills = configuredSkillRows(repoState);
-    printHeader(`Repository: ${repoState.repo.name}`);
+    if(!options.json) printHeader(`Repository: ${repoState.repo.name}`);
     const checks = [
       {status:repoState.config?.virtualKeyId && repoState.secret?.mcpVirtualKey ? "ok" : "warn",
        label:"Repository Virtual Key", detail:repoState.secret?.mcpVirtualKey ? "Saved locally (value hidden)" : "Missing"},
       {status:existsSync(mcpPath) ? "ok" : "warn", label:"OMP MCP configuration",
        detail:existsSync(mcpPath) ? "File present" : "Missing"},
     ];
-    for (const item of checks) console.log(terminalStatus(item.status, item.label, item.detail));
+    const result=reportHealth({command:"repo status",checks:checks.map((check,i)=>({
+      id:i===0?"repo-key":"omp-mcp-config",...check,required:false,
+      action:"pifrost repo init"
+    })),strict:options.strict,json:options.json});
+    if(options.json){if(result.exitCode)process.exitCode=result.exitCode;return;}
+    for (const item of result.checks) console.log(terminalStatus(item.status, item.label, item.detail));
     console.log(terminalField("Direct MCP clients configured", grants.length));
     console.log(terminalField("Virtual MCP bundles configured", bundles.length));
     console.log(terminalField("Bifrost Skills configured", skills.length));
@@ -1124,7 +1134,7 @@ async function commandRepoStatus(snapshot, options = {}) {
     const actions = [];
     if (!repoState.config?.virtualKeyId || !repoState.secret?.mcpVirtualKey || !existsSync(mcpPath)) {
       actions.push("pifrost repo init");
-      process.exitCode = 2;
+      if(options.strict)process.exitCode=2;
     }
     actions.push("pifrost repo status --verbose");
     console.log(terminalNextSteps(actions));
