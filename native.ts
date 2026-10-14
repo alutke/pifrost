@@ -152,8 +152,15 @@ function nonEmpty(value: string | undefined): string | undefined {
 function messageWithBifrostCost(
 	message: AssistantMessage,
 	capture: BifrostCostCapture,
+	logicalAlias?: string,
 ): AssistantMessage {
-	const withIdentity = applyBifrostResolvedModel(message, capture);
+	// A native logical rule may serve a different physical model than Pifrost's
+	// cached primary. Without gateway-confirmed provenance, the OMP transport's
+	// selected encoder is NOT evidence of the upstream provider/model.
+	const safeMessage = logicalAlias
+		? { ...message, model: logicalAlias, upstreamModel: undefined, upstreamProvider: undefined }
+		: message;
+	const withIdentity = applyBifrostResolvedModel(safeMessage, capture);
 	return {
 		...withIdentity,
 		usage: applyBifrostAuthoritativeCost(withIdentity.usage, capture),
@@ -163,16 +170,17 @@ function messageWithBifrostCost(
 function eventWithBifrostCost(
 	event: AssistantMessageEvent,
 	capture: BifrostCostCapture,
+	logicalAlias?: string,
 ): AssistantMessageEvent {
 	switch (event.type) {
 		case "done":
-			return { ...event, message: messageWithBifrostCost(event.message, capture) };
+			return { ...event, message: messageWithBifrostCost(event.message, capture, logicalAlias) };
 		case "error":
-			return { ...event, error: messageWithBifrostCost(event.error, capture) };
+			return { ...event, error: messageWithBifrostCost(event.error, capture, logicalAlias) };
 		default:
 			return {
 				...event,
-				partial: messageWithBifrostCost(event.partial, capture),
+				partial: messageWithBifrostCost(event.partial, capture, logicalAlias),
 			} as AssistantMessageEvent;
 	}
 }
@@ -182,6 +190,7 @@ function bridgeBifrostUsageCostStream(
 	capture: BifrostCostCapture,
 	onTerminal?: (outcome: "done" | "error" | "thrown") => void,
 	reasoningFilter?: ResponsesReasoningPrefixFilter,
+	logicalAlias?: string,
 ): AssistantMessageEventStream {
 	const output = new AssistantMessageEventStream();
 	output.forwardLocalWorkFrom(source);
@@ -195,7 +204,7 @@ function bridgeBifrostUsageCostStream(
 		try {
 			for await (const event of source) {
 				for (const emitted of reasoningFilter ? reasoningFilter.consume(event) : [event]) {
-					output.push(eventWithBifrostCost(emitted, capture));
+					output.push(eventWithBifrostCost(emitted, capture, logicalAlias));
 				}
 				if (event.type === "done" || event.type === "error") terminal(event.type);
 			}
@@ -503,6 +512,7 @@ function streamDynamicPifrostRoute(
 				outcome,
 			}, costCapture, chatHygieneCounters),
 			chatReasoningFilter,
+			nativeGatewayRoute ? plan.logicalModel : undefined,
 		);
 	}).catch((error) => outer.fail(error));
 
