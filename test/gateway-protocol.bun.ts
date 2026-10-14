@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// @ts-ignore -- bun:test is supplied by the Bun CI/runtime, not Node typechecking.
 import { test } from "bun:test";
 
 import nativeExtension from "../native.ts";
