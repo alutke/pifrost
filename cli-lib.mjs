@@ -893,7 +893,7 @@ export async function bifrostCompatibilityMatrix({
       const raw = client.vk_rotation_cooldown;
       const value = typeof raw === "string" ? raw.trim()
         : typeof raw === "number" && Number.isFinite(raw) && raw === 0 ? "0" : undefined;
-      const valid = value !== undefined && (/^0$/u.test(value) || /^\\d+(?:ns|us|ms|s|m|h)$/u.test(value));
+      const valid = value !== undefined && (/^0$/u.test(value) || /^\d+(?:ns|us|ms|s|m|h)$/u.test(value));
       results.push({
         id: "bifrost-vk-rotation", label: "Virtual Key rotation grace policy",
         minimum: "2.3.0", status: "supported",
