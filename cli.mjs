@@ -355,11 +355,15 @@ async function askSecret(rl, prompt, existing) {
     const keep = await confirm(rl, `${prompt} is already configured. Keep it?`, true);
     if (keep) return existing;
   }
+  if (process.platform === "win32" && process.stdin.isTTY) {
+    throw new Error("Hidden interactive secret entry is not supported by this terminal. Set the appropriate BIFROST_* environment variable and use --yes.");
+  }
   let echoDisabled = false;
   try {
     if (process.platform !== "win32" && process.stdin.isTTY) {
       const result = spawnSync("stty", ["-echo"], { stdio: ["inherit", "ignore", "ignore"] });
       echoDisabled = result.status === 0;
+      if (!echoDisabled) throw new Error("Cannot disable terminal echo. Provide secret via environment instead.");
     }
     const value = (await rl.question(`${prompt}: `)).trim();
     if (echoDisabled) process.stdout.write("\n");
@@ -440,6 +444,10 @@ async function commandGlobalSetup(flags) {
     }
   }
 
+  const secretFlags = ["api-key","virtual-key","management-password","management-key","setup-token"];
+  if (secretFlags.some(name => flagString(flags, name))) {
+    console.error("[WARN] Supplying credentials as command-line arguments can expose them in shell history or process lists. Use environment variables or hidden interactive input.");
+  }
   const nonInteractive = Boolean(flags.yes) || (!process.stdin.isTTY && !flagString(flags, "url"));
   if (!nonInteractive) {
     await withPrompter(async (rl) => {
