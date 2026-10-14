@@ -95,9 +95,9 @@ test("session gateway cost report groups confirmed costs by logical model and le
     requestId: "gateway-r3", cacheHit: false,
   });
   const report = formatPifrostSessionCosts(id);
-  assert.match(report, /reported=2\/3 total-reported=\$0\.002000/u);
-  assert.match(report, /omp-default: reported=2\/2 cost=\$0\.002000 fallbacks=1 cache-hits=1/u);
-  assert.match(report, /omp-advisor: reported=0\/1 cost=\$0\.000000/u);
+  assert.match(report, /reported=2\/3 reported-subtotal=\$0\.002000/u);
+  assert.match(report, /omp-default: reported=2\/2 reported-subtotal=\$0\.002000 fallbacks=1 cache-hits=1/u);
+  assert.match(report, /omp-advisor: reported=0\/1 cost=unknown/u);
   assert.match(report, /cache-metadata=3\/3/u);
   assert.match(report, /missing costs excluded, not zero/u);
   assert.doesNotMatch(report, /gateway-r1|gateway-r2|gateway-r3/u);
