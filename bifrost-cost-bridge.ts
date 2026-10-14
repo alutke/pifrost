@@ -155,16 +155,19 @@ function nonEmptyHeader(headers: Headers, name: string): string | undefined {
 function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture, status?: number): void {
 	if (!capture) return;
 	capture.requestId = safeGatewayHeaderToken(headers.get("x-bifrost-request-id")) ?? capture.requestId;
-	capture.traceId = safeGatewayHeaderToken(headers.get("x-bifrost-trace-id")) ?? capture.traceId;
+	const traceId = safeGatewayHeaderToken(headers.get("x-bifrost-trace-id"));
+	if (traceId) capture.traceId = traceId;
 	const classified = status === undefined ? undefined : classifyGatewayHttpStatus(status);
 	if (classified && status !== undefined) {
 		capture.httpStatus = status;
 		capture.failureClass = classified;
-		capture.retryAfterSeconds = parseGatewayRetryAfter(headers.get("retry-after"));
+		const retryAfter = parseGatewayRetryAfter(headers.get("retry-after"));
+		if (retryAfter !== undefined) capture.retryAfterSeconds = retryAfter;
 	}
 	const cacheHit = headers.get("x-bifrost-cache-hit");
 	if (cacheHit === "true" || cacheHit === "false") capture.cacheHit = cacheHit === "true";
-	capture.cacheHitType = safeGatewayHeaderToken(headers.get("x-bifrost-cache-hit-type"), 64) ?? capture.cacheHitType;
+	const cacheHitType = safeGatewayHeaderToken(headers.get("x-bifrost-cache-hit-type"), 64);
+	if (cacheHitType) capture.cacheHitType = cacheHitType;
 	capture.requestedModel = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-model") ?? capture.requestedModel;
 	capture.requestedProvider = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-provider") ?? capture.requestedProvider;
 	capture.provider =
