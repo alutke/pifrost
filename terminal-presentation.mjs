@@ -13,12 +13,33 @@ export function terminalSection(title) {
   const heading = cleanDisplay(title);
   return `\n${heading}\n${"-".repeat(Math.min(72, heading.length))}`;
 }
+/** Text-only wrapping respects narrow output/pipes and indents continuations.
+ * A long single token is split rather than overflowing the terminal. */
+export function wrapTerminal(text, width = 88, indent = "    ") {
+  const max=Math.max(36,Math.min(160,width));
+  const segments=String(text).split(/\s+/u).filter(Boolean);
+  const rows=[];let current="";
+  for(const word of segments){
+    let remaining=word;
+    while(remaining.length){
+      const prefix=current?current+" ":"";
+      const available=max-prefix.length;
+      if(remaining.length<=available){
+        current=prefix+remaining;remaining="";break;
+      }
+      if(prefix){rows.push(current);current="";continue;}
+      rows.push(remaining.slice(0,max));remaining=remaining.slice(max);
+    }
+  }
+  if(current)rows.push(current);
+  return rows.map((line,i)=>i===0?line:indent+line).join("\n");
+}
 export function terminalField(label, value) {
-  return `  ${cleanDisplay(label)}: ${cleanDisplay(value)}`;
+  return wrapTerminal(`  ${cleanDisplay(label)}: ${cleanDisplay(value)}`);
 }
 export function terminalStatus(status, label, detail) {
   const code = LABELS[status] ?? "UNKNOWN";
-  return `  [${code}] ${cleanDisplay(label)}${detail ? " - " + cleanDisplay(detail) : ""}`;
+  return wrapTerminal(`  [${code}] ${cleanDisplay(label)}${detail ? " - " + cleanDisplay(detail) : ""}`);
 }
 export function terminalNextSteps(steps, max = 6) {
   const unique = [...new Set((steps ?? []).filter(s => typeof s === "string" && s.trim()).map(s => s.trim()))].slice(0, max);
