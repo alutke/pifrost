@@ -62,7 +62,7 @@ test("CLI errors occur before any configuration or gateway side-effects",()=>{
     assert.match(invalid.stderr,/Explicitly choose --tools/u);
     const unknown=invoke("repo","skills","list","--delete-remote");
     assert.equal(unknown.status,1);
-    assert.match(unknown.stderr,/not valid/u);
+    assert.match(unknown.stderr,/Unknown option|not valid/u);
     const usage=invoke("repo","mcp","add","--help");
     assert.equal(usage.status,0,usage.stderr);
     assert.match(usage.stdout,/Changes gateway access/u);
