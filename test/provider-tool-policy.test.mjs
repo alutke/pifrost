@@ -24,6 +24,28 @@ test("provider-injected web search stays gateway-owned and is only reported, nev
   assert.doesNotMatch(report, /sk-super-secret|sk-hidden|Authorization|extra_headers|network_config/);
 });
 
+test("Bifrost 2.3 injected-tools array supports multiple named tools with read-only drift diagnostics", () => {
+  const input = { providers: [{ name: "deepseek", provider_status: "active",
+    injected_tools: [
+      { name: "web_search", mcp_client_name: "donsetch", tool_name: "web_search" },
+      { name: "research_fetch", mcp_client_name: "donsetch", tool_name: "web_fetch" },
+    ],
+    keys: [{ api_key: "secret-not-for-report" }],
+  }] };
+  const good = gatewayInjectedToolDiagnostics(input, [{ name: "DonSeTch", tools: ["web_search", "web_fetch"] }]);
+  assert.equal(good.configured, 2);
+  assert.deepEqual(good.policies[0].concerns, []);
+  const report = formatGatewayInjectedToolDiagnostics(good);
+  assert.match(report, /web_search=donsetch\/web_search/);
+  assert.match(report, /research_fetch=donsetch\/web_fetch/);
+  assert.doesNotMatch(report, /secret-not-for-report/);
+  const missing = gatewayInjectedToolDiagnostics(input, [{ name: "donsetch", tools: ["web_search"] }]);
+  assert.deepEqual(missing.policies[0].concerns, ["tool not present in MCP client metadata"]);
+  const invalid = gatewayInjectedToolDiagnostics({ providers: [{name:"bad", injected_tools:[{name:"tool",mcp_client_name:"donsetch"}]}] }, []);
+  assert.equal(invalid.policies[0].status, "invalid-reference");
+  assert.equal(gatewayInjectedToolDiagnostics({ providers: [{name:"none", injected_tools:[]}] }, []).policies[0].status, "not-configured");
+});
+
 test("gateway absent injected-tool schema is unknown, not an assertion that policy is disabled", () => {
   const diagnostics = gatewayInjectedToolDiagnostics({ providers: [{ name: "deepseek", provider_status: "active" }] }, []);
   assert.equal(diagnostics.schemaReported, false);
