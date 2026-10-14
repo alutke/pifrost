@@ -40,6 +40,10 @@ import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs"
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
+import {
+  compactCliHelp, formatCliFailure, renderHealthOverview,
+  terminalSection, terminalField, terminalStatus, terminalNextSteps, humanAge,
+} from "./terminal-presentation.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -339,8 +343,7 @@ function formatError(error) {
 }
 
 function printHeader(title) {
-  console.log(`\n${title}`);
-  console.log("-".repeat(title.length));
+  console.log(terminalSection(title));
 }
 
 function boolMark(value) {
@@ -576,7 +579,23 @@ async function commandGlobalSetup(flags) {
   }
 }
 
-async function commandGlobalStatus(snapshot) {
+async function commandGlobalStatus(snapshot, options = {}) {
+  if (!options.verbose) {
+    const state = loadState();
+    const runtime = runtimeConfigFromState(state);
+    const management = managementAuthFromState(state);
+    const live = snapshot ?? await collectDoctorSnapshot({ runtime, managementAuth: management });
+    const checks = [
+      snapshotCheck("health", "Bifrost gateway", live, "pifrost global setup"),
+      snapshotCheck("inference", "Inference access", live, "pifrost global setup"),
+      snapshotCheck("management", "Management access", live, "pifrost global setup"),
+      snapshotCheck("routing", "Routing policy", live, "pifrost routes diagnose"),
+    ];
+    console.log(renderHealthOverview(checks, {title:"Pifrost global status"}));
+    console.log(terminalField("Gateway", runtime.url ?? "not configured"));
+    console.log("For full gateway, quota and MCP details: pifrost global status --verbose");
+    return;
+  }
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
   const managementAuth = managementAuthFromState(state);
@@ -870,7 +889,26 @@ async function commandModelsRefresh(flags = {}) {
   runCommand("omp", ["models", "refresh"], { env, inherit: true });
 }
 
-async function commandModelsDoctor() {
+async function commandModelsDoctor(options = {}) {
+  if (!options.verbose) {
+    const result = printModelDoctor(process.env, { log() {} });
+    const check = result.checks?.[0];
+    const issues = (result.unresolved ?? []).length;
+    console.log(terminalSection("Model catalogue"));
+    console.log(terminalStatus(result.ok ? "ok" : "fail", "Model readiness",
+      check?.summary ?? (result.ok ? "Available" : "Needs attention")));
+    if (issues) {
+      for (const item of result.unresolved.slice(0, 8)) {
+        console.log(`  - ${item.id}: ${item.unresolved.join(", ")}`);
+      }
+      if (issues > 8) console.log(`  ... and ${issues - 8} more affected routes.`);
+      console.log(terminalNextSteps(["pifrost models refresh --force", "pifrost models doctor --verbose"]));
+    } else {
+      console.log("For capability, provenance and context-band details: pifrost models doctor --verbose");
+    }
+    if (!result.ok) process.exitCode = 2;
+    return result;
+  }
   const result = printModelDoctor();
   if (!result.ok) process.exitCode = 2;
   return result;
@@ -2107,7 +2145,7 @@ async function commandDoctor() {
 const COMMANDS = new Map([
   ["init", (_args, flags) => commandInit(flags)],
   ["global setup", (_args, flags) => commandGlobalSetup(flags)],
-  ["global status", () => commandGlobalStatus()],
+  ["global status", (_args, flags) => commandGlobalStatus(undefined, flags)],
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["judge status", () => commandJudgeStatus()],
@@ -2126,7 +2164,7 @@ const COMMANDS = new Map([
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
-  ["models doctor", () => commandModelsDoctor()],
+  ["models doctor", (_args, flags) => commandModelsDoctor(flags)],
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", () => commandRepoStatus()],
@@ -2154,7 +2192,7 @@ const COMMANDS = new Map([
   ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
   ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
-  ["doctor", () => commandDoctor()],
+  ["doctor", (_args, flags) => commandDoctor(flags)],
 ]);
 
 function resolveCommand(positional) {
@@ -2174,16 +2212,16 @@ async function main() {
     return;
   }
   if (flags.help || !one || one === "help") {
-    process.stdout.write(HELP);
+    process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }
 
   const resolved = resolveCommand(positional);
   if (resolved) return resolved.handler(resolved.args, flags);
-  throw new Error(`Unknown command: ${positional.join(" ")}\n\n${HELP}`);
+  throw Object.assign(new Error("Unknown command. Use pifrost help for the available commands."), { isUsage: true });
 }
 
 main().catch((error) => {
-  console.error(`pifrost: ${formatError(error)}`);
+  console.error(formatCliFailure(error, { isUsage: error?.isUsage === true }));
   process.exitCode = 1;
 });
