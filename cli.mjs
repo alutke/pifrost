@@ -2173,6 +2173,30 @@ async function commandDoctor(flags = {}) {
         detail:catalog.checks?.[0]?.summary ?? "Not verified",
         action:"pifrost models refresh --force"},
     ];
+    const matrix = await buildCompatibilityMatrix({
+      url: runtime.url,
+      managementAuth,
+      virtualKey: runtime.virtualKey,
+      apiKey: runtime.apiKey,
+      ompVersion: getOmpVersion(),
+      bifrostVersion: snapshot.version?.ok ? snapshot.version.value : undefined,
+      probes: snapshot,
+    });
+    const incompatibilities = [...matrix.omp, ...matrix.bifrost]
+      .filter(item => item.optional !== true && item.status !== "supported");
+    for (const item of incompatibilities.slice(0, 5)) {
+      checks.push({
+        label:`Compatibility: ${item.label}`,
+        status:item.status === "unavailable" || item.status === "drifted" ? "warn" : "unknown",
+        detail:item.detail ? item.detail.slice(0, 140) : "Cannot verify",
+        action:"pifrost doctor --verbose",
+      });
+    }
+    if (incompatibilities.length > 5) checks.push({
+      label:"Other compatibility checks",status:"warn",
+      detail:`${incompatibilities.length - 5} additional findings`,
+      action:"pifrost doctor --verbose",
+    });
     if (transportWarnings.length) checks.push({
       label:"Transport security",status:"warn",
       detail:`${transportWarnings.length} warning(s) - see verbose report`,
