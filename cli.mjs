@@ -1458,11 +1458,8 @@ async function offerMatchingMcpSkills(selectedClients, flags = {}) {
       if (skill.raw?.license) console.log(`  License: ${String(skill.raw.license).slice(0, 120)}`);
       console.log(`  Project location: .agents/skills/${skill.name}; no MCP grants change`);
       let choice = flags["install-matching-skills"] === true ? "y" : "n";
-      if (flags["install-matching-skills"] !== true && input.isTTY && output.isTTY) {
-        choice = await withPrompter(async (rl) =>
-          (await rl.question("Install Skill? [y/N/d=never suggest]: ")).trim().toLowerCase());
-      } else if (flags["install-matching-skills"] !== true) {
-        console.log("  Skipped (noninteractive; use --install-matching-skills to opt in)");
+      if(flags["install-matching-skills"] !== true){
+        console.log("  Read-only suggestion; use pifrost repo skills add "+skill.name+" to install.");
       }
       if (choice === "d") {
         const latest = normalizeMcpSkillDiscovery(loadState().config.repos?.[current.repo.id]?.mcpSkillDiscovery);
@@ -1533,6 +1530,12 @@ async function commandRepoSkillsAdd(name, flags = {}) {
   if (!compatibility.compatible) {
     throw new Error(`Bifrost skill ${summary.name} is not safely representable in OMP: ${compatibility.reason}`);
   }
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would install Skill "+summary.name+"@"+summary.version,
+      flags.force?"May overwrite locally modified managed files":"Would preserve locally modified managed files"
+    ]));return;
+  }
   const { bundle, installed } = await installRepoBifrostSkill(state, current, summary, { force: flags.force === true });
   console.log(`Installed Bifrost skill ${bundle.skill.name}@${bundle.skill.version}`);
   console.log(`OMP project skill: ${installed.path}`);
@@ -1545,6 +1548,12 @@ async function commandRepoSkillsRemove(name, flags = {}) {
   const configured = configuredSkillRows(current);
   const found = configured.find((item) => item.name.toLowerCase() === name.toLowerCase());
   if (!found) throw new Error(`Bifrost skill is not configured for this repo: ${name}`);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would remove managed Skill "+found.name+" from this repository",
+      "Would remove its local discovery link; upstream Skill remains unchanged"
+    ]));return;
+  }
   const removed = removeManagedBifrostSkill(current.repo.root, found.name, { force: flags.force === true });
   const next = configured.filter((item) => item.name.toLowerCase() !== found.name.toLowerCase());
   updateRepoState(state, current.repo.id, { bifrostSkills: next,
@@ -1566,6 +1575,12 @@ async function commandRepoSkillsSync(name, flags = {}) {
       : "No Bifrost skills are configured for this repo; use `pifrost repo skills add <name>`");
   }
   const available = await listBifrostSkills(url, managementKey);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      ...wanted.map(item=>"Would inspect/synchronise "+item.name),
+      flags.force?"May overwrite local modified managed files":"Modified managed files would be preserved"
+    ]));return;
+  }
   for (const summary of resolveBifrostSkillNames(available, wanted.map((item) => item.name))) {
     const compatibility = bifrostSkillCompatibility(summary.raw);
     if (!compatibility.compatible) {
@@ -1612,7 +1627,8 @@ async function commandRepoSkillSuggestions(flags = {}) {
       (compat && !compat.compatible ? ` incompatible=${compat.reason}` : "") +
       (status?.installedVersion && skill?.version !== status.installedVersion ? ` update=${skill.version}` : ""));
   }
-  await offerMatchingMcpSkills(active, flags);
+  if(flags["install-matching-skills"]) await offerMatchingMcpSkills(active, flags);
+  else console.log("Read-only suggestions. To install, use pifrost repo skills add <name> or explicitly --install-matching-skills.");
 }
 
 async function commandRepoSkillBind(clientName, skillName, flags = {}) {
@@ -1624,7 +1640,8 @@ async function commandRepoSkillBind(clientName, skillName, flags = {}) {
     mcpSkillDiscovery: setMcpSkillAlias(current.config?.mcpSkillDiscovery, client, skill.name),
   });
   console.log(`Bound ${client.name} -> ${skill.name} for repository Skill discovery; no grants changed.`);
-  await offerMatchingMcpSkills([client], flags);
+  if(flags["install-matching-skills"]) await offerMatchingMcpSkills([client], flags);
+  else console.log("Skill binding saved. No Skill was installed.");
 }
 
 async function commandRepoSkillUnbind(clientName) {
