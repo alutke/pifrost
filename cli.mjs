@@ -1102,10 +1102,36 @@ async function commandRepoInit(flags) {
   }
 }
 
-async function commandRepoStatus(snapshot) {
+async function commandRepoStatus(snapshot, options = {}) {
   const state = loadState();
   const runtime = requireRuntime(state);
   const repoState = currentRepoState(state);
+  if (!options.verbose) {
+    const mcpPath = join(repoState.repo.root, ".omp/mcp.json");
+    const grants = repoState.config?.mcpClients ?? [];
+    const bundles = repoState.config?.virtualMcps ?? [];
+    const skills = configuredSkillRows(repoState);
+    printHeader(`Repository: ${repoState.repo.name}`);
+    const checks = [
+      {status:repoState.config?.virtualKeyId && repoState.secret?.mcpVirtualKey ? "ok" : "warn",
+       label:"Repository Virtual Key", detail:repoState.secret?.mcpVirtualKey ? "Saved locally (value hidden)" : "Missing"},
+      {status:existsSync(mcpPath) ? "ok" : "warn", label:"OMP MCP configuration",
+       detail:existsSync(mcpPath) ? "File present" : "Missing"},
+    ];
+    for (const item of checks) console.log(terminalStatus(item.status, item.label, item.detail));
+    console.log(terminalField("Direct MCP clients configured", grants.length));
+    console.log(terminalField("Virtual MCP bundles configured", bundles.length));
+    console.log(terminalField("Bifrost Skills configured", skills.length));
+    console.log("These are saved settings, not live permission or tool-execution checks.");
+    const actions = [];
+    if (!repoState.config?.virtualKeyId || !repoState.secret?.mcpVirtualKey || !existsSync(mcpPath)) {
+      actions.push("pifrost repo init");
+      process.exitCode = 2;
+    }
+    actions.push("pifrost repo status --verbose");
+    console.log(terminalNextSteps(actions));
+    return;
+  }
   printHeader(`Repo Pifrost status: ${repoState.repo.name}`);
   console.log(`Repo id:          ${repoState.repo.id}`);
   console.log(`Virtual Key id:   ${repoState.config?.virtualKeyId ?? "missing"}`);
@@ -2183,7 +2209,7 @@ async function commandDoctor(flags = {}) {
   try {
     getRepoRoot();
     console.log("");
-    await commandRepoStatus(snapshot);
+    await commandRepoStatus(snapshot, { verbose:true });
   } catch (error) {
     if (!String(formatError(error)).includes("not inside a Git repository")) throw error;
   }
@@ -2214,7 +2240,7 @@ const COMMANDS = new Map([
   ["models doctor", (_args, flags) => commandModelsDoctor(flags)],
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
-  ["repo status", () => commandRepoStatus()],
+  ["repo status", (_args, flags) => commandRepoStatus(undefined, flags)],
   ["repo research status", () => commandRepoResearchStatus()],
   ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
