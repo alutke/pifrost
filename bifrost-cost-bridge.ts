@@ -6,6 +6,9 @@ export interface BifrostCostCapture {
 	total?: number;
 	breakdown?: Record<string, unknown>;
 	requestId?: string;
+	/** Original logical route as observed by Bifrost 2.3+, not client metadata. */
+	requestedModel?: string;
+	requestedProvider?: string;
 	provider?: string;
 	originalModel?: string;
 	resolvedModel?: string;
