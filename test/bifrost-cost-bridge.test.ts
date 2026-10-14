@@ -113,6 +113,8 @@ test("captures Bifrost routed identity and request provenance headers", async ()
 		headers: {
 			"content-type": "application/json",
 			"x-bifrost-request-id": "req-123",
+			"x-bifrost-routing-info-requested-model": "omp-default",
+			"x-bifrost-routing-info-requested-provider": "bifrost",
 			"x-bifrost-provider": "deepseek",
 			"x-bifrost-resolved-model": "deepseek-v4.1-flash",
 			"x-bifrost-original-model": "omp-default",
@@ -127,6 +129,8 @@ test("captures Bifrost routed identity and request provenance headers", async ()
 	await bridgeBifrostUsageCostResponse(response, capture);
 	assert.deepEqual(capture, {
 		requestId: "req-123",
+		requestedModel: "omp-default",
+		requestedProvider: "bifrost",
 		provider: "deepseek",
 		originalModel: "omp-default",
 		resolvedModel: "deepseek-v4.1-flash",
