@@ -18,6 +18,7 @@ import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream"
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
+import { resolveModelTokenizer } from "@oh-my-pi/pi-catalog/model-tokenizer";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import { nativeJudgeGateway } from "./judge-bridge.mjs";
 import { installPifrostTextTokenCounter } from "./omp-context-policy.ts";
@@ -32,6 +33,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import {
 	buildPifrostTransportModel,
 	installPifrostModelPolicyResolver,
+	installPifrostModelTokenizerResolver,
 } from "./transport-model.ts";
 import {
 	installOmpCatalogRuntime,
@@ -123,6 +125,7 @@ import {
 } from "./request-provenance.ts";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));
+installPifrostModelTokenizerResolver((modelId, provider) => resolveModelTokenizer(modelId, provider));
 
 installOmpCatalogRuntime({
 	getBundledProviders: () => getBundledProviders(),
