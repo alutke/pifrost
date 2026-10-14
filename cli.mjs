@@ -888,6 +888,8 @@ function commandRoutesExplain(input, flags = {}) {
   const explanation = explainRouteRequest(diagnostic, routeExplanationRequestFromFlags(flags));
   printHeader(`Route request: ${input}`);
   console.log(formatRouteExplanation(explanation));
+  console.log("Request simulation only: this does not invoke a Bifrost rule or establish route-counter attribution.");
+  console.log("After an actual inference, inspect /pifrost trace and correlate its gateway request/trace ID with Bifrost Logs and Routes.");
 }
 
 async function chooseClientsInteractively(clients) {
