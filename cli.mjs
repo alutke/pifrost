@@ -25,6 +25,7 @@ import {
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
+import { commandCatalog, flagRequiresValue, isKnownFlag, cliUsageError, validateCliInvocation, commandUsage, operationLabel } from "./cli-command-schema.mjs";
 import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
 import {
   RESEARCH_PROFILES,
@@ -234,33 +235,25 @@ Repo .omp/mcp.json files contain no secret; they resolve the repo VK through
 `;
 
 function parseArgs(argv) {
-  const positional = [];
-  const flags = {};
-  for (let i = 0; i < argv.length; i += 1) {
-    const arg = argv[i];
-    if (arg === "--") {
-      positional.push(...argv.slice(i + 1));
-      break;
-    }
-    if (!arg.startsWith("--")) {
-      positional.push(arg);
-      continue;
-    }
-    const eq = arg.indexOf("=");
-    if (eq > 2) {
-      flags[arg.slice(2, eq)] = arg.slice(eq + 1);
-      continue;
-    }
-    const key = arg.slice(2);
-    const next = argv[i + 1];
-    if (next !== undefined && !next.startsWith("--")) {
-      flags[key] = next;
-      i += 1;
-    } else {
-      flags[key] = true;
+  const positional = [], flags = {};
+  for (let i=0;i<argv.length;i++) {
+    const token=argv[i];
+    if(token==="--") { positional.push(...argv.slice(i+1)); break; }
+    if(!token.startsWith("--") || token==="--") {positional.push(token);continue;}
+    const eq=token.indexOf("=");
+    const key=eq>2?token.slice(2,eq):token.slice(2);
+    if(!isKnownFlag(key))throw cliUsageError("Unknown option --"+key+". Use the command's --help.");
+    if(Object.hasOwn(flags,key))throw cliUsageError("Option --"+key+" was provided more than once.");
+    if(flagRequiresValue(key)){
+      const value=eq>2?token.slice(eq+1):argv[++i];
+      if(!value || value.startsWith("--"))throw cliUsageError("Option --"+key+" requires a value.");
+      flags[key]=value;
+    }else{
+      if(eq>2)throw cliUsageError("Option --"+key+" is a switch and cannot take a value.");
+      flags[key]=true;
     }
   }
-  return { positional, flags };
+  return {positional,flags};
 }
 
 function flagString(flags, name) {
@@ -2308,13 +2301,25 @@ async function main() {
     console.log(VERSION);
     return;
   }
-  if (flags.help || !one || one === "help") {
+  if (!one || one === "help") {
     process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }
 
   const resolved = resolveCommand(positional);
-  if (resolved) return resolved.handler(resolved.args, flags);
+  if (resolved) {
+    const name = positional.slice(0, positional.length - resolved.args.length).join(" ");
+    if (flags.help) {
+      process.stdout.write(commandUsage(name) + "\n");
+      return;
+    }
+    const definition = validateCliInvocation(name, resolved.args, flags);
+    if (definition.operation === "billed" && !flags.yes) {
+      console.log("Operation: " + operationLabel(definition.operation));
+      console.log("This command performs real provider calls and may incur charges.");
+    }
+    return resolved.handler(resolved.args, flags);
+  }
   throw Object.assign(new Error("Unknown command. Use pifrost help for the available commands."), { isUsage: true });
 }
 
