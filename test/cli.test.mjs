@@ -67,11 +67,13 @@ test("parses and compares upstream semantic versions conservatively", () => {
   assert.equal(versionAtLeast("2.2.2", "2.2.3"), false);
 });
 
-test("OMP compatibility matrix gates the Pifrost 18.4.5 baseline and preserves earlier feature floors", () => {
-  const current = ompCompatibilityMatrix("18.4.5");
-  assert.ok(current.filter(item => !["omp-native-replay-accounting", "omp-cross-model-compaction", "omp-plan-review-hooks"].includes(item.id))
-    .every(item => item.status === "supported"));
-  assert.equal(current.find(item => item.id === "omp-cross-model-compaction")?.status, "unavailable");
+test("OMP compatibility matrix enforces 18.10.4 installation floor and preserves feature history", () => {
+  const legacy = ompCompatibilityMatrix("18.4.5");
+  assert.equal(legacy.find(item => item.id === "omp-baseline")?.status, "unavailable",
+    "legacy OMP is no longer a supported GitHub plugin installation host");
+  assert.ok(legacy.filter(item => !["omp-baseline","omp-native-replay-accounting","omp-cross-model-compaction","omp-plan-review-hooks"].includes(item.id))
+    .every(item => item.status === "supported"), "historical feature availability remains visible");
+  assert.equal(legacy.find(item => item.id === "omp-cross-model-compaction")?.status, "unavailable");
   const latest = ompCompatibilityMatrix("18.10.4");
   assert.ok(latest.every(item => item.status === "supported"));
   const previous = ompCompatibilityMatrix("18.3.2");

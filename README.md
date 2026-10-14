@@ -106,10 +106,10 @@ Pifrost's existing chat aliases remain chat-only. Non-chat `judge`, image, searc
 | Component | Requirement |
 | --- | --- |
 | Node.js | **22.19+** |
-| OhMyPi | **18.4.5+** in the 18.x line |
-| Pifrost OMP policy snapshot | **18.8.9**, with evidence-backed compatibility patches; host integration validated separately |
+| OhMyPi | **18.10.4+** for Pifrost 0.17.0 installation |
+| Pifrost OMP policy snapshot | **18.10.4**, with versioned model-policy contracts; host integration validated separately |
 | Maxim Bifrost | **2.2.4+** |
-| Recommended Bifrost | **2.2.6+** for setup-lock awareness, routed-response provenance and current cost semantics |
+| Recommended Bifrost | **2.3.0+** for requested-route provenance, per-target first-token deadlines, reasoning conversion and injected-tool list schema |
 
 You also need:
 
@@ -262,7 +262,9 @@ Bifrost 2.3's `injected_tools` list is now recognised by read-only `pifrost glob
 
 **Upstream-first compatibility:** OMP owns reasoning-aware compaction and the session/replay lifecycle. Pifrost retains its narrowly scoped physical-model context estimates, wire compatibility preflight, Bifrost-specific nested-cost decoding and observed synthetic reasoning cleanup until live tests establish safe upstream parity. Bifrost 2.3 TTFT and reasoning compatibility policy are inspected, not automatically changed.
 
-Upgrade to v0.17.0 then synchronise routes as described below. An OMP restart is required.
+Upgrade OMP to **18.10.4 or newer before installing Pifrost v0.17.0**, then synchronise routes as described below. An OMP restart is required.
+
+**Installation compatibility:** OMP 18.4.8's compiled GitHub plugin installer cannot resolve the dependency graph used by OMP 18.10.4's catalog (notably `@oh-my-pi/pi-utils`), even though local linked-extension checks may succeed. Pifrost v0.17.0 does not support that older GitHub installation path. If OMP cannot be upgraded, retain **Pifrost v0.16.0** with its earlier pinned OMP libraries instead. The compiled OMP 18.10.4 clean GitHub install is now a required main-branch release gate.
 
 ### Release A: Bifrost-native route attribution
 

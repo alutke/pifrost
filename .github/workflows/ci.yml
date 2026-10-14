@@ -47,19 +47,6 @@ jobs:
           ./node_modules/.bin/omp --version
           ./node_modules/.bin/omp install . --force
           ./node_modules/.bin/omp plugin list
-      - name: Validate with compiled OMP 18.4.8 release binary
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.4.8"
-          curl --fail --location --silent --show-error \
-            "https://github.com/can1357/oh-my-pi/releases/download/v18.4.8/omp-linux-x64" \
-            --output "$OMP_BIN"
-          echo "1b88f7a0da3f61edda915d836e11f63f20f2b56aeac2ddfa4ece0faa726f31c2  $OMP_BIN" | sha256sum -c -
-          chmod +x "$OMP_BIN"
-          export HOME="$RUNNER_TEMP/omp-home-compiled"
-          mkdir -p "$HOME"
-          "$OMP_BIN" --version
-          "$OMP_BIN" install . --force
-          "$OMP_BIN" plugin list
       - name: Validate with current OMP 18.10.4 release binary
         run: |
           OMP_BIN="$RUNNER_TEMP/omp-18.10.4"
@@ -80,11 +67,12 @@ jobs:
           mkdir -p "$HOME"
           ./node_modules/.bin/omp install "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" --force
           ./node_modules/.bin/omp plugin list
-      - name: Validate clean GitHub plugin install with compiled OMP 18.4.8
-        if: github.event_name == 'push'
+      - name: Validate clean GitHub plugin install with compiled OMP 18.10.4
         run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.4.8"
+          OMP_BIN="$RUNNER_TEMP/omp-18.10.4"
+          REF="${{ github.event.pull_request.head.sha || github.sha }}"
           export HOME="$RUNNER_TEMP/omp-home-compiled-github"
           mkdir -p "$HOME"
-          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" --force
+          "$OMP_BIN" --version
+          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${REF}" --force
           "$OMP_BIN" plugin list
