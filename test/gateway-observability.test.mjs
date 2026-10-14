@@ -56,7 +56,7 @@ test("privacy merges global default with explicit tri-state VK override only whe
   const forcedOn = summarizeGatewayPrivacy({ client_config: { disable_content_logging: true } }, { disable_content_logging: false });
   assert.equal(forcedOn.effective, "on");
   const report = formatGatewayPrivacy(gateway, { disable_content_logging: true, value: "sk-bf-secret" });
-  assert.match(report, /effective log content.*off/u);
+  assert.match(report, /configured logging default.*off/u);
   assert.match(report, /hidden object-storage retention: enabled/u);
   assert.match(report, /log retention days: 30/u);
   assert.doesNotMatch(report, /secret-should-not-leak|sk-bf-secret|vk-1/u);
