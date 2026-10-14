@@ -5,6 +5,11 @@ import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
+import {
+  reconcileRoutesOnce, runRouteWatchLoop, validateWatchInterval,
+  readWatchStatus, writeWatchStatus, withRouteWatchLock, RouteWatchError,
+} from "./route-watch.mjs";
+import { enableRouteWatchService, disableRouteWatchService, routeWatchServiceStatus } from "./route-watch-service.mjs";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
@@ -157,6 +162,11 @@ Usage:
   pifrost routes diff
   pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
   pifrost routes sync [--no-refresh]
+  pifrost routes watch once                 Detect, stage and atomically apply changes when safe
+  pifrost routes watch [--interval 60]      Run a foreground periodic watcher
+  pifrost routes watch enable [--interval 60]  Install/start a user systemd service (opt-in)
+  pifrost routes watch disable              Stop/remove managed watcher service
+  pifrost routes watch status               Inspect watcher health and latest check
   pifrost routes diagnose
   pifrost routes effective
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
@@ -895,6 +905,7 @@ async function commandRoutesDiff() {
 }
 
 async function commandRoutesVerify(flags = {}) {
+  return withRouteWatchLock(async () => {
   const { policyFingerprint, manifest } = await routingSnapshot();
   const local = loadAliasManifest();
   const status = routePolicyDrift(local.policyFingerprint, policyFingerprint);
@@ -917,9 +928,11 @@ async function commandRoutesVerify(flags = {}) {
   const result = writeAliasManifest({ ...local, synchronizedAt: stamp, policyFingerprint });
   console.log(`Verified full Bifrost rule policy unchanged; refreshed local verification at ${stamp}.`);
   console.log(`Manifest: ${result.path}; restart OMP to refresh active compatibility profiles.`);
+  });
 }
 
 async function commandRoutesSync(flags = {}) {
+  return withRouteWatchLock(async () => {
   const { manifest, rules, diagnostics, policyFingerprint } = await routingSnapshot();
   const count = Object.keys(manifest.aliases).length;
   if (!count) {
@@ -943,6 +956,66 @@ async function commandRoutesSync(flags = {}) {
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
   if (!flags["no-refresh"]) await commandModelsRefresh({ force: true });
+  });
+}
+
+async function commandRoutesWatchOnce() {
+  requireManagement(loadState());
+  try {
+    const result = await reconcileRoutesOnce({ capture: routingSnapshot });
+    console.log(result.status === "updated"
+      ? `Updated ${result.routes} Bifrost routes (fingerprint ${result.fingerprint}). Restart active OMP sessions.`
+      : `Routes unchanged (fingerprint ${result.fingerprint}).`);
+  } catch (error) {
+    const code = error instanceof RouteWatchError ? error.code : "watcher-error";
+    try { writeWatchStatus({ status: "degraded", lastError: code, lastCheckedAt: new Date().toISOString() }); } catch {}
+    throw new Error(`Route watch check failed (${code}); existing routes retained. Check pifrost routes watch status.`);
+  }
+}
+
+async function commandRoutesWatch(flags = {}) {
+  requireManagement(loadState());
+  const intervalMs = validateWatchInterval(flags.interval);
+  const controller = new AbortController();
+  const stop = () => controller.abort();
+  process.once("SIGINT", stop);
+  process.once("SIGTERM", stop);
+  console.log(`Watching Bifrost routes every ${intervalMs / 1000}s (changes staged before applying; Ctrl+C to stop).`);
+  try {
+    await runRouteWatchLoop({ capture: routingSnapshot, intervalMs, signal: controller.signal });
+  } finally {
+    process.removeListener("SIGINT", stop);
+    process.removeListener("SIGTERM", stop);
+  }
+}
+
+function commandRoutesWatchEnable(flags = {}) {
+  const state = loadState();
+  requireManagement(state);
+  if (!managementAuthFromState(state, {}) ||
+      !state?.config?.bifrost?.url || !state?.secrets?.inferenceVirtualKey) {
+    throw new Error("Background service needs stored Bifrost management + inference credentials. Run pifrost global setup first (environment-only credentials are not persisted into systemd).");
+  }
+  const intervalMs = validateWatchInterval(flags.interval);
+  if (flags["dry-run"]) {
+    console.log(`Would install/start pifrost-route-watch.service, polling every ${intervalMs / 1000}s; no credentials in unit file.`);
+    return;
+  }
+  const result = enableRouteWatchService({ intervalMs });
+  console.log(`Watcher service installed and ${result.started ? "started" : "created"} (every ${result.intervalSeconds}s).`);
+  console.log("Check: pifrost routes watch status; journalctl --user -u pifrost-route-watch.service");
+}
+function commandRoutesWatchStatus() {
+  const service = routeWatchServiceStatus();
+  console.log("Bifrost automatic route watch");
+  console.log("  service:", service.installed ? service.active : "not installed");
+  console.log("  last check:", service.watcher.lastCheckedAt ?? "never");
+  console.log("  result:", service.watcher.status ?? "never-run");
+  if (service.watcher.fingerprint) console.log("  rule fingerprint:", service.watcher.fingerprint);
+  if (service.watcher.lastChangedAt) console.log("  last change:", service.watcher.lastChangedAt);
+  if (service.watcher.lastError) console.log("  last error:", service.watcher.lastError);
+  if (service.watcher.restartRequired) console.log("  NOTE: running OMP sessions must be restarted to load changed model registration.");
+  if (!service.installed) console.log("  Enable automatic sync: pifrost routes watch enable");
 }
 
 async function commandModelsRefresh(flags = {}) {
@@ -2439,6 +2512,14 @@ const COMMANDS = new Map([
   ["routes diff", () => commandRoutesDiff()],
   ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
+  ["routes watch", (_args, flags) => commandRoutesWatch(flags)],
+  ["routes watch once", () => commandRoutesWatchOnce()],
+  ["routes watch enable", (_args, flags) => commandRoutesWatchEnable(flags)],
+  ["routes watch disable", () => {
+    const result = disableRouteWatchService();
+    console.log(result.removed ? "Watcher service stopped and removed." : "Watcher service not installed.");
+  }],
+  ["routes watch status", () => commandRoutesWatchStatus()],
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
