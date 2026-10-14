@@ -1,3 +1,9 @@
+## 0.23.1 — 2026-10-14
+
+- **Rollback:** withdraw the automatic Bifrost route watcher introduced in v0.23.0 at the user's request; there is no daemon, systemd unit integration, periodic polling, background credential access or watch CLI surface in this version.
+- Restore the proven v0.22.4 routing, catalogue, CLI and OMP extension implementation, preserving all fixes through v0.22.4 (including model-cache and mixed-protocol ingress corrections).
+- Keep released tags and audit history intact. For changed Bifrost routes, continue using `pifrost routes sync` and restart OMP. A service-free launch-time reconciliation mechanism can be designed separately without enabling background processes.
+
 ## 0.23.0 — 2026-10-14
 
 - Add an opt-in, persistent **Bifrost route watcher**: `pifrost routes watch [--interval 60]`, `routes watch once`, `routes watch enable|disable|status`. On Linux, `enable` installs and starts a managed systemd user service without storing credentials in its unit file.
