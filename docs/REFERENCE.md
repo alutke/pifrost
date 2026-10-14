@@ -155,6 +155,14 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.19.0 — selective, read-only observability
+
+`pifrost global observability` reads Bifrost's complexity-analyzer configuration, redacted provider inventory and MCP client metadata. It reports a known `classifier` mode (keywords/decision/semantic), identifier-only provider/model selectors, semantic/LLM fallback and session-stickiness settings, but neither runs classification nor asserts readiness or model selection. Research-tool detection is limited to provider-injected MCP names with web/search/fetch/crawl/browse/research semantics. Bifrost execution and Virtual Key grants remain unverified and unchanged.
+
+`pifrost global observability --vk-id <management-id>` also reads **that** Virtual Key's management metadata. Its nullable `disable_content_logging` is treated as inherit/true/false and combined with `client_config.disable_content_logging` for a *configured default only*. This is not an inference that hidden object copies, log metadata or per-request overrides were disabled. Without a readable key or global config, the selected-key default remains **unverified**. No secret/value, prompt, raw management document or log content is rendered.
+
+In OMP, `/pifrost costs` sums only authoritative per-attempt gateway cost totals retained in the bounded in-memory session trace (up to 20 attempts). It groups by OMP logical alias, reports number of attempts with/without cost and cache/fallback counts. Unknown costs are never presented as zero; the sum excludes unreported costs and is not Bifrost's full billing ledger. Session trace state is dropped on shutdown. No new persistent tracking or background polling is added.
+
 ### 0.18.0 — gateway reliability and attribution
 
 `/pifrost trace` reports gateway response status and sanitized request/trace identifiers. It classifies authentication (401), authorization (403), budget/rate allowance (402/429), timeouts (408/504), upstream failures (5xx), and invalid requests (remaining 4xx) without parsing arbitrary provider response bodies or inventing upstream error reasons. `Retry-After` is bounded to one day, advisory-only, and does not change OMP or Bifrost retry policy.
@@ -383,7 +391,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.18.0
+0.19.0
 ```
 
 Bun can also install the package globally:

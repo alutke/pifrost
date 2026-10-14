@@ -1,3 +1,11 @@
+## 0.19.0 — 2026-10-14
+
+- Release D: add explicit, read-only `pifrost global observability [--vk-id <management-id>]` for Bifrost complexity classifier configuration, provider-injected web research tool visibility and selected Virtual Key content-logging posture.
+- Inspect known Bifrost global/nullable-VK privacy fields without dumping raw config, secrets or request content. Keep per-request retention overrides and actual deletion unverified rather than claiming compliance.
+- Add `/pifrost costs` with role-level aggregation of gateway-reported cost only, unknown-cost coverage, fallback/cache counts, and bounded session-only state. No model prices or invoices are inferred.
+- Retain Bifrost execution ownership for complexity decisions, provider tools, routing and governance. No Warp or A2A integration, new agent runtime, automatic activation or policy mutations.
+- Test classifier/semantic fallback, tri-state logging, secrets redaction, research-tool selection and partial cost reporting. Preserve older Bifrost compatibility and OMP 18.10.4 install requirements.
+
 ## 0.18.0 — 2026-10-14
 
 - Release C: extend gateway-owned request provenance with sanitised Bifrost trace IDs, HTTP status, error category, bounded Retry-After hints, cache-hit metadata and pre/post-output evidence in `/pifrost trace`.

@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
 	formatPifrostRouteTraces,
+	formatPifrostSessionCosts,
 	recordBifrostCaptureTrace,
 	releasePifrostRouteTraces,
 } from "../request-provenance.ts";
@@ -76,4 +77,30 @@ test("trace leaves compatible routes free of wire-boundary notices", () => {
 	const report = formatPifrostRouteTraces(sessionId);
 	assert.doesNotMatch(report, /wire-boundaries|boundary-retry/u);
 	releasePifrostRouteTraces(sessionId);
+});
+
+test("session gateway cost report groups confirmed costs by logical model and leaves missing values unknown", () => {
+  const id = "release-d-cost-review";
+  const base = (logicalModel: string, outcome: "done" | "error" = "done") => ({
+    logicalModel, protocol: "openai-completions", attempt: 1,
+    requestedPrimary: logicalModel, outcome,
+  });
+  recordBifrostCaptureTrace(id, base("omp-default"), {
+    requestId: "gateway-r1", total: 0.002, isFallback: true, cacheHit: false,
+  });
+  recordBifrostCaptureTrace(id, base("omp-default"), {
+    requestId: "gateway-r2", total: 0, cacheHit: true,
+  });
+  recordBifrostCaptureTrace(id, base("omp-advisor", "error"), {
+    requestId: "gateway-r3", cacheHit: false,
+  });
+  const report = formatPifrostSessionCosts(id);
+  assert.match(report, /reported=2\/3 total-reported=\$0\.002000/u);
+  assert.match(report, /omp-default: reported=2\/2 cost=\$0\.002000 fallbacks=1 cache-hits=1/u);
+  assert.match(report, /omp-advisor: reported=0\/1 cost=\$0\.000000/u);
+  assert.match(report, /cache-metadata=3\/3/u);
+  assert.match(report, /missing costs excluded, not zero/u);
+  assert.doesNotMatch(report, /gateway-r1|gateway-r2|gateway-r3/u);
+  releasePifrostRouteTraces(id);
+  assert.match(formatPifrostSessionCosts(id), /no requests recorded/u);
 });

@@ -301,6 +301,21 @@ const SOURCES = [
     required: ["VKRotationCooldown", "PreviousValueExpiresAt", "RotateVirtualKey"],
   },
   {
+    name: "Bifrost 2.3.0 classifier config interface",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/ui/lib/types/complexityRouter.ts`,
+    required: ["export interface AnalyzerConfig", "classifier?: ClassifierMode", "decision?: DecisionConfig", "semantic?: SemanticConfig", "session?: SessionConfig"],
+  },
+  {
+    name: "Bifrost 2.3.0 gateway content-logging privacy fields",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/framework/configstore/clientconfig.go`,
+    required: ['json:"disable_content_logging"', 'json:"retain_content_in_object_storage"', 'json:"allow_per_request_content_storage_override"', 'json:"log_retention_days"'],
+  },
+  {
+    name: "Bifrost 2.3.0 nullable Virtual Key content-logging policy",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/transports/bifrost-http/handlers/governance.go`,
+    required: ['json:"disable_content_logging,omitempty"', 'r.GET("/api/governance/virtual-keys/{vk_id}"', "applyVirtualKeyContentLoggingUpdate"],
+  },
+  {
     name: "Bifrost 2.3.0 provider injected-tool list",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/framework/configstore/clientconfig.go`,
     required: ["InjectedTools", 'json:"injected_tools,omitempty"'],
