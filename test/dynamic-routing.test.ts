@@ -102,6 +102,17 @@ test("unchanged eligible Chat route delegates the complete live chain to Bifrost
 	assert.equal(canUseNativeBifrostRoute(route, split), false);
 });
 
+test("native passthrough applies to every standard OMP role alias", () => {
+	const prototype = profile();
+	for (const role of ["default", "smol", "task", "advisor", "slow", "plan", "designer", "vision", "commit", "tiny"]) {
+		const route: DynamicRouteProfile = { ...prototype, id: `omp-${role}`, members: [prototype.members[0]!] };
+		const planned = planDynamicRouteAttempts(route, {
+			model: route.id, messages: [{ role: "user", content: "hello" }], max_completion_tokens: 4_000,
+		}, { estimatedInputTokens: 500, compatibilityByMember: new Map([[route.members[0]!.reference, "chat"]]) });
+		assert.equal(canUseNativeBifrostRoute(route, planned), true, `native rule for ${role}`);
+	}
+});
+
 test("compatibility exceptions reject unsynchronised and expired local rule snapshots", () => {
 	const route = profile();
 	const now = Date.parse("2026-10-14T07:00:00Z");
