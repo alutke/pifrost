@@ -121,6 +121,7 @@ import {
 } from "./agent-attribution.ts";
 import {
 	formatPifrostRouteTraces,
+	parsePifrostTraceOptions,
 	formatPifrostSessionCosts,
 	recordBifrostCaptureTrace,
 	releasePifrostRouteTraces,
@@ -904,7 +905,16 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			}
 
 			if (command === "trace") {
-				ctx.ui.notify(formatPifrostRouteTraces(ctx.sessionManager.getSessionId()), "info");
+				try {
+					const options = parsePifrostTraceOptions(raw.slice("trace".length));
+					ctx.ui.notify(formatPifrostRouteTraces(ctx.sessionManager.getSessionId(), options), "info");
+				} catch (error) {
+					ctx.ui.notify(error instanceof Error ? error.message : "Invalid trace options.", "warning");
+				}
+				return;
+			}
+			if (command === "help") {
+				ctx.ui.notify("Pifrost OMP commands:\n  /pifrost doctor [verbose] - model readiness\n  /pifrost trace [last N] [errors] [role omp-ROLE] [verbose] - request diagnostics\n  /pifrost costs - gateway-reported session costs\n  /pifrost refresh - update catalog\n  /pifrost config status|apply|set|save - OMP settings", "info");
 				return;
 			}
 
@@ -974,7 +984,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor [verbose] | /pifrost trace | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost help | /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role omp-ROLE] [verbose] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
