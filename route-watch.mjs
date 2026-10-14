@@ -15,9 +15,11 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 import {
   aliasManifestPath, loadAliasManifest, ompAgentDir, pifrostConfigDir,
-  writeAliasManifest, diffAliases,
+  writeAliasManifest, diffAliases, loadState, runtimeConfigFromState,
 } from "./cli-lib.mjs";
 import { routePolicyDrift } from "./route-policy-fingerprint.mjs";
+import { semanticAliasFingerprint, inferenceKeyFingerprint } from "./route-cache-identity.mjs";
+import { CATALOG_CACHE_SCHEMA_VERSION } from "./dist/cache-schema.js";
 
 export const DEFAULT_WATCH_INTERVAL_MS = 60_000;
 export const MIN_WATCH_INTERVAL_MS = 15_000;
@@ -175,11 +177,22 @@ export async function stageRouteCatalog(manifest, env = process.env, refresh = r
     });
     if (!existsSync(stagedCache)) throw new RouteWatchError("catalog-staging-failed");
     const catalog = JSON.parse(readFileSync(stagedCache, "utf8"));
-    const ids = new Set((catalog.models ?? []).map(model => model?.id?.toLowerCase()));
-    if (!Array.isArray(catalog.models) || catalog.models.length === 0 ||
-        !Array.isArray(catalog.diagnostics) ||
-        !Object.keys(manifest.aliases).every(id => ids.has(id.toLowerCase())) ||
-        !/^[a-f0-9]{64}$/u.test(catalog.aliasFingerprint ?? "")) {
+    const ids = new Set(Array.isArray(catalog.models)
+      ? catalog.models.map(model => typeof model?.id === "string" ? model.id.toLowerCase() : "")
+      : []);
+    const runtime = runtimeConfigFromState(loadState(env), env);
+    const validModels = Array.isArray(catalog.models) && catalog.models.length > 0 &&
+      catalog.models.every(model => typeof model?.id === "string" &&
+        typeof model?.name === "string" &&
+        Number.isSafeInteger(model?.contextWindow) && model.contextWindow > 0 &&
+        Number.isSafeInteger(model?.maxTokens) && model.maxTokens > 0);
+    if (catalog.schemaVersion !== CATALOG_CACHE_SCHEMA_VERSION ||
+        !runtime.url || !runtime.virtualKey ||
+        catalog.url !== runtime.url ||
+        catalog.virtualKeyFingerprint !== inferenceKeyFingerprint(runtime.virtualKey) ||
+        catalog.aliasFingerprint !== semanticAliasFingerprint(manifest) ||
+        !validModels || !Array.isArray(catalog.diagnostics) ||
+        !Object.keys(manifest.aliases).every(id => ids.has(id.toLowerCase()))) {
       throw new RouteWatchError("catalog-staging-invalid");
     }
     return {

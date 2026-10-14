@@ -10,6 +10,8 @@ import {
   readWatchStatus, runRouteWatchLoop,
 } from "../route-watch.mjs";
 import { routePolicyFingerprint } from "../route-policy-fingerprint.mjs";
+import { semanticAliasFingerprint, inferenceKeyFingerprint } from "../route-cache-identity.mjs";
+import { CATALOG_CACHE_SCHEMA_VERSION } from "../dist/cache-schema.js";
 
 function fixture(t) {
   const home = mkdtempSync(join(tmpdir(), "pifrost-route-watch-"));
@@ -107,7 +109,9 @@ test("catalog staging keeps old config until it is valid, commits both files, an
     synchronizedAt: new Date().toISOString() };
   let seenEnvironment;
   const staged = await stageRouteCatalog(manifest, {
-    ...f.env, BIFROST_ADMIN_PASSWORD: "secret-password",
+    ...f.env, BIFROST_URL:"http://127.0.0.1:8180/v1",
+    BIFROST_VIRTUAL_KEY: "sk-bf-virtual-test",
+    BIFROST_ADMIN_PASSWORD: "secret-password",
     BIFROST_MANAGEMENT_API_KEY: "secret-token",
   }, async environment => {
     seenEnvironment = environment;
@@ -115,8 +119,11 @@ test("catalog staging keeps old config until it is valid, commits both files, an
     assert.deepEqual(readManifest.aliases, f.base.aliases);
     assert.equal(readFileSync(f.env.PIFROST_ALIASES, "utf8"), JSON.stringify(original));
     writeFileSync(environment.PIFROST_CACHE_FILE, JSON.stringify({
-      aliasFingerprint: "c".repeat(64), diagnostics: [],
-      models: [{ id: "omp-default" }]
+      schemaVersion: CATALOG_CACHE_SCHEMA_VERSION,
+      url: "http://127.0.0.1:8180/v1",
+      virtualKeyFingerprint: inferenceKeyFingerprint("sk-bf-virtual-test"),
+      aliasFingerprint: semanticAliasFingerprint(manifest),
+      diagnostics: [], models: [{ id: "omp-default", name: "omp-default", contextWindow: 128000, maxTokens: 8192 }]
     }));
   });
   assert.match(readFileSync(f.env.PIFROST_CACHE_FILE, "utf8"), /old-cache/);
@@ -132,9 +139,18 @@ test("publication failure rolls back both manifest and cached catalogue", async 
   const original = { ...f.base, policyFingerprint: "a".repeat(64) };
   writeFileSync(f.env.PIFROST_ALIASES, JSON.stringify(original));
   writeFileSync(f.env.PIFROST_CACHE_FILE, "old-catalog");
-  const staged = await stageRouteCatalog({ ...f.base, policyFingerprint: "b".repeat(64) }, f.env,
+  const next = { ...f.base, policyFingerprint: "b".repeat(64) };
+  const staged = await stageRouteCatalog(next, {
+    ...f.env, BIFROST_URL:"http://127.0.0.1:8180/v1",
+    BIFROST_VIRTUAL_KEY:"sk-bf-virtual-test",
+  },
     async environment => writeFileSync(environment.PIFROST_CACHE_FILE, JSON.stringify({
-      aliasFingerprint: "c".repeat(64), models: [{ id: "omp-default" }], diagnostics: [],
+      schemaVersion: CATALOG_CACHE_SCHEMA_VERSION,
+      url:"http://127.0.0.1:8180/v1",
+      virtualKeyFingerprint: inferenceKeyFingerprint("sk-bf-virtual-test"),
+      aliasFingerprint: semanticAliasFingerprint(next),
+      models: [{ id:"omp-default", name:"omp-default", contextWindow:128000, maxTokens:8192 }],
+      diagnostics: [],
     })));
   unlinkSync(staged.path); // emulate a rename failure after manifest publication
   assert.throws(() => staged.commit());

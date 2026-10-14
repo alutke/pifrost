@@ -24,9 +24,17 @@ if (process.env.BIFROST_ADMIN_PASSWORD || process.env.BIFROST_MANAGEMENT_API_KEY
   fs.writeFileSync(${JSON.stringify(secretExposed)}, "EXPOSED");
 }
 const config = JSON.parse(fs.readFileSync(process.env.PIFROST_ALIASES,"utf8"));
-const models = Object.keys(config.aliases).map(id=>({id,name:id}));
+const models = Object.keys(config.aliases).map(id=>({id,name:id,contextWindow:128000,maxTokens:8192}));
 fs.writeFileSync(process.env.PIFROST_CACHE_FILE, JSON.stringify({
-  schemaVersion:4, generatedAt:new Date().toISOString(), aliasFingerprint:"c".repeat(64),
+  schemaVersion:18, generatedAt:new Date().toISOString(),
+  url:process.env.BIFROST_URL,
+  virtualKeyFingerprint:require("node:crypto").createHash("sha256").update(process.env.BIFROST_VIRTUAL_KEY).digest("hex"),
+  aliasFingerprint:(()=>{ const config={...JSON.parse(fs.readFileSync(process.env.PIFROST_ALIASES,"utf8"))};
+    delete config.synchronizedAt;
+    const canonical=value=>Array.isArray(value)?value.map(canonical):value&&typeof value==="object"
+      ?Object.fromEntries(Object.entries(value).sort(([a],[b])=>a.localeCompare(b)).map(([k,v])=>[k,canonical(v)])):value;
+    return require("node:crypto").createHash("sha256").update(JSON.stringify(canonical(config))).digest("hex");
+  })(),
   models,diagnostics:[]
 }));
 fs.appendFileSync(${JSON.stringify(marker)}, "refresh\\n");
