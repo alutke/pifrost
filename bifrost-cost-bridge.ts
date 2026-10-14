@@ -6,6 +6,9 @@ export interface BifrostCostCapture {
 	total?: number;
 	breakdown?: Record<string, unknown>;
 	requestId?: string;
+	/** Original logical route as observed by Bifrost 2.3+, not client metadata. */
+	requestedModel?: string;
+	requestedProvider?: string;
 	provider?: string;
 	originalModel?: string;
 	resolvedModel?: string;
@@ -141,6 +144,8 @@ function nonEmptyHeader(headers: Headers, name: string): string | undefined {
 function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture): void {
 	if (!capture) return;
 	capture.requestId = nonEmptyHeader(headers, "x-bifrost-request-id") ?? capture.requestId;
+	capture.requestedModel = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-model") ?? capture.requestedModel;
+	capture.requestedProvider = nonEmptyHeader(headers, "x-bifrost-routing-info-requested-provider") ?? capture.requestedProvider;
 	capture.provider =
 		nonEmptyHeader(headers, "x-bifrost-routing-info-provider") ??
 		nonEmptyHeader(headers, "x-bifrost-provider") ??
@@ -221,6 +226,18 @@ export function createBifrostCostBridgeFetch(
 export interface PifrostMessageWithUpstreamModel {
 	upstreamModel?: string;
 	upstreamProvider?: string;
+}
+
+/**
+ * Before processing a native logical rule, discard the physical identity
+ * inferred by OMP's locally selected serialization model. Only Bifrost's
+ * confirmed resolved-model headers may add real upstream provenance later.
+ */
+export function clearUnverifiedNativeOrigin<T extends PifrostMessageWithUpstreamModel & { model: string }>(
+	message: T,
+	logicalAlias: string,
+): T {
+	return { ...message, model: logicalAlias, upstreamModel: undefined, upstreamProvider: undefined };
 }
 
 /**

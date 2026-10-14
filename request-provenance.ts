@@ -5,12 +5,17 @@ export interface PifrostRouteTrace {
 	timestamp: number;
 	sessionId: string;
 	logicalModel: string;
+	/** Whether the live Bifrost alias was invoked or a compatibility exception ran. */
+	routeMode?: "bifrost-native" | "pifrost-compatibility" | "bifrost-direct";
+	exceptionReason?: string;
 	protocol: string;
 	attempt: number;
 	requestedPrimary: string;
 	/** Same-protocol physical wire splits: crossing them is pre-output-only. */
 	compatibilityBoundaryCount?: number;
 	requestId?: string;
+	requestedModel?: string;
+	requestedProvider?: string;
 	provider?: string;
 	resolvedModel?: string;
 	originalModel?: string;
@@ -48,6 +53,8 @@ export function recordBifrostCaptureTrace(
 	sessionId: string,
 	base: {
 		logicalModel: string;
+		routeMode?: PifrostRouteTrace["routeMode"];
+		exceptionReason?: string;
 		protocol: string;
 		attempt: number;
 		requestedPrimary: string;
@@ -61,6 +68,8 @@ export function recordBifrostCaptureTrace(
 	return recordPifrostRouteTrace(sessionId, {
 		...base,
 		...(capture.requestId ? { requestId: capture.requestId } : {}),
+		...(capture.requestedModel ? { requestedModel: capture.requestedModel } : {}),
+		...(capture.requestedProvider ? { requestedProvider: capture.requestedProvider } : {}),
 		...(capture.provider ? { provider: capture.provider } : {}),
 		...(capture.resolvedModel ? { resolvedModel: capture.resolvedModel } : {}),
 		...(capture.originalModel ? { originalModel: capture.originalModel } : {}),
@@ -93,8 +102,11 @@ export function formatPifrostRouteTraces(sessionId: string): string {
 			: trace.requestedPrimary;
 		const details = [
 			`attempt=${trace.attempt}`,
+			trace.routeMode ? `route-mode=${trace.routeMode}` : undefined,
+			trace.exceptionReason ? `exception=${trace.exceptionReason}` : undefined,
 			`protocol=${trace.protocol}`,
 			`requested=${trace.requestedPrimary}`,
+			trace.requestedModel ? `gateway-request=${trace.requestedProvider ? `${trace.requestedProvider}/` : ""}${trace.requestedModel}` : undefined,
 			trace.compatibilityBoundaryCount
 				? `wire-boundaries=${trace.compatibilityBoundaryCount} boundary-retry=pre-output-only`
 				: undefined,

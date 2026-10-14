@@ -155,6 +155,14 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.16.0 — native rule execution and compatibility exceptions
+
+When a synchronized simple global rule has a single wire-compatible Chat group and no excluded route members, Pifrost sends the logical `omp-*` request identifier to Bifrost, retaining the first physical member's OMP wire serialization contract. The gateway's live rule owns target ordering, pinned provider keys and fallbacks. Pifrost sends **no** client-side `fallbacks` override in this mode.
+
+For incompatible requests, Pifrost still prefilters unsafe members and executes ordered protocol/encoder groups, never replaying after output begins. The physical request bypasses the original `omp-*` rule, and is labeled `pifrost-compatibility` in the session trace. A local compatibility chain is accepted only with a recent (seven-day) management-plane `pifrost routes sync` timestamp. Neither the timestamp nor model-catalog refresh proves that the live rule has not changed; operators must sync after every rule change and restart OMP. For stronger runtime guarantees, a future Bifrost native candidate-eligibility API would avoid any physical override.
+
+Trace fields distinguish Pifrost execution mode from gateway-reported requested/resolved models. The gateway's `x-bifrost-routing-info-requested-model` is evidence of what reached Bifrost, not proof that a specific CEL rule matched; confirm rule counters/logs for that claim.
+
 ### Request routing provenance
 
 Bifrost 2.2.6 exposes routed identity on successful responses through `x-bifrost-*` headers. Pifrost captures the actual provider/model, fallback index, request type and upstream latency without changing routing. Newer Bifrost builds that emit `x-bifrost-request-id` are picked up automatically. Inside an OMP session, `/pifrost trace` displays the latest ten requests for that session together with Pifrost's logical alias/protocol attempt and the authoritative Bifrost cost when present. Each trace also records `wire-boundaries=N boundary-retry=pre-output-only` when physical model encoders require a compatibility split. Non-actionable compatibility notices and replay-cleanup counts are not emitted to stderr during inference; the latter remain visible in the existing trace counters. This preserves the physical wire guard and keeps OMP settings and TUI operations quiet. Trace state is in-memory only and is discarded when the OMP session shuts down.
@@ -359,7 +367,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.15.2
+0.16.0
 ```
 
 Bun can also install the package globally:

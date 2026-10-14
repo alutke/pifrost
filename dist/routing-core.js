@@ -1,3 +1,5 @@
+export const MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS = 7 * 24 * 60 * 60_000;
+
                                      
 
                              

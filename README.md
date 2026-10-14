@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.15.2
+0.16.0
 ```
 
 Bun also works:
@@ -253,6 +253,24 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 ~~~
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
+
+### Release A: Bifrost-native route attribution
+
+For a synchronized simple `omp-*` rule, Pifrost now keeps the **logical model** on the wire when every member is eligible and the members share one compatible Chat Completions encoding. Bifrost executes its **live** routing rule, including its actual provider/key policies and fallback chain; Pifrost does not send a copied `fallbacks` list.
+
+When a request requires a different wire protocol, excludes an incompatible model, or crosses an encoder boundary, Pifrost retains its restricted pre-output compatibility adapter. These physical-model attempts do **not** match the original `omp-*` rule in Bifrost. The exception is explicit in `/pifrost trace` as `route-mode=pifrost-compatibility`, with the compatibility reason and the gateway's originally requested model where supported.
+
+Exception paths rely on locally synchronized Bifrost rule membership and therefore require `pifrost routes sync` within the past seven days. Missing or expired sync provenance fails with a clear recovery instruction rather than silently executing an arbitrary old physical chain. **A recent sync is not proof the route has not changed since**: always run `pifrost routes sync` after changing Bifrost routes, then restart OMP. Model metadata refresh alone does not reload routing rules.
+
+Upgrade:
+
+~~~bash
+npm install --global github:alutke/pifrost#v0.16.0
+hash -r
+omp install --force github:alutke/pifrost#v0.16.0
+pifrost routes sync
+pifrost doctor
+~~~
 
 ### How capability safety works
 

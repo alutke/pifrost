@@ -135,6 +135,21 @@ if (!native.includes("nativeJudgeGateway(config, mergedEnvironment)") ||
     !native.includes('api: "typesafe"') || !native.includes('kind: "judge"')) {
   errors.push("Release C native judge must register an isolated OMP-owned TypeSafe provider");
 }
+// Protect the architectural invariant: complete compatible Chat routes must
+// use the logical alias at Bifrost, never a client-side copy of the chain.
+const dynamicRoutes = readFileSync(resolve(root, "dynamic-routing.ts"), "utf8");
+const multiProtocol = readFileSync(resolve(root, "multi-protocol-routing.ts"), "utf8");
+if (!dynamicRoutes.includes("export function canUseNativeBifrostRoute(") ||
+    !dynamicRoutes.includes("plan.excluded.length > 0") ||
+    !native.includes("canUseNativeBifrostRoute(profile, plan)") ||
+    !native.includes("createPifrostNativeRouteModelSpec(model, attempt)") ||
+    !multiProtocol.includes("requestModelId: logicalModel.id")) {
+  errors.push("Complete compatible Chat routes must preserve the Bifrost logical alias");
+}
+if (!native.includes("compatibilityRouteSnapshotError(profile)") ||
+    !multiProtocol.includes("createPifrostMemberModelSpec(logicalModel, attempt.members[0]!, \"openai-completions\")")) {
+  errors.push("Physical route exceptions need fresh synchronized provenance and physical wire policy");
+}
 if (!/statefulResponses\s*:\s*false/u.test(native)) {
   errors.push("Pifrost dynamic Responses must remain stateless across heterogeneous Bifrost fallback routes");
 }

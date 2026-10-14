@@ -4,6 +4,8 @@ import test from "node:test";
 import type { BifrostProviderModel, PifrostAliasConfig, PifrostCatalog } from "../index.ts";
 import {
 	applyDynamicRouteProfiles,
+	canUseNativeBifrostRoute,
+	compatibilityRouteSnapshotError,
 	createDynamicRoutingFetch,
 	extractDynamicRouteProfiles,
 	planDynamicRouteAttempts,
@@ -71,6 +73,54 @@ function profile(): DynamicRouteProfile {
 	assert.ok(value);
 	return value;
 }
+
+test("unchanged eligible Chat route delegates the complete live chain to Bifrost", () => {
+	const route = profile();
+	const wirePolicies = new Map(route.members.map((entry) => [entry.reference, "same-chat-encoder"]));
+	const plan = planDynamicRouteAttempts(route, {
+		model: "omp-default", messages: [{ role: "user", content: "short request" }],
+		max_completion_tokens: 8_000,
+	}, { estimatedInputTokens: 1_000, compatibilityByMember: wirePolicies });
+	assert.equal(plan.attempts.length, 1);
+	assert.equal(plan.excluded.length, 0);
+	assert.equal(canUseNativeBifrostRoute(route, plan), true);
+
+	const overContext = planDynamicRouteAttempts(route, {
+		model: "omp-default", messages: [{ role: "user", content: "large request" }],
+		max_completion_tokens: 32_000,
+	}, { estimatedInputTokens: 400_000, compatibilityByMember: wirePolicies });
+	assert.equal(canUseNativeBifrostRoute(route, overContext), false);
+	assert.ok(overContext.excluded.some((entry) => entry.reference === "provider/small"));
+
+	const split = planDynamicRouteAttempts(route, {
+		model: "omp-default", messages: [{ role: "user", content: "wire split" }],
+		max_completion_tokens: 8_000,
+	}, { estimatedInputTokens: 1_000,
+		compatibilityByMember: new Map(route.members.map((entry) => [entry.reference, entry.reference])),
+	});
+	assert.ok(split.attempts.length > 1);
+	assert.equal(canUseNativeBifrostRoute(route, split), false);
+});
+
+test("native passthrough applies to every standard OMP role alias", () => {
+	const prototype = profile();
+	for (const role of ["default", "smol", "task", "advisor", "slow", "plan", "designer", "vision", "commit", "tiny"]) {
+		const route: DynamicRouteProfile = { ...prototype, id: `omp-${role}`, members: [prototype.members[0]!] };
+		const planned = planDynamicRouteAttempts(route, {
+			model: route.id, messages: [{ role: "user", content: "hello" }], max_completion_tokens: 4_000,
+		}, { estimatedInputTokens: 500, compatibilityByMember: new Map([[route.members[0]!.reference, "chat"]]) });
+		assert.equal(canUseNativeBifrostRoute(route, planned), true, `native rule for ${role}`);
+	}
+});
+
+test("compatibility exceptions reject unsynchronised and expired local rule snapshots", () => {
+	const route = profile();
+	const now = Date.parse("2026-10-14T07:00:00Z");
+	assert.match(compatibilityRouteSnapshotError(route, now) ?? "", /route-sync timestamp/u);
+	assert.equal(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "2026-10-13T07:00:00Z" }, now), undefined);
+	assert.match(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "2026-09-20T07:00:00Z" }, now) ?? "", /last synchronized/u);
+	assert.match(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "not-a-date" }, now) ?? "", /route-sync timestamp/u);
+});
 
 test("dynamic alias advertises the largest context while retaining safe output ceiling", () => {
 	const catalog = applyDynamicRouteProfiles(baseCatalog(), physical, aliases, (reference, models) =>
