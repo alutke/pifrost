@@ -378,6 +378,20 @@ async function askSecret(rl, prompt, existing) {
     const keep = await confirm(rl, `${prompt} is already configured. Keep it?`, true);
     if (keep) return existing;
   }
+  if(process.platform==="win32" && process.stdin.isTTY){
+    // PowerShell Read-Host masks TTY input; plaintext remains in private
+    // subprocess stdout pipe, never terminal output or command arguments.
+    rl.pause();
+    try{
+      console.log(prompt+":");
+      const script="$sec=Read-Host -AsSecureString; $p=[Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec); try { [Runtime.InteropServices.Marshal]::PtrToStringBSTR($p) } finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($p) }";
+      const read=spawnSync("powershell.exe",["-NoProfile","-Command",script],{
+        stdio:["inherit","pipe","inherit"],encoding:"utf8",
+      });
+      if(read.status!==0)throw new Error("Secure Windows prompt unavailable. Supply the secret via a protected environment variable.");
+      return (read.stdout??"").trim();
+    }finally{rl.resume();}
+  }
   let echoDisabled = false;
   try {
     if (process.platform !== "win32" && process.stdin.isTTY) {
@@ -463,7 +477,7 @@ async function commandGlobalSetup(flags) {
     }
   }
 
-  const nonInteractive = Boolean(flags.yes) || (!process.stdin.isTTY && !flagString(flags, "url"));
+  const nonInteractive = Boolean(flags.yes) || !process.stdin.isTTY;
   if (!nonInteractive) {
     await withPrompter(async (rl) => {
       url = await ask(rl, "Bifrost URL", url ?? "http://127.0.0.1:8180/v1");
@@ -1048,6 +1062,9 @@ async function commandRepoInit(flags) {
   const available = await listMcpClients(url, managementKey);
   const names = splitCsv(flagString(flags, "clients"));
   const commonTools = splitCsv(flagString(flags, "tools"));
+  if(!process.stdin.isTTY && !clientFlagPresent && !virtualMcpFlagPresent){
+    throw cliUsageError("Non-interactive repository setup requires --clients and --tools, or --virtual-mcps.");
+  }
   const clients = clientFlagPresent
     ? resolveNamedClients(available, names, commonTools)
     : virtualMcpFlagPresent
@@ -2444,6 +2461,9 @@ async function main() {
       return;
     }
     const definition = validateCliInvocation(name, resolved.args, flags);
+    if(["gateway-change","local-change"].includes(definition.operation)){
+      console.log("Operation: "+(flags["dry-run"]?"Read-only preview":operationLabel(definition.operation)));
+    }
     if (definition.operation === "billed" && !flags.yes) {
       console.log("Operation: " + operationLabel(definition.operation));
       console.log("This command performs real provider calls and may incur charges.");
