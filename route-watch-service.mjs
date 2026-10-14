@@ -23,7 +23,7 @@ function systemctl(args) {
     throw new Error("systemd --user is unavailable or rejected " + args[0] + "; inspect systemctl --user status " + UNIT);
   }
 }
-function unitSource({ node = process.execPath, cli = resolve(process.argv[1]),
+export function unitSource({ node = process.execPath, cli = resolve(process.argv[1]),
   path = process.env.PATH ?? "/usr/local/bin:/usr/bin:/bin", intervalMs } = {}) {
   const seconds = validateWatchInterval(intervalMs === undefined ? undefined : intervalMs / 1000) / 1000;
   return `${MARKER}

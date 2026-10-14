@@ -1,3 +1,10 @@
+## 0.23.0 — 2026-10-14
+
+- Add an opt-in, persistent **Bifrost route watcher**: `pifrost routes watch [--interval 60]`, `routes watch once`, `routes watch enable|disable|status`. On Linux, `enable` installs and starts a managed systemd user service without storing credentials in its unit file.
+- Compare complete Bifrost routing-policy fingerprints (including CEL, weights and pins); debounce before applying. Stage a model catalogue against a temporary manifest, validate schema and credential/alias fingerprints, recheck the gateway and publish atomically with rollback protections. Unchanged policies do not trigger expensive refreshes.
+- Share catalog identity logic with the native OMP provider. Guard sync/verify/watch updates with an interprocess lock, reject truncated/unrecognized paginated routing snapshots, retain the last valid local configuration through transient failures, and back off on repeated polling failures.
+- Provide secret-safe watcher health and diagnostics, configurable intervals and explicit restart guidance. Running OMP sessions remain unchanged until restart; no live provider hot-reload or changes to Bifrost governance/authentication.
+
 ## 0.22.4 — 2026-10-14
 
 - Correct HTTP 400 `Model does not support this protocol` for Bifrost-managed `omp-*` aliases containing Responses-only models, such as OpenCode Go Muse Spark 1.3 Contributor. Select a compatible Bifrost ingress protocol using resolved member capabilities without rewriting the logical alias or original gateway policy.
