@@ -42,7 +42,7 @@ import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
 import {
-  compactCliHelp, formatCliFailure, renderHealthOverview,
+  compactCliHelp, formatCliFailure, renderHealthOverview, healthExitCode,
   terminalSection, terminalField, terminalStatus, terminalNextSteps, humanAge,
 } from "./terminal-presentation.mjs";
 
@@ -558,18 +558,18 @@ async function commandGlobalSetup(flags) {
   }
 }
 
-function snapshotCheck(id, label, snapshot, action) {
+function snapshotCheck(id, label, snapshot, action, required = false) {
   const item = snapshot?.[id];
   if (item?.ok) {
     const detail = id === "inference" && Number.isFinite(item.value?.models)
       ? `${item.value.models} models visible`
       : id === "routing" && Array.isArray(item.value) ? `${item.value.length} routing rules`
       : "Connection verified";
-    return { label, status:"ok", detail };
+    return { label, status:"ok", detail, required };
   }
   return {
-    label,
-    status: item?.skipped ? "unknown" : "warn",
+    label, required,
+    status: required ? "fail" : item?.skipped ? "unknown" : "warn",
     detail: item?.skipped ? "Not configured or not checked" : "Could not verify",
     action,
   };
@@ -582,12 +582,13 @@ async function commandGlobalStatus(snapshot, options = {}) {
     const management = managementAuthFromState(state);
     const live = snapshot ?? await collectDoctorSnapshot({ runtime, managementAuth: management });
     const checks = [
-      snapshotCheck("health", "Bifrost gateway", live, "pifrost global setup"),
-      snapshotCheck("inference", "Inference access", live, "pifrost global setup"),
+      snapshotCheck("health", "Bifrost gateway", live, "pifrost global setup", true),
+      snapshotCheck("inference", "Inference access", live, "pifrost global setup", true),
       snapshotCheck("management", "Management access", live, "pifrost global setup"),
       snapshotCheck("routing", "Routing policy", live, "pifrost routes diagnose"),
     ];
-    console.log(renderHealthOverview(checks, {title:"Pifrost global status"}));
+    console.log(renderHealthOverview(checks, {title:"Pifrost global status", detailCommand:"pifrost global status --verbose"}));
+    process.exitCode = healthExitCode(checks, {strict:options.strict}) || process.exitCode;
     console.log(terminalField("Gateway", runtime.url ?? "not configured"));
     console.log("For full gateway, quota and MCP details: pifrost global status --verbose");
     return;
@@ -2199,8 +2200,8 @@ async function commandDoctor(flags = {}) {
       { label:"OMP", status:commandExists("omp") ? "ok" : "fail",
         detail: commandExists("omp") ? `Installed (${getOmpVersion() ?? "version unknown"})` : "Not installed",
         action:"Install or update OMP, then rerun pifrost doctor." },
-      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup"),
-      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup"),
+      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup", true),
+      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup", true),
       snapshotCheck("management", "Management API", snapshot, "pifrost global setup"),
       snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose"),
       {label:"Model catalogue", status:catalog.ok ? "ok" : "fail",
@@ -2242,8 +2243,7 @@ async function commandDoctor(flags = {}) {
       action:"pifrost global setup",
     });
     console.log(renderHealthOverview(checks));
-    const problemCount = checks.filter(x => x.status === "fail" || x.status === "warn").length;
-    if (problemCount) process.exitCode = 2;
+    process.exitCode = healthExitCode(checks, {strict:flags.strict}) || process.exitCode;
     return;
   }
 
