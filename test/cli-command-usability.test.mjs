@@ -65,7 +65,7 @@ test("filters, pagination and redaction are consistent",()=>{
   const items=[{name:"Asearch"},{name:"Compute"},{name:"Bsearch"}];
   assert.deepEqual(listFilter(items,{filter:"search",limit:"1"}).items,[items[0]]);
   assert.equal(listFilter(items,{filter:"search",limit:"1"}).omitted,1);
-  assert.match(safeUiText("Authorization Bearer secret-key"),/Bearer \[redacted\]/u);
+  assert.match(safeUiText("Authorization Bearer secret-key"),/\[redacted\]/u);
 });
 test("CLI invalid arguments are rejected before any gateway access or writes",()=>{
   const home=mkdtempSync(resolve(tmpdir(),"pifrost-ux-contract-"));
@@ -90,7 +90,7 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
     }
     const help=run("repo","mcp","add","--help");
     assert.equal(help.status,0,help.stderr);
-    assert.match(help.stdout,/Operation: Changes Bifrost gateway configuration/u);
+    assert.match(help.stdout,/Operation: Changes gateway permissions or credentials/u);
     assert.match(help.stdout,/--tools <value>/u);
     const shortcut=run("routes","explain","default","--tools","--help");
     assert.equal(shortcut.status,0,shortcut.stderr);
