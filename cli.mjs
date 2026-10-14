@@ -771,10 +771,17 @@ async function routingSnapshot() {
   };
 }
 
-async function commandRoutesList() {
+async function commandRoutesList(flags = {}) {
   const { manifest } = await routingSnapshot();
-  printHeader(`Bifrost OMP routes (${Object.keys(manifest.aliases).length})`);
-  for (const [id, definition] of Object.entries(manifest.aliases).sort(([a], [b]) => a.localeCompare(b))) {
+  const all = Object.entries(manifest.aliases).sort(([a], [b]) => a.localeCompare(b));
+  const filtered = all.filter(([id]) => !flags.filter || id.toLowerCase().includes(flags.filter.toLowerCase()));
+  const selected = filtered.slice(0, flags.limit ?? (flags.verbose ? Infinity : 15));
+  printHeader("Bifrost OMP routes (" + filtered.length + " matched, " + all.length + " total)");
+  for (const [id, definition] of selected) {
+    if (!flags.verbose) {
+      console.log("  " + id + ": " + definition.chain.length + " member(s); first: " + (definition.chain[0] ?? "none"));
+      continue;
+    }
     console.log(id);
     const pins = Array.isArray(definition.routingPins) ? definition.routingPins : [];
     definition.chain.forEach((member, index) => {
@@ -785,6 +792,7 @@ async function commandRoutesList() {
       console.log(`  ${index + 1}. ${member}${suffix}`);
     });
   }
+  if (filtered.length > selected.length) console.log("  ... " + (filtered.length - selected.length) + " more. Use --limit N or --verbose.");
 }
 
 async function commandRoutesDiagnose() {
@@ -1629,12 +1637,19 @@ async function commandRepoSkillDismiss(clientName, dismissed) {
   console.log(`${dismissed ? "Dismissed" : "Restored"} suggestion for ${client.name} -> ${matched.skill.name}`);
 }
 
-async function commandRepoMcpList() {
+async function commandRepoMcpList(flags = {}) {
   const state = loadState();
   const { url, managementKey } = requireManagement(state);
   const clients = await listMcpClients(url, managementKey);
-  printHeader(`Bifrost MCP clients (${clients.length})`);
-  for (const client of clients.sort((a, b) => a.name.localeCompare(b.name))) {
+  const filtered=clients.filter(item=>!flags.filter||item.name.toLowerCase().includes(flags.filter.toLowerCase()));
+  const chosen=filtered.sort((a,b)=>a.name.localeCompare(b.name)).slice(0,flags.limit??(flags.verbose?Infinity:15));
+  printHeader("Bifrost MCP clients ("+filtered.length+" matched)");
+  for (const client of chosen) {
+    if (!flags.verbose) {
+      console.log("  "+client.name+" - "+(client.state??"unknown")+"; "+client.tools.length+" tools; "+
+        (client.isCodeModeClient?"code-mode":"classic")+"; auth="+(client.authType??"unknown"));
+      continue;
+    }
     const modes = [
       client.isCodeModeClient ? "code-mode" : undefined,
       client.toolsToAutoExecute?.length ? "agent-mode" : undefined,
@@ -1651,6 +1666,7 @@ async function commandRepoMcpList() {
     if (client.serverInstructions) console.log(`  upstream instructions: set (${Buffer.byteLength(client.serverInstructions, "utf8")}B)`);
     if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
   }
+  if (filtered.length>chosen.length) console.log("  ... "+(filtered.length-chosen.length)+" more. Use --limit N or --verbose.");
 }
 
 async function requireRepoVirtualKey(state) {
@@ -2292,7 +2308,7 @@ const COMMANDS = new Map([
     console.log(`Configured ${result.settings} OMP settings.`);
     if (result.backup) console.log(`Backup: ${result.backup}`);
   }],
-  ["routes list", () => commandRoutesList()],
+  ["routes list", (_args, flags) => commandRoutesList(flags)],
   ["routes diff", () => commandRoutesDiff()],
   ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
@@ -2311,7 +2327,7 @@ const COMMANDS = new Map([
   ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
   ["repo rotate-key", (_args, flags) => commandRepoRotateKey(flags)],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
-  ["repo mcp list", () => commandRepoMcpList()],
+  ["repo mcp list", (_args, flags) => commandRepoMcpList(flags)],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
   ["repo mcp remove", (args, flags) => commandRepoMcpRemove(args[0], flags)],
   ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
