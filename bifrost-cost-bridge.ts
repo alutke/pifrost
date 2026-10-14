@@ -229,6 +229,18 @@ export interface PifrostMessageWithUpstreamModel {
 }
 
 /**
+ * Before processing a native logical rule, discard the physical identity
+ * inferred by OMP's locally selected serialization model. Only Bifrost's
+ * confirmed resolved-model headers may add real upstream provenance later.
+ */
+export function clearUnverifiedNativeOrigin<T extends PifrostMessageWithUpstreamModel & { model: string }>(
+	message: T,
+	logicalAlias: string,
+): T {
+	return { ...message, model: logicalAlias, upstreamModel: undefined, upstreamProvider: undefined };
+}
+
+/**
  * Keep the logical OMP model stable while recording what Bifrost actually
  * served. Never infer a provider from the configured primary: Bifrost may
  * independently select a fallback for the same wire request.
