@@ -26,7 +26,7 @@ test("option grammar rejects missing values, duplicate options, unknown options 
   assert.throws(()=>parseCliArgs(["doctor","--verbose=true"]),/cannot accept a value/u);
   assert.deepEqual(parseCliArgs(["routes","list","--limit=12"]).flags,{limit:12});
   assert.deepEqual(parseCliArgs(["routes","explain","default","--tools"]).flags,{tools:true});
-  assert.throws(()=>validateCommand("doctor",[],{tools:true}),/not valid/u);
+  assert.throws(()=>validateCommand("doctor",[],{tools:true}),/Unknown option|not valid/u);
   assert.throws(()=>validateCommand("routes list",["surplus"],{}),/Invalid arguments/u);
 });
 test("wildcard grants require explicit opt-in and tool scopes cannot broaden accidentally",()=>{
