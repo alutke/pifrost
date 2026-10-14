@@ -48,6 +48,7 @@ test("privacy merges global default with explicit tri-state VK override only whe
   const unknown = summarizeGatewayPrivacy(gateway);
   assert.equal(unknown.effective, "unverified");
   assert.equal(unknown.global, "disabled");
+  assert.equal(unknown.loggingEnabled, "not reported");
   const inherited = summarizeGatewayPrivacy(gateway, { id: "vk-1", disable_content_logging: null });
   assert.equal(inherited.vk, "inherit");
   assert.equal(inherited.effective, "on");
@@ -58,6 +59,8 @@ test("privacy merges global default with explicit tri-state VK override only whe
   const report = formatGatewayPrivacy(gateway, { disable_content_logging: true, value: "sk-bf-secret" });
   assert.match(report, /configured logging default.*off/u);
   assert.match(report, /hidden object-storage retention: enabled/u);
+  assert.match(report, /global log store enabled: not reported/u);
+  assert.match(report, /External observability connectors: unverified/u);
   assert.match(report, /log retention days: 30/u);
   assert.doesNotMatch(report, /secret-should-not-leak|sk-bf-secret|vk-1/u);
   assert.match(formatGatewayPrivacy(gateway), /--vk-id/u);
