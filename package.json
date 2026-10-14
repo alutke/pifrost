@@ -39,6 +39,7 @@
     "dynamic-routing.ts",
     "output-commitment.ts",
     "route-policy-fingerprint.mjs",
+    "route-policy-fingerprint.d.mts",
     "capability-bridge.ts",
     "context-estimator.ts",
     "omp-context-policy.ts",
