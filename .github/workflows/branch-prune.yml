@@ -44,7 +44,7 @@ jobs:
             exit 1
           fi
           cat > expected-refs.txt <<'EXPECTED'
-          fix/gateway-protocol-boundaries-v0.22.4 bf5e932437491d4671fa502ef7143719a67a3510
+          feat/route-watch-v0.23.0 3c3cc20caf927ac65f58be9ce236e984ce02de02
           EXPECTED
           LC_ALL=C sort -o expected-refs.txt expected-refs.txt
           git ls-remote --heads origin | awk '$2 != "refs/heads/main" {sub(/^refs\/heads\//, "", $2); print $2 " " $1}' | LC_ALL=C sort > observed-refs.txt
