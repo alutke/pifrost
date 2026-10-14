@@ -60,7 +60,7 @@ export function summarizeGatewayPrivacy(gateway, virtualKey) {
     perRequestOverride: value(overridesAllowed),
     hiddenObjectStorage: value(retainedHidden),
     retentionDays: days,
-    vk: key === undefined ? "not inspected" : keyOverride === undefined ? "inherit" : value(keyOverride),
+    vk: key === undefined ? "not inspected" : keyOverride === undefined ? "inherit" : keyOverride ? "force logging off" : "force logging on",
     effective: effectiveDisabled === undefined ? "unverified" : effectiveDisabled ? "off" : "on",
     // Without a known VK, the global flag alone cannot determine traffic retention.
     vkInspected: key !== undefined,
@@ -76,10 +76,10 @@ export function formatGatewayPrivacy(gateway, virtualKey) {
     `  hidden object-storage retention: ${p.hiddenObjectStorage}`,
     `  log retention days: ${p.retentionDays ?? "not reported"}`,
     `  Virtual Key content-logging override: ${p.vk}`,
-    `  effective log content for inspected Virtual Key: ${p.effective}`,
+    `  configured logging default for inspected Virtual Key: ${p.effective}`,
   ];
   if (!p.vkInspected) lines.push("  To inspect a specific key without disclosing its value, supply --vk-id <management-id>.");
-  lines.push("  Log metadata, hidden object copies, and other retention policies may still apply. Configuration does not prove deletion.");
+  lines.push("  Per-request overrides, log metadata, hidden object copies and other retention policies may still apply. Configuration does not prove deletion.");
   return lines.join("\n");
 }
 
