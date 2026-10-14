@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.18.0
+0.19.0
 ```
 
 Bun also works:
@@ -254,6 +254,16 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### Release D: optional gateway intelligence and privacy visibility
+
+Use the **read-only, opt-in** command `pifrost global observability` to inspect the Bifrost complexity classifier configuration (keywords, decision model, semantic fallback and session stickiness) alongside configured provider-injected web research tools. These are configuration observations, **not evidence** that a classifier or tool ran or that a given Virtual Key was authorised.
+
+For privacy, `pifrost global observability --vk-id <management-id>` reads the selected Virtual Key's **management metadata** to combine its tri-state `disable_content_logging` override with gateway-wide content-logging defaults. It reports log retention, hidden object storage and per-request override policy. Without an inspected key the effective default is **unverified**. It never prints raw configuration, VK values, secrets, prompts or credentials and makes no configuration changes. Per-request controls may further change effective storage.
+
+Within OMP, `/pifrost costs` groups only gateway-reported monetary totals over the latest 20 session attempts by logical role, showing fallback and cache counts plus how many attempts have **unknown** cost. This in-memory subtotal is not an invoice or full-history spend report; `/pifrost trace` still shows individual gateway request IDs and costs.
+
+Warp, A2A, new agent runtimes, inference-triggered classification and automatically activated research injection are deliberately **not** part of Release D. Bifrost and OMP retain execution ownership.
+
 ### Release C: gateway reliability, failure and routing attribution
 
 Release C extends `/pifrost trace` without taking control of Bifrost or OMP request execution. It captures the confirmed gateway trace ID, HTTP status, classified credential/access/quota/timeout/upstream errors, bounded Retry-After hints, response cache metadata, and whether streamed model output had begun. It provides read-only next-step guidance for credential rotation, quota investigations and Bifrost timeout policies. No keys, provider response bodies or secrets are stored in traces.
@@ -283,9 +293,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.18.0
+npm install --global github:alutke/pifrost#v0.19.0
 hash -r
-omp install --force github:alutke/pifrost#v0.18.0
+omp install --force github:alutke/pifrost#v0.19.0
 pifrost routes sync
 pifrost doctor
 ~~~
