@@ -29,7 +29,7 @@ If <code>pifrost doctor</code> is healthy, you are done.
 
 Inside OMP, use <code>/pifrost trace</code> to inspect the most recent request-level routing provenance for the current session, including the model Bifrost actually served and whether a fallback fired.
 
-For the full implementation, Release A compatibility-exception register and verification limits, see the [technical reference](docs/REFERENCE.md). For release-specific changes, see the [changelog](CHANGELOG.md).
+For current integration details and verification limits, see the [technical reference](docs/REFERENCE.md). For release-specific changes and earlier compatibility decisions, see the [changelog](CHANGELOG.md).
 
 ## What Pifrost solves
 
@@ -85,7 +85,7 @@ The environment variable registers `bifrost-judge/jev-latest`; activation is a s
 | Component | Requirement |
 | --- | --- |
 | Node.js | **22.19+** |
-| OhMyPi | **18.10.4+** for Pifrost 0.17.0 installation |
+| OhMyPi | **18.10.4+** for a clean current GitHub plugin install |
 | Pifrost OMP policy snapshot | **18.10.4**, with versioned model-policy contracts; host integration validated separately |
 | Maxim Bifrost | **2.2.4+** |
 | Recommended Bifrost | **2.3.0+** for requested-route provenance, per-target first-token deadlines, reasoning conversion and injected-tool list schema |
@@ -177,7 +177,7 @@ pifrost models doctor
 
 ## Model roles and routing aliases
 
-Pifrost's recommended OMP configuration maps OMP roles to Bifrost aliases:
+Pifrost's recommended OMP configuration maps OMP roles to Bifrost aliases; create the physical routes in Bifrost:
 
 | OMP role | Pifrost/Bifrost model |
 | --- | --- |
