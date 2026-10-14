@@ -4,13 +4,6 @@
  */
 const ORDER = { fail: 0, warn: 1, unknown: 2, skip: 3, ok: 4 };
 const LABELS = { fail: "FAIL", warn: "WARN", unknown: "UNKNOWN", skip: "SKIP", ok: "OK" };
-const HELP = {
-  fail: "Action required",
-  warn: "Attention recommended",
-  unknown: "Not verified",
-  skip: "Not checked",
-  ok: "Working",
-};
 export function cleanDisplay(value, fallback = "not available") {
   if (value === null || value === undefined) return fallback;
   const text = String(value).replace(/[\x00-\x1f\x7f]/gu, " ").trim();
@@ -100,7 +93,10 @@ export function compactCliHelp(version) {
 }
 export function formatCliFailure(error, { isUsage = false } = {}) {
   // Avoid echoing arbitrary input arguments (which may contain secrets).
-  const message = cleanDisplay(error?.message ?? error);
+  const message = cleanDisplay(error?.message ?? error)
+    .replace(/\bsk-[a-zA-Z0-9_-]{8,}\b/gu, "[redacted]")
+    .replace(/\bBearer\s+[^\s]+/giu, "Bearer [redacted]")
+    .replace(/([?&](?:api_key|token|password|virtual_key)=)[^\s&]+/giu, "$1[redacted]");
   const result = ["Pifrost could not complete the command.", `Reason: ${message}`];
   if (isUsage) result.push("Next: run pifrost help or pifrost help --all for syntax.");
   else if (/timeout|timed out/iu.test(message)) result.push("Next: check gateway connectivity with pifrost global status.");
