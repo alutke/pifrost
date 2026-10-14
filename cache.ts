@@ -80,7 +80,23 @@ function canonical(value: unknown): unknown {
 	return value;
 }
 
+/**
+ * Catalog identity reflects model-relevant routing configuration, not when
+ * an unchanged policy was last verified. Only synchronizedAt is excluded;
+ * all unknown fields, route members/pins and policyFingerprint stay hashed
+ * so new policy metadata fails closed rather than reusing stale models.
+ */
 export function aliasConfigFingerprint(aliasConfig?: PifrostAliasConfig): string {
+	if (!aliasConfig) return sha256(JSON.stringify(null));
+	const relevant = { ...aliasConfig };
+	delete relevant.synchronizedAt;
+	return sha256(JSON.stringify(canonical(relevant)));
+}
+
+/** Accept a genuinely matching v0.22.2 cache once, without a forced cold start
+ * when upgrading. This cannot accept a cache after the old full hash changes.
+ */
+function legacyAliasConfigFingerprint(aliasConfig?: PifrostAliasConfig): string {
 	return sha256(JSON.stringify(canonical(aliasConfig ?? null)));
 }
 
@@ -145,7 +161,10 @@ export function loadCatalogCache(options: CatalogCacheOptions): LoadedCatalogCac
 	if (parsed.schemaVersion !== CATALOG_CACHE_SCHEMA_VERSION) return undefined;
 	if (parsed.url !== options.config.url) return undefined;
 	if (parsed.virtualKeyFingerprint !== virtualKeyFingerprint(options.config.virtualKey)) return undefined;
-	if (parsed.aliasFingerprint !== aliasConfigFingerprint(options.aliasConfig)) return undefined;
+	const semanticFingerprint = aliasConfigFingerprint(options.aliasConfig);
+	const validFingerprint = parsed.aliasFingerprint === semanticFingerprint ||
+		parsed.aliasFingerprint === legacyAliasConfigFingerprint(options.aliasConfig);
+	if (!validFingerprint) return undefined;
 	if (!Array.isArray(parsed.models) || parsed.models.length === 0 || !parsed.models.every(validModel)) return undefined;
 	if (!validDiagnostics(parsed.diagnostics)) return undefined;
 

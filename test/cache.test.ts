@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import {
+	aliasConfigFingerprint,
 	cacheIsFresh,
 	CATALOG_CACHE_SCHEMA_VERSION,
 	loadCatalogCache,
@@ -156,4 +158,65 @@ test("PIFROST_FORCE_REFRESH bypasses an otherwise valid startup cache", () => {
 test("refresh interval distinguishes fast startup cache from refresh-due cache", () => {
 	assert.equal(cacheIsFresh({ ageMs: 999 }, 1_000), true);
 	assert.equal(cacheIsFresh({ ageMs: 1_000 }, 1_000), false);
+});
+
+test("verification timestamp changes do not invalidate a live, keyed catalogue", () => {
+	withTempCache((path) => {
+		const { config, aliasConfig, catalog } = fixture();
+		const initial = {
+			...aliasConfig,
+			synchronizedAt: "2026-10-14T13:08:32.451Z",
+			policyFingerprint: "policy-fingerprint-a",
+		} as PifrostAliasConfig;
+		writeCatalogCache(catalog, { config, aliasConfig: initial, path, now: 10_000 });
+		const updated = { ...initial, synchronizedAt: "2026-10-14T13:16:01.266Z" };
+		assert.equal(aliasConfigFingerprint(initial), aliasConfigFingerprint(updated));
+		assert.ok(loadCatalogCache({ config, aliasConfig: updated, path, now: 11_000 }));
+		assert.equal(readFileSync(path, "utf8").includes("synchronizedAt"), false);
+	});
+});
+
+test("policy, routing pins, membership, and unknown fields still invalidate cache", () => {
+	withTempCache((path) => {
+		const { config, aliasConfig, catalog } = fixture();
+		const original = {
+			...aliasConfig,
+			synchronizedAt: "2026-10-14T13:08:32.451Z",
+			policyFingerprint: "policy-a",
+		} as PifrostAliasConfig;
+		writeCatalogCache(catalog, { config, aliasConfig: original, path, now: 10_000 });
+		const changes = [
+			{ ...original, policyFingerprint: "policy-b" },
+			{ ...original, includePhysicalModels: true },
+			{ ...original, aliases: { "omp-test": ["other/model"] } },
+			{ ...original, aliases: { "omp-test": { chain: ["provider/model"], routingPins: [{ source: "target" as const, reference: "provider/model", keyId: "new-key" }] } } },
+			{ ...original, futureSafetyPolicy: { deny: true } },
+		];
+		for (const changed of changes) {
+			assert.equal(loadCatalogCache({ config, aliasConfig: changed as PifrostAliasConfig, path, now: 11_000 }), undefined);
+		}
+	});
+});
+
+test("matching legacy v0.22.2 cache is accepted without a cold-start refresh", () => {
+	withTempCache((path) => {
+		const { config, aliasConfig, catalog } = fixture();
+		const original = { ...aliasConfig, synchronizedAt: "2026-10-14T13:08:32.451Z" };
+		writeCatalogCache(catalog, { config, aliasConfig: original, path, now: 10_000 });
+		const record = JSON.parse(readFileSync(path, "utf8"));
+		const crypto = createHash("sha256").update(JSON.stringify({
+				aliases: original.aliases,
+				includePhysicalModels: original.includePhysicalModels,
+				synchronizedAt: original.synchronizedAt,
+			})).digest("hex");
+		record.aliasFingerprint = crypto;
+		writeFileSync(path, JSON.stringify(record));
+		assert.ok(loadCatalogCache({ config, aliasConfig: original, path, now: 11_000 }));
+		assert.equal(loadCatalogCache({
+			config,
+			aliasConfig: { ...original, synchronizedAt: "2026-10-14T13:16:01.266Z" },
+			path,
+			now: 11_000,
+		}), undefined, "legacy full hashes must fail closed after any change");
+	});
 });

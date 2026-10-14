@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
+import { aliasConfigFingerprint } from "../cache.ts";
 const exec = promisify(execFile);
 
 test("actual pifrost routes sync/verify/diff detects condition-only changes without leaking credentials", async () => {
@@ -35,8 +36,13 @@ test("actual pifrost routes sync/verify/diff detects condition-only changes with
     assert.match(synced.stdout,/Wrote 1 aliases/u);
     const manifest=JSON.parse(readFileSync(resolve(home,"aliases.json"),"utf8"));
     assert.match(manifest.policyFingerprint,/^[a-f0-9]{64}$/u);
+    const beforeVerification=JSON.parse(readFileSync(resolve(home,"aliases.json"),"utf8"));
     const verified=await run("routes","verify");
     assert.match(verified.stdout,/Verified full Bifrost rule policy unchanged/u);
+    const afterVerification=JSON.parse(readFileSync(resolve(home,"aliases.json"),"utf8"));
+    assert.notEqual(afterVerification.synchronizedAt,beforeVerification.synchronizedAt);
+    assert.equal(aliasConfigFingerprint(afterVerification),aliasConfigFingerprint(beforeVerification),
+      "verification-only timestamp must preserve model catalogue identity");
     assert.doesNotMatch(verified.stdout,/test-password|sk-bf-test/u);
     cel="model == 'omp-default' && request_type == 'chat'";
     const diff=await run("routes","diff").then(()=>null,e=>e);

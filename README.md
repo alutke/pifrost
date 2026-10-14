@@ -122,7 +122,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.22.2
+0.22.3
 ```
 
 Bun also works:
@@ -497,13 +497,23 @@ It is intentionally the first diagnostic command: it checks the installed OMP/Bi
 
 ### OMP starts with <code>no-model</code>
 
+A successful `pifrost routes verify` updates its verification timestamp without
+invalidating an otherwise unchanged model cache. On a genuine cold cache miss,
+the extension resolves models before registering the OMP provider; it never
+reuses a catalogue from different routing policy or Virtual Key credentials.
+
 ~~~bash
 pifrost global status
-pifrost routes sync
-pifrost models refresh --force
-pifrost models doctor
+pifrost routes diff
+pifrost routes verify --dry-run
 omp models bifrost
+pifrost models doctor
 ~~~
+
+If discovery fails, check Bifrost availability and credentials, then run
+`pifrost models refresh --force`. A fresh model inventory is required after
+genuine changes to route members, policy or credentials; a second OMP launch
+must not be necessary after an ordinary verification.
 
 ### Bifrost OSS management returns 401
 

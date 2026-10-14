@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.22.2
+0.22.3
 ```
 
 ## Architecture and ownership
@@ -187,7 +187,7 @@ Plain HTTP on a non-loopback address can expose credentials, especially OSS Basi
 
 ### OMP starts with `no-model`
 
-Run `pifrost global status`, `pifrost routes sync`, `pifrost models refresh --force`, `pifrost models doctor` and `omp models bifrost`. Restart OMP after updating profiles.
+In v0.22.3+, `routes verify` updates `synchronizedAt` without changing the semantic model-cache fingerprint. A genuine cache miss (route-policy/credential changes, expiry or invalid data) triggers bounded foreground model discovery before OMP provider registration; failures do not permit unverified cached models. Check `pifrost global status`, `pifrost routes diff`, `pifrost routes verify --dry-run`, `omp models bifrost`, and `pifrost models doctor`. Use `pifrost models refresh --force` when gateway or model metadata needs a fresh read; restart OMP after material configuration changes.
 
 ### OpenCode Go returns `MissingSessionID`
 

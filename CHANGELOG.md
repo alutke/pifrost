@@ -1,3 +1,9 @@
+## 0.22.3 — 2026-10-14
+
+- Fix OMP `no-model` after `pifrost routes verify`: exclude only the verification timestamp from semantic model-cache identity; preserve changes to provider chains, pins, physical-model inclusion, policy fingerprint and unknown safety metadata as invalidation triggers.
+- Accept a fully matching legacy cache fingerprint during upgrade without relaxing credential, schema or route checks. Perform bounded foreground model discovery on genuine cold cache misses before OMP provider registration; retain cache-first fast startup and fail closed on discovery errors.
+- Add regression coverage for verification-only writes, policy/credential changes, legacy-cache compatibility and cold/warm provider startup. No changes to Bifrost routing rules, quota/auth policy or MCP grants.
+
 ## 0.22.2 — 2026-10-14
 
 - Repository maintenance: close superseded PR #60, replace an obsolete single-branch cleanup workflow with a guarded, explicit-sha one-time prune of the 23 inspected non-main branch refs. Preserve `main` and all release tags.

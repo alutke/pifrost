@@ -796,6 +796,23 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				});
 		};
 
+		// On a genuine cache miss, resolve and persist a safe catalogue before
+		// registering the provider. Otherwise OMP can evaluate enabledModels
+		// against an empty dynamic catalogue on first startup and show no-model;
+		// launching it a second time succeeds only because discovery populated
+		// the cache. Never serve stale routes/credentials while refreshing.
+		let bootstrappedCatalog: PifrostCatalog | undefined;
+		if (!startupCache) {
+			try {
+				bootstrappedCatalog = await refresh();
+				diagnostics = bootstrappedCatalog.diagnostics;
+			} catch (error) {
+				process.stderr.write(
+					`pifrost: cold-start model discovery failed; no unverified cached models will be registered: ${error instanceof Error ? error.message : String(error)}\n`,
+				);
+			}
+		}
+
 		const providerApiKey = config.apiKey ?? config.virtualKey;
 		const virtualKeyBearerCompatible = /^sk-bf-/u.test(config.virtualKey);
 		const usage = createBifrostUsageProvider(config);
@@ -840,7 +857,9 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			authHeader: Boolean(config.apiKey || virtualKeyBearerCompatible),
 			headers: pifrostProviderHeaders(config.virtualKey),
 			...(usage ? { usage } : {}),
-			...(startupCache ? { models: startupCache.models } : {}),
+			...(startupCache || bootstrappedCatalog
+				? { models: (startupCache ?? bootstrappedCatalog)!.models }
+				: {}),
 			async fetchDynamicModels(resolvedApiKey) {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached && !forceRefreshRequested()) {
