@@ -888,6 +888,32 @@ function formatSources(sources: CapabilityProvenance | undefined): string {
 		.join(",") || "unknown";
 }
 
+/** Brief and screen-reader-friendly OMP report; the existing formatter remains
+ * the detailed technical view. No private gateway data or terminal escape codes. */
+export function formatDoctorSummary(diagnostics: readonly AliasDiagnostic[], aliasPath?: string): string {
+  const ready = diagnostics.filter(item => item.unresolved.length === 0);
+  const affected = diagnostics.filter(item => item.unresolved.length > 0);
+  const lines = [
+    "Pifrost model health",
+    `  ${ready.length} ready, ${affected.length} need attention (${diagnostics.length} aliases)`,
+  ];
+  if (!diagnostics.length) {
+    lines.push("  No logical aliases configured; physical Bifrost models are available directly.");
+  }
+  for (const item of affected.slice(0, 8)) {
+    lines.push(`  [WARN] ${item.id}: ${item.unresolved.length} unresolved member(s)`);
+    for (const reason of item.unresolved.slice(0, 3)) lines.push(`    - ${reason}`);
+    if (item.unresolved.length > 3) lines.push(`    ... and ${item.unresolved.length - 3} more`);
+  }
+  if (affected.length > 8) lines.push(`  ... and ${affected.length - 8} more affected aliases`);
+  lines.push("");
+  if (affected.length) lines.push("Next: run /pifrost refresh; then restart OMP if the catalog changes.");
+  else lines.push("For individual model details: use /pifrost doctor verbose.");
+  if (aliasPath) lines.push("  Configuration loaded from the Pifrost alias manifest.");
+  lines.push("Routing eligibility is evaluated again for each request.");
+  return lines.join("\n");
+}
+
 export function formatDoctorReport(diagnostics: readonly AliasDiagnostic[], aliasPath?: string, at = new Date()): string {
 	const lines = [`Pifrost doctor${aliasPath ? ` — ${aliasPath}` : ""}`];
 	if (!diagnostics.length) return `${lines[0]}\nNo aliases configured; physical Bifrost models are exposed directly.`;
