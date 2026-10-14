@@ -49,7 +49,7 @@ const rows = [
   ["models refresh",0,0,["force"],"local-change"],
   ["models doctor",0,0,[...read,"json"],"read-only"],
   ["models kinds",0,0,read,"read-only"],
-  ["repo init",0,0,["clients","tools","virtual-mcps","rotate-existing","no-mcp-instructions","install-matching-skills","no-skill-discovery","dry-run"],"gateway-change"],
+  ["repo init",0,0,["clients","tools","virtual-mcps","rotate-existing","no-mcp-instructions","install-matching-skills","no-skill-discovery","dry-run","yes"],"gateway-change"],
   ["repo status",0,0,[...read,"json"],"read-only"],
   ["repo research status",0,0,read,"read-only"],
   ["repo research bind",2,2,["profile","search-tool","fetch-tool","crawl-tool","screenshot-tool"],"local-change"],
