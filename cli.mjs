@@ -830,7 +830,7 @@ async function commandRoutesDiff() {
   process.exitCode = 2;
 }
 
-async function commandRoutesVerify() {
+async function commandRoutesVerify(flags = {}) {
   const { policyFingerprint, manifest } = await routingSnapshot();
   const local = loadAliasManifest();
   const status = routePolicyDrift(local.policyFingerprint, policyFingerprint);
@@ -843,6 +843,10 @@ async function commandRoutesVerify() {
   if (diffAliases(local, manifest).length > 0) {
     console.log("Alias membership drift despite matching policy digest; refusing to refresh.");
     process.exitCode = 2;
+    return;
+  }
+  if (flags["dry-run"]) {
+    console.log("Preview: policy matches. Would refresh the local verification timestamp. No changes made.");
     return;
   }
   const stamp = new Date().toISOString();
@@ -861,6 +865,12 @@ async function commandRoutesSync(flags = {}) {
     throw new Error(
       `Bifrost returned ${rules.length} routing rule(s), but none could be derived as omp-* aliases (${sourceSummary}). Run \`pifrost routes diagnose\` for details.`,
     );
+  }
+  if (flags["dry-run"]) {
+    console.log("Preview: " + count + " aliases and " + rules.length + " rules.");
+    console.log(flags["no-refresh"] ? "Would save the manifest only." : "Would save the manifest and refresh OMP models.");
+    console.log("No changes made. Restart OMP after an actual sync.");
+    return;
   }
   // A local exception route must carry provenance of an actual management API
   // read. Model-catalog refresh alone does not refresh Bifrost rule membership.
@@ -2259,7 +2269,7 @@ const COMMANDS = new Map([
   }],
   ["routes list", () => commandRoutesList()],
   ["routes diff", () => commandRoutesDiff()],
-  ["routes verify", () => commandRoutesVerify()],
+  ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
