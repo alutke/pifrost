@@ -561,6 +561,8 @@ async function commandGlobalSetup(flags) {
     delete state.config.bifrost.managementAuthMode;
   }
 
+  if(["api-key","virtual-key","management-key","management-password","setup-token"].some(k=>
+    Object.hasOwn(flags,k))) console.log("Security note: CLI secret flags can appear in shell history/process listings; prefer protected environment variables or interactive prompts.");
   const paths = saveState(state.config, state.secrets);
   console.log(`Saved config:  ${paths.config}`);
   console.log(`Saved secrets: ${paths.secrets} (0600)`);
@@ -571,6 +573,7 @@ async function commandGlobalSetup(flags) {
     console.log(`OK (${result.settings} settings)`);
     if (result.backup) console.log(`OMP config backup: ${result.backup}`);
   }
+  console.log("Setup completed. Verify with pifrost doctor; synchronise routes using pifrost routes sync, then restart OMP.");
 }
 
 function snapshotCheck(id, label, snapshot, action, required = false) {
@@ -1069,6 +1072,7 @@ async function commandRepoInit(flags) {
       "Would configure repository Virtual Key, OMP MCP configuration and optionally matching Skills",
     ]));return;
   }
+  console.log("Operation: May change Bifrost Virtual Key grants and repository MCP settings");
   const vk = await upsertRepoVirtualKey({
     state,
     repo,
@@ -1883,6 +1887,9 @@ async function commandRepoReset(flags = {}) {
   const deleteRemote = flags["delete-remote"] === true;
   const recoverByName = flags["recover-by-name"] === true;
   const yes = flags.yes === true;
+  if (recoverByName && !deleteRemote) {
+    throw new Error("--recover-by-name is valid only with --delete-remote");
+  }
   if (flags["dry-run"]) {
     console.log(operationSummary("Read-only preview", [
       "Repository: "+repo.name,
@@ -1891,10 +1898,6 @@ async function commandRepoReset(flags = {}) {
       "Other OMP MCP entries remain unchanged",
     ]));
     return;
-  }
-
-  if (recoverByName && !deleteRemote) {
-    throw new Error("--recover-by-name is valid only with --delete-remote");
   }
 
   if (deleteRemote) {
@@ -1981,9 +1984,23 @@ async function researchSnapshot(includeLive = false) {
     research: current.config?.research ?? {}, liveTools, codeModeProbes, ompSearch: ompWebSearchDiagnostics(),
   }) };
 }
-async function commandRepoResearchStatus() {
+async function commandRepoResearchStatus(flags = {}) {
   const { diagnostics } = await researchSnapshot(true);
   printHeader("Bifrost MCP research providers");
+  if(!flags.verbose){
+    console.log("Preferred (guidance only): "+(diagnostics.preferred??"none"));
+    const ready=diagnostics.providers.filter(p=>p.webResearchReady).length;
+    console.log("Research-ready: "+ready+" of "+diagnostics.providers.length+" configured/discovered providers");
+    for(const provider of diagnostics.providers){
+      const state=provider.webResearchReady?"READY":provider.authorized?"PARTIAL":"UNVERIFIED";
+      console.log("  ["+state+"] "+provider.id+" via "+provider.client+" ("+provider.mode+")");
+      for(const warning of (provider.warnings??[]).slice(0,2))console.log("    "+safeUiText(warning));
+    }
+    console.log("Search path: "+(diagnostics.search.path??"unverified"));
+    console.log("Preferred is advisory: OMP owns actual tool selection and execution.");
+    console.log("For capability grants and tool names: pifrost repo research status --verbose");
+    return;
+  }
   console.log("Preferred (guidance): " + (diagnostics.preferred ?? "none"));
   for (const provider of diagnostics.providers) {
     console.log(provider.id + " [" + provider.client + "] profile=" + provider.profile + " mode=" + (provider.mode ?? "unknown") + " status=" + provider.status);
@@ -2371,7 +2388,7 @@ const COMMANDS = new Map([
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", (_args, flags) => commandRepoStatus(undefined, flags)],
-  ["repo research status", () => commandRepoResearchStatus()],
+  ["repo research status", (_args,flags) => commandRepoResearchStatus(flags)],
   ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
   ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
