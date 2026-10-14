@@ -2403,6 +2403,13 @@ async function main() {
 }
 
 main().catch((error) => {
-  console.error(formatCliFailure(error, { isUsage: error?.isUsage === true }));
-  process.exitCode = 1;
+  const code = error?.isUsage === true ? 1 : 2;
+  const message = formatCliFailure(error, { isUsage: error?.isUsage === true });
+  if (process.argv.includes("--json")) {
+    process.stdout.write(JSON.stringify({
+      schemaVersion:1, command:process.argv.slice(2).filter(a=>!a.startsWith("--")).slice(0,3).join(" "),
+      status:"failed", exitCode:code, error:{code:error?.isUsage ? "INVALID_COMMAND" : "COMMAND_FAILED",message},
+    }) + "\n");
+  } else console.error(message);
+  process.exitCode = code;
 });
