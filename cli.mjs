@@ -38,6 +38,7 @@ import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-
 import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
+import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -140,6 +141,7 @@ Usage:
   pifrost global setup [options]
   pifrost global status
   pifrost global mcp-policy               Read-only gateway-injected provider tools
+  pifrost global observability [--vk-id ID]  Optional gateway intelligence, research, privacy (read-only)
   pifrost global configure-omp
   pifrost judge status                      Inspect opt-in native OMP judge and gateway model availability
   pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
@@ -1850,6 +1852,53 @@ async function commandSecretRepoMcp(flags) {
   process.stdout.write(value);
 }
 
+/** Explicit opt-in report. Never execute a classifier or tool and never send
+ * credentials or raw config to stdout. Each source has independent failure
+ * handling so partial management API access stays useful. */
+async function commandGlobalObservability(flags = {}) {
+  printHeader("Bifrost optional observability (read-only)");
+  const state = loadState();
+  const runtime = runtimeConfigFromState(state);
+  const management = managementAuthFromState(state);
+  if (!runtime.url || !management) {
+    console.log("Management access unavailable; run pifrost global setup.");
+    return;
+  }
+  const vkId = flagString(flags, "vk-id");
+  if (vkId && !/^[a-zA-Z0-9_-]{1,128}$/u.test(vkId)) {
+    throw new Error("--vk-id must be a Virtual Key management ID, not a key secret");
+  }
+  const [complexity, gateway, providers, clients, vk] = await Promise.allSettled([
+    getComplexityAnalyzerConfig(runtime.url, management),
+    getBifrostConfig(runtime.url, management),
+    listBifrostProviderInventory(runtime.url, management),
+    listMcpClients(runtime.url, management),
+    vkId ? getVirtualKey(runtime.url, management, vkId) : Promise.resolve(undefined),
+  ]);
+  console.log(formatGatewayComplexity(complexity.status === "fulfilled" ? complexity.value : undefined));
+  console.log("");
+  if (providers.status === "fulfilled") {
+    try {
+      const report = gatewayInjectedToolDiagnostics(providers.value,
+        clients.status === "fulfilled" ? clients.value : undefined);
+      console.log(formatGatewayResearchTools(report));
+    } catch {
+      console.log("Bifrost provider-injected research: unverified (unsupported provider inventory)");
+    }
+  } else {
+    console.log("Bifrost provider-injected research: unverified (provider management API unavailable)");
+  }
+  console.log("");
+  if (gateway.status === "rejected") {
+    console.log("Bifrost privacy: unverified (gateway management configuration unavailable)");
+  } else {
+    console.log(formatGatewayPrivacy(gateway.value, vk.status === "fulfilled" ? vk.value : undefined));
+    if (vkId && vk.status === "rejected") console.log("  VK inspection failed; effective logging policy remains unverified.");
+  }
+  console.log("");
+  console.log("No routes, models, classifiers, tools, permissions, credentials or privacy settings were changed.");
+}
+
 async function commandGlobalMcpPolicy(snapshot) {
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
@@ -2027,6 +2076,7 @@ const COMMANDS = new Map([
   ["global setup", (_args, flags) => commandGlobalSetup(flags)],
   ["global status", () => commandGlobalStatus()],
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
+  ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["judge status", () => commandJudgeStatus()],
   ["judge activate", () => commandJudgeActivate()],
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
