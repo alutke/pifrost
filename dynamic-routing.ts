@@ -50,6 +50,8 @@ export interface DynamicRouteProfile {
 	staticContextWindow: number;
 	advertisedContextWindow: number;
 	maxTokens: number;
+	/** Time of last management-plane route sync, not a live gateway attestation. */
+	synchronizedAt?: string;
 	members: DynamicRouteMemberProfile[];
 	bands: DynamicRouteBand[];
 }
@@ -229,6 +231,7 @@ export function applyDynamicRouteProfiles(
 			// Output remains the route-wide safe minimum. Dynamic routing solves
 			// context-window down-ranking without silently increasing output ceilings.
 			maxTokens: model.maxTokens,
+			...(typeof aliasConfig.synchronizedAt === "string" ? { synchronizedAt: aliasConfig.synchronizedAt } : {}),
 			members,
 			bands: routeBands(members),
 		};
@@ -545,6 +548,50 @@ export function planDynamicRouteAttempts(
 		excluded: evaluated.excluded,
 		...(compatibilityBreaks.length ? { compatibilityBreaks } : {}),
 	};
+}
+
+/**
+ * Only let Bifrost execute its original logical rule when every member is
+ * eligible and uses precisely one compatible Chat wire contract. For these
+ * requests local route membership is observational: the gateway's live rule
+ * (not our cached chain) makes every provider and fallback decision.
+ * Responses and encoder-boundary routes still need a restricted adapter.
+ */
+export function canUseNativeBifrostRoute(profile: DynamicRouteProfile, plan: DynamicRoutePlan): boolean {
+	if (plan.logicalModel !== profile.id || plan.excluded.length > 0 || plan.attempts.length !== 1) return false;
+	if (plan.compatibilityBreaks?.length) return false;
+	const attempt = plan.attempts[0]!;
+	if (attempt.protocol !== "openai-completions") return false;
+	if (attempt.members.length !== profile.members.length) return false;
+	if (attempt.fallbacks.length !== profile.members.length - 1) return false;
+	return attempt.members.every((member, index) =>
+		member.reference === profile.members[index]?.reference &&
+		(index === 0 ? attempt.primary === member.reference : attempt.fallbacks[index - 1] === member.reference),
+	);
+}
+
+/**
+ * Bifrost control-plane data is deliberately not fetched using inference keys.
+ * Exception routing relies on a saved routing-rule snapshot, and therefore
+ * must reject missing/old route syncs rather than silently executing an
+ * arbitrarily stale local physical chain. Sync does not prevent drift within
+ * this window; native pass-through is always preferred when possible.
+ */
+export const MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS = 7 * 24 * 60 * 60_000;
+
+export function compatibilityRouteSnapshotError(
+	profile: DynamicRouteProfile,
+	now = Date.now(),
+	maxAgeMs = MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS,
+): string | undefined {
+	const synchronizedAt = typeof profile.synchronizedAt === "string" ? Date.parse(profile.synchronizedAt) : NaN;
+	if (!Number.isFinite(synchronizedAt) || synchronizedAt > now + 60_000) {
+		return `Pifrost compatibility route ${profile.id} has no verified route-sync timestamp; run pifrost routes sync and restart OMP`;
+	}
+	if (now - synchronizedAt > maxAgeMs) {
+		return `Pifrost compatibility route ${profile.id} was last synchronized ${Math.floor((now - synchronizedAt) / 3_600_000)} hours ago; run pifrost routes sync and restart OMP`;
+	}
+	return undefined;
 }
 
 function clampOpenAIOutputTokenFields(
