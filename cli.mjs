@@ -24,6 +24,7 @@ import {
   routeExplanationRequestFromFlags,
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
+import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
 import {
   RESEARCH_PROFILES,
   eligibleResearchCodeModeClients,
@@ -858,6 +859,19 @@ function commandRoutesEffective() {
     const minutes = Math.floor(ageMs / 60_000);
     console.log(formatCatalogSnapshot(cache, ageMs, stale));
     if (stale) console.log("WARN route membership may have changed in Bifrost; run `pifrost models refresh --force` for a fresh effective view.");
+  }
+  const manifest = loadAliasManifest();
+  const hasCompatibilityRoutes = Object.values(manifest.aliases ?? {}).some(
+    definition => definition && !Array.isArray(definition) && definition.dynamicRouting?.source === "bifrost-simple-rule",
+  );
+  if (hasCompatibilityRoutes) {
+    const syncedAt = typeof manifest.synchronizedAt === "string" ? Date.parse(manifest.synchronizedAt) : NaN;
+    const age = Date.now() - syncedAt;
+    if (!Number.isFinite(syncedAt) || age < -60_000 || age > MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS) {
+      console.log("WARN local compatibility routes need a recent rule sync: run `pifrost routes sync` and restart OMP. Model metadata refresh does not update Bifrost routing rules.");
+    } else {
+      console.log(`Bifrost rule sync: ${manifest.synchronizedAt} (snapshot only; resync after any route changes)`);
+    }
   }
   console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
 }
