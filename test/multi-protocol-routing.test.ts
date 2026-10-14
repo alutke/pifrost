@@ -7,6 +7,7 @@ import type { DynamicRoutePlan } from "../dynamic-routing.ts";
 import {
 	bifrostAttemptExtraBody,
 	createPifrostAttemptModelSpec,
+	createPifrostNativeRouteModelSpec,
 	pifrostAttemptMaxTokens,
 	pifrostDirectMaxTokens,
 	normalizePifrostReasoningOptions,
@@ -157,6 +158,20 @@ function outputCollector() {
 		failure: () => failure,
 	};
 }
+
+test("native Bifrost route uses physical Chat encoder but sends logical model without client fallbacks", () => {
+	const model = logicalModel();
+	model.headers = { "x-bf-vk": "test-virtual-key" };
+	const attempt = plan().attempts[1]!;
+	const spec = createPifrostNativeRouteModelSpec(model, attempt);
+	assert.equal(spec.api, "openai-completions");
+	assert.equal(spec.requestModelId, "omp-default");
+	assert.equal(spec.provider, "commandcode");
+	assert.equal(spec.baseUrl, "http://bifrost/v1");
+	assert.equal(spec.headers?.["x-bf-vk"], "test-virtual-key");
+	assert.equal((spec.compat as Record<string, unknown>)?.extraBody, undefined);
+	assert.deepEqual(attempt.fallbacks, ["deepseek/deepseek-flash"], "source rule is not modified");
+});
 
 test("attempt specs use native protocol endpoints and preserve same-protocol Bifrost fallbacks", () => {
 	const logical = logicalModel();
