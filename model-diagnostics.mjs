@@ -263,19 +263,30 @@ export function explainRouteRequest(diagnostic, request = {}) {
 }
 
 export function formatRouteExplanation(explanation) {
-  if (explanation?.error) return `Route explanation unavailable: ${explanation.error}`;
+  if (explanation?.error) return `Route preview unavailable: ${explanation.error}\nNext: pifrost routes effective`;
+  const members = explanation.members ?? [];
+  const eligible = members.filter(member => member.eligible).length;
   const lines = [
-    `Route explanation: ${explanation.alias}`,
-    `  request input=${explanation.inputTokens} output<=${explanation.requestedOutput}`,
+    `Route preview: ${explanation.alias}`,
+    `Request: ${Number(explanation.inputTokens).toLocaleString("en-GB")} input tokens; up to ${Number(explanation.requestedOutput).toLocaleString("en-GB")} output tokens`,
+    `Candidates: ${eligible} eligible of ${members.length} (in configured order)`,
+    "",
   ];
-  for (const member of explanation.members ?? []) {
-    lines.push(
-      `  [${member.eligible ? "ELIGIBLE" : "EXCLUDED"}] ${member.reference}${member.resolvedModelId ? ` -> ${member.resolvedModelId}` : ""}`,
-    );
-    if (member.reasons?.length) lines.push(`    ${member.reasons.join("; ")}`);
-    else lines.push(`    context=${member.requiredContext} output-reserve=${member.outputReserve} protocol=${member.protocol ?? "unknown"}`);
-    if (member.notices?.length) lines.push(`    note: ${member.notices.join("; ")}`);
+  for (const [index, member] of members.entries()) {
+    lines.push(`  ${index + 1}. [${member.eligible ? "ELIGIBLE" : "EXCLUDED"}] ${member.reference}`);
+    if (member.resolvedModelId && member.resolvedModelId !== member.reference) {
+      lines.push(`     Resolved model: ${member.resolvedModelId}`);
+    }
+    if (member.reasons?.length) {
+      for (const reason of member.reasons) lines.push(`     Why excluded: ${reason}`);
+    } else {
+      lines.push(`     Protocol: ${member.protocol ?? "unknown"}; context needed: ${member.requiredContext ?? "unknown"} tokens; output reserve: ${member.outputReserve ?? "unknown"} tokens`);
+    }
+    for (const notice of member.notices ?? []) lines.push(`     Note: ${notice}`);
   }
+  lines.push("", "This is a preview, not an executed Bifrost routing decision.");
+  if (!eligible) lines.push("Next: reduce the requested context or check models with pifrost models doctor --verbose.");
+  else lines.push("Next: after an OMP request, inspect /pifrost trace and Bifrost Logs for the actual route.");
   return lines.join("\n");
 }
 

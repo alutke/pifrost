@@ -40,6 +40,10 @@ import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs"
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
+import {
+  compactCliHelp, formatCliFailure, renderHealthOverview,
+  terminalSection, terminalField, terminalStatus, terminalNextSteps, humanAge,
+} from "./terminal-presentation.mjs";
 
 import {
   bifrostSkillCompatibility,
@@ -339,8 +343,7 @@ function formatError(error) {
 }
 
 function printHeader(title) {
-  console.log(`\n${title}`);
-  console.log("-".repeat(title.length));
+  console.log(terminalSection(title));
 }
 
 function boolMark(value) {
@@ -576,7 +579,40 @@ async function commandGlobalSetup(flags) {
   }
 }
 
-async function commandGlobalStatus(snapshot) {
+function snapshotCheck(id, label, snapshot, action) {
+  const item = snapshot?.[id];
+  if (item?.ok) {
+    const detail = id === "inference" && Number.isFinite(item.value?.models)
+      ? `${item.value.models} models visible`
+      : id === "routing" && Array.isArray(item.value) ? `${item.value.length} routing rules`
+      : "Connection verified";
+    return { label, status:"ok", detail };
+  }
+  return {
+    label,
+    status: item?.skipped ? "unknown" : "warn",
+    detail: item?.skipped ? "Not configured or not checked" : "Could not verify",
+    action,
+  };
+}
+
+async function commandGlobalStatus(snapshot, options = {}) {
+  if (!options.verbose) {
+    const state = loadState();
+    const runtime = runtimeConfigFromState(state);
+    const management = managementAuthFromState(state);
+    const live = snapshot ?? await collectDoctorSnapshot({ runtime, managementAuth: management });
+    const checks = [
+      snapshotCheck("health", "Bifrost gateway", live, "pifrost global setup"),
+      snapshotCheck("inference", "Inference access", live, "pifrost global setup"),
+      snapshotCheck("management", "Management access", live, "pifrost global setup"),
+      snapshotCheck("routing", "Routing policy", live, "pifrost routes diagnose"),
+    ];
+    console.log(renderHealthOverview(checks, {title:"Pifrost global status"}));
+    console.log(terminalField("Gateway", runtime.url ?? "not configured"));
+    console.log("For full gateway, quota and MCP details: pifrost global status --verbose");
+    return;
+  }
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
   const managementAuth = managementAuthFromState(state);
@@ -870,7 +906,26 @@ async function commandModelsRefresh(flags = {}) {
   runCommand("omp", ["models", "refresh"], { env, inherit: true });
 }
 
-async function commandModelsDoctor() {
+async function commandModelsDoctor(options = {}) {
+  if (!options.verbose) {
+    const result = printModelDoctor(process.env, { log() {} });
+    const check = result.checks?.[0];
+    const issues = (result.unresolved ?? []).length;
+    console.log(terminalSection("Model catalogue"));
+    console.log(terminalStatus(result.ok ? "ok" : "fail", "Model readiness",
+      check?.summary ?? (result.ok ? "Available" : "Needs attention")));
+    if (!result.ok) {
+      for (const item of result.unresolved.slice(0, 8)) {
+        console.log(`  - ${item.id}: ${item.unresolved.join(", ")}`);
+      }
+      if (issues > 8) console.log(`  ... and ${issues - 8} more affected routes.`);
+      console.log(terminalNextSteps(["pifrost models refresh --force", "pifrost models doctor --verbose"]));
+    } else {
+      console.log("For capability, provenance and context-band details: pifrost models doctor --verbose");
+    }
+    if (!result.ok) process.exitCode = 2;
+    return result;
+  }
   const result = printModelDoctor();
   if (!result.ok) process.exitCode = 2;
   return result;
@@ -1047,10 +1102,36 @@ async function commandRepoInit(flags) {
   }
 }
 
-async function commandRepoStatus(snapshot) {
+async function commandRepoStatus(snapshot, options = {}) {
   const state = loadState();
   const runtime = requireRuntime(state);
   const repoState = currentRepoState(state);
+  if (!options.verbose) {
+    const mcpPath = join(repoState.repo.root, ".omp/mcp.json");
+    const grants = repoState.config?.mcpClients ?? [];
+    const bundles = repoState.config?.virtualMcps ?? [];
+    const skills = configuredSkillRows(repoState);
+    printHeader(`Repository: ${repoState.repo.name}`);
+    const checks = [
+      {status:repoState.config?.virtualKeyId && repoState.secret?.mcpVirtualKey ? "ok" : "warn",
+       label:"Repository Virtual Key", detail:repoState.secret?.mcpVirtualKey ? "Saved locally (value hidden)" : "Missing"},
+      {status:existsSync(mcpPath) ? "ok" : "warn", label:"OMP MCP configuration",
+       detail:existsSync(mcpPath) ? "File present" : "Missing"},
+    ];
+    for (const item of checks) console.log(terminalStatus(item.status, item.label, item.detail));
+    console.log(terminalField("Direct MCP clients configured", grants.length));
+    console.log(terminalField("Virtual MCP bundles configured", bundles.length));
+    console.log(terminalField("Bifrost Skills configured", skills.length));
+    console.log("These are saved settings, not live permission or tool-execution checks.");
+    const actions = [];
+    if (!repoState.config?.virtualKeyId || !repoState.secret?.mcpVirtualKey || !existsSync(mcpPath)) {
+      actions.push("pifrost repo init");
+      process.exitCode = 2;
+    }
+    actions.push("pifrost repo status --verbose");
+    console.log(terminalNextSteps(actions));
+    return;
+  }
   printHeader(`Repo Pifrost status: ${repoState.repo.name}`);
   console.log(`Repo id:          ${repoState.repo.id}`);
   console.log(`Virtual Key id:   ${repoState.config?.virtualKeyId ?? "missing"}`);
@@ -2062,7 +2143,7 @@ async function commandJudgeProbe(flags = {}) {
   console.log("  this was an explicitly requested inference request; normal judgments remain OMP-owned");
 }
 
-async function commandDoctor() {
+async function commandDoctor(flags = {}) {
   const storedWarnings = storedRuntimeConfigDiagnostics();
   if (storedWarnings.length) {
     printHeader("Stored Pifrost configuration");
@@ -2078,13 +2159,67 @@ async function commandDoctor() {
   const snapshot = await collectDoctorSnapshot({ runtime, managementAuth });
 
   const transportWarnings = bifrostCredentialTransportWarnings(runtime, managementAuth);
+  if (!flags.verbose) {
+    const catalog = printModelDoctor(process.env, { log() {} });
+    const checks = [
+      { label:"OMP", status:commandExists("omp") ? "ok" : "fail",
+        detail: commandExists("omp") ? `Installed (${getOmpVersion() ?? "version unknown"})` : "Not installed",
+        action:"Install or update OMP, then rerun pifrost doctor." },
+      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup"),
+      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup"),
+      snapshotCheck("management", "Management API", snapshot, "pifrost global setup"),
+      snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose"),
+      {label:"Model catalogue", status:catalog.ok ? "ok" : "fail",
+        detail:catalog.checks?.[0]?.summary ?? "Not verified",
+        action:"pifrost models refresh --force"},
+    ];
+    const matrix = await buildCompatibilityMatrix({
+      url: runtime.url,
+      managementAuth,
+      virtualKey: runtime.virtualKey,
+      apiKey: runtime.apiKey,
+      ompVersion: getOmpVersion(),
+      bifrostVersion: snapshot.version?.ok ? snapshot.version.value : undefined,
+      probes: snapshot,
+    });
+    const incompatibilities = [...matrix.omp, ...matrix.bifrost]
+      .filter(item => item.optional !== true && item.status !== "supported");
+    for (const item of incompatibilities.slice(0, 5)) {
+      checks.push({
+        label:`Compatibility: ${item.label}`,
+        status:item.status === "unavailable" || item.status === "drifted" ? "warn" : "unknown",
+        detail:item.detail ? item.detail.slice(0, 140) : "Cannot verify",
+        action:"pifrost doctor --verbose",
+      });
+    }
+    if (incompatibilities.length > 5) checks.push({
+      label:"Other compatibility checks",status:"warn",
+      detail:`${incompatibilities.length - 5} additional findings`,
+      action:"pifrost doctor --verbose",
+    });
+    if (transportWarnings.length) checks.push({
+      label:"Transport security",status:"warn",
+      detail:`${transportWarnings.length} warning(s) - see verbose report`,
+      action:"pifrost doctor --verbose",
+    });
+    if (storedWarnings.length) checks.push({
+      label:"Stored configuration",status:"fail",
+      detail:`${storedWarnings.length} unreadable or invalid file(s)`,
+      action:"pifrost global setup",
+    });
+    console.log(renderHealthOverview(checks));
+    const problemCount = checks.filter(x => x.status === "fail" || x.status === "warn").length;
+    if (problemCount) process.exitCode = 2;
+    return;
+  }
+
   if (transportWarnings.length) {
     printHeader("Transport security");
     for (const warning of transportWarnings) console.log(`WARN ${warning}`);
     console.log("");
   }
 
-  await commandGlobalStatus(snapshot);
+  await commandGlobalStatus(snapshot, { verbose:true });
   console.log("");
   await commandGlobalMcpPolicy(snapshot);
   console.log("");
@@ -2092,13 +2227,13 @@ async function commandDoctor() {
   console.log("");
   await commandCompatibilityDoctor(snapshot);
   console.log("");
-  await commandModelsDoctor();
+  await commandModelsDoctor({ verbose:true });
   console.log("");
   commandRoutesEffective();
   try {
     getRepoRoot();
     console.log("");
-    await commandRepoStatus(snapshot);
+    await commandRepoStatus(snapshot, { verbose:true });
   } catch (error) {
     if (!String(formatError(error)).includes("not inside a Git repository")) throw error;
   }
@@ -2107,7 +2242,7 @@ async function commandDoctor() {
 const COMMANDS = new Map([
   ["init", (_args, flags) => commandInit(flags)],
   ["global setup", (_args, flags) => commandGlobalSetup(flags)],
-  ["global status", () => commandGlobalStatus()],
+  ["global status", (_args, flags) => commandGlobalStatus(undefined, flags)],
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["judge status", () => commandJudgeStatus()],
@@ -2126,10 +2261,10 @@ const COMMANDS = new Map([
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
-  ["models doctor", () => commandModelsDoctor()],
+  ["models doctor", (_args, flags) => commandModelsDoctor(flags)],
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
-  ["repo status", () => commandRepoStatus()],
+  ["repo status", (_args, flags) => commandRepoStatus(undefined, flags)],
   ["repo research status", () => commandRepoResearchStatus()],
   ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
@@ -2154,7 +2289,7 @@ const COMMANDS = new Map([
   ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
   ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
-  ["doctor", () => commandDoctor()],
+  ["doctor", (_args, flags) => commandDoctor(flags)],
 ]);
 
 function resolveCommand(positional) {
@@ -2174,16 +2309,16 @@ async function main() {
     return;
   }
   if (flags.help || !one || one === "help") {
-    process.stdout.write(HELP);
+    process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }
 
   const resolved = resolveCommand(positional);
   if (resolved) return resolved.handler(resolved.args, flags);
-  throw new Error(`Unknown command: ${positional.join(" ")}\n\n${HELP}`);
+  throw Object.assign(new Error("Unknown command. Use pifrost help for the available commands."), { isUsage: true });
 }
 
 main().catch((error) => {
-  console.error(`pifrost: ${formatError(error)}`);
+  console.error(formatCliFailure(error, { isUsage: error?.isUsage === true }));
   process.exitCode = 1;
 });

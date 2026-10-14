@@ -155,6 +155,14 @@ Repository MCP access -> one dedicated MCP VK per repository
 
 Do not reuse a repository MCP VK as the global inference VK.
 
+### 0.21.0 — terminal output and accessibility
+
+Pifrost presents a task-oriented quick help screen by default; `pifrost help --all` retains all commands and flags. The renderer is plain-text-first with explicit [OK]/[WARN]/[FAIL]/[UNKNOWN] labels, no ANSI escape codes, and consistent next-step commands. Quick `doctor`, `global status`, `repo status`, and `models doctor` views prioritise problems; `--verbose` retains the earlier detailed output. The compact views do not assert that configured MCP grants or eligibility imply successful live execution.
+
+`pifrost routes explain` now labels requests as previews, explains exclusion per candidate and points to real Bifrost routing evidence. OMP `/pifrost doctor` is concise, while `/pifrost doctor verbose` contains capability provenance and agent attribution. OMP `/pifrost trace` groups routing, gateway and usage instead of printing one opaque line per attempt. Terminal errors are short and redact common bearer/API tokens; neither help nor diagnostics echo unknown command arguments.
+
+The report formatting is a presentation-only change. Management APIs, Bifrost/OMP ownership, OMP config approval, stored credential semantics and exit codes remain unchanged.
+
 ### 0.20.0 — cross-release policy, failover and reporting hardening
 
 Only exact unconditional OMP model-alias predicates are locally compilable. Query/condition-builder rules, CEL with additional predicates, scoped/pinned rules, and rule chains stay gateway-owned. The production inference adapter does not permit a late fetch-time fallback rewrite.
@@ -401,7 +409,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.20.0
+0.21.0
 ```
 
 Bun can also install the package globally:

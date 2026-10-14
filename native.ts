@@ -45,6 +45,7 @@ import {
 	fetchBifrostModels,
 	flagFromArgv,
 	formatDoctorReport,
+	formatDoctorSummary,
 	loadAliasConfig,
 	optionalConfigFromEnvironment,
 	PIFROST_API,
@@ -973,7 +974,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor | /pifrost trace | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost doctor [verbose] | /pifrost trace | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
@@ -991,7 +992,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					const catalog = await fetchFreshCatalog(config, aliasSource);
 					diagnostics = catalog.diagnostics;
 					ctx.ui.notify(
-						`${formatDoctorReport(diagnostics, aliasSource.path)}\nCatalog cache refreshed; restart OMP to guarantee the refreshed envelope is selected at startup.`,
+						`${formatDoctorSummary(diagnostics, aliasSource.path)}\nCatalog refreshed. Restart OMP to load the new model capabilities.`,
 						diagnostics.some((item) => item.unresolved.length) ? "warning" : "info",
 					);
 					return;
@@ -1004,12 +1005,15 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					diagnostics = catalog.diagnostics;
 				}
 				bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
-				let report = `${formatDoctorReport(diagnostics, aliasSource.path)}\n\n${formatAgentAttributionReport(ctx.sessionManager.getSessionId())}`;
+				const verbose = /^doctor\s+verbose$/iu.test(raw.trim());
+				let report = verbose
+					? `${formatDoctorReport(diagnostics, aliasSource.path)}\n\n${formatAgentAttributionReport(ctx.sessionManager.getSessionId())}`
+					: formatDoctorSummary(diagnostics, aliasSource.path);
 				const storedWarnings = storedRuntimeConfigDiagnostics();
 				if (storedWarnings.length) {
 					report += `\n\nStored configuration warnings:\n${storedWarnings.map((warning) => `  WARN ${warning}`).join("\n")}`;
 				}
-				if (ctx.agent.kind === "main" && ctx.mode === "tui" && ctx.hasUI) {
+				if (verbose && ctx.agent.kind === "main" && ctx.mode === "tui" && ctx.hasUI) {
 					try {
 						report += `\n\n${formatPifrostOmpProfile(await readPifrostOmpProfile(await cfgSession()))}`;
 					} catch (error) {

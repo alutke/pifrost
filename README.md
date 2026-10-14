@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.20.0
+0.21.0
 ```
 
 Bun also works:
@@ -254,6 +254,16 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### Terminal readability and accessibility: 0.21.0
+
+The default terminal experience is now intentionally concise and plain-text-first, with no reliance on colour, emoji, animation or TTY features. Use `pifrost help` for a task-oriented starter guide and `pifrost help --all` for the complete command reference. Unknown commands display a short recovery hint rather than the entire help page.
+
+`pifrost doctor`, `pifrost global status`, `pifrost repo status` and `pifrost models doctor` show actionable summaries by default, with warnings before healthy checks. Add **`--verbose`** for the previous technical detail, including MCP/Skills, model capability provenance and Bifrost compatibility contracts. `pifrost routes explain` clearly separates eligible/excluded candidates and their reasons; `/pifrost trace` is grouped by model, route, gateway and usage.
+
+Inside OMP, `/pifrost doctor` is a compact model-readiness view; `/pifrost doctor verbose` shows full per-alias provenance and attribution. `/pifrost refresh` gives a concise readiness result. Existing `/pifrost config`, `/pifrost costs` and diagnostic commands retain their behaviour. All outputs work when redirected to files or read aloud.
+
+The display layer does not change routing policy, governance, inference execution, configuration writes or diagnostic exit codes.
+
 ### Cross-release hardening: 0.20.0
 
 Pifrost compiles only exact unconditional OMP model-alias CEL predicates into local compatibility routes. Arbitrary request-type, budget, complexity, scoped and query conditions remain Bifrost-owned, including on heterogeneous Chat/Responses chains. An alternative late physical-request rewrite was removed from the live direct inference path. Model output commitment for failover and trace now uses one common predicate: empty text/thinking starts are not generated output.
@@ -303,9 +313,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.20.0
+npm install --global github:alutke/pifrost#v0.21.0
 hash -r
-omp install --force github:alutke/pifrost#v0.20.0
+omp install --force github:alutke/pifrost#v0.21.0
 pifrost routes sync
 pifrost doctor
 ~~~

@@ -1,3 +1,12 @@
+## 0.21.0 — 2026-10-14
+
+- Terminal UX and accessibility: introduce a shared plain-text, no-ANSI renderer with explicit statuses, issues-first sorting, concise recovery commands and user-oriented quick help (`pifrost help --all` retains the full reference).
+- Default `pifrost doctor`, `global status`, `repo status`, `models doctor` to shorter readable summaries; `--verbose` preserves deep operational and compatibility details.
+- Improve route previews with eligibility counts, one candidate per section, exclusion reasons and a clear distinction between simulation and executed Bifrost routing.
+- Group `/pifrost trace` into model, routing, gateway, and usage details rather than a single dense line. Shorten OMP `/pifrost doctor`, with `/pifrost doctor verbose` for capability and attribution details.
+- Improve unknown-command errors and guard against echoing unknown arguments; redact common secrets from diagnostic error messages.
+- Add non-TTY, accessible-text, quick/full-help and OMP summary tests. No changes to model routing, retry ownership, Virtual Key access or external API operations.
+
 ## 0.20.0 — 2026-10-14
 
 - Cross-release hardening: restrict context-aware alias compilation to exact unconditional CEL model matches; opaque request/CEL conditions stay entirely gateway-owned.
