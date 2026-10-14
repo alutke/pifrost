@@ -40,7 +40,7 @@ jobs:
         run: node scripts/validate-hound-contract.mjs
       - name: Validate minimum and current OMP contracts
         run: node scripts/validate-omp-contract.mjs
-      - name: Validate with packaged OMP 18.8.9 CLI/plugin loader
+      - name: Validate with packaged OMP 18.10.4 CLI/plugin loader
         run: |
           export HOME="$RUNNER_TEMP/omp-home-local"
           mkdir -p "$HOME"
@@ -60,13 +60,13 @@ jobs:
           "$OMP_BIN" --version
           "$OMP_BIN" install . --force
           "$OMP_BIN" plugin list
-      - name: Validate with current OMP 18.8.9 release binary
+      - name: Validate with current OMP 18.10.4 release binary
         run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.8.9"
+          OMP_BIN="$RUNNER_TEMP/omp-18.10.4"
           curl --fail --location --silent --show-error \
-            "https://github.com/can1357/oh-my-pi/releases/download/v18.8.9/omp-linux-x64" \
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.10.4/omp-linux-x64" \
             --output "$OMP_BIN"
-          echo "cacc12d5cdd46ff207f3452b36a0d0cfa7c5b8aee0d403aa83c5ab1f46bccb58  $OMP_BIN" | sha256sum -c -
+          echo "ff59fc1b484c1308a7247ad208305005627b3fac62b440737c2b1835ac32074e  $OMP_BIN" | sha256sum -c -
           chmod +x "$OMP_BIN"
           export HOME="$RUNNER_TEMP/omp-home-current"
           mkdir -p "$HOME"
