@@ -59,7 +59,7 @@ const rows = [
   ["repo rotate-key",0,0,["dry-run","yes"],"gateway-change"],
   ["repo reset",0,0,["delete-remote","recover-by-name","yes","dry-run"],"gateway-change"],
   ["repo mcp list",0,0,[...filters,...read],"read-only"],
-  ["repo mcp add",1,1,["tools","dry-run"],"gateway-change"],
+  ["repo mcp add",1,1,["tools","dry-run","install-matching-skills","no-skill-discovery","yes"],"gateway-change"],
   ["repo mcp remove",1,1,["dry-run"],"gateway-change"],
   ["repo mcp instructions",1,1,["dry-run"],"local-change"],
   ["repo vmcp list",0,0,[...filters,...read],"read-only"],
