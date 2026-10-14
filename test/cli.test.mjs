@@ -69,7 +69,11 @@ test("parses and compares upstream semantic versions conservatively", () => {
 
 test("OMP compatibility matrix gates the Pifrost 18.4.5 baseline and preserves earlier feature floors", () => {
   const current = ompCompatibilityMatrix("18.4.5");
-  assert.ok(current.every((item) => item.status === "supported"));
+  assert.ok(current.filter(item => !["omp-native-replay-accounting", "omp-cross-model-compaction", "omp-plan-review-hooks"].includes(item.id))
+    .every(item => item.status === "supported"));
+  assert.equal(current.find(item => item.id === "omp-cross-model-compaction")?.status, "unavailable");
+  const latest = ompCompatibilityMatrix("18.10.4");
+  assert.ok(latest.every(item => item.status === "supported"));
   const previous = ompCompatibilityMatrix("18.3.2");
   assert.equal(previous.find((item) => item.id === "omp-baseline")?.status, "unavailable");
   assert.equal(previous.find((item) => item.id === "omp-mcp-instructions")?.status, "supported");

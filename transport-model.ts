@@ -10,6 +10,12 @@ export type PifrostModelPolicy = {
 export type PifrostModelPolicyResolver = <TApi extends Api>(spec: ModelSpec<TApi>) => PifrostModelPolicy;
 
 let resolvePolicySnapshot: PifrostModelPolicyResolver | undefined;
+export type PifrostTokenizerResolver = (modelId: string, provider?: string) => Model["tokenizer"];
+let resolveTokenizerSnapshot: PifrostTokenizerResolver | undefined;
+export function installPifrostModelTokenizerResolver(resolver: PifrostTokenizerResolver): void {
+  resolveTokenizerSnapshot = resolver;
+}
+
 
 /**
  * Install Pifrost's validated OMP policy snapshot resolver at the extension
@@ -268,7 +274,7 @@ export function buildPifrostTransportModel<TApi extends Api>(spec: ModelSpec<TAp
 		name: cleanTransportModelName(spec.name),
 		identity: policy.identity,
 		requiresGlyphTokenization: policy.identity.class === "anthropic",
-		tokenizer: spec.tokenizer ?? resolveTransportTokenizer(policy.identity),
+		tokenizer: spec.tokenizer ?? resolveTokenizerSnapshot?.(spec.requestModelId ?? spec.id, spec.provider) ?? resolveTransportTokenizer(policy.identity),
 		thinking: policy.thinking,
 		supportsComputerUse: supportsOpenAIGAComputerUse(spec, policy.identity, supportsComputerUseConfig),
 		supportsComputerUseConfig,

@@ -5,6 +5,7 @@ const BIFROST_2_2_3_COMMIT = "b840c82caed6919d84c21bd7be5bf7fa27a7ba17";
 const BIFROST_2_2_4_COMMIT = "ed8371a9779bfbc8aa689d4d77964cf8ce9308bf";
 const BIFROST_2_2_5_COMMIT = "77d08f241cfa10d09ea37d6b00ef9f2c363a3ede";
 const BIFROST_2_2_6_COMMIT = "8b4fce4f1709d66f9208d02f50552da522535f9e";
+const BIFROST_2_3_0_COMMIT = "9237ec06672406e437b3cb33fc793ffd0403b3ae";
 
 const SOURCES = [
   {
@@ -262,6 +263,37 @@ const SOURCES = [
       '"x-bifrost-request-type"',
       '"x-bifrost-upstream-latency-ms"',
     ],
+  },
+  {
+    name: "Bifrost 2.3.0 requested route and correlation response headers",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/transports/bifrost-http/lib/responseheaders.go`,
+    required: [
+      '"x-bifrost-request-id"',
+      '"x-bifrost-routing-info-requested-provider"',
+      '"x-bifrost-routing-info-requested-model"',
+      '"x-bifrost-resolved-model"',
+      '"x-bifrost-fallback-index"',
+    ],
+  },
+  {
+    name: "Bifrost 2.3.0 route first-token timeout",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/ui/lib/types/routingRules.ts`,
+    required: ["ttft_timeout_ms", "fallbacks", "key_id", "priority"],
+  },
+  {
+    name: "Bifrost 2.3.0 persisted routing target timeout",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/framework/configstore/tables/routingrules.go`,
+    required: ['json:"ttft_timeout_ms,omitempty"', "TTFTTimeoutMs"],
+  },
+  {
+    name: "Bifrost 2.3.0 gateway reasoning-to-Responses conversion",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/plugins/compat/main.go`,
+    required: ["ForceReasoningOnlyModelsToResponses", "reasoning_with_tool_calls", "converting request to"],
+  },
+  {
+    name: "Bifrost 2.3.0 provider injected-tool list",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_0_COMMIT}/framework/configstore/clientconfig.go`,
+    required: ["InjectedTools", 'json:"injected_tools,omitempty"'],
   },
 ];
 

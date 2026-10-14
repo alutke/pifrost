@@ -31,17 +31,29 @@ export function gatewayInjectedToolDiagnostics(payload, clients) {
     const explicitlyReported = Object.hasOwn(provider, "injected_tools");
     if (explicitlyReported) schemaReported = true;
     const injected = provider.injected_tools;
-    const rawRef = injected && typeof injected === "object" && !Array.isArray(injected) ? injected.web_search : undefined;
+    // Bifrost 2.3+ accepts a list of {name,mcp_client_name,tool_name}.
+    // Retain the pre-2.3 {web_search:{...}} form for older gateways.
+    const isNewSchema = Array.isArray(injected);
+    const rawRef = injected && typeof injected === "object" && !isNewSchema ? injected.web_search : undefined;
+    const rawTools = isNewSchema ? injected : rawRef ? [{ name: "web_search", ...rawRef }] : [];
     let status = "unreported";
-    let client = "";
-    let tool = "";
-    if (explicitlyReported && (injected === null || injected === undefined ||
-        (typeof injected === "object" && !Array.isArray(injected) && rawRef === undefined))) {
+    const tools = [];
+    if (explicitlyReported && (injected == null || (isNewSchema && injected.length === 0) ||
+        (!isNewSchema && typeof injected === "object" && rawRef === undefined))) {
       status = "not-configured";
-    } else if (rawRef && typeof rawRef === "object" && !Array.isArray(rawRef)) {
-      client = clean(rawRef.mcp_client_name);
-      tool = clean(rawRef.tool_name);
-      status = client && tool ? "configured" : "invalid-reference";
+    } else if (!isNewSchema && rawRef !== undefined && (typeof rawRef !== "object" || Array.isArray(rawRef))) {
+      status = "unrecognised-schema";
+    } else if (isNewSchema || rawRef !== undefined) {
+      status = "configured";
+      for (const entry of rawTools) {
+        const item = entry && typeof entry === "object" && !Array.isArray(entry) ? entry : {};
+        const client = clean(item.mcp_client_name);
+        const tool = clean(item.tool_name);
+        const injectionName = clean(item.name);
+        if (!client || !tool || !injectionName) status = "invalid-reference";
+        tools.push({ name: injectionName, client, tool });
+      }
+      if (!tools.length) status = "not-configured";
     } else if (explicitlyReported) {
       status = "unrecognised-schema";
     }
@@ -50,12 +62,12 @@ export function gatewayInjectedToolDiagnostics(payload, clients) {
     if (status === "configured") {
       if (!active) concerns.push("provider not active");
       if (!clientsReadable) concerns.push("MCP client list unavailable; execution unverified");
-      else {
-        const found = byName.get(comparable(client));
+      else for (const entry of tools) {
+        const found = byName.get(comparable(entry.client));
         if (!found) concerns.push("configured MCP client not found");
         else {
           const names = Array.isArray(found.tools) ? found.tools : [];
-          if (!names.some(candidate => comparable(candidate) === comparable(tool))) {
+          if (!names.some(candidate => comparable(candidate) === comparable(entry.tool))) {
             concerns.push("tool not present in MCP client metadata");
           }
         }
@@ -63,10 +75,11 @@ export function gatewayInjectedToolDiagnostics(payload, clients) {
     } else if (status === "invalid-reference" || status === "unrecognised-schema") {
       concerns.push("provider injected-tools schema requires review");
     }
-    policies.push({ provider: name, status, client, tool, active, concerns });
+    // Preserve old report fields for legacy single-tool integrations.
+    policies.push({ provider: name, status, client: tools[0]?.client ?? "", tool: tools[0]?.tool ?? "", tools, active, concerns: [...new Set(concerns)] });
   }
   policies.sort((a, b) => a.provider.localeCompare(b.provider));
-  return { schemaReported, clientsReadable, policies, configured: policies.filter(p => p.status === "configured").length };
+  return { schemaReported, clientsReadable, policies, configured: policies.filter(p => p.status === "configured").reduce((sum, p) => sum + p.tools.length, 0) };
 }
 
 export function formatGatewayInjectedToolDiagnostics(report) {
@@ -74,11 +87,13 @@ export function formatGatewayInjectedToolDiagnostics(report) {
   if (!report.schemaReported) {
     lines.push("  not exposed by current Bifrost management response; cannot establish whether injection is configured");
   } else if (report.configured === 0) {
-    lines.push("  no provider web_search injection is reported");
+    lines.push("  no provider-injected MCP tools are reported");
   }
   for (const p of report.policies) {
     if (p.status === "not-configured" || p.status === "unreported") continue;
-    const target = p.status === "configured" ? " web_search=" + p.client + "/" + p.tool : "";
+    const target = p.status === "configured"
+      ? " " + p.tools.map(item => item.name + "=" + item.client + "/" + item.tool).join(", ")
+      : "";
     lines.push("  " + p.provider + ": " + p.status + target);
     for (const concern of p.concerns) lines.push("    WARN " + concern);
   }

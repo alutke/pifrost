@@ -1,6 +1,6 @@
 const OMP_MIN_COMMIT = "79808c3bf8f8cd9826decc63e3e18b13035f64f8";
-const OMP_VALIDATED_VERSION = "18.8.9";
-const OMP_VALIDATED_COMMIT = "fa5ff4a3a977a28b93d025f4cf50f046e019f18c";
+const OMP_VALIDATED_VERSION = "18.10.4";
+const OMP_VALIDATED_COMMIT = "687892d1046ecaf18829b45f5b86928a308258f4";
 const OMP_UPSTREAM_CANARY = process.env.PIFROST_OMP_UPSTREAM_CANARY === "1";
 const OMP_CURRENT_REF = OMP_UPSTREAM_CANARY ? "main" : OMP_VALIDATED_COMMIT;
 const OMP_CURRENT_LABEL = OMP_UPSTREAM_CANARY ? "main" : OMP_VALIDATED_VERSION;
@@ -115,17 +115,18 @@ const CURRENT_SOURCES = [
     name: `OMP ${OMP_CURRENT_LABEL} dimension-aware image accounting`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/agent/src/image-tokens.ts`,
     required: [
-      "estimateImageContentTokens",
+      "estimateImageTokens",
       "base64ImageSize",
       "UNKNOWN_SIZE",
-      "imageTokens(openAiWireRule()",
+      "openAiWireRule()",
     ],
   },
   {
     name: `OMP ${OMP_CURRENT_LABEL} OpenAI image-policy parity`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/rules/classes/openai.kdl`,
     required: [
-      'revision ">=5.6 <10"',
+      'revision ">=5.6 <6.2"',
+      'revision ">=6.2 <10"',
       'models "*gpt-6-astra*"',
       'multiplier 1.2',
       'patch-budget 2500',
@@ -161,6 +162,16 @@ const CURRENT_SOURCES = [
       'patch-budget 10000',
       'tokens 1120',
       'max-tokens 4784',
+    ],
+  },
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} authoritative physical tokenizer model policy`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/model-tokenizer.ts`,
+    required: [
+      "export function resolveModelTokenizer",
+      'return identity.class === "openai"',
+      '"o200k"',
+      '"claude-v5-sonnet"',
     ],
   },
   {

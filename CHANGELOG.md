@@ -1,3 +1,13 @@
+## 0.17.0 — 2026-10-14
+
+- Release B: upgrade all five direct OMP packages from 18.8.9 to the unified 18.10.4 release, regenerate and commit the canonical npm lockfile, and update both the packaged CLI and verified 18.10.4 binary CI gates. Continue validating minimum OMP 18.4.8 support.
+- Pin Bifrost HTTP 2.3.0 contract checks for gateway-owned requested-route/request-ID headers, per-target first-token timeouts, Chat-to-Responses reasoning conversion and provider injected-tool list schema; preserve supported 2.2.x compatibility.
+- Reconcile Bifrost 2.3 provider-injected MCP tool inventories: support named multi-tool arrays and legacy web_search objects, report drift read-only, avoid secrets and never execute or enable tools from diagnostics.
+- Delegate physical model tokenizer resolution to OMP's exported 18.10.4 catalog resolver rather than duplicating newer GPT-5+ o200k/Claude family rules; retain only a legacy fallback and verify request-model parity in Bun tests.
+- Expose OMP 18.10.3+ replay-token accounting, OMP 18.10.4 reasoning-safe cross-model compaction and Bifrost 2.3 first-token deadlines in version-aware diagnostics. Keep OMP as agent/session/compaction owner and Bifrost as timeout, model, quota, retry and MCP executor.
+- Retain Pifrost's narrowly scoped physical-model context preflight, reasoning replay hygiene and Bifrost nested-cost translation until gateway-host tests prove equivalent upstream behaviour; do not silently disable safety-critical workarounds or change OMP fallback ownership.
+- Add CI/contract and provider-injection tests; live gateway/model-specific behavioural verification remains distinct from public contract checks.
+
 ## 0.16.0 — 2026-10-14
 
 - Release A: restore Bifrost-native `omp-*` inference routing when all simple-rule members are request-compatible and share a single Chat/encoder contract. Preserve the physical primary's OMP wire policy, send the original logical model, and omit any locally copied `fallbacks` override; Bifrost owns live target/key ordering, same-protocol fallback and route counters.

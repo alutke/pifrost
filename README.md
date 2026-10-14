@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.16.0
+0.17.0
 ```
 
 Bun also works:
@@ -254,6 +254,16 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### Release B: upstream compatibility (OMP 18.10.4 / Bifrost 2.3.0)
+
+Release B updates Pifrost's pinned OMP runtime/catalog policies together and validates the 18.10.4 compiled binary. It adds pinned Bifrost 2.3.0 contract validation for original-route headers, gateway-native TTFT deadlines and reasoning-aware Chat-to-Responses conversion.
+
+Bifrost 2.3's `injected_tools` list is now recognised by read-only `pifrost global mcp-policy` and `pifrost doctor`; older `web_search` objects remain supported. Diagnostics neither enable nor execute tools. Bifrost still owns routing and MCP access controls.
+
+**Upstream-first compatibility:** OMP owns reasoning-aware compaction and the session/replay lifecycle. Pifrost retains its narrowly scoped physical-model context estimates, wire compatibility preflight, Bifrost-specific nested-cost decoding and observed synthetic reasoning cleanup until live tests establish safe upstream parity. Bifrost 2.3 TTFT and reasoning compatibility policy are inspected, not automatically changed.
+
+Upgrade to v0.17.0 then synchronise routes as described below. An OMP restart is required.
+
 ### Release A: Bifrost-native route attribution
 
 For a synchronized simple `omp-*` rule, Pifrost now keeps the **logical model** on the wire when every member is eligible and the members share one compatible Chat Completions encoding. Bifrost executes its **live** routing rule, including its actual provider/key policies and fallback chain; Pifrost does not send a copied `fallbacks` list.
@@ -265,9 +275,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.16.0
+npm install --global github:alutke/pifrost#v0.17.0
 hash -r
-omp install --force github:alutke/pifrost#v0.16.0
+omp install --force github:alutke/pifrost#v0.17.0
 pifrost routes sync
 pifrost doctor
 ~~~
