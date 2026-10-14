@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.19.0
+0.20.0
 ```
 
 Bun also works:
@@ -254,6 +254,16 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### Cross-release hardening: 0.20.0
+
+Pifrost compiles only exact unconditional OMP model-alias CEL predicates into local compatibility routes. Arbitrary request-type, budget, complexity, scoped and query conditions remain Bifrost-owned, including on heterogeneous Chat/Responses chains. An alternative late physical-request rewrite was removed from the live direct inference path. Model output commitment for failover and trace now uses one common predicate: empty text/thinking starts are not generated output.
+
+`pifrost routes sync` records an order-independent fingerprint of the complete Bifrost rule inventory. `pifrost routes diff` detects changes to conditions or pins even when the model chain is unchanged. `pifrost routes verify` fetches rules with management authentication and, only when the full policy is unchanged, refreshes the local verification timestamp. **Restart OMP after verify/sync** to refresh active compatibility profiles. A seven-day fail-closed guard remains where live revision verification is unavailable from the OMP inference boundary; this is intentional and not proof that live rules cannot drift within the window.
+
+`/pifrost costs` reports `cost=unknown` for roles with no gateway cost response, and `reported-subtotal` for incomplete cost coverage. Bifrost privacy reports distinguish global log-store enablement, per-Virtual-Key content defaults, hidden object storage and unverified external connectors. They do not constitute a compliance finding.
+
+CI adds mock HTTP gateway integration and missing-output/failover tests. Actual Bifrost rule hits and live connected provider results still require a deployment acceptance check.
+
 ### Release D: optional gateway intelligence and privacy visibility
 
 Use the **read-only, opt-in** command `pifrost global observability` to inspect the Bifrost complexity classifier configuration (keywords, decision model, semantic fallback and session stickiness) alongside configured provider-injected web research tools. These are configuration observations, **not evidence** that a classifier or tool ran or that a given Virtual Key was authorised.
@@ -293,9 +303,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.19.0
+npm install --global github:alutke/pifrost#v0.20.0
 hash -r
-omp install --force github:alutke/pifrost#v0.19.0
+omp install --force github:alutke/pifrost#v0.20.0
 pifrost routes sync
 pifrost doctor
 ~~~
