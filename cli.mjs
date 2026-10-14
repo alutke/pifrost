@@ -323,7 +323,7 @@ function boolMark(value) {
 
 function parseSelection(value, max) {
   const indexes = splitCsv(value)
-    .map((item) => Number.parseInt(item, 10))
+    .map((item) => /^\d+$/u.test(item) ? Number(item) : NaN)
     .filter((item) => Number.isInteger(item) && item >= 1 && item <= max);
   return [...new Set(indexes)];
 }
@@ -994,8 +994,12 @@ async function commandRepoInit(flags) {
   const available = await listMcpClients(url, managementKey);
   const names = splitCsv(flagString(flags, "clients"));
   const commonTools = splitCsv(flagString(flags, "tools"));
+  if (clientFlagPresent && names.length && !commonTools.length && !flags["allow-all-tools"]) {
+    throw Object.assign(new Error("Specify --tools tool1,tool2 or --allow-all-tools with --clients."),{isUsage:true});
+  }
+  const explicitTools = flags["allow-all-tools"] ? ["*"] : commonTools;
   const clients = clientFlagPresent
-    ? resolveNamedClients(available, names, commonTools)
+    ? resolveNamedClients(available, names, explicitTools)
     : virtualMcpFlagPresent
       ? undefined
       : await chooseClientsInteractively(available);
@@ -1010,6 +1014,15 @@ async function commandRepoInit(flags) {
     );
   }
 
+  if (flags["dry-run"]) {
+    printHeader("Repository setup preview - no changes");
+    console.log("Operation: changes local configuration and Bifrost Virtual Key permissions");
+    console.log("Repository: " + repo.name);
+    for (const client of clients ?? []) console.log("  MCP: " + client.name + " tools: " + client.tools.join(", "));
+    for (const item of desiredVirtualMcps ?? []) console.log("  Virtual MCP: " + item.name);
+    console.log("No configuration, permissions or credentials have changed.");
+    return;
+  }
   const vk = await upsertRepoVirtualKey({
     state,
     repo,
@@ -1688,11 +1701,24 @@ async function commandRepoMcpAdd(clientName, flags) {
   const available = await listMcpClients(url, managementKey);
   const found = available.find((client) => client.name.toLowerCase() === clientName.toLowerCase());
   if (!found) throw new Error(`Unknown Bifrost MCP client: ${clientName}`);
-  const tools = splitCsv(flagString(flags, "tools"));
+  const tools = flags["allow-all-tools"] ? ["*"] : splitCsv(flagString(flags, "tools"));
+  if (!tools.length) throw Object.assign(new Error("Select --tools tool1,tool2 or explicitly --allow-all-tools"),{isUsage:true});
+  const knownTools = found.tools.map(tool => typeof tool === "string" ? tool : tool.name).filter(Boolean);
+  if (!tools.includes("*") && knownTools.length) {
+    const unknown = tools.filter(tool => !knownTools.includes(tool));
+    if (unknown.length) throw new Error("Selected tools not exposed by " + found.name + ": " + unknown.join(", "));
+  }
   const alreadyAssigned = virtualKeyMcpConfigs(vk)
     .some((item) => item.mcp_client_name.toLowerCase() === found.name.toLowerCase());
   const configs = virtualKeyMcpConfigs(vk).filter((item) => item.mcp_client_name !== found.name);
   configs.push({ mcp_client_name: found.name, tools_to_execute: tools.length ? tools : ["*"] });
+  printHeader("MCP access " + (flags["dry-run"] ? "preview" : "change"));
+  console.log("Client: " + found.name);
+  console.log("Requested tools: " + tools.join(", "));
+  console.log("Existing grant: " + (alreadyAssigned ? "yes - replacing" : "none"));
+  if (tools.includes("*")) console.log("[WARN] Wildcard authorises every tool exposed by this client.");
+  console.log("Execution/auto-execution still depend on Bifrost policy. No inference has been run.");
+  if (flags["dry-run"]) { console.log("No permissions changed."); return; }
   const updated = await updateVirtualKey(url, managementKey, vk.id, { mcp_configs: configs });
   const normalized = virtualKeyMcpConfigs(updated).map((item) => ({
     name: item.mcp_client_name,
@@ -1703,13 +1729,20 @@ async function commandRepoMcpAdd(clientName, flags) {
   if (!alreadyAssigned) await offerMatchingMcpSkills([found], flags);
 }
 
-async function commandRepoMcpRemove(clientName) {
+async function commandRepoMcpRemove(clientName, flags = {}) {
   if (!clientName) throw new Error("Usage: pifrost repo mcp remove <client>");
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
   const configs = virtualKeyMcpConfigs(vk).filter(
     (item) => item.mcp_client_name.toLowerCase() !== clientName.toLowerCase(),
   );
+  if (flags["dry-run"]) {
+    printHeader("MCP removal preview - no changes");
+    console.log("Client: " + clientName);
+    console.log("Virtual Key: " + (current.config.virtualKeyName ?? "current repository key"));
+    console.log("Direct grant would be removed; Virtual MCP bundles may still grant access.");
+    return;
+  }
   const updated = await updateVirtualKey(url, managementKey, vk.id, { mcp_configs: configs });
   const normalized = virtualKeyMcpConfigs(updated).map((item) => ({
     name: item.mcp_client_name,
@@ -2245,7 +2278,7 @@ const COMMANDS = new Map([
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
   ["repo mcp list", () => commandRepoMcpList()],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
-  ["repo mcp remove", (args) => commandRepoMcpRemove(args[0])],
+  ["repo mcp remove", (args, flags) => commandRepoMcpRemove(args[0], flags)],
   ["repo mcp instructions", (args) => commandRepoMcpInstructions(args[0])],
   ["repo vmcp list", () => commandRepoVirtualMcpList()],
   ["repo vmcp add", (args, flags) => commandRepoVirtualMcpAdd(args[0], flags)],
