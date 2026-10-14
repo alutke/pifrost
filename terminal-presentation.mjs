@@ -25,19 +25,24 @@ export function terminalNextSteps(steps, max = 6) {
   if (!unique.length) return "";
   return ["Next steps:", ...unique.map((item, index) => `  ${index + 1}. ${cleanDisplay(item)}`)].join("\n");
 }
-export function renderHealthOverview(checks, { details = false, title = "Pifrost health" } = {}) {
+export function healthExitCode(checks, { strict = false } = {}) {
+  return checks.some(item => item.status === "fail" && item.required !== false || strict && item.status !== "ok") ? 2 : 0;
+}
+export function renderHealthOverview(checks, { details = false, title = "Pifrost health", detailCommand = "pifrost doctor --verbose" } = {}) {
   const items = [...checks].sort((a, b) => (ORDER[a.status] ?? 2) - (ORDER[b.status] ?? 2));
   const issues = items.filter(x => x.status !== "ok");
   const passed = items.filter(x => x.status === "ok").length;
   const label = issues.some(x => x.status === "fail")
     ? "Action required" : issues.length ? "Review recommended" : "All checked services are working";
   const lines = [terminalSection(title), `Result: ${label} (${passed}/${items.length} checks OK)`, ""];
-  for (const item of details ? items : [...issues, ...items.filter(x => x.status === "ok")]) {
+  const visible = details ? items : [...issues, ...items.filter(x => x.status === "ok").slice(0, 8)];
+  for (const item of visible) {
     lines.push(terminalStatus(item.status, item.label, item.detail));
   }
   const actions = terminalNextSteps(issues.map(item => item.action));
   if (actions) lines.push("", actions);
-  if (!details) lines.push("", "For technical details: pifrost doctor --verbose");
+  if (!details && items.length > visible.length) lines.push("  ... " + (items.length - visible.length) + " other successful checks (see --verbose)");
+  if (!details) lines.push("", "For technical details: " + detailCommand);
   lines.push("Checks show what was verified, not proof that every inference route will work.");
   return lines.join("\n");
 }
