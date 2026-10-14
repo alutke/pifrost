@@ -449,11 +449,12 @@ test("empty starts followed by tool-call completion prevent fallback", async () 
 });
 
 function gatewayPlan(model: Model, first: "openai-completions" | "openai-responses"): DynamicRoutePlan {
-	const second = first === "openai-responses" ? "openai-completions" : "openai-responses";
+	const second: "openai-completions" | "openai-responses" = first === "openai-responses" ? "openai-completions" : "openai-responses";
+	const protocols: Array<"openai-completions" | "openai-responses"> = [first, second];
 	return {
 		logicalModel: model.id, estimatedInputTokens: 0,
 		outputReserveTokens: 0, outputReserveExplicit: false, requiredContextTokens: 0, excluded: [],
-		attempts: [first, second].map(protocol => ({
+		attempts: protocols.map(protocol => ({
 			protocol, primary: model.id, fallbacks: [], members: [],
 		})),
 	};
