@@ -115,9 +115,9 @@ async function fixture(run) {
 
 test("direct MCP assignment does not install Skills without explicit unattended consent", async () => {
   await fixture(async ({ run, work, counters, vk }) => {
-    const first = await run("repo", "mcp", "add", "donsetch", "--yes");
+    const first = await run("repo", "mcp", "add", "donsetch", "--allow-all-tools", "--yes");
     assert.equal(first.code, 0, first.stderr + first.stdout);
-    assert.match(first.stdout, /Skipped \(noninteractive/u);
+    assert.match(first.stdout, /Suggestion only/u);
     assert.equal(existsSync(join(work, ".agents/skills/donsetch")), false);
     assert.equal(vk.mcp_configs.length, 1, "MCP grant was committed independently");
     assert.equal(counters.installs, 0);
@@ -126,14 +126,14 @@ test("direct MCP assignment does not install Skills without explicit unattended 
 
 test("explicit opt-in installs once, tracks provenance and never repeats an unchanged grant", async () => {
   await fixture(async ({ run, work, configDir, id, counters }) => {
-    const first = await run("repo", "mcp", "add", "donsetch", "--install-matching-skills");
+    const first = await run("repo", "mcp", "add", "donsetch", "--allow-all-tools", "--install-matching-skills");
     assert.equal(first.code, 0, first.stderr + first.stdout);
     assert.match(first.stdout, /Installed donsetch@1\.0\.0/u);
     assert.equal(existsSync(join(work, ".agents/skills/donsetch/SKILL.md")), true);
     const state = JSON.parse(readFileSync(join(configDir, "config.json"), "utf8"));
     assert.equal(state.repos[id].mcpSkillDiscovery.links[0].clientId, "client-ds");
     assert.equal(state.repos[id].bifrostSkills[0].name, "donsetch");
-    const again = await run("repo", "mcp", "add", "donsetch", "--install-matching-skills");
+    const again = await run("repo", "mcp", "add", "donsetch", "--allow-all-tools", "--install-matching-skills");
     assert.equal(again.code, 0, again.stderr);
     assert.equal(counters.installs, 1);
     assert.equal(counters.skills, 1, "catalogue should not be read for unchanged direct grant");
@@ -143,7 +143,7 @@ test("explicit opt-in installs once, tracks provenance and never repeats an unch
 test("an optional Skill discovery failure never reverses a successful MCP assignment", async () => {
   await fixture(async ({ run, failSkills, vk }) => {
     failSkills(true);
-    const result = await run("repo", "mcp", "add", "donsetch", "--install-matching-skills");
+    const result = await run("repo", "mcp", "add", "donsetch", "--allow-all-tools", "--install-matching-skills");
     assert.equal(result.code, 0, result.stderr + result.stdout);
     assert.match(result.stdout, /WARN Optional MCP Skill discovery unavailable/u);
     assert.equal(vk.mcp_configs.length, 1);
