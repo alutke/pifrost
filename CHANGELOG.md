@@ -1,3 +1,8 @@
+## 0.22.2 — 2026-10-14
+
+- Repository maintenance: close superseded PR #60, replace an obsolete single-branch cleanup workflow with a guarded, explicit-sha one-time prune of the 23 inspected non-main branch refs. Preserve `main` and all release tags.
+- The cleanup validates its exact branch manifest, checks for open pull requests and protected branches, and uses Git push leases to reject a moved ref. No changes to the Pifrost runtime or provider integration.
+
 ## 0.22.1 — 2026-10-14
 
 - Consolidate current user guidance and the technical reference around the CLI's 46-command source of truth; remove duplicated release-by-release explanations and obsolete migration instructions from the active guides.
