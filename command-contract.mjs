@@ -57,12 +57,35 @@ export const COMMAND_SPEC=Object.freeze({
 export class CommandUsageError extends Error{
 constructor(message){super(message);this.name="CommandUsageError";this.isUsage=true}
 }
+const POSITION_NAMES={
+  "routes explain":["role-or-alias"],
+  "repo research bind":["provider-id","mcp-client"],
+  "repo research unbind":["provider-id"],
+  "repo research prefer":["provider-id|none"],
+  "repo research probe":["provider-id"],
+  "repo mcp add":["client"],"repo mcp remove":["client"],
+  "repo mcp instructions":["on|off|default"],
+  "repo vmcp add":["bundle"],"repo vmcp remove":["bundle"],
+  "repo skills add":["skill"],"repo skills remove":["skill"],
+  "repo skills sync":["skill"],"repo skills bind":["client","skill"],
+  "repo skills unbind":["client"],"repo skills dismiss":["client"],
+  "repo skills undismiss":["client"]
+};
+const EXAMPLES={
+  "repo mcp add":"pifrost repo mcp add donsetch --tools web_search,web_fetch --dry-run",
+  "repo reset":"pifrost repo reset --delete-remote --dry-run",
+  "routes explain":"pifrost routes explain default --input-tokens 20000 --tools",
+  "routes sync":"pifrost routes sync --dry-run",
+  "repo skills suggestions":"pifrost repo skills suggestions",
+  "repo research probe":"pifrost repo research probe donsetch",
+  "doctor":"pifrost doctor --strict --json"
+};
 export function commandUsage(name){
 const s=COMMAND_SPEC[name];
 if(!s)return "Unknown command. Run pifrost help --all.";
-const args=Array.from({length:s.min},(_,i)=>"<argument-"+(i+1)+">").join(" ");
+const args=Array.from({length:s.min},(_,i)=>"<"+(POSITION_NAMES[name]?.[i]??"argument-"+(i+1))+">").join(" ");
 const opts=Object.entries(s.flags).map(([k,v])=>"  --"+k+(v==="boolean"?"":" VALUE"));
-return ["Usage: pifrost "+name+(args?" "+args:"")+(s.max>s.min?" [argument]":"")+" [options]",s.summary,"Effect: "+s.effect,...opts,"  --help  Show this command's help"].join("\n");
+return ["Usage: pifrost "+name+(args?" "+args:"")+(s.max>s.min?" [argument]":"")+" [options]",s.summary,"Effect: "+s.effect,...opts,"  --help  Show this command's help",EXAMPLES[name]?"Example: "+EXAMPLES[name]:""].filter(Boolean).join("\n");
 }
 export function parseCliArgs(argv){
 const positional=[],flags={};
