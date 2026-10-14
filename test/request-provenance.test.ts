@@ -11,6 +11,7 @@ test("records and formats actual Bifrost route provenance", () => {
 	const sessionId = "session-trace-test";
 	recordBifrostCaptureTrace(sessionId, {
 		logicalModel: "omp-default",
+		routeMode: "bifrost-native",
 		protocol: "openai-completions",
 		attempt: 2,
 		requestedPrimary: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
@@ -18,6 +19,8 @@ test("records and formats actual Bifrost route provenance", () => {
 		outcome: "done",
 	}, {
 		requestId: "req-42",
+		requestedModel: "omp-default",
+		requestedProvider: "bifrost",
 		provider: "deepseek",
 		resolvedModel: "deepseek-v4.1-flash",
 		fallbackIndex: 1,
@@ -29,6 +32,8 @@ test("records and formats actual Bifrost route provenance", () => {
 	const report = formatPifrostRouteTraces(sessionId);
 	assert.match(report, /omp-default/u);
 	assert.match(report, /attempt=2/u);
+	assert.match(report, /route-mode=bifrost-native/u);
+	assert.match(report, /gateway-request=bifrost\/omp-default/u);
 	assert.match(report, /wire-boundaries=1 boundary-retry=pre-output-only/u);
 	assert.equal(report.includes("\\n"), false, "format readable newlines, never escaped backslash-n");
 	assert.match(report, /served=deepseek\/deepseek-v4\.1-flash/u);
@@ -41,6 +46,23 @@ test("records and formats actual Bifrost route provenance", () => {
 	assert.match(formatPifrostRouteTraces(sessionId), /no requests recorded/u);
 });
 
+
+test("compatibility exception trace explicitly identifies bypass and reason", () => {
+	const sessionId = "session-compatibility-bypass";
+	recordBifrostCaptureTrace(sessionId, {
+		logicalModel: "omp-advisor",
+		routeMode: "pifrost-compatibility",
+		exceptionReason: "member-eligibility",
+		protocol: "openai-completions",
+		attempt: 1,
+		requestedPrimary: "physical/model",
+		outcome: "done",
+	}, { requestedModel: "physical/model" });
+	const report = formatPifrostRouteTraces(sessionId);
+	assert.match(report, /route-mode=pifrost-compatibility exception=member-eligibility/u);
+	assert.match(report, /gateway-request=physical\/model/u);
+	releasePifrostRouteTraces(sessionId);
+});
 
 test("trace leaves compatible routes free of wire-boundary notices", () => {
 	const sessionId = "session-compatible-route";
