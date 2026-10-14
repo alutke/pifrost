@@ -143,7 +143,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.17.0
+0.18.0
 ```
 
 Bun also works:
@@ -254,6 +254,12 @@ pifrost routes explain plan --tools --reasoning --tool-choice required
 
 The explanation uses the same shared eligibility engine as runtime prewalk: context/output reserve, image/tool support, tool-choice variants, reasoning-with-tools, Tool Search/Responses transport, between-tools thinking and service-tier availability. Between-tools thinking is advisory rather than a hard exclusion: Bifrost 2.2.4+ downgrades or omits that mode for physical fallbacks that do not support it.
 
+### Release C: gateway reliability, failure and routing attribution
+
+Release C extends `/pifrost trace` without taking control of Bifrost or OMP request execution. It captures the confirmed gateway trace ID, HTTP status, classified credential/access/quota/timeout/upstream errors, bounded Retry-After hints, response cache metadata, and whether streamed model output had begun. It provides read-only next-step guidance for credential rotation, quota investigations and Bifrost timeout policies. No keys, provider response bodies or secrets are stored in traces.
+
+The trace distinguishes a **gateway-requested alias** from a **confirmed matched Bifrost rule**. Bifrost's routing dashboard/logs remain authoritative for rule matches and cost. Pifrost compatibility exceptions explicitly explain why physical requests may not increment `omp-*` routing statistics; successful cached responses are marked as such and are not evidence of a new live upstream call. No retries or automatic key rotations are introduced.
+
 ### Release B: upstream compatibility (OMP 18.10.4 / Bifrost 2.3.0)
 
 Release B updates Pifrost's pinned OMP runtime/catalog policies together and validates the 18.10.4 compiled binary. It adds pinned Bifrost 2.3.0 contract validation for original-route headers, gateway-native TTFT deadlines and reasoning-aware Chat-to-Responses conversion.
@@ -277,9 +283,9 @@ Exception paths rely on locally synchronized Bifrost rule membership and therefo
 Upgrade:
 
 ~~~bash
-npm install --global github:alutke/pifrost#v0.17.0
+npm install --global github:alutke/pifrost#v0.18.0
 hash -r
-omp install --force github:alutke/pifrost#v0.17.0
+omp install --force github:alutke/pifrost#v0.18.0
 pifrost routes sync
 pifrost doctor
 ~~~
