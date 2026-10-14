@@ -154,24 +154,24 @@ Usage:
   pifrost judge probe [--decisions]         Billed opt-in System One or canonical Decisions conformance
   pifrost routes list
   pifrost routes diff
-  pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
-  pifrost routes sync [--no-refresh]
+  pifrost routes verify [--dry-run]        Verify policy; optionally refresh timestamp
+  pifrost routes sync [--no-refresh] [--dry-run]
   pifrost routes diagnose
   pifrost routes effective
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost models refresh [--force]
   pifrost models doctor
   pifrost models kinds                     Read-only Bifrost model-kind inventory, not model runner registration
-  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
+  pifrost repo init [--clients a,b] [--tools tool1,tool2|--allow-all-tools]] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
   pifrost repo status
   pifrost repo research status
   pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name] [--fetch-tool name] [--crawl-tool name] [--screenshot-tool name]
   pifrost repo research unbind <id>
   pifrost repo research prefer <id|none>
   pifrost repo research probe [<id>]       Explicit, read-only live search test via Bifrost (Classic MCP only)
-  pifrost repo rotate-key
+  pifrost repo rotate-key [--dry-run]
   pifrost repo mcp list
-  pifrost repo mcp add <client> [--tools '*|tool1,tool2'] [--install-matching-skills]
+  pifrost repo mcp add <client> (--tools tool1,tool2 | --allow-all-tools) [--dry-run]
   pifrost repo mcp remove <client>
   pifrost repo mcp instructions <on|off|default>
   pifrost repo vmcp list
@@ -186,7 +186,7 @@ Usage:
   pifrost repo skills unbind <client>
   pifrost repo skills dismiss <client>
   pifrost repo skills undismiss <client>
-  pifrost repo reset [--delete-remote] [--recover-by-name] [--yes]
+  pifrost repo reset [--delete-remote] [--recover-by-name] [--yes] [--dry-run]
   pifrost secret repo-mcp --id <repo-id>
   pifrost doctor
   pifrost --version
@@ -205,7 +205,8 @@ Global setup options:
 
 Repo init options:
   --clients <a,b>                 Direct MCP clients to grant
-  --tools <*|tool1,tool2>         Tool allow-list for selected direct MCP clients
+  --tools <tool1,tool2>           Explicit tool allow-list for selected direct MCP clients
+  --allow-all-tools               Explicitly grant all tools on a selected MCP client
   --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
   --rotate-existing               Explicitly rotate an adopted existing repo Virtual Key when its raw value is unavailable
   --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
@@ -216,6 +217,7 @@ Repo reset options:
   --delete-remote                 Delete the repo Bifrost Virtual Key before local cleanup
   --recover-by-name               With --delete-remote, recover only the exact canonical VK name
   --yes                           Skip the destructive DELETE confirmation
+  --dry-run                       Show planned changes without writing
 
 Environment overrides:
   BIFROST_URL
