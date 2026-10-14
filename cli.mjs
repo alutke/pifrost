@@ -857,7 +857,7 @@ async function commandRoutesDiff() {
   process.exitCode = 2;
 }
 
-async function commandRoutesVerify() {
+async function commandRoutesVerify(flags = {}) {
   const { policyFingerprint, manifest } = await routingSnapshot();
   const local = loadAliasManifest();
   const status = routePolicyDrift(local.policyFingerprint, policyFingerprint);
@@ -872,6 +872,10 @@ async function commandRoutesVerify() {
     process.exitCode = 2;
     return;
   }
+  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
+    "Rule fingerprints match; verification timestamp would be refreshed",
+    "Restart OMP after applying verification"
+  ]));return;}
   const stamp = new Date().toISOString();
   const result = writeAliasManifest({ ...local, synchronizedAt: stamp, policyFingerprint });
   console.log(`Verified full Bifrost rule policy unchanged; refreshed local verification at ${stamp}.`);
@@ -891,6 +895,13 @@ async function commandRoutesSync(flags = {}) {
   }
   // A local exception route must carry provenance of an actual management API
   // read. Model-catalog refresh alone does not refresh Bifrost rule membership.
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would save "+count+" logical route aliases and the complete Bifrost rule-policy fingerprint",
+      flags["no-refresh"]?"Model refresh would be skipped":"Would refresh the OMP model catalogue",
+      "Restart OMP after applying"
+    ]));return;
+  }
   const result = writeAliasManifest({ ...manifest, synchronizedAt: new Date().toISOString(), policyFingerprint });
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
@@ -1785,9 +1796,17 @@ async function commandRepoMcpInstructions(mode) {
   console.log(`Updated: ${file.path}`);
 }
 
-async function commandRepoRotateKey() {
+async function commandRepoRotateKey(flags = {}) {
   const state = loadState();
   const { url, managementKey, current, vk } = await requireRepoVirtualKey(state);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would rotate repository Virtual Key "+current.repo.name,
+      "The old key may stop working after Bifrost's grace period",
+      "A new key would be saved to the local secret store; restart OMP"
+    ]));return;
+  }
+  console.log("Operation: Changes Bifrost credentials and locally stored MCP secret");
   const rotated = await rotateVirtualKey(url, managementKey, vk.id);
   const value = rotated?.value;
   if (!value || typeof value !== "string") throw new Error("Bifrost rotate response did not include the new key value");
@@ -1802,6 +1821,15 @@ async function commandRepoReset(flags = {}) {
   const deleteRemote = flags["delete-remote"] === true;
   const recoverByName = flags["recover-by-name"] === true;
   const yes = flags.yes === true;
+  if (flags["dry-run"]) {
+    console.log(operationSummary("Read-only preview", [
+      "Repository: "+repo.name,
+      "Would remove Pifrost-managed repository state, MCP entry and installed managed Skills",
+      deleteRemote?"Would DELETE the remote repository Virtual Key (irreversible)":"Remote Virtual Key would be retained",
+      "Other OMP MCP entries remain unchanged",
+    ]));
+    return;
+  }
 
   if (recoverByName && !deleteRemote) {
     throw new Error("--recover-by-name is valid only with --delete-remote");
@@ -2114,7 +2142,7 @@ async function commandJudgeStatus() {
   console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
 }
 
-async function commandJudgeActivate() {
+async function commandJudgeActivate(flags = {}) {
   const selected = nativeJudgeSelection();
   if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest to explicitly opt into the native judge provider first");
   const runtime = judgeRuntimeConfig();
@@ -2133,6 +2161,13 @@ async function commandJudgeActivate() {
   if (models.status !== "ok") throw new Error("Cannot safely enable OMP judge namespace: " + (models.error ?? "enabledModels unreadable"));
   const roles = reconcilePifrostOmpSetting("modelRoles", existing.value, { judge: selected.selector });
   const enabled = reconcilePifrostOmpSetting("enabledModels", models.value, ["bifrost-judge/*"]);
+  if(flags["dry-run"]){
+    console.log(operationSummary("Read-only preview",[
+      "Would enable OMP judge namespace bifrost-judge/*",
+      "Would select "+selected.selector+" for the OMP judge role",
+      "Unrelated model roles and patterns remain unchanged"
+    ]));return;
+  }
   const backup = backupOmpConfig();
   runCommand("omp", ["config", "set", "enabledModels", JSON.stringify(enabled)]);
   runCommand("omp", ["config", "set", "modelRoles", JSON.stringify(roles)]);
@@ -2254,16 +2289,17 @@ const COMMANDS = new Map([
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["judge status", () => commandJudgeStatus()],
-  ["judge activate", () => commandJudgeActivate()],
+  ["judge activate", (_args, flags) => commandJudgeActivate(flags)],
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
-  ["global configure-omp", () => {
+  ["global configure-omp", (_args, flags) => {
+    if(flags["dry-run"]){console.log(operationSummary("Read-only preview",["Would apply Pifrost-owned OMP configuration with backup"]));return;}
     const result = configureOmp();
     console.log(`Configured ${result.settings} OMP settings.`);
     if (result.backup) console.log(`Backup: ${result.backup}`);
   }],
   ["routes list", () => commandRoutesList()],
   ["routes diff", () => commandRoutesDiff()],
-  ["routes verify", () => commandRoutesVerify()],
+  ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
@@ -2278,7 +2314,7 @@ const COMMANDS = new Map([
   ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
   ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
   ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
-  ["repo rotate-key", () => commandRepoRotateKey()],
+  ["repo rotate-key", (_args, flags) => commandRepoRotateKey(flags)],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
   ["repo mcp list", () => commandRepoMcpList()],
   ["repo mcp add", (args, flags) => commandRepoMcpAdd(args[0], flags)],
