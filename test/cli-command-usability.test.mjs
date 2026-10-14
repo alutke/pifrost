@@ -97,3 +97,50 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
     assert.match(shortcut.stdout,/--tools(?:\s|$)/u);
   } finally {rmSync(home,{recursive:true,force:true});}
 });
+
+test("every registered command has contextual CLI help without connecting to Bifrost",()=>{
+  const root=mkdtempSync(resolve(tmpdir(),"pifrost-help-matrix-"));
+  const env={...process.env,HOME:root,PIFROST_CONFIG_DIR:resolve(root,"config"),
+    BIFROST_URL:"",BIFROST_VIRTUAL_KEY:""};
+  try{
+    for(const name of commands){
+      const result=spawnSync(process.execPath,["cli.mjs",...name.split(" "),"--help"],{
+        cwd:resolve(import.meta.dirname,".."),env,encoding:"utf8",timeout:10000,
+      });
+      assert.equal(result.status,0,name+": "+result.stderr);
+      assert.match(result.stdout,/^Usage: pifrost /u,name);
+      assert.match(result.stdout,/^Operation: /mu,name);
+      assert.doesNotMatch(result.stdout,/\x1b\[|sk-secret/u,name);
+    }
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("non-configured JSON status failure still emits parseable, redacted machine output",()=>{
+  const root=mkdtempSync(resolve(tmpdir(),"pifrost-json-"));
+  try{
+    const r=spawnSync(process.execPath,["cli.mjs","repo","status","--json"],{
+      cwd:resolve(import.meta.dirname,".."),
+      env:{...process.env,HOME:root,PIFROST_CONFIG_DIR:resolve(root,"config"),BIFROST_URL:"",
+        BIFROST_API_KEY:"",BIFROST_VIRTUAL_KEY:""},
+      encoding:"utf8",timeout:12000,
+    });
+    const parsed=JSON.parse(r.stdout);
+    assert.equal(r.status,2);
+    assert.equal(parsed.schemaVersion,1);
+    assert.equal(parsed.result,"FAILED");
+    assert.equal(parsed.checks[0].id,"command-error");
+  }finally{rmSync(root,{recursive:true,force:true});}
+});
+test("first-time setup preview performs no writes",()=>{
+  const home=mkdtempSync(resolve(tmpdir(),"pifrost-setup-preview-"));
+  try{
+    const r=spawnSync(process.execPath,["cli.mjs","init","--dry-run"],{
+      cwd:resolve(import.meta.dirname,".."),
+      env:{...process.env,HOME:home,PIFROST_CONFIG_DIR:resolve(home,"config"),
+        PI_CODING_AGENT_DIR:resolve(home,"agent")},
+      encoding:"utf8",timeout:10000,
+    });
+    assert.equal(r.status,0,r.stderr);
+    assert.match(r.stdout,/Read-only preview/u);
+    assert.match(r.stdout,/no changes made/u);
+  }finally{rmSync(home,{recursive:true,force:true});}
+});
