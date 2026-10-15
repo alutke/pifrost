@@ -25,6 +25,7 @@ import {
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
+import { reconcileRouteSnapshot, RouteReconcileError } from "./route-reconcile.mjs";
 import { commandCatalog, flagRequiresValue, isKnownFlag, cliUsageError, validateCliInvocation, commandUsage, operationLabel } from "./cli-command-schema.mjs";
 import { reportHealth, listFilter, operationSummary, safeUiText } from "./cli-health.mjs";
 import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
@@ -157,6 +158,7 @@ Usage:
   pifrost routes diff
   pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
   pifrost routes sync [--no-refresh]
+  pifrost routes reconcile --json         Safe user-triggered comparison and sync (OMP integration)
   pifrost routes diagnose
   pifrost routes effective
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
@@ -943,6 +945,28 @@ async function commandRoutesSync(flags = {}) {
   console.log(`Wrote ${count} aliases to ${result.path}`);
   if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
   if (!flags["no-refresh"]) await commandModelsRefresh({ force: true });
+}
+
+async function commandRoutesReconcile(flags = {}) {
+  try {
+    const result = await reconcileRouteSnapshot();
+    if (flags.json) {
+      console.log(JSON.stringify({ schemaVersion: 1, ...result }));
+    } else {
+      console.log(result.status === "updated"
+        ? `Bifrost routing changed; synchronized ${result.routes} aliases. Refresh OMP models to apply.`
+        : "Bifrost routes unchanged; no refresh required.");
+    }
+  } catch (error) {
+    const code = error instanceof RouteReconcileError ? error.code : "check-failed";
+    if (flags.json) {
+      // This machine-readable result never includes Bifrost credentials or
+      // raw CEL expressions; the OMP hook fails open without blocking work.
+      console.log(JSON.stringify({ schemaVersion: 1, status: "unavailable", code }));
+    } else {
+      console.log(`Route check unavailable (${code}); local routes unchanged.`);
+    }
+  }
 }
 
 async function commandModelsRefresh(flags = {}) {
@@ -2439,6 +2463,7 @@ const COMMANDS = new Map([
   ["routes diff", () => commandRoutesDiff()],
   ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
+  ["routes reconcile", (_args, flags) => commandRoutesReconcile(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
@@ -2503,7 +2528,7 @@ async function main() {
       return;
     }
     const definition = validateCliInvocation(name, resolved.args, flags);
-    if(["gateway-change","local-change"].includes(definition.operation)){
+    if(["gateway-change","local-change"].includes(definition.operation) && !flags.json){
       console.log("Operation: "+(flags["dry-run"]?"Read-only preview":operationLabel(definition.operation)));
     }
     if (definition.operation === "billed" && !flags.yes) {

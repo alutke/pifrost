@@ -29,7 +29,7 @@ const read = ["verbose"];
 const healthRead = ["verbose","strict","json"];
 const filters = ["filter","limit"];
 const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
-// 46 registered commands. Source-of-truth for validation/help side effects.
+// 47 registered commands. Source-of-truth for validation/help side effects.
 const rows = [
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
@@ -44,6 +44,7 @@ const rows = [
   ["routes diff",0,0,read,"read-only"],
   ["routes verify",0,0,["dry-run",...read],"local-change"],
   ["routes sync",0,0,["no-refresh","dry-run",...read],"local-change"],
+  ["routes reconcile",0,0,["json"],"local-change"],
   ["routes diagnose",0,0,read,"read-only"],
   ["routes effective",0,0,read,"read-only"],
   ["routes explain",1,1,routeOptions,"read-only"],

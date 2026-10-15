@@ -13,7 +13,7 @@ import {
 
 const commands=[
 "init","global setup","global status","global mcp-policy","global observability","global configure-omp",
-"judge status","judge activate","judge probe","routes list","routes diff","routes verify","routes sync",
+"judge status","judge activate","judge probe","routes list","routes diff","routes verify","routes sync","routes reconcile",
 "routes diagnose","routes effective","routes explain","models refresh","models doctor","models kinds",
 "repo init","repo status","repo research status","repo research bind","repo research unbind",
 "repo research prefer","repo research probe","repo rotate-key","repo reset","repo mcp list",
@@ -22,7 +22,7 @@ const commands=[
 "repo skills dismiss","repo skills undismiss","repo skills add","repo skills remove","repo skills sync",
 "secret repo-mcp","doctor",
 ];
-test("all 46 CLI command contracts are present, documented and readable",()=>{
+test("all 47 CLI command contracts are present, documented and readable",()=>{
   assert.deepEqual([...commandCatalog.keys()],commands);
   for(const [name,def] of commandCatalog){
     const h=commandUsage(name);
