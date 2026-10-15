@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.23.1
+0.24.0
 ```
 
 ## Architecture and ownership
@@ -75,6 +75,12 @@ Health commands `doctor`, `global status`, `repo status` and `models doctor` sup
 Default aliases are `bifrost/omp-default`, `-smol`, `-task`, `-advisor`, `-slow`, `-plan`, `-designer`, `-vision`, `-commit` and `-tiny`. Create their physical routing rules in Bifrost. Keep OMP `retry.modelFallback: false` when Bifrost owns model fallback. OMP defines `extendedContext`, `compaction.modelThresholds`, effective context windows and session history. Pifrost's optional idle compact-before-skip invokes **OMP** compaction, and can be disabled with `PIFROST_COMPACT_BEFORE_CONTEXT_SKIP=0`.
 
 Each OMP conversation's session ID is sent separately as `x-bf-session-id` to Bifrost and `x-bf-eh-x-opencode-session` for upstream OpenCode Go's `x-opencode-session` requirement. These are per-request forwarding headers, not global provider configuration. Attribution uses OMP agent identity for diagnostics only, never model preference or selection.
+
+## Activity-triggered, service-free Bifrost synchronization
+
+OMP 18.10.4 exposes `before_agent_start` and the provider-scoped `ctx.modelRegistry.refreshProvider("bifrost", "online")` API. The native Pifrost extension invokes a short-lived `pifrost routes reconcile --json` child only when the top-level user submits work (max once per 60 seconds of prompt activity). The child alone loads Pifrost management credentials. No service, cron, scheduled background process or timer is created.
+
+The child detects changes to the **entire** Bifrost routing policy, independently confirms the new fingerprint, and synchronizes the alias manifest without triggering an unrelated OMP process. Once a change is committed, the active OMP model registry refreshes only the Bifrost provider. The extension rereads the alias file on refresh, so subsequent route/protocol selection uses the new model catalog. The existing response cannot be modified mid-stream, and manual reselection may be needed if a model's advertised capabilities change. The process is fail-open for ordinary prompts when management is unavailable. `PIFROST_AUTO_SYNC=0` disables the hook. No background polling.
 
 ## Routing and provenance
 

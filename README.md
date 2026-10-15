@@ -122,7 +122,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.23.1
+0.24.0
 ```
 
 Bun also works:
@@ -259,6 +259,14 @@ Read-only health checks return exit code **2** on required failure (or warnings 
 
 Inside OMP: `/pifrost doctor`, `/pifrost doctor verbose`, `/pifrost trace`, `/pifrost trace errors`, `/pifrost trace last 5`, `/pifrost trace role omp-default`, `/pifrost trace verbose`, `/pifrost costs`, `/pifrost refresh` and `/pifrost config`. Trace and cost totals are session-bounded; missing cost is **unknown**, not zero. Bifrost logs and route counters remain authoritative for actual execution.
 
+### Automatic route updates without a service (v0.24.0)
+
+Pifrost now checks for changed Bifrost routes **when a main-agent user prompt begins in OMP**. It uses no daemon, cron job, systemd unit, recurring timer, or separate launcher. A check is performed at most once per 60 seconds **of prompt activity**, not while OMP is idle. The short-lived Pifrost CLI reads the gateway management credentials; those credentials are not copied into the OMP inference provider.
+
+If Bifrost's **full** routing policy changes (including CEL rules, weights, pins and model membership), Pifrost confirms the new policy, synchronizes the alias manifest, and refreshes only OMP's Bifrost model registry for subsequent model selections. Unchanged routing never triggers a model refresh. Temporary management API failures do not block your prompt.
+
+This cannot change an already-running response, and a currently selected model may need reselecting if its capabilities changed. To opt out, start OMP using `PIFROST_AUTO_SYNC=0 omp`. For a one-time check use `pifrost routes reconcile`. No background service is installed or started.
+
 ## Day-to-day commands
 
 | Command | Use it when... |
@@ -268,6 +276,7 @@ Inside OMP: `/pifrost doctor`, `/pifrost doctor verbose`, `/pifrost trace`, `/pi
 | <code>pifrost routes list</code> | You want to see the live <code>omp-*</code> routes |
 | <code>pifrost routes diff</code> | You changed routing and want to see local drift |
 | <code>pifrost routes sync</code> | You want OMP aliases/catalogue refreshed from Bifrost |
+| <code>pifrost routes reconcile</code> | One-shot safe policy check and synchronize only when changed |
 | <code>pifrost models refresh --force</code> | Model metadata is stale or incomplete |
 | <code>pifrost models doctor</code> | You want to inspect the capabilities OMP will actually see |
 | <code>pifrost global configure-omp</code> | You want to reapply Pifrost's recommended OMP settings |

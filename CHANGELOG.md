@@ -1,3 +1,10 @@
+## 0.24.0 — 2026-10-15
+
+- Introduce service-free, timer-free Bifrost route reconciliation triggered by OMP main-agent user prompts (at most once per 60 seconds of prompt activity). Opt out with `PIFROST_AUTO_SYNC=0`; no daemons, cron, user services or background polling loops.
+- Add one-shot `pifrost routes reconcile --json` with short-lived management authentication, complete Bifrost rule-policy fingerprint checks, confirmation of changes before writing, and a short-lived cross-process lock.
+- Refresh only OMP's Bifrost model registry on confirmed changes through OMP's supported `refreshProvider("bifrost","online")` API; reread current Pifrost alias manifest before dynamic discovery. Do not modify gateway routing or interrupt existing streams. Fail open for user prompts when management is unavailable.
+- Add safeguards for unexpected/partial rule responses and regression tests for unchanged, changed and racing policies, subprocess output, throttling and reentrancy.
+
 ## 0.23.1 — 2026-10-14
 
 - **Rollback:** withdraw the automatic Bifrost route watcher introduced in v0.23.0 at the user's request; there is no daemon, systemd unit integration, periodic polling, background credential access or watch CLI surface in this version.

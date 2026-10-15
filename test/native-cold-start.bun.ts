@@ -33,7 +33,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
 	const keys = [
 		"BIFROST_URL", "BIFROST_API_KEY", "BIFROST_VIRTUAL_KEY",
 		"PIFROST_CONFIG_DIR", "PIFROST_ALIASES", "PIFROST_CACHE_FILE",
-		"PIFROST_FORCE_REFRESH", "PIFROST_NATIVE_JUDGE_MODEL"
+		"PIFROST_FORCE_REFRESH", "PIFROST_NATIVE_JUDGE_MODEL", "PIFROST_AUTO_SYNC"
 	] as const;
 	const before = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 	await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -48,13 +48,24 @@ test("OMP cold startup registers discoverable models before returning, then reus
 		delete process.env.BIFROST_API_KEY;
 		delete process.env.PIFROST_FORCE_REFRESH;
 		delete process.env.PIFROST_NATIVE_JUDGE_MODEL;
+        delete process.env.PIFROST_AUTO_SYNC;
+        let onDemandRuns = 0;
+        const handlers = new Map<string, (...args: any[]) => Promise<void>>();
 		const registered: Array<{ id: string; config: any }> = [];
 		const pi = {
 			registerFlag() {},
 			getFlag() { return undefined; },
 			registerProvider(id: string, config: any) { registered.push({ id, config }); },
 			registerCommand() {},
-			on() {},
+            on(name: string, handler: (...args: any[]) => Promise<void>) {
+                if (name === "before_agent_start") handlers.set(name, handler);
+            },
+            async exec(command: string, args: string[]) {
+                assert.equal(command, "pifrost");
+                assert.deepEqual(args, ["routes", "reconcile", "--json"]);
+                onDemandRuns++;
+                return { code: 0, stdout: JSON.stringify({ schemaVersion: 1, status: "updated" }), stderr: "" };
+            },
 		} as unknown as Parameters<typeof nativeExtension>[0];
 		await nativeExtension(pi);
 		const provider = registered.find(value => value.id === "bifrost")?.config;
@@ -62,6 +73,23 @@ test("OMP cold startup registers discoverable models before returning, then reus
 		assert.deepEqual(provider.models?.map((item: { id: string }) => item.id), ["omp-cold-start-model"],
 			"first interactive launch must have selectable models before registration completes");
 		assert.equal(requests, 1);
+        const onPrompt = handlers.get("before_agent_start");
+        assert.ok(onPrompt, "OMP registers a prompt-triggered sync handler, not a background timer");
+        const refreshed: Array<[string, string]> = [];
+        const ctx = {
+            agent: { kind: "main" }, hasUI: false,
+            modelRegistry: {
+                async refreshProvider(provider: string, strategy: string) {
+                    refreshed.push([provider, strategy]);
+                },
+            },
+        };
+        await onPrompt({ type: "before_agent_start" }, ctx);
+        await onPrompt({ type: "before_agent_start" }, ctx);
+        assert.equal(onDemandRuns, 1, "subsequent prompts are throttled without a background service");
+        assert.deepEqual(refreshed, [["bifrost", "online"]], "only the Bifrost model registry is refreshed");
+        await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "task" } });
+        assert.equal(onDemandRuns, 1, "subagent prompts never start management checks");
 		const persisted = JSON.parse(readFileSync(cachePath, "utf8"));
 		assert.equal(persisted.models.length, 1);
 		assert.equal(persisted.aliasFingerprint, aliasConfigFingerprint(JSON.parse(readFileSync(aliasPath, "utf8"))));

@@ -56,7 +56,7 @@ function totalCount(body) {
   return Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
-async function fetchRoutingPages(base, path, headers) {
+async function fetchRoutingPages(base, path, headers, options = {}) {
   const limit = 100;
   const rules = [];
   const shapes = [];
@@ -65,17 +65,27 @@ async function fetchRoutingPages(base, path, headers) {
 
   while (true) {
     const query = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-    const body = await requestJson(`${base}${path}?${query}`, { headers });
+    const body = await requestJson(`${base}${path}?${query}`, { headers, timeoutMs: options.timeoutMs });
+    const recognized = Array.isArray(body) ||
+      [["rules"],["routing_rules"],["items"],["data"],["data","rules"],
+       ["data","routing_rules"],["data","items"],["result","rules"],
+       ["result","routing_rules"],["result","items"]]
+        .some(keys => nestedArray(body, keys) !== undefined);
+    if (!recognized) throw new Error("Unsupported Bifrost routing response shape; refusing incomplete inventory");
     const page = extractRoutingRules(body);
     const signature = JSON.stringify(page.map((rule) => rule?.id ?? rule?.name ?? rule));
-    if (seenPages.has(signature)) break;
+    if (seenPages.has(signature)) throw new Error("Repeated Bifrost routing page; refusing incomplete inventory");
     seenPages.add(signature);
     rules.push(...page);
     shapes.push(bodyShape(body));
 
     const total = totalCount(body);
     if (total !== undefined && rules.length >= total) break;
-    if (page.length === 0 || page.length < limit) break;
+    if (page.length === 0 || page.length < limit) {
+      if (total !== undefined && rules.length < total)
+        throw new Error("Bifrost routing pagination ended early; refusing incomplete inventory");
+      break;
+    }
 
     offset += page.length;
     if (offset > 100_000) throw new Error(`Refusing excessive routing pagination from ${path}`);
@@ -87,7 +97,7 @@ async function fetchRoutingPages(base, path, headers) {
     shape: shapes.length === 1 ? shapes[0] : `${shapes[0]} pages=${shapes.length}`,
   };
 }
-export async function discoverRoutingRules(url, auth) {
+export async function discoverRoutingRules(url, auth, options = {}) {
   const base = bifrostManagementBase(url);
   const headers = managementHeaders(auth);
   const diagnostics = [];
@@ -96,7 +106,7 @@ export async function discoverRoutingRules(url, auth) {
   for (let index = 0; index < ROUTE_PATHS.length; index += 1) {
     const path = ROUTE_PATHS[index];
     try {
-      const pageResult = await fetchRoutingPages(base, path, headers);
+      const pageResult = await fetchRoutingPages(base, path, headers, options);
       const rules = pageResult.rules;
       diagnostics.push({
         path,

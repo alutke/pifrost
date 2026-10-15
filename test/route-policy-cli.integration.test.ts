@@ -52,6 +52,16 @@ test("actual pifrost routes sync/verify/diff detects condition-only changes with
     assert.equal(rejected?.code,2);
     assert.match(rejected.stdout,/Policy drifted/u);
     assert.doesNotMatch(rejected.stdout,/test-password|sk-bf-test/u);
+    const applied=await run("routes","reconcile","--json");
+    const result=JSON.parse(applied.stdout);
+    assert.equal(result.schemaVersion,1);
+    assert.equal(result.status,"updated");
+    assert.equal(result.routes,1);
+    const next=JSON.parse(readFileSync(resolve(home,"aliases.json"),"utf8"));
+    assert.notEqual(next.policyFingerprint,manifest.policyFingerprint);
+    const repeated=await run("routes","reconcile","--json");
+    assert.equal(JSON.parse(repeated.stdout).status,"unchanged");
+    assert.doesNotMatch(applied.stdout+applied.stderr,/test-password|sk-bf-test/u);
   } finally {
     await new Promise<void>((resolve,reject)=>server.close(err=>err?reject(err):resolve()));
     rmSync(home,{recursive:true,force:true});
