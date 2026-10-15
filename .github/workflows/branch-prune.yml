@@ -44,7 +44,7 @@ jobs:
             exit 1
           fi
           cat > expected-refs.txt <<'EXPECTED'
-          revert/route-watch-v0.23.1 16cb7660625f72ea1dbdec98d64fb342ee2857f8
+          feat/on-demand-in-session-routes-v0.24.0 cf3fb89c9e678f11532762d833487cc9f819ace3
           EXPECTED
           LC_ALL=C sort -o expected-refs.txt expected-refs.txt
           git ls-remote --heads origin | awk '$2 != "refs/heads/main" {sub(/^refs\/heads\//, "", $2); print $2 " " $1}' | LC_ALL=C sort > observed-refs.txt
