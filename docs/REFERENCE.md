@@ -76,6 +76,12 @@ Default aliases are `bifrost/omp-default`, `-smol`, `-task`, `-advisor`, `-slow`
 
 Each OMP conversation's session ID is sent separately as `x-bf-session-id` to Bifrost and `x-bf-eh-x-opencode-session` for upstream OpenCode Go's `x-opencode-session` requirement. These are per-request forwarding headers, not global provider configuration. Attribution uses OMP agent identity for diagnostics only, never model preference or selection.
 
+## Activity-triggered, service-free Bifrost synchronization
+
+OMP 18.10.4 exposes `before_agent_start` and the provider-scoped `ctx.modelRegistry.refreshProvider("bifrost", "online")` API. The native Pifrost extension invokes a short-lived `pifrost routes reconcile --json` child only when the top-level user submits work (max once per 60 seconds of prompt activity). The child alone loads Pifrost management credentials. No service, cron, scheduled background process or timer is created.
+
+The child detects changes to the **entire** Bifrost routing policy, independently confirms the new fingerprint, and synchronizes the alias manifest without triggering an unrelated OMP process. Once a change is committed, the active OMP model registry refreshes only the Bifrost provider. The extension rereads the alias file on refresh, so subsequent route/protocol selection uses the new model catalog. The existing response cannot be modified mid-stream, and manual reselection may be needed if a model's advertised capabilities change. The process is fail-open for ordinary prompts when management is unavailable. `PIFROST_AUTO_SYNC=0` disables the hook. No background polling.
+
 ## Routing and provenance
 
 For an exact, unconditional `omp-*` rule with all physical members request-compatible on a shared Chat wire contract, Pifrost sends the **logical alias** unchanged to Bifrost. It does not send a duplicated fallback list; Bifrost runs its live rule, selecting keys, models and same-protocol fallbacks. Receiving an alias does **not** prove that a particular CEL rule matched: confirm Bifrost routing metrics or request logs.
