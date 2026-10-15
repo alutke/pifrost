@@ -148,21 +148,37 @@ export function createOnDemandRouteCheck({
   if (typeof run !== "function" || typeof refresh !== "function") throw new Error("Missing route-check dependencies");
   let checkedAt = -Infinity;
   let pending;
+  let needsRegistryRefresh = false;
   return async function check(context) {
     if (pending) return pending;
     const current = now();
-    if (current - checkedAt < minIntervalMs) return { status: "throttled" };
+    if (!needsRegistryRefresh && current - checkedAt < minIntervalMs) return { status: "throttled" };
     checkedAt = current;
     pending = (async () => {
       try {
+        // If the previous prompt successfully saved new aliases but model
+        // registration failed, retry just OMP's Bifrost registry on the next
+        // user prompt. Otherwise unchanged gateway policy would mask the
+        // incomplete in-session refresh indefinitely.
+        if (needsRegistryRefresh) {
+          await refresh(context);
+          needsRegistryRefresh = false;
+          notify("Pifrost: Bifrost model registration recovered.", "info", context);
+          return { status: "refreshed", modelsRefreshed: true };
+        }
         const result = await run();
         if (result?.status === "unavailable") throw new Error("gateway check unavailable");
         if (result?.status !== "updated") return result;
+        needsRegistryRefresh = true;
         await refresh(context);
+        needsRegistryRefresh = false;
         notify("Pifrost: Bifrost routes changed; refreshed OMP models for future selections.", "info", context);
         return { ...result, modelsRefreshed: true };
       } catch {
-        notify("Pifrost: route check unavailable; keeping the existing OMP models. Run pifrost routes sync if needed.", "warning", context);
+        notify(needsRegistryRefresh
+          ? "Pifrost: routes saved but OMP model refresh failed; will retry at your next prompt."
+          : "Pifrost: route check unavailable; keeping the existing OMP models. Run pifrost routes sync if needed.",
+          "warning", context);
         return { status: "unavailable" };
       }
     })();

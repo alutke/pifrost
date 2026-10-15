@@ -125,3 +125,23 @@ test("management/check failures fail open and do not refresh providers", async (
   assert.equal(refreshes, 0);
   assert.equal(notices, 1);
 });
+
+test("failed OMP registry refresh is retried on next prompt even before throttle expiry", async () => {
+  let timestamp = 0, checks = 0, refreshes = 0;
+  const notices = [];
+  const runCheck = createOnDemandRouteCheck({
+    now: () => timestamp,
+    run: async () => { checks++; return { status: "updated" }; },
+    refresh: async () => { refreshes++; if (refreshes === 1) throw new Error("model registry offline"); },
+    notify: (message, level) => notices.push({ message, level }),
+  });
+  assert.equal((await runCheck({})).status, "unavailable");
+  assert.equal(checks, 1);
+  assert.equal(refreshes, 1);
+  assert.match(notices[0].message, /will retry/u);
+  timestamp = 1;
+  assert.equal((await runCheck({})).status, "refreshed");
+  assert.equal(checks, 1, "must not requery management API for a model-registry-only retry");
+  assert.equal(refreshes, 2);
+  assert.equal((await runCheck({})).status, "throttled");
+});
