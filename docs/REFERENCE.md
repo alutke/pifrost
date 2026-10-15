@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.23.1
+0.24.0
 ```
 
 ## Architecture and ownership
