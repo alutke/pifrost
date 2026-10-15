@@ -4,7 +4,7 @@
  * The CLI child owns management authentication; no secrets reach the OMP
  * provider or model registry. No timers, cron jobs or background workers.
  */
-import { openSync, readFileSync, closeSync, unlinkSync, mkdirSync } from "node:fs";
+import { openSync, readFileSync, writeFileSync, closeSync, unlinkSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
   aliasManifestPath, diffAliases, loadAliasManifest, loadState,
@@ -79,7 +79,6 @@ export async function withReconcileLock(action, env = process.env) {
     }
     if (fd === undefined) throw new RouteReconcileError("check-already-in-progress");
     const token = { pid: process.pid, nonce: String(process.hrtime.bigint()) };
-    const { writeFileSync } = await import("node:fs");
     writeFileSync(fd, JSON.stringify(token));
     try { return await action(); }
     finally {
