@@ -16,6 +16,7 @@ import {
 } from "@oh-my-pi/pi-ai/providers/openai-responses";
 import { AssistantMessageEventStream } from "@oh-my-pi/pi-ai/utils/event-stream";
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
+import { createOnDemandRouteCheck } from "./route-reconcile.mjs";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
 import { resolveModelTokenizer } from "@oh-my-pi/pi-catalog/model-tokenizer";
@@ -862,7 +863,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		return (typeof value === "string" ? nonEmpty(value) : undefined) ?? flagFromArgv(name);
 	};
 
-	const aliasSource = loadAliasConfig(flag("pifrost-aliases"));
+	let aliasSource = loadAliasConfig(flag("pifrost-aliases"));
 	const stored = loadStoredRuntimeConfig();
 	const mergedEnvironment: NodeJS.ProcessEnv = {
 		...process.env,
@@ -889,7 +890,9 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 		const refresh = (resolvedApiKey?: string): Promise<PifrostCatalog> => {
 			if (!refreshInFlight) {
-				refreshInFlight = fetchFreshCatalog(config, aliasSource, resolvedApiKey).finally(() => {
+				// A prior OMP prompt may have reconciled a new Bifrost policy.
+                aliasSource = loadAliasConfig(flag("pifrost-aliases"));
+                refreshInFlight = fetchFreshCatalog(config, aliasSource, resolvedApiKey).finally(() => {
 					refreshInFlight = undefined;
 				});
 			}
@@ -973,6 +976,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				? { models: (startupCache ?? bootstrappedCatalog)!.models }
 				: {}),
 			async fetchDynamicModels(resolvedApiKey) {
+                aliasSource = loadAliasConfig(flag("pifrost-aliases"));
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached && !forceRefreshRequested()) {
 					diagnostics = cached.diagnostics;
@@ -986,6 +990,36 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				return catalog.models;
 			},
 		});
+        // On-demand checks run only before actual top-level user prompts.
+        // No service, scheduled task, timer or background polling process.
+        // Management credentials stay in the short-lived Pifrost CLI child.
+        if (!/^(0|false|off|no)$/iu.test(process.env.PIFROST_AUTO_SYNC?.trim() ?? "")) {
+            const check = createOnDemandRouteCheck({
+                run: async () => {
+                    const result = await pi.exec("pifrost", ["routes", "reconcile", "--json"], { timeout: 12000 });
+                    if (result.code !== 0) throw new Error("reconcile CLI failed");
+                    const value: unknown = JSON.parse(result.stdout);
+                    if (!value || typeof value !== "object" || !("status" in value)) {
+                        throw new Error("invalid reconciliation reply");
+                    }
+                    const reply = value as { schemaVersion?: number; status: string };
+                    if (reply.schemaVersion !== 1 || !["unchanged", "updated", "unavailable"].includes(reply.status)) {
+                        throw new Error("invalid reconciliation reply");
+                    }
+                    return reply;
+                },
+                refresh: async (ctx) => {
+                    await ctx.modelRegistry.refreshProvider(PROVIDER_ID, "online");
+                },
+                notify: (message, level, ctx) => {
+                    if (ctx?.hasUI) ctx.ui.notify(message, level);
+                },
+            });
+            pi.on("before_agent_start", async (_event, ctx) => {
+                if (ctx.agent.kind !== "main") return;
+                await check(ctx);
+            });
+        }
 	} else {
 		process.stderr.write(
 			"pifrost: provider not registered; run `pifrost global setup` or set BIFROST_URL and BIFROST_VIRTUAL_KEY (BIFROST_API_KEY is optional on Bifrost 2.x)\n",

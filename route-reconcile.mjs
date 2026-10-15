@@ -149,7 +149,7 @@ export function createOnDemandRouteCheck({
   if (typeof run !== "function" || typeof refresh !== "function") throw new Error("Missing route-check dependencies");
   let checkedAt = -Infinity;
   let pending;
-  return async function check() {
+  return async function check(context) {
     if (pending) return pending;
     const current = now();
     if (current - checkedAt < minIntervalMs) return { status: "throttled" };
@@ -157,12 +157,13 @@ export function createOnDemandRouteCheck({
     pending = (async () => {
       try {
         const result = await run();
+        if (result?.status === "unavailable") throw new Error("gateway check unavailable");
         if (result?.status !== "updated") return result;
-        await refresh();
-        notify("Pifrost: Bifrost routes changed; refreshed OMP models for future selections.", "info");
+        await refresh(context);
+        notify("Pifrost: Bifrost routes changed; refreshed OMP models for future selections.", "info", context);
         return { ...result, modelsRefreshed: true };
       } catch {
-        notify("Pifrost: route check unavailable; keeping the existing OMP models. Run pifrost routes sync if needed.", "warning");
+        notify("Pifrost: route check unavailable; keeping the existing OMP models. Run pifrost routes sync if needed.", "warning", context);
         return { status: "unavailable" };
       }
     })();

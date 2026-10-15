@@ -82,6 +82,7 @@
     "cli-lib.mjs",
     "routing-discovery.mjs",
     "route-reconcile.mjs",
+    "route-reconcile.d.mts",
     "mcp-client-shape.mjs",
     "mcp-client-normalization.mjs",
     "repo-reset.mjs",
