@@ -16,7 +16,7 @@ test("optional gateway count is an exact positive integer only",()=>{
   assert.equal(gatewayImageCountBudget({image_count_budget:6,per_request_limits:{images:9}}),undefined);
   assert.equal(gatewayImageCountBudget({image_count_budget:"5"}),undefined);
 });
-const image=(n,source="live")=>({input:["text","image"],imageCountBudget:n,capabilitySources:{imageCountBudget:source}});
+const image=(n:number|undefined,source="live")=>({input:["text","image"],imageCountBudget:n,capabilitySources:{imageCountBudget:source}});
 test("conservative route count requires every eligible member to be verified",()=>{
   assert.equal(conservativeRouteImageCountBudget([image(8),image(3)]),3);
   assert.equal(conservativeRouteImageCountBudget([]),undefined);
