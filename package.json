@@ -89,6 +89,7 @@
     "model-diagnostics.mjs",
     "README.md",
     "docs/REFERENCE.md",
+    "docs/OMP_COMPATIBILITY.md",
     "CHANGELOG.md",
     "scripts/smoke-live.mjs",
     "scripts/validate-architecture.mjs",
