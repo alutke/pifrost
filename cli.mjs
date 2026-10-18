@@ -43,6 +43,7 @@ import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs"
 import { OMP_ORCHESTRATION_SETTING_IDS, assessOmpOrchestration, formatOmpOrchestration } from "./omp-orchestration-readiness.mjs";
 import { inspectPifrostWorkarounds, formatPifrostWorkarounds } from "./workaround-register.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
+import { planJudgeRoleActivation, applyJudgeRoleActivation } from "./judge-activation.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
 import {
@@ -2304,15 +2305,7 @@ async function commandJudgeStatus() {
     && !Array.isArray(current.value) ? current.value : undefined;
   console.log("  OMP judge role: " + (roles?.judge ?? (current.status === "ok" ? "not explicitly assigned" : "unavailable")));
   console.log("  role matches opt-in: " + (roles?.judge === selected.selector ? "yes" : "no"));
-  const enabled = readOmpConfigValueResult("enabledModels");
-  const allowed = enabled.status === "ok" && Array.isArray(enabled.value)
-    ? enabled.value : undefined;
-  const visible = allowed?.some(pattern => pattern === "*" || pattern === selected.selector ||
-    pattern === "bifrost-judge/*" || pattern === "bifrost-*/*");
-  console.log("  OMP judge model namespace enabled: " + (allowed ? (allowed.length === 0 || visible ? "yes" : "no") : "unavailable"));
-  if (allowed && allowed.length > 0 && !visible) {
-    console.log("  WARN run pifrost judge activate to enable bifrost-judge/* while preserving other model patterns");
-  }
+  console.log("  Native non-chat judges are not filtered by OMP enabledModels.");
   try {
     const status = await inspectNativeJudgeModels(judgeRuntimeConfig());
     console.log("  Bifrost native " + status.family + " model listing: " + status.status);
@@ -2329,37 +2322,30 @@ async function commandJudgeStatus() {
 
 async function commandJudgeActivate(flags = {}) {
   const selected = nativeJudgeSelection();
-  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest or openai/gpt-6-luna to opt in first");
+  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL before activating a native judge");
   const runtime = judgeRuntimeConfig();
-  const judge = nativeJudgeGateway(runtime);
-  if (!judge) throw new Error("Native judge provider unavailable");
+  if (!nativeJudgeGateway(runtime)) throw new Error("Native judgment provider not configured");
   const available = await inspectNativeJudgeModels(runtime);
-  if (available.status !== "available") throw new Error("Configured native judge model was not confirmed by the Bifrost gateway");
-  // Release B's profile narrows OMP enabledModels to "bifrost/*".
-  // A separate native judge provider is otherwise invisible even if its role
-  // is assigned. Read both values before any write and preserve all other
-  // namespaces and roles; apply visibility first so a failed write cannot
-  // leave a dangling active judge role.
-  const existing = readOmpConfigValueResult("modelRoles");
-  const models = readOmpConfigValueResult("enabledModels");
-  if (existing.status !== "ok") throw new Error("Cannot safely update OMP judge role: " + (existing.error ?? "role map unreadable"));
-  if (models.status !== "ok") throw new Error("Cannot safely enable OMP judge namespace: " + (models.error ?? "enabledModels unreadable"));
-  const roles = reconcilePifrostOmpSetting("modelRoles", existing.value, { judge: selected.selector });
-  const enabled = reconcilePifrostOmpSetting("enabledModels", models.value, ["bifrost-judge/*"]);
-  if(flags["dry-run"]){
+  if (available.status !== "available")
+    throw new Error("Configured native judge was not confirmed by Bifrost model listing");
+  const read = readOmpConfigValueResult;
+  if (flags["dry-run"]) {
+    planJudgeRoleActivation(read,selected.selector);
     console.log(operationSummary("Read-only preview",[
-      "Would enable OMP judge namespace bifrost-judge/*",
-      "Would select "+selected.selector+" for the OMP judge role",
-      "Unrelated model roles and patterns remain unchanged"
-    ]));return;
+      "Would set OMP modelRoles.judge to "+selected.selector,
+      "All other roles and enabledModels remain unchanged",
+      "OMP resolves native non-chat judge roles independently of enabledModels",
+    ]));
+    return;
   }
-  const backup = backupOmpConfig();
-  runCommand("omp", ["config", "set", "enabledModels", JSON.stringify(enabled)]);
-  runCommand("omp", ["config", "set", "modelRoles", JSON.stringify(roles)]);
-  console.log("OMP modelRoles.judge explicitly assigned: " + selected.selector);
-  console.log("OMP enabledModels includes bifrost-judge/*.");
-  console.log("All unrelated OMP model roles, enabled model patterns and presets were preserved.");
-  if (backup) console.log("Configuration backup: " + backup);
+  const outcome=applyJudgeRoleActivation({
+    read, selector:selected.selector, backup:backupOmpConfig,
+    write:(id,value)=>runCommand("omp",["config","set",id,JSON.stringify(value)]),
+  });
+  console.log("OMP modelRoles.judge: "+selected.selector);
+  console.log(outcome.changed?"Verified role update.":"Judge role already configured.");
+  console.log("Other roles and enabledModels unchanged.");
+  if (outcome.backup) console.log("Configuration backup: "+outcome.backup);
 }
 
 async function commandJudgeProbe(flags = {}) {
