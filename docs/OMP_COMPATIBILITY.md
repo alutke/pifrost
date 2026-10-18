@@ -1,9 +1,9 @@
-# OMP compatibility baseline — Pifrost 0.25.0 (Release A)
+# OMP compatibility — Pifrost 0.29.0 (Releases A–D hardening)
 
 ## Tested contract and ownership
 
 - Packaged OpenMyPi libraries and policy snapshot: **18.12.1**. Keep pi-ai, pi-catalog, pi-natives, pi-utils and pi-coding-agent on exactly the same version. Never mix catalogue versions.
-- Supported compiled-host smoke tests: historical minimum **18.10.4** and validated current **18.12.1**, both checked by a downloaded binary with pinned SHA-256 digest.
+- Compiled-host installation checks: historical minimum **18.10.4** and newer **18.12.1**, both checked by a downloaded binary with pinned SHA-256 digest.
 - Release CI validates static public APIs, cold/warm provider registration, model and routing contracts, multi-protocol recovery, reasoning replay, configuration preservation, and plugin installation. Local mocked tests do **not** prove live provider throughput or Bifrost rule hits.
 - The OMP **main** canary is separate from release validation. Never use untagged main as the release's runtime policy snapshot.
 - OMP retains agent sessions, history, prewalk, compaction, advisor, native judgment and retry orchestration. Bifrost retains physical routing, CEL, credentials, quotas and fallback policy; `retry.modelFallback` stays false in OMP. Pifrost translates interface contracts, exposes conservative metadata and records evidence.
@@ -49,3 +49,14 @@ Native image judgments, cross-provider decision routing, auto-prewalk activation
 `workaround-register.mjs` is the source of truth for retained compatibility exceptions and their explicit retirement gates. Read with `pifrost omp workarounds --verbose` or `--json`. All remain in place until upstream versioned contracts, targeted regressions and representative gateway tests prove removal safe.
 
 An image-count cap is published to OMP only when valid explicit metadata appears on every image-capable route member. Standard Bifrost model lists need not contain such data; absence is not evidence of unlimited support. We do not transfer official upstream vendor limits blindly to a custom Bifrost gateway.
+
+
+## v0.29.0 — validation and evidence boundaries
+
+- Install/list smoke on OMP 18.10.4 and 18.12.1 confirms packaged plugin discovery, not all feature APIs or live in-session execution. New judgment and image features are targeted to OMP 18.12.1; 18.10.4 installation compatibility does **not** assert newer feature support.
+- Additional native extension registration tests use a local fake Bifrost model inventory to exercise Jev and OpenAI Decisions model metadata. They do **not** invoke compiled OMP or physical providers.
+- Real native judgment conformance is available only through the explicitly billable `npm run smoke:judgments` workflow with user-supplied Bifrost credentials. No live results were recorded in this release's ordinary CI.
+- OMP's non-chat judge role is not filtered by `enabledModels`, so activation no longer modifies that chat-model scope. It updates only `modelRoles`, verifies and safely recovers where possible.
+- The static `workaround-register.mjs` remains a retained-only inventory. `scripts/validate-workarounds.mjs` checks identifiers and referenced tests. No automated retirement without targeted tests, reviewed evidence and an explicit change.
+
+See [Integration support matrix](INTEGRATION_SUPPORT.md) for exact claims and limitations.

@@ -67,18 +67,24 @@ That gives you six useful properties:
 - **Repository-scoped MCP.** Each repository can have its own Bifrost MCP Virtual Key without committing the raw secret.
 - **One diagnostic surface.** <code>pifrost doctor</code> checks the OMP, Bifrost, routing, model and current-repository integration together.
 
-## Optional judge and non-chat model discovery
+## Optional native judgments and non-chat discovery
 
-OMP owns judgment execution, caching and session usage. To opt into Bifrost's TypeSafe System One judge (not its distinct `/v1/decisions` schema):
+OMP executes native judgments; Bifrost controls upstream decisions and keys. Pifrost registers an **optional** Bifrost-backed judge, selected before OMP starts. This is separate from ordinary chat routing.
 
 ```bash
-export PIFROST_NATIVE_JUDGE_MODEL=jev-latest
+# Select one native judgment dialect
+export PIFROST_NATIVE_JUDGE_MODEL=jev-1.14.0
+# Alternatively: export PIFROST_NATIVE_JUDGE_MODEL=openai/gpt-6-luna
 pifrost judge status
 pifrost judge activate --dry-run
 pifrost judge activate
 ```
 
-The environment variable registers `bifrost-judge/jev-latest`; activation is a separate, explicit OMP role/configuration change. `pifrost judge probe` makes a potentially billable live request. `pifrost models kinds` shows which Bifrost model kinds are discoverable; it does not turn non-chat models into chat models. See the [reference](docs/REFERENCE.md#judgment-and-model-kinds).
+Activation updates only `modelRoles.judge`, validates the write and performs guarded recovery on failure. It does **not** modify `enabledModels` because OMP does not apply chat-model scoping to native judgment roles. An available model listing does not prove the judgment endpoint works.
+
+`pifrost judge probe` is billable. Experimental image judgments require `PIFROST_NATIVE_JUDGE_IMAGES=1` and can be tested with `pifrost judge probe --image`. `pifrost models kinds` provides non-chat discovery without treating judges as chat models.
+
+Read the [tested integration support matrix](docs/INTEGRATION_SUPPORT.md) and [judgment reference](docs/REFERENCE.md#release-b--native-multimodal-judgments-v0260) for supported host versions, limitations and deployment-level validation.
 
 ## Requirements
 
@@ -122,7 +128,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.28.0
+0.29.0
 ```
 
 Bun also works:

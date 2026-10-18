@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.28.0
+0.29.0
 ```
 
 ## Architecture and ownership
@@ -263,3 +263,12 @@ The local catalog does not prove that a physical route is still valid, that cred
 Pifrost consumes an explicit positive image-count budget only when Bifrost's `/v1/models` JSON supplies an optional `image_count_budget` or `per_request_limits.images` field and the model independently advertises image input. Both fields are **optional extensions, not guaranteed by Bifrost's published standard model-list contract**. An invalid, absent or conflicting value is ignored. For mixed routes, every resolved physical member must have an explicit count; the minimum wins. If not, `imageCountBudget` is omitted and OMP retains its normal policy. This does not impose a new upload-image validation layer.
 
 `pifrost omp workarounds`, `--verbose` and `--json` provide a read-only catalogue of compatibility mechanisms and objective retirement conditions. No automatic removal of routing, reasoning, startup, or gateway-security safeguards occurs. Evidence from live compatible Bifrost/OMP transports and regression checks is required before deleting a workaround.
+
+
+## Release 0.29.0 — compatibility assurance and judge activation
+
+Current guidance is consolidated in [Integration support](INTEGRATION_SUPPORT.md). Native non-chat judge roles **are not filtered by OMP enabledModels**. `pifrost judge activate` now writes only `modelRoles`, verifies the resulting map and performs a guarded rollback when its own proposed change is still present after failure; any concurrent unrelated update is never overwritten. The CLI reports the backup location if recovery cannot be confirmed.
+
+`pifrost omp readiness` reports `locally-compatible` rather than `ready` for settings-only observations. Cached models, OMP host version and selected judge roles do not prove live gateway decisions or historical consultations. Unknown chat-model scope syntax is marked unverified rather than rejected. The separate `pifrost omp workarounds --verbose` report lists retained safeguards and their regression references; `npm run check` verifies those references exist.
+
+The optional `npm run smoke:judgments` is potentially billable, requires `PIFROST_LIVE_JUDGMENTS=1`, `BIFROST_URL` and `BIFROST_VIRTUAL_KEY`; it checks text and image typed decisions on the specified TypeSafe/OpenAI native routes. It is not run in ordinary CI or automatically on install. OMP/Bifrost/physical provider image validation remains authoritative; enabling Jev images is experimental and requires provider-side validation.
