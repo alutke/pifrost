@@ -1,3 +1,10 @@
+## 0.29.0 — 2026-10-18
+
+- Hardening of Releases A–D: activate native judge by a single verified `modelRoles` update with guarded rollback and no `enabledModels` rewrite (native non-chat roles are not chat-scoped).
+- Tighten auto-prewalk readiness: separate local configuration from gateway execution, honour basic OMP chat globs, mark complex globs unverified, and report `locally-compatible` instead of an unproven ready state.
+- Add mocked native-extension registration tests and an explicitly opt-in, potentially billable TypeSafe/OpenAI native judgment smoke suite. Standard CI never uses provider credentials.
+- Validate compatibility-register test references and strengthen current guidance with an integration support matrix, precise assurance boundaries and consolidated setup documentation. Existing fallback and routing safety guards remain.
+
 ## 0.28.0 — 2026-10-18
 
 - Release D: optionally propagate explicit, validated Bifrost gateway image-count limits into OMP model metadata. A logical alias advertises the lowest verified limit only when every eligible fallback member is image-capable and provides an authoritative count; no vendor defaults, implicit five-image assumption, or guessed value.

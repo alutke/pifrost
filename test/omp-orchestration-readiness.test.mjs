@@ -30,11 +30,11 @@ test("version gates are exact and fail closed on unparseable host", () => {
 
 test("suggest readiness validates local target and native judge without inference", () => {
   const result=assessOmpOrchestration({settings:baseSettings,catalog,hostVersion:"18.12.1",selectedJudge});
-  assert.equal(result.status,"ready");
+  assert.equal(result.status,"locally-compatible");
   assert.equal(result.auto,"suggest");
   assert.equal(result.target,"bifrost/omp-smol");
   assert.deepEqual(result.checks.map(c=>c.status),["ok","ok","ok","ok","ok"]);
-  assert.match(formatOmpOrchestration(result),/without arming or switching/);
+  assert.match(formatOmpOrchestration(result),/without switching/);
   assert.ok(result.notes.some(t=>t.includes("No settings")));
 });
 
@@ -42,7 +42,7 @@ test("auto on is informational, does not change settings or turn on prewalk", ()
   const original=JSON.stringify(baseSettings);
   const copy={...baseSettings,"prewalk.auto":value("on")};
   const result=assessOmpOrchestration({settings:copy,catalog,hostVersion:"18.12.1",selectedJudge});
-  assert.equal(result.status,"ready");
+  assert.equal(result.status,"locally-compatible");
   assert.match(result.checks[0].message,/0\.70/);
   assert.equal(JSON.stringify(baseSettings),original);
   assert.equal(copy["prewalk.enabled"].value,false);
@@ -77,8 +77,8 @@ test("a hidden native judge or missing logical alias is visibly not ready",()=>{
     settings:{...baseSettings,enabledModels:value(["bifrost/*"])},
     catalog,hostVersion:"18.12.1",selectedJudge,
   });
-  assert.equal(hidden.checks.find(c=>c.id==="auto-prewalk").status,"warn");
-  assert.match(formatOmpOrchestration(hidden),/pifrost judge activate --dry-run/);
+  assert.equal(hidden.checks.find(c=>c.id==="auto-prewalk").status,"ok");
+  assert.equal(hidden.checks.find(c=>c.id==="handoff-target").status,"ok");
   const missing=assessOmpOrchestration({
     settings:baseSettings,catalog:{models:[]},hostVersion:"18.12.1",selectedJudge,
   });
@@ -120,4 +120,22 @@ test("readiness CLI is registered read-only and JSON/verbose are exclusive",asyn
   assert.equal(commandCatalog.get("omp readiness")?.operation,"read-only");
   assert.ok(commandCatalog.get("omp readiness")?.options.includes("json"));
   assert.throws(()=>validateCliInvocation("omp readiness",[],{json:true,verbose:true}),/separate/);
+});
+
+test("complex OMP chat scope is unverified rather than falsely denied",()=>{
+ const scoped=assessOmpOrchestration({
+   settings:{...baseSettings,enabledModels:value(["{bifrost,openai}/*"])},
+   catalog,hostVersion:"18.12.1",selectedJudge,
+ });
+ assert.equal(scoped.checks.find(c=>c.id==="auto-prewalk").status,"ok");
+ assert.equal(scoped.checks.find(c=>c.id==="handoff-target").status,"unknown");
+ assert.equal(scoped.status,"unverified");
+});
+test("native judgment selector remains eligible independent of chat scope",()=>{
+ const scoped=assessOmpOrchestration({
+   settings:{...baseSettings,enabledModels:value(["bifrost/omp-*"])},
+   catalog,hostVersion:"18.12.1",selectedJudge,
+ });
+ assert.equal(scoped.checks.find(c=>c.id==="auto-prewalk").status,"ok");
+ assert.equal(scoped.status,"locally-compatible");
 });

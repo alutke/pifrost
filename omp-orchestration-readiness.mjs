@@ -17,10 +17,21 @@ function check(id, status, message, action) {
 }
 function allowed(model, models) {
   if (!Array.isArray(models) || !models.every(x=>typeof x==="string")) return undefined;
-  if (models.length===0) return true;
-  const provider=model.split("/")[0];
-  return models.some(x=>x==="*"||x===model||x===provider+"/*");
+  if (!models.length) return true;
+  if (!model || !model.includes("/")) return undefined;
+  let unknown=false;
+  for (let pattern of models) {
+    pattern=pattern.replace(/:(off|minimal|low|medium|high|xhigh|auto)$/i,"");
+    if (/[{}[\]!\\]/.test(pattern) || pattern.includes("**") || !/^[a-z\d/_.*?+-]+$/i.test(pattern)) {
+      unknown=true; continue;
+    }
+    const quoted=pattern.replace(/[.+^$|()]/g,"\\$&").replace(/\*/g,".*").replace(/\?/g,".");
+    const regex=new RegExp("^"+quoted+"$","i");
+    if(regex.test(model) || regex.test(model.slice(model.indexOf("/")+1)))return true;
+  }
+  return unknown?undefined:false;
 }
+
 function targetFor(pattern, roles) {
   if (typeof pattern!=="string"||!pattern.trim()) return undefined;
   if (!pattern.startsWith("@")) return pattern.trim();
@@ -48,19 +59,17 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
   const target=targetFor(rawTarget,roles);
   const judgeRole=roles?.judge;
   const selectedMatches=typeof judgeRole==="string" && selectedJudge?.selector===judgeRole;
-  const judgeVisible=typeof judgeRole==="string"?allowed(judgeRole,enabled):undefined;
+  // Native non-chat judge roles are not filtered by OMP enabledModels.
   if(!["off","suggest","on"].includes(auto)){
     checks.push(check("auto-prewalk","unknown","Cannot read an OMP-supported prewalk.auto value.","omp config get prewalk.auto --json"));
   }else if(auto==="off"){
     checks.push(check("auto-prewalk","info","Off. No task classifier is run."));
-  }else if(selectedMatches&&judgeVisible===false){
-    checks.push(check("auto-prewalk","warn","Configured Pifrost native judge is excluded by enabledModels.","pifrost judge activate --dry-run"));
-  }else if(!selectedMatches||judgeVisible!==true){
-    checks.push(check("auto-prewalk","unknown","Cannot establish a native judge from local settings. OMP determines whether the judge role resolves natively.","pifrost judge status"));
+  }else if(!selectedMatches){
+    checks.push(check("auto-prewalk","unknown","Matching Pifrost native judge not confirmed. Local configuration cannot prove native inference.","pifrost judge status"));
   }else{
     checks.push(check("auto-prewalk","ok",auto==="suggest"?
-      "Suggest mode: OMP classifies without arming or switching.":
-      "On: OMP may arm handoff only when native prewalk confidence reaches 0.70."));
+      "Locally configured: suggest classifies without switching; judgment execution is unverified.":
+      "Locally configured: handoff may occur at 0.70 confidence; judgment execution is unverified."));
   }
   checks.push(unconditional===true?
     check("unconditional-prewalk","warn","prewalk.enabled is true: unconditional handoff is independent of prewalk.auto.","omp config get prewalk.enabled --json"):
@@ -73,6 +82,8 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
     checks.push(check("handoff-target","unknown","Target role has no single local selector; OMP may resolve fallback roles at runtime.","omp config get modelRoles --json"));
   }else if(allowed(target,enabled)===false){
     checks.push(check("handoff-target","warn","Target "+target+" is excluded by enabledModels.","omp config get enabledModels --json"));
+  }else if(allowed(target,enabled)===undefined){
+    checks.push(check("handoff-target","unknown","Unknown or complex OMP chat scope; cannot establish target eligibility locally."));
   }else{
     const m=/^bifrost\/(omp-[a-z0-9_.-]+)$/i.exec(target);
     const cached=Array.isArray(catalog?.models)?catalog.models:undefined;
@@ -101,7 +112,7 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
   }else checks.push(check("advisor","unknown","Cannot read advisor.continueSeverity; do not infer a default.","omp config get advisor.continueSeverity --json"));
   return {
     schemaVersion:1,
-    status: checks.some(c=>c.status==="warn")?"attention":checks.some(c=>c.status==="unknown")?"unverified":"ready",
+    status: checks.some(c=>c.status==="warn")?"attention":checks.some(c=>c.status==="unknown")?"unverified":"locally-compatible",
     hostVersion:typeof hostVersion==="string"?hostVersion:null,
     auto:typeof auto==="string"?auto:null,target:target??null,
     judgeSelector:typeof judgeRole==="string"?judgeRole:null,
@@ -109,7 +120,8 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
     notes:[
       "Read-only local assessment. No settings, route, session or MCP permissions changed.",
       "OMP owns auto-prewalk classification, session isolation, model switching and advisor continuation.",
-      "Bifrost owns physical routing and cost attribution; local aliases do not prove a gateway rule matched."
+      "Bifrost owns physical routing and cost attribution; local aliases do not prove a gateway rule matched.",
+      "Locally compatible does not mean successful live judgment, handoff, or historical consultation."
     ]
   };
 }

@@ -1,0 +1,45 @@
+# Pifrost v0.29.0 — Integration support and verification
+
+This page describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.1**. Supported historical host installation: **OMP 18.10.4**; current host contract: **OMP 18.12.1**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **2.3.0**.
+
+| Capability | 18.10.4 compiled host | 18.12.1 compiled host | Live physical provider |
+| --- | --- | --- | --- |
+| Plugin installation / `omp plugin list` | Tested in CI | Tested in CI | Not applicable |
+| Native extension registration with mocked model discovery | Shared integration test (not executed inside the compiled host) | Shared integration test (not executed inside the compiled host) | Not proven |
+| Bifrost routing, fallback and reasoning replay | Mocked CI and upstream contracts | Mocked CI and upstream contracts | Separate opt-in transport smoke |
+| TypeSafe `/typesafe/v1/systemone` Jev | Not advertised as supported | Native wire mocked; optional registered provider | Opt-in billable conformance |
+| OpenAI `/openai/v1/decisions` | Not advertised as supported | Native wire mocked; optional registered provider | Opt-in billable conformance |
+| Jev native image judgments | Not advertised as supported | Experimental, opt-in, mocked | Opt-in billable image conformance |
+| Auto-prewalk / `/seance` / advisor | Not advertised as supported | Settings and source contract inspection | No real session/consultation run |
+| Optional gateway image-count metadata | Deterministic unit coverage | Deterministic unit coverage | Only if Bifrost actually reports validated fields |
+
+## Ownership and limits
+
+OMP owns native judgment execution, image input validation, agent sessions, prewalk, advisor and native fallback. Bifrost owns endpoint routing, gateway auth, provider policy and billing. Pifrost owns isolated model registration, conservative metadata and CLI diagnostics. Native non-chat judge roles are **not filtered** by `enabledModels`; only `modelRoles.judge` is changed by activation. Bifrost inventory image-count properties `image_count_budget` and `per_request_limits.images` are optional extensions, **not documented universal fields**. Missing fields cannot be inferred from a provider name.
+
+## Safe user verification
+
+```bash
+pifrost doctor
+pifrost omp readiness --verbose
+pifrost omp workarounds --verbose
+pifrost judge status
+pifrost judge activate --dry-run
+```
+
+For optional **billable** native conformance, on a trusted machine with a test Bifrost Virtual Key authorised to both TypeSafe and OpenAI:
+
+```bash
+export BIFROST_URL=http://127.0.0.1:8180/v1
+export BIFROST_VIRTUAL_KEY=YOUR_TEST_VIRTUAL_KEY
+export PIFROST_LIVE_JUDGMENTS=1
+npm run smoke:judgments
+```
+
+The smoke runs text and synthetic-image judgments for `jev-1.14.0` and `openai/gpt-6-luna` by default. Set `PIFROST_LIVE_JUDGE_MODELS` to a comma-separated subset. It fails when discovery, typed answers, or usage evidence are missing. Output suppresses upstream response bodies and secrets. It **does not** demonstrate correct answers on a representative production workload, and does not automate OMP's `/seance` or prewalk lifecycle.
+
+## Quality gates
+
+CI runs package and source contracts, the native-extension mocked-registration test, the model metadata tests, judge role rollback tests, historical/current compiled installation, and the workaround-registry reference validator. All assertions beyond these gates require separate evidence. Never remove routing/transport/reasoning guards based on an OMP version number alone.
+
+For optional **read-only** live gateway image-budget inventory inspection, set `PIFROST_LIVE_IMAGE_METADATA=1` and run `npm run smoke:image-metadata` with the same Bifrost URL and test Virtual Key. No image or decision request is submitted; counts may legitimately be zero because the fields are optional.
