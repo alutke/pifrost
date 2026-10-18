@@ -1,22 +1,28 @@
 /**
- * Release C: optional native OMP judge registration against Bifrost's
- * stable TypeSafe System One endpoint (Bifrost transports/v2.2.6).
+ * Opt-in native OMP judgment routes through Bifrost.
  *
- * OMP's TypeSafeJudge owns judgment parsing, retry, caching, concurrency and
- * usage attribution. Bifrost owns provider selection, keys and governance.
- * This module only resolves the opt-in transport boundary.
+ * OMP owns judgment encoding, retries, caching, question limits and usage.
+ * Bifrost owns credentials, authorization, model selection and governance.
+ * No Pifrost judgment executor or silent Decisions-protocol conversion.
  */
 export const PIFROST_JUDGE_PROVIDER = "bifrost-judge";
 export const PIFROST_JUDGE_ENV = "PIFROST_NATIVE_JUDGE_MODEL";
+export const PIFROST_JUDGE_IMAGES_ENV = "PIFROST_NATIVE_JUDGE_IMAGES";
+const VERIFIED_JEV_IMAGE_IDS = new Set(["jev-latest", "jev-preview", "jev-1.13.0", "jev-1.14.0"]);
 
 export function nativeJudgeSelection(env = process.env) {
   const raw = env[PIFROST_JUDGE_ENV];
-  if (raw === undefined || raw.trim() === "") return undefined;
-  const model = raw.trim().replace(/^typesafe\//i, "");
-  // Other model kinds and providers must not be impersonated as a TypeSafe
-  // native judgment API. Canonical Decisions has a different wire shape.
+  if (raw === undefined || typeof raw !== "string" || raw.trim() === "") return undefined;
+  const value = raw.trim();
+  // Only the documented native OpenAI Decisions model is supported. Chat models
+  // never qualify as judgment models by virtue of having the same provider.
+  if (/^openai\/gpt-6-luna(?:-decisions)?$/i.test(value)) {
+    const model = "gpt-6-luna-decisions";
+    return { model, selector: PIFROST_JUDGE_PROVIDER + "/" + model };
+  }
+  const model = value.replace(/^typesafe\//i, "");
   if (!/^jev-[a-z0-9][a-z0-9._-]{0,90}$/i.test(model)) {
-    throw new Error("PIFROST_NATIVE_JUDGE_MODEL must be a TypeSafe jev model (e.g. jev-latest or typesafe/jev-latest)");
+    throw new Error("PIFROST_NATIVE_JUDGE_MODEL must be a TypeSafe jev model or openai/gpt-6-luna");
   }
   return { model, selector: PIFROST_JUDGE_PROVIDER + "/" + model };
 }
@@ -34,13 +40,23 @@ export function nativeJudgeGateway(config, env = process.env) {
       !/^\/v1\/?$/.test(url.pathname) || url.username || url.password) {
     throw new Error("Cannot register native judge: expected Bifrost URL ending in /v1 without credentials or query");
   }
-  // Native OMP TypeSafeJudge calls baseUrl + /v1/systemone.
-  // Bifrost exposes /typesafe/v1/systemone, with native response shape.
+  const isOpenAI = selected.model === "gpt-6-luna-decisions";
+  const imagesRequested = /^(?:1|true|yes|on)$/i.test(String(env[PIFROST_JUDGE_IMAGES_ENV] ?? "").trim());
+  // Unknown Jev versions retain their historical text-only contract. No
+  // visual capability may be invented from a model-name prefix.
+  if (imagesRequested && !isOpenAI && !VERIFIED_JEV_IMAGE_IDS.has(selected.model.toLowerCase())) {
+    throw new Error("Image judgments require a verified Jev version (jev-latest, jev-preview, jev-1.13.0, jev-1.14.0)");
+  }
   return {
     ...selected,
     provider: PIFROST_JUDGE_PROVIDER,
-    baseUrl: url.origin + "/typesafe",
+    api: isOpenAI ? "openai-decisions" : "typesafe",
+    requestModelId: isOpenAI ? "gpt-6-luna" : selected.model,
+    family: isOpenAI ? "openai" : "typesafe",
+    // OMP prepends the native wire-specific /decisions or /v1/systemone path.
+    baseUrl: url.origin + (isOpenAI ? "/openai/v1" : "/typesafe"),
     virtualKey: config.virtualKey,
+    imageEnabled: imagesRequested,
   };
 }
 
