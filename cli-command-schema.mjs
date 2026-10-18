@@ -29,7 +29,7 @@ const read = ["verbose"];
 const healthRead = ["verbose","strict","json"];
 const filters = ["filter","limit"];
 const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
-// 48 registered commands. Source-of-truth for validation/help side effects.
+// 49 registered commands. Source-of-truth for validation/help side effects.
 const rows = [
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
