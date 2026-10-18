@@ -90,6 +90,8 @@ test("OMP cold startup registers discoverable models before returning, then reus
         assert.deepEqual(refreshed, [["bifrost", "online"]], "only the Bifrost model registry is refreshed");
         await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "task" } });
         assert.equal(onDemandRuns, 1, "subagent prompts never start management checks");
+        await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "sub", name: "seance" } });
+        assert.equal(onDemandRuns, 1, "isolated seance never invokes Bifrost management reconciliation");
 		const persisted = JSON.parse(readFileSync(cachePath, "utf8"));
 		assert.equal(persisted.models.length, 1);
 		assert.equal(persisted.aliasFingerprint, aliasConfigFingerprint(JSON.parse(readFileSync(aliasPath, "utf8"))));

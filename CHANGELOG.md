@@ -1,3 +1,9 @@
+## 0.27.0 — 2026-10-18
+
+- Release C: add a read-only `pifrost omp readiness [--verbose|--json]` checking OMP-native auto-prewalk, unconditional prewalk, native judge visibility, handoff target/cache, /seance host support and advisor continuation severity.
+- Preserve OMP ownership of task classification, model switching, historical-session isolation and advisor lifecycle; no automatic configuration, session access, daemon or new inference engine.
+- Add pinned OMP 18.12.1 seance model-registry/restore source checks, mock isolation tests, config/host/version regressions, and local cache/stale/unknown reporting. Preserve Bifrost route and cost authority.
+
 ## 0.26.0 — 2026-10-18
 
 - Release B: extend the opt-in OMP native judgment bridge from TypeSafe System One to OpenAI Decisions via Bifrost's documented /openai/v1/decisions native endpoint. PIFROST_NATIVE_JUDGE_MODEL=openai/gpt-6-luna registers bifrost-judge/gpt-6-luna-decisions with physical request model gpt-6-luna; Jev System One remains supported.

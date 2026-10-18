@@ -34,6 +34,7 @@ const runtime = [
   "datasheet.ts",
   "omp-cfg.ts",
   "judge-bridge.mjs",
+  "omp-orchestration-readiness.mjs",
   "model-kind-boundary.mjs",
 ];
 
@@ -113,6 +114,16 @@ if (!/definition\(\s*["']retry\.modelFallback["']\s*,\s*false/u.test(ompCfg)) {
   errors.push("OMP model fallback must remain disabled; physical fallback is owned by Bifrost");
 }
 
+const orchestration = readFileSync(resolve(root, "omp-orchestration-readiness.mjs"), "utf8");
+if (!orchestration.includes("assessOmpOrchestration") ||
+    !orchestration.includes("ompVersionAtLeast") ||
+    !orchestration.includes("advisor.continueSeverity") ||
+    !orchestration.includes("prewalk.auto") ||
+    orchestration.includes("setInterval(") ||
+    orchestration.includes("spawnSync(") ||
+    orchestration.includes("fetch(")) {
+  errors.push("OMP orchestration readiness must remain read-only and host-owned");
+}
 const judgeBridge = readFileSync(resolve(root, "judge-bridge.mjs"), "utf8");
 const judgeControl = readFileSync(resolve(root, "judge-control.mjs"), "utf8");
 const modelKinds = readFileSync(resolve(root, "model-kind-boundary.mjs"), "utf8");

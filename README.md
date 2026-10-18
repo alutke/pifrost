@@ -122,7 +122,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.26.0
+0.27.0
 ```
 
 Bun also works:
@@ -585,3 +585,5 @@ Release CI additionally runs upstream contract, package-install and transport ch
 ## Attribution
 
 Pifrost is MIT-licensed and derived from [pi-bifrost-provider](https://github.com/lxdlam/pi-bifrost-provider). See [NOTICE](NOTICE.md) and [LICENSE](LICENSE). Historical compatibility and release-specific detail remains in the [changelog](CHANGELOG.md).
+
+OMP integration diagnostics: `pifrost omp readiness` checks native prewalk, `/seance` and advisor settings read-only. See [Release C guide](docs/REFERENCE.md#release-c--omp-orchestration-readiness-v0270).

@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.26.0
+0.27.0
 ```
 
 ## Architecture and ownership
@@ -244,3 +244,15 @@ To enable **experimental image judgments**, set PIFROST_NATIVE_JUDGE_IMAGES=1 be
 Run pifrost judge status for a read-only listing, pifrost judge activate --dry-run to preview the role merge, and pifrost judge activate to explicitly apply it while preserving unrelated roles and namespaces. **A model listed by the gateway does not establish native decisions functionality.** Use pifrost judge probe for a billable native typed-answer test or pifrost judge probe --image to submit a synthetic white 280x280 PNG and verify typed answers. The older --decisions comparison is TypeSafe-only and cannot be combined with --image.
 
 Both native transports require an appropriate sk-bf-* Bifrost Virtual Key and a gateway configured for the chosen model. Bifrost owns quotas/permissions/provider selection; Pifrost never supplies chat emulation or a second judgment scheduler.
+
+## Release C — OMP orchestration readiness (v0.27.0)
+
+`pifrost omp readiness` is a read-only report covering OMP prewalk, native judge visibility, `@smol` handoff, local model cache, `/seance` host support and advisor continuation. Use `--verbose` for evidence limits, or `--json` for a schemaVersion 1 report. Only OMP settings, host version and existing local cache are read. No session files, inference, management API calls, model switches, or configuration writes are performed.
+
+OMP owns `prewalk.auto` (`off`, `suggest`, `on`), `prewalk.enabled`, `prewalk.autoTarget` (default `@smol`) and its fixed judgment threshold of 0.70. In `suggest` mode OMP classifies without switching. A separate opt-in to `on` is needed for task handoffs. `prewalk.enabled=true` may arm an unconditional handoff independently. Start with `omp config set prewalk.auto suggest` and `omp config set prewalk.autoTarget @smol`; activate a native judge separately using `pifrost judge status` and `pifrost judge activate` if desired.
+
+OMP `/seance` requires host >=18.11.3. The parent registry resolves selectors, while OMP disables extension discovery and MCP in isolated consultations. Pifrost never injects tools, historical session access or route management into a seance. The check verifies version and source contracts, **not** that a historical consultation or physical Bifrost route succeeded.
+
+`advisor.continueSeverity` is `nit`, `concern` (OMP 18.12.1 default), or `blocker`. Qualifying late advisor findings can resume the main agent and incur additional Bifrost requests and costs. Readiness reports the configured value but never alters it. Use `omp config set advisor.continueSeverity blocker` only if you want the more restrictive behaviour.
+
+The local catalog does not prove that a physical route is still valid, that credentials are usable, or which Bifrost rule matched. OMP controls agent lifecycle and Bifrost controls inference governance. No daemon, independent classifier, history loader or background watch was added.
