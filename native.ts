@@ -951,6 +951,9 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 						name: "Bifrost native " + source + " judge " + judge.model,
 						api: judge.api,
 						kind: "judge",
+						// Preserve OMP's upstream catalog policy identity (especially
+						// Jev image bounds) while the actual credential/URL remains Bifrost.
+						providerType: source,
 						reasoning: false,
 						input: judge.imageEnabled ? ["text", "image"] : ["text"],
 						// Native judges are priced by actual Bifrost inference.
