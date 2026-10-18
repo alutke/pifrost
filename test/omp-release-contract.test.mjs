@@ -21,12 +21,12 @@ test("OMP release A dependency and policy snapshots are aligned", () => {
   assert.equal(pkg.devDependencies["@oh-my-pi/pi-coding-agent"], version);
   assert.equal(lock.packages[""].devDependencies["@oh-my-pi/pi-coding-agent"], version);
   assert.equal(lock.packages["node_modules/@oh-my-pi/pi-coding-agent"].version, version);
-  assert.match(cli, /PIFROST_OMP_POLICY_SNAPSHOT_VERSION\\s*=\\s*"18\\.12\\.1"/);
+  assert.match(cli, /PIFROST_OMP_POLICY_SNAPSHOT_VERSION\s*=\s*"18\.12\.1"/);
 });
 
 test("CI validates both supported legacy and current released OMP binaries", () => {
-  assert.match(ci, /omp-18\\.10\\.4/);
-  assert.match(ci, /omp-18\\.12\\.1/);
+  assert.match(ci, /omp-18\.10\.4/);
+  assert.match(ci, /omp-18\.12\.1/);
   assert.match(ci, /sha256sum -c -/);
   assert.match(ci, /Validate minimum and current OMP contracts/);
 });
@@ -34,8 +34,8 @@ test("CI validates both supported legacy and current released OMP binaries", () 
 test("Pifrost keeps Bifrost as the fallback authority during the host upgrade", () => {
   const cfg = readFileSync(new URL("omp-cfg.ts", root), "utf8");
   const native = readFileSync(new URL("native.ts", root), "utf8");
-  assert.match(cfg, /definition\\("retry\\.modelFallback", false/);
-  assert.match(native, /refreshProvider\\(PROVIDER_ID, "online"\\)/);
-  assert.match(native, /canUseNativeBifrostRoute\\(profile, plan\\)/);
-  assert.match(native, /isCommittedModelOutput\\(event\\)/);
+  assert.match(cfg, /definition\("retry\.modelFallback", false/);
+  assert.match(native, /refreshProvider\(PROVIDER_ID, "online"\)/);
+  assert.match(native, /canUseNativeBifrostRoute\(profile, plan\)/);
+  assert.match(native, /isCommittedModelOutput\(event\)/);
 });
