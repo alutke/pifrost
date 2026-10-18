@@ -931,29 +931,33 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		const providerApiKey = config.apiKey ?? config.virtualKey;
 		const virtualKeyBearerCompatible = /^sk-bf-/u.test(config.virtualKey);
 		const usage = createBifrostUsageProvider(config);
-		// An explicitly opted-in OMP native judge; never a second judge executor
-		// or session ledger. The user's OMP modelRoles.judge is not modified.
+		// Optional native judgment providers. OMP supplies typed judgment,
+		// retries/caching, native image encoding and accounting. Bifrost
+		// supplies the physical endpoint and VK governance. Image input is
+		// explicitly opted into, never inferred from an unknown jev version.
 		try {
 			const judge = nativeJudgeGateway(config, mergedEnvironment);
 			if (judge) {
-				const reference = getBundledModels("typesafe").find(item => item.id === "jev-latest");
+				const source = judge.api === "typesafe" ? "typesafe" : "openai";
+				const reference = getBundledModels(source).find(item =>
+					item.id === (judge.api === "typesafe" ? "jev-latest" : "gpt-6-luna-decisions"));
 				pi.registerProvider(judge.provider, {
 					baseUrl: judge.baseUrl,
-					api: "typesafe",
+					api: judge.api,
 					apiKey: judge.virtualKey,
 					models: [{
 						id: judge.model,
-						name: "Bifrost TypeSafe " + judge.model + " (native judge)",
-						api: "typesafe",
+						...(judge.requestModelId !== judge.model ? { requestModelId: judge.requestModelId } : {}),
+						name: "Bifrost native " + source + " judge " + judge.model,
+						api: judge.api,
 						kind: "judge",
 						reasoning: false,
-						input: ["text"],
-						// Pinned OMP catalog TypeSafe rate; Bifrost bills actual.
-						cost: reference?.cost ?? { input: 0.042, output: 0, cacheRead: 0, cacheWrite: 0 },
-						// Numeric fields are required by OMP's extension type
-						// even for non-chat runners; not chat context limits.
-						contextWindow: 8192,
-						maxTokens: 256,
+						input: judge.imageEnabled ? ["text", "image"] : ["text"],
+						// Native judges are priced by actual Bifrost inference.
+						// The OMP catalogue rate is indicative, not a Bifrost invoice.
+						cost: reference?.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+						contextWindow: reference?.contextWindow ?? 8192,
+						maxTokens: reference?.maxTokens ?? 256,
 					}],
 				});
 			}
