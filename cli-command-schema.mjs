@@ -39,7 +39,7 @@ const rows = [
   ["global configure-omp",0,0,["dry-run"],"local-change"],
   ["judge status",0,0,read,"read-only"],
   ["judge activate",0,0,["dry-run"],"local-change"],
-  ["judge probe",0,0,["decisions","yes"],"billed"],
+  ["judge probe",0,0,["decisions","image","yes"],"billed"],
   ["routes list",0,0,[...filters,...read],"read-only"],
   ["routes diff",0,0,read,"read-only"],
   ["routes verify",0,0,["dry-run",...read],"local-change"],

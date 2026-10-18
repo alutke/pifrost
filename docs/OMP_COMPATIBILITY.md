@@ -17,7 +17,7 @@
 | Mixed Chat/Responses gateway ingress and pre-output retry | Pifrost boundary | Retain | Bifrost accepts every member wire protocol in the live logical route without unsafe fallback or replay |
 | Synthetic `reasoning unavailable` replay hygiene | Pifrost boundary | Retain; check new native replay behaviour | Reproducible upstream fix removes exact placeholder without stripping signed/real reasoning; all replay tests pass |
 | Context/token estimation before compatibility exception | Pifrost boundary | Retain, consume 18.12.1 policies | Stable upstream physical policy API provides accurate provider-qualified estimates with proven mixed-route behaviour |
-| Native TypeSafe judge registration | Pifrost boundary | Retain unchanged in Release A | Release B explicitly validates image/Decision support before widening registered capabilities |
+| Native judge registration | Pifrost boundary | Release B enables explicit Jev images and OpenAI Decisions | Validate real gateway judgments before advertising further transports |
 | Prompt-triggered Bifrost route reconciliation | Pifrost boundary | Retain unchanged | OMP/Bifrost offer an equivalent supported event-safe route-change notification without a daemon |
 
 ## Host compatibility and regression matrix

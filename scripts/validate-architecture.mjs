@@ -132,7 +132,8 @@ if (judgeControl.includes("judgeBatch(") || judgeControl.includes("queueMicrotas
 
 const native = readFileSync(resolve(root, "native.ts"), "utf8");
 if (!native.includes("nativeJudgeGateway(config, mergedEnvironment)") ||
-    !native.includes('api: "typesafe"') || !native.includes('kind: "judge"')) {
+    !native.includes("api: judge.api") || !native.includes('kind: "judge"') ||
+    !native.includes("judge.imageEnabled") || !judgeBridge.includes('"/openai/v1"')) {
   errors.push("Release C native judge must register an isolated OMP-owned TypeSafe provider");
 }
 // Protect the architectural invariant: complete compatible Chat routes must

@@ -1,3 +1,10 @@
+## 0.26.0 — 2026-10-18
+
+- Release B: extend the opt-in OMP native judgment bridge from TypeSafe System One to OpenAI Decisions via Bifrost's documented /openai/v1/decisions native endpoint. PIFROST_NATIVE_JUDGE_MODEL=openai/gpt-6-luna registers bifrost-judge/gpt-6-luna-decisions with physical request model gpt-6-luna; Jev System One remains supported.
+- Explicit PIFROST_NATIVE_JUDGE_IMAGES=1 opt-in for verified Jev releases and OpenAI Decisions, with unverified Jev versions staying text-only. OMP owns image serialization, typed answers, retries, caching and usage.
+- Add billed native image probe with a synthetic white 280x280 PNG, strict typed-answer validation, model-listing diagnostics and approval-aware judge activation without changing unrelated OMP roles.
+- Keep Bifrost governance, physical decision routing, chat aliases and service-free route reconciliation unchanged. No Pifrost judgment executor, custom task scheduler or daemon.
+
 ## 0.25.0 — 2026-10-18
 
 - Release A: advance the pinned, synchronized OhMyPi library and physical-model-policy snapshot from 18.10.4 to 18.12.1; do not blend incompatible catalogue packages.
