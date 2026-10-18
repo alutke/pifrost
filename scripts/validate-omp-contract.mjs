@@ -101,6 +101,17 @@ const SOURCES = [
 
 const CURRENT_SOURCES = [
   {
+    name: `OMP ${OMP_CURRENT_LABEL} seance model registry resolution and restoration`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/task/seance.ts`,
+    required: [
+      "resolveSessionModelSelector",
+      "modelRegistry.awaitBackgroundRefresh()",
+      "export async function restoreSeanceSession",
+      "modelRegistry: ModelRegistry",
+    ],
+  },
+
+  {
     name: `OMP ${OMP_CURRENT_LABEL} live Bifrost model-registry refresh`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/config/model-registry.ts`,
     required: ["refreshProvider(", "export class ModelRegistry"],
