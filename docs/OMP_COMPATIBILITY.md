@@ -36,3 +36,9 @@
 ## Explicitly out of scope for Release A
 
 Native image judgments, cross-provider decision routing, auto-prewalk activation, session consultations and new daemon/watch implementations. Follow-up releases may integrate them only after their contracts and live gateway endpoints have been verified.
+
+## Release C — native orchestration
+
+- `pifrost omp readiness [--verbose|--json]` reads OMP configuration, host version and local Pifrost catalog only; unknown and stale values are reported explicitly.
+- OMP retains native auto-prewalk, seance session restoration/isolation, advisor continuation, judge execution and model switching. Bifrost retains physical routing and billing.
+- Upstream OMP seance registry resolution is pinned to 18.12.1 and the Pifrost top-level reconciliation hook is exercised against simulated isolated seance prompts. Live historical consultation is not executed by CI.
