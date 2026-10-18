@@ -226,3 +226,21 @@ Main-branch CI also checks pinned Bifrost, OMP, DonSeTch and legacy Hound contra
 ## Attribution
 
 This project is derived from [pi-bifrost-provider](https://github.com/lxdlam/pi-bifrost-provider). See [NOTICE](../NOTICE.md) and [MIT license](../LICENSE). The [changelog](../CHANGELOG.md) records historical compatibility decisions and migration notes.
+
+## Release B — native multimodal judgments (v0.26.0)
+
+Pifrost optionally registers one OMP judge through Bifrost. Judgment execution, caching, retry, and typed responses remain OMP-owned.
+
+| PIFROST_NATIVE_JUDGE_MODEL | OMP modelRoles.judge | Native Bifrost endpoint |
+| --- | --- | --- |
+| jev-latest | bifrost-judge/jev-latest | /typesafe/v1/systemone |
+| jev-1.14.0 | bifrost-judge/jev-1.14.0 | /typesafe/v1/systemone |
+| openai/gpt-6-luna | bifrost-judge/gpt-6-luna-decisions | /openai/v1/decisions |
+
+OpenAI's wire request uses the physical model ID gpt-6-luna; its OMP catalog model ID has the -decisions suffix to separate it from chat. Jev-latest might still resolve to 1.13; explicit Jev 1.14/preview is required for its new box-question support.
+
+To enable **experimental image judgments**, set PIFROST_NATIVE_JUDGE_IMAGES=1 before starting OMP. This is disabled by default. Unknown Jev versions cannot advertise images; supported Jev 1.13, 1.14, latest and preview identifiers can opt in. The native TypeSafe wire accepts PNG/JPEG; published Jev image bounds include 280–1568 px per side and a maximum 16 MiB per image. OMP/Bifrost/TypeSafe remain the enforcement boundary, not Pifrost's test fixture.
+
+Run pifrost judge status for a read-only listing, pifrost judge activate --dry-run to preview the role merge, and pifrost judge activate to explicitly apply it while preserving unrelated roles and namespaces. **A model listed by the gateway does not establish native decisions functionality.** Use pifrost judge probe for a billable native typed-answer test or pifrost judge probe --image to submit a synthetic white 280x280 PNG and verify typed answers. The older --decisions comparison is TypeSafe-only and cannot be combined with --image.
+
+Both native transports require an appropriate sk-bf-* Bifrost Virtual Key and a gateway configured for the chosen model. Bifrost owns quotas/permissions/provider selection; Pifrost never supplies chat emulation or a second judgment scheduler.
