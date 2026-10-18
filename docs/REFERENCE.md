@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.27.0
+0.28.0
 ```
 
 ## Architecture and ownership
@@ -256,3 +256,10 @@ OMP `/seance` requires host >=18.11.3. The parent registry resolves selectors, w
 `advisor.continueSeverity` is `nit`, `concern` (OMP 18.12.1 default), or `blocker`. Qualifying late advisor findings can resume the main agent and incur additional Bifrost requests and costs. Readiness reports the configured value but never alters it. Use `omp config set advisor.continueSeverity blocker` only if you want the more restrictive behaviour.
 
 The local catalog does not prove that a physical route is still valid, that credentials are usable, or which Bifrost rule matched. OMP controls agent lifecycle and Bifrost controls inference governance. No daemon, independent classifier, history loader or background watch was added.
+
+
+## Release D — image count and compatibility retirement (v0.28.0)
+
+Pifrost consumes an explicit positive image-count budget only when Bifrost's `/v1/models` JSON supplies an optional `image_count_budget` or `per_request_limits.images` field and the model independently advertises image input. Both fields are **optional extensions, not guaranteed by Bifrost's published standard model-list contract**. An invalid, absent or conflicting value is ignored. For mixed routes, every resolved physical member must have an explicit count; the minimum wins. If not, `imageCountBudget` is omitted and OMP retains its normal policy. This does not impose a new upload-image validation layer.
+
+`pifrost omp workarounds`, `--verbose` and `--json` provide a read-only catalogue of compatibility mechanisms and objective retirement conditions. No automatic removal of routing, reasoning, startup, or gateway-security safeguards occurs. Evidence from live compatible Bifrost/OMP transports and regression checks is required before deleting a workaround.

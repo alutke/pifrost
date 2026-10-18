@@ -33,6 +33,7 @@ const runtime = [
   "research-repo-config.ts",
   "datasheet.ts",
   "omp-cfg.ts",
+  "image-count-budget.ts",
   "judge-bridge.mjs",
   "omp-orchestration-readiness.mjs",
   "model-kind-boundary.mjs",
@@ -114,6 +115,13 @@ if (!/definition\(\s*["']retry\.modelFallback["']\s*,\s*false/u.test(ompCfg)) {
   errors.push("OMP model fallback must remain disabled; physical fallback is owned by Bifrost");
 }
 
+const budgetPolicy = readFileSync(resolve(root, "image-count-budget.ts"), "utf8");
+const registeredWorkarounds = readFileSync(resolve(root, "workaround-register.mjs"), "utf8");
+if (!budgetPolicy.includes("conservativeRouteImageCountBudget") ||
+    !registeredWorkarounds.includes("retained-pending-evidence") ||
+    registeredWorkarounds.includes("setInterval(")) {
+  errors.push("Release D must preserve conservative image-count and evidence-gated workaround contracts");
+}
 const orchestration = readFileSync(resolve(root, "omp-orchestration-readiness.mjs"), "utf8");
 if (!orchestration.includes("assessOmpOrchestration") ||
     !orchestration.includes("ompVersionAtLeast") ||

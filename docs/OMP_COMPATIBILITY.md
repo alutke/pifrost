@@ -42,3 +42,10 @@ Native image judgments, cross-provider decision routing, auto-prewalk activation
 - `pifrost omp readiness [--verbose|--json]` reads OMP configuration, host version and local Pifrost catalog only; unknown and stale values are reported explicitly.
 - OMP retains native auto-prewalk, seance session restoration/isolation, advisor continuation, judge execution and model switching. Bifrost retains physical routing and billing.
 - Upstream OMP seance registry resolution is pinned to 18.12.1 and the Pifrost top-level reconciliation hook is exercised against simulated isolated seance prompts. Live historical consultation is not executed by CI.
+
+
+## Release D — lifecycle and metadata controls (v0.28.0)
+
+`workaround-register.mjs` is the source of truth for retained compatibility exceptions and their explicit retirement gates. Read with `pifrost omp workarounds --verbose` or `--json`. All remain in place until upstream versioned contracts, targeted regressions and representative gateway tests prove removal safe.
+
+An image-count cap is published to OMP only when valid explicit metadata appears on every image-capable route member. Standard Bifrost model lists need not contain such data; absence is not evidence of unlimited support. We do not transfer official upstream vendor limits blindly to a custom Bifrost gateway.

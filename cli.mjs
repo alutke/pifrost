@@ -41,6 +41,7 @@ import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
 import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-boundary.mjs";
 import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
 import { OMP_ORCHESTRATION_SETTING_IDS, assessOmpOrchestration, formatOmpOrchestration } from "./omp-orchestration-readiness.mjs";
+import { inspectPifrostWorkarounds, formatPifrostWorkarounds } from "./workaround-register.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
@@ -153,6 +154,7 @@ Usage:
   pifrost global observability [--vk-id ID]  Optional gateway intelligence, research, privacy (read-only)
   pifrost global configure-omp
   pifrost omp readiness [--json|--verbose] Read-only prewalk, seance and advisor readiness
+  pifrost omp workarounds [--json|--verbose] Read-only compatibility retirement register
   pifrost judge status                      Inspect opt-in native OMP judge and gateway model availability
   pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
   pifrost judge probe [--image|--decisions] Billed native image or canonical Decisions conformance
@@ -2263,6 +2265,12 @@ async function commandModelsKinds() {
 }
 
 
+function commandOmpWorkarounds(flags = {}) {
+  const result = inspectPifrostWorkarounds({ hostVersion: getOmpVersion() });
+  if (flags.json) console.log(JSON.stringify(result));
+  else console.log(formatPifrostWorkarounds(result, flags.verbose === true));
+}
+
 function commandOmpReadiness(flags = {}) {
   const settings = Object.fromEntries(
     OMP_ORCHESTRATION_SETTING_IDS.map(id => [id, readOmpConfigValueResult(id)])
@@ -2474,6 +2482,7 @@ const COMMANDS = new Map([
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["omp readiness", (_args, flags) => commandOmpReadiness(flags)],
+  ["omp workarounds", (_args, flags) => commandOmpWorkarounds(flags)],
   ["judge status", () => commandJudgeStatus()],
   ["judge activate", (_args, flags) => commandJudgeActivate(flags)],
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
