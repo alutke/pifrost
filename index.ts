@@ -1,5 +1,6 @@
 import { loadRepoResearchScreenshotTools } from "./research-repo-config.ts";
 import { isBifrostChatModel } from "./model-kind-boundary.mjs";
+import { gatewayImageCountBudget, conservativeRouteImageCountBudget } from "./image-count-budget.ts";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
@@ -48,6 +49,7 @@ export type CapabilityKey =
 	| "contextWindow"
 	| "maxTokens"
 	| "image"
+	| "imageCountBudget"
 	| "reasoning"
 	| "reasoningEfforts"
 	| "tools"
@@ -96,9 +98,12 @@ export interface BifrostModel {
 		context_length?: number;
 		max_completion_tokens?: number;
 	};
+	/** Optional gateway extension; not guaranteed by the standard model-list API. */
+	image_count_budget?: number;
 	per_request_limits?: {
 		prompt_tokens?: number;
 		completion_tokens?: number;
+		images?: number;
 	};
 	supported_parameters?: string[];
 	supported_methods?: string[];
@@ -118,6 +123,7 @@ export interface BifrostProviderModel {
 	reasoning: boolean;
 	thinking?: OmpThinkingConfig;
 	input: ("text" | "image")[];
+	imageCountBudget?: number;
 	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
 	contextWindow: number;
 	maxTokens: number;
@@ -197,6 +203,7 @@ export interface AliasMemberDiagnostic {
 		contextWindow: number;
 		maxTokens: number;
 		image: boolean;
+		imageCountBudget?: number;
 		reasoning: boolean;
 		tools: boolean;
 		toolSearch?: boolean;
@@ -222,6 +229,7 @@ export interface AliasDiagnostic {
 	contextWindow?: number;
 	maxTokens?: number;
 	image: boolean;
+	imageCountBudget?: number;
 	reasoning: boolean;
 	reasoningEfforts: string[];
 	tools: boolean;
@@ -486,6 +494,8 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		.filter((tier): tier is string => Boolean(tier));
 	const inputModalities = model.architecture?.input_modalities?.map((modality) => modality.toLowerCase()) ?? [];
 	const hasInputModalities = inputModalities.length > 0;
+	const hasImageInput = inputModalities.some((modality) => modality.includes("image"));
+	const imageCountBudget = hasImageInput ? gatewayImageCountBudget(model) : undefined;
 	const inputPrice = pricePerMillion(model.pricing?.prompt) ?? 0;
 	const outputPrice = pricePerMillion(model.pricing?.completion) ?? 0;
 
@@ -494,7 +504,8 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 		name: nonEmpty(model.normalized_name) ?? nonEmpty(model.name) ?? id,
 		reasoning,
 		thinking,
-		input: inputModalities.some((modality) => modality.includes("image")) ? ["text", "image"] : ["text"],
+		input: hasImageInput ? ["text", "image"] : ["text"],
+		...(imageCountBudget !== undefined ? { imageCountBudget } : {}),
 		cost: {
 			input: inputPrice,
 			output: outputPrice,
@@ -514,6 +525,7 @@ export function toProviderModel(model: BifrostModel): BifrostProviderModel | und
 			maxTokens: confirmedOutputCeiling !== undefined && (!liveMaxTokens || liveMaxTokens > confirmedOutputCeiling)
 				? "vendor-override" : liveMaxTokens ? "live" : "fallback",
 			image: hasInputModalities ? "live" : "fallback",
+			...(imageCountBudget !== undefined ? { imageCountBudget: "live" as const } : {}),
 			reasoning: model.reasoning !== undefined || hasParameterInventory ? "live" : "fallback",
 			reasoningEfforts: (model.reasoning?.supported_efforts?.length ?? 0) > 0 ? "live" : "fallback",
 			tools: hasParameterInventory ? "live" : "fallback",
@@ -666,6 +678,7 @@ export function synthesizeAlias(
 			? (memberPricingStatuses[0] === "fixed" ? undefined : memberPricingStatuses[0] as OmpModel["pricingStatus"])
 			: "variable";
 	const disableReasoningOnToolChoice = members.some((model) => model.compat.disableReasoningOnToolChoice === true);
+	const imageCountBudget = conservativeRouteImageCountBudget(members);
 	const memberDiagnostics: AliasMemberDiagnostic[] = resolutionEntries.map((entry) => {
 		const model = entry.resolution.model;
 		const rich = entry.rich;
@@ -681,6 +694,7 @@ export function synthesizeAlias(
 				contextWindow: model.contextWindow,
 				maxTokens: model.maxTokens,
 				image: model.input.includes("image"),
+				...(model.imageCountBudget !== undefined ? { imageCountBudget: model.imageCountBudget } : {}),
 				reasoning: model.reasoning,
 				tools: model.supportsTools,
 				toolSearch: model.supportsToolSearch,
@@ -707,6 +721,7 @@ export function synthesizeAlias(
 		contextWindow: members.length ? Math.min(...members.map((model) => model.contextWindow)) : undefined,
 		maxTokens: members.length ? Math.min(...members.map((model) => model.maxTokens)) : undefined,
 		image: members.length > 0 && members.every((model) => model.input.includes("image")),
+		...(unresolved.length === 0 && imageCountBudget !== undefined ? { imageCountBudget } : {}),
 		reasoning,
 		reasoningEfforts: [...reasoningEfforts],
 		tools: members.length > 0 && members.every((model) => model.supportsTools),
@@ -732,6 +747,8 @@ export function synthesizeAlias(
 			reasoning,
 			thinking: reasoning ? thinking : undefined,
 			input: diagnostic.image ? ["text", "image"] : ["text"],
+			...(diagnostic.imageCountBudget !== undefined ? { imageCountBudget: diagnostic.imageCountBudget } : {}),
+			...(diagnostic.imageCountBudget !== undefined ? { capabilitySources: { imageCountBudget: "live" as const } } : {}),
 			cost: {
 				input: Math.max(...members.map((model) => model.cost.input)),
 				output: Math.max(...members.map((model) => model.cost.output)),

@@ -44,6 +44,7 @@ export interface DatasheetCapabilitySources {
 	contextWindow?: CapabilitySource;
 	maxTokens?: CapabilitySource;
 	image?: CapabilitySource;
+	imageCountBudget?: CapabilitySource;
 	reasoning?: CapabilitySource;
 	reasoningEfforts?: CapabilitySource;
 	tools?: CapabilitySource;
@@ -793,6 +794,7 @@ export function buildRichRouteCatalog(
 			maxTokens: confirmedOutputCeiling !== undefined && contractedOutput! < output.value!
 				? "vendor-override" : output.source,
 			image: image.source,
+			...(image.value && liveModel.capabilitySources?.imageCountBudget === "live" && liveModel.imageCountBudget !== undefined ? { imageCountBudget: "live" as const } : {}),
 			reasoning: reasoning.source,
 			reasoningEfforts: thinking.source,
 			tools: tools.source,
@@ -817,6 +819,8 @@ export function buildRichRouteCatalog(
 			contextWindow: context.value,
 			maxTokens: Math.min(context.value, contractedOutput!),
 			input: image.value ? ["text", "image"] : ["text"],
+			// If image capability is removed by enrichment, suppress any old count.
+			imageCountBudget: image.value && sources.imageCountBudget === "live" ? liveModel.imageCountBudget : undefined,
 			reasoning: Boolean(reasoning.value),
 			thinking: reasoning.value ? thinking.value : undefined,
 			supportsTools: Boolean(tools.value),

@@ -1,3 +1,10 @@
+## 0.28.0 — 2026-10-18
+
+- Release D: optionally propagate explicit, validated Bifrost gateway image-count limits into OMP model metadata. A logical alias advertises the lowest verified limit only when every eligible fallback member is image-capable and provides an authoritative count; no vendor defaults, implicit five-image assumption, or guessed value.
+- Keep Bifrost inventory and OMP public catalog separate, preserving cache and capability provenance; missing/invalid/conflicting metadata remains unknown.
+- Add a read-only `pifrost omp workarounds [--json|--verbose]` register detailing retained compatibility boundaries, upstream contracts, test coverage and retirement evidence. No workarounds removed merely because OMP advanced.
+- No daemons, timers, independent routing, or inference/judgment logic added.
+
 ## 0.27.0 — 2026-10-18
 
 - Release C: add a read-only `pifrost omp readiness [--verbose|--json]` checking OMP-native auto-prewalk, unconditional prewalk, native judge visibility, handoff target/cache, /seance host support and advisor continuation severity.
