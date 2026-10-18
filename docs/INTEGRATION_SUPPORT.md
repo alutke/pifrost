@@ -41,3 +41,5 @@ The smoke runs text and synthetic-image judgments for `jev-1.14.0` and `openai/g
 ## Quality gates
 
 CI runs package and source contracts, the native-extension mocked-registration test, the model metadata tests, judge role rollback tests, historical/current compiled installation, and the workaround-registry reference validator. All assertions beyond these gates require separate evidence. Never remove routing/transport/reasoning guards based on an OMP version number alone.
+
+For optional **read-only** live gateway image-budget inventory inspection, set `PIFROST_LIVE_IMAGE_METADATA=1` and run `npm run smoke:image-metadata` with the same Bifrost URL and test Virtual Key. No image or decision request is submitted; counts may legitimately be zero because the fields are optional.
