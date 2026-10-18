@@ -44,6 +44,7 @@ export interface DatasheetCapabilitySources {
 	contextWindow?: CapabilitySource;
 	maxTokens?: CapabilitySource;
 	image?: CapabilitySource;
+	imageCountBudget?: CapabilitySource;
 	reasoning?: CapabilitySource;
 	reasoningEfforts?: CapabilitySource;
 	tools?: CapabilitySource;
