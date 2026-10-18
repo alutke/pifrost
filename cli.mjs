@@ -153,7 +153,7 @@ Usage:
   pifrost global configure-omp
   pifrost judge status                      Inspect opt-in native OMP judge and gateway model availability
   pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
-  pifrost judge probe [--decisions]         Billed opt-in System One or canonical Decisions conformance
+  pifrost judge probe [--image|--decisions] Billed native image or canonical Decisions conformance
   pifrost routes list
   pifrost routes diff
   pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
@@ -2264,12 +2264,15 @@ async function commandJudgeStatus() {
   const selected = nativeJudgeSelection();
   console.log("OMP native judgment (optional; OMP owns judge execution and session usage):");
   if (!selected) {
-    console.log("  disabled: set PIFROST_NATIVE_JUDGE_MODEL=jev-latest before launching OMP");
+    console.log("  disabled: set PIFROST_NATIVE_JUDGE_MODEL=jev-latest or openai/gpt-6-luna before launching OMP");
     console.log("  other OMP kinds (image, search, speech, dictation, embedding, rerank, video) remain OMP-owned");
     return;
   }
   console.log("  configured provider: bifrost-judge");
   console.log("  configured model: " + selected.model);
+  const judge = nativeJudgeGateway(judgeRuntimeConfig());
+  console.log("  native judgment transport: " + judge.api);
+  console.log("  image judgments: " + (judge.imageEnabled ? "opted in (experimental for Jev)" : "disabled"));
   const current = readOmpConfigValueResult("modelRoles");
   const roles = current.status === "ok" && current.value && typeof current.value === "object"
     && !Array.isArray(current.value) ? current.value : undefined;
@@ -2286,20 +2289,21 @@ async function commandJudgeStatus() {
   }
   try {
     const status = await inspectNativeJudgeModels(judgeRuntimeConfig());
-    console.log("  Bifrost native TypeSafe model: " + status.status);
+    console.log("  Bifrost native " + status.family + " model listing: " + status.status);
     console.log("  model-list names: " + status.models.length);
     if (status.status !== "available") process.exitCode = 2;
   } catch (error) {
-    console.log("  Bifrost native TypeSafe models: unavailable (" + formatError(error) + ")");
+    console.log("  Bifrost native judge models: unavailable (" + formatError(error) + ")");
     process.exitCode = 2;
   }
-  console.log("  canonical /v1/decisions differs from OMP TypeSafe wire; Bifrost owns its translation");
+  console.log("  Native endpoint model listing is not a billable judgment conformance check.");
+  console.log("  TypeSafe System One and OpenAI Decisions use separate native wire formats.");
   console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
 }
 
 async function commandJudgeActivate(flags = {}) {
   const selected = nativeJudgeSelection();
-  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest to explicitly opt into the native judge provider first");
+  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL=jev-latest or openai/gpt-6-luna to opt in first");
   const runtime = judgeRuntimeConfig();
   const judge = nativeJudgeGateway(runtime);
   if (!judge) throw new Error("Native judge provider unavailable");
@@ -2333,10 +2337,11 @@ async function commandJudgeActivate(flags = {}) {
 }
 
 async function commandJudgeProbe(flags = {}) {
-  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true });
+  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true, image: flags.image === true });
   console.log("Bifrost " + result.kind + " judgment conformance: OK");
   console.log("  model: " + result.model);
   console.log("  typed answers checked: " + result.answered);
+  console.log("  image conformance: " + (result.image ? "PNG fixture submitted" : "not requested"));
   console.log("  usage: " + (result.hasUsage ? "reported" : "not reported"));
   console.log("  this was an explicitly requested inference request; normal judgments remain OMP-owned");
 }

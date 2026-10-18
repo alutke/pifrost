@@ -87,7 +87,7 @@ test("explicit native probe uses OMP's System One wire shape and validates typed
     },
   });
   assert.equal(calls, 1);
-  assert.deepEqual(result, { kind: "systemone", model: "jev-latest", answered: 3, hasUsage: true });
+  assert.deepEqual(result, { kind: "systemone", model: "jev-latest", answered: 3, hasUsage: true, image: false });
   assert.equal(nativeJudgeProbeRequest("jev-latest").questions.urgent.type, "noul");
 });
 
@@ -104,7 +104,7 @@ test("canonical Decisions probe is explicitly selected, never silently substitut
       return { model: "jev-latest", answers: canonicalAnswers };
     },
   });
-  assert.deepEqual(result, { kind: "decisions", model: "jev-latest", answered: 3, hasUsage: false });
+  assert.deepEqual(result, { kind: "decisions", model: "jev-latest", answered: 3, hasUsage: false, image: false });
 });
 
 test("incomplete, mismatched or malformed typed judgments are never reported as success", () => {
