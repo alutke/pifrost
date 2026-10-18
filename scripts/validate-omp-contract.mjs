@@ -1,6 +1,6 @@
 const OMP_MIN_COMMIT = "79808c3bf8f8cd9826decc63e3e18b13035f64f8";
-const OMP_VALIDATED_VERSION = "18.10.4";
-const OMP_VALIDATED_COMMIT = "687892d1046ecaf18829b45f5b86928a308258f4";
+const OMP_VALIDATED_VERSION = "18.12.1";
+const OMP_VALIDATED_COMMIT = "291e055836c210f314af3f73f53244e8e9d09de8";
 const OMP_UPSTREAM_CANARY = process.env.PIFROST_OMP_UPSTREAM_CANARY === "1";
 const OMP_CURRENT_REF = OMP_UPSTREAM_CANARY ? "main" : OMP_VALIDATED_COMMIT;
 const OMP_CURRENT_LABEL = OMP_UPSTREAM_CANARY ? "main" : OMP_VALIDATED_VERSION;
@@ -100,6 +100,32 @@ const SOURCES = [
 ];
 
 const CURRENT_SOURCES = [
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} live Bifrost model-registry refresh`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/config/model-registry.ts`,
+    required: ["refreshProvider(", "export class ModelRegistry"],
+  },
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} extension lifecycle and provider API`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/extensibility/extensions/types.ts`,
+    required: ["before_agent_start", "registerProvider"],
+  },
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} native prewalk and judge settings`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/session/settings.ts`,
+    required: ["cfgPrewalkAuto", "cfgPrewalkAutoTarget"],
+  },
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} advisor continuation contract`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/advisor/settings.ts`,
+    required: ["cfgAdvisorContinueSeverity"],
+  },
+  {
+    name: `OMP ${OMP_CURRENT_LABEL} historical-consultation isolation`,
+    url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/coding-agent/src/task/seance-policy.ts`,
+    required: ["disableExtensionDiscovery: true", "enableMCP: false"],
+  },
+
   {
     name: `OMP ${OMP_CURRENT_LABEL} image-tokenization contract`,
     url: `https://raw.githubusercontent.com/can1357/oh-my-pi/${OMP_CURRENT_REF}/packages/catalog/src/compat/image-tokenization.ts`,

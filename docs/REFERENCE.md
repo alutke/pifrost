@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.24.0
+0.25.0
 ```
 
 ## Architecture and ownership
@@ -27,7 +27,7 @@ Prefer a stable upstream contract to copied behaviour. Retain compatibility exce
 ## Requirements
 
 - Node.js **22.19+** and OMP **18.10.4+** for clean GitHub plugin installation.
-- Packaged OMP packages and policy snapshot: **18.10.4**. Later OMP hosts may work but require compatibility verification; Pifrost's pinned snapshot does not automatically advance with the host.
+- Packaged OMP packages and policy snapshot: **18.12.1**. The legacy compiled-host compatibility test remains at **18.10.4**; newer OMP hosts require separate verification before the pinned snapshot advances.
 - Bifrost **2.2.4+** with Chat Completions; the Responses endpoint is also needed for Responses members. CI exercises pinned Bifrost **2.3.0** contracts and relevant earlier compatibility.
 - Global inference Virtual Key able to access the configured physical models, plus separately scoped Bifrost management credentials for synchronization and repository operations.
 - Network access for live Bifrost model discovery and optional public datasheets. Some smoke tests explicitly incur provider charges.
@@ -78,7 +78,7 @@ Each OMP conversation's session ID is sent separately as `x-bf-session-id` to Bi
 
 ## Activity-triggered, service-free Bifrost synchronization
 
-OMP 18.10.4 exposes `before_agent_start` and the provider-scoped `ctx.modelRegistry.refreshProvider("bifrost", "online")` API. The native Pifrost extension invokes a short-lived `pifrost routes reconcile --json` child only when the top-level user submits work (max once per 60 seconds of prompt activity). The child alone loads Pifrost management credentials. No service, cron, scheduled background process or timer is created.
+OMP 18.12.1 exposes `before_agent_start` and the provider-scoped `ctx.modelRegistry.refreshProvider("bifrost", "online")` API. The native Pifrost extension invokes a short-lived `pifrost routes reconcile --json` child only when the top-level user submits work (max once per 60 seconds of prompt activity). The child alone loads Pifrost management credentials. No service, cron, scheduled background process or timer is created.
 
 The child detects changes to the **entire** Bifrost routing policy, independently confirms the new fingerprint, and synchronizes the alias manifest without triggering an unrelated OMP process. Once a change is committed, the active OMP model registry refreshes only the Bifrost provider. The extension rereads the alias file on refresh, so subsequent route/protocol selection uses the new model catalog. The existing response cannot be modified mid-stream, and manual reselection may be needed if a model's advertised capabilities change. The process is fail-open for ordinary prompts when management is unavailable. `PIFROST_AUTO_SYNC=0` disables the hook. No background polling.
 

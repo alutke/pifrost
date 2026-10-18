@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -89,6 +89,7 @@
     "model-diagnostics.mjs",
     "README.md",
     "docs/REFERENCE.md",
+    "docs/OMP_COMPATIBILITY.md",
     "CHANGELOG.md",
     "scripts/smoke-live.mjs",
     "scripts/validate-architecture.mjs",
@@ -122,13 +123,13 @@
     "smoke:transport": "node scripts/smoke-transport.mjs"
   },
   "dependencies": {
-    "@oh-my-pi/pi-ai": "18.10.4",
-    "@oh-my-pi/pi-catalog": "18.10.4",
-    "@oh-my-pi/pi-natives": "18.10.4",
-    "@oh-my-pi/pi-utils": "18.10.4"
+    "@oh-my-pi/pi-ai": "18.12.1",
+    "@oh-my-pi/pi-catalog": "18.12.1",
+    "@oh-my-pi/pi-natives": "18.12.1",
+    "@oh-my-pi/pi-utils": "18.12.1"
   },
   "devDependencies": {
-    "@oh-my-pi/pi-coding-agent": "18.10.4",
+    "@oh-my-pi/pi-coding-agent": "18.12.1",
     "@types/node": "^22.0.0",
     "tsx": "^4.21.0",
     "typescript": "^5.9.0"
