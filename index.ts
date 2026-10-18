@@ -748,6 +748,7 @@ export function synthesizeAlias(
 			thinking: reasoning ? thinking : undefined,
 			input: diagnostic.image ? ["text", "image"] : ["text"],
 			...(diagnostic.imageCountBudget !== undefined ? { imageCountBudget: diagnostic.imageCountBudget } : {}),
+			...(diagnostic.imageCountBudget !== undefined ? { capabilitySources: { imageCountBudget: "live" as const } } : {}),
 			cost: {
 				input: Math.max(...members.map((model) => model.cost.input)),
 				output: Math.max(...members.map((model) => model.cost.output)),
