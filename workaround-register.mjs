@@ -28,5 +28,5 @@ export function formatPifrostWorkarounds(info,verbose=false){
     "    Retirement gate: "+x.retirement);
  }
  lines.push("  No safety mechanism is retired on release version alone.");
- return lines.join("\\n");
+ return lines.join("\n");
 }
