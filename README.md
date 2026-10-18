@@ -85,8 +85,8 @@ The environment variable registers `bifrost-judge/jev-latest`; activation is a s
 | Component | Requirement |
 | --- | --- |
 | Node.js | **22.19+** |
-| OhMyPi | **18.10.4+** for a clean current GitHub plugin install |
-| Pifrost OMP policy snapshot | **18.10.4**, with versioned model-policy contracts; host integration validated separately |
+| OhMyPi | **18.10.4+** minimum; validated with **18.12.1** |
+| Pifrost OMP policy snapshot | **18.12.1**, with versioned model-policy contracts; host integration validated separately |
 | Maxim Bifrost | **2.2.4+** |
 | Recommended Bifrost | **2.3.0+** for requested-route provenance, per-target first-token deadlines, reasoning conversion and injected-tool list schema |
 
@@ -122,7 +122,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.24.0
+0.25.0
 ```
 
 Bun also works:

@@ -1,3 +1,10 @@
+## 0.25.0 — 2026-10-18
+
+- Release A: advance the pinned, synchronized OhMyPi library and physical-model-policy snapshot from 18.10.4 to 18.12.1; do not blend incompatible catalogue packages.
+- Extend released-upstream contract checks for the model-registry refresh, extension lifecycle, auto-prewalk, advisor continuation and historical-consultation isolation boundaries.
+- Test both minimum supported OMP 18.10.4 and current OMP 18.12.1 released Linux binaries with SHA-256 verification, alongside the packaged CLI/extension loader and cold/warm model startup.
+- Add a version-consistency regression test and an explicit exception-retirement register. Preserve Bifrost authority, existing pre-output failover rules and Pifrost's service-free prompt-triggered reconciliation. No new judgment or orchestration runtime.
+
 ## 0.24.0 — 2026-10-15
 
 - Introduce service-free, timer-free Bifrost route reconciliation triggered by OMP main-agent user prompts (at most once per 60 seconds of prompt activity). Opt out with `PIFROST_AUTO_SYNC=0`; no daemons, cron, user services or background polling loops.
