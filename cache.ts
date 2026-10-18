@@ -119,6 +119,9 @@ function validModel(value: unknown): value is BifrostProviderModel {
 	if (typeof model.name !== "string" || !model.name) return false;
 	if (!positiveInteger(model.contextWindow) || !positiveInteger(model.maxTokens)) return false;
 	if (!Array.isArray(model.input) || !model.input.includes("text")) return false;
+	if (model.imageCountBudget !== undefined && (
+		!Number.isSafeInteger(model.imageCountBudget) || model.imageCountBudget < 1 || model.imageCountBudget > 10000 ||
+		!model.input.includes("image") || model.capabilitySources?.imageCountBudget !== "live")) return false;
 	if (typeof model.reasoning !== "boolean" || typeof model.supportsTools !== "boolean") return false;
 	if (!model.cost || !Object.values(model.cost).every(finiteNonNegative)) return false;
 	if (!model.compat || typeof model.compat !== "object") return false;

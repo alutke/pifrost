@@ -26,6 +26,7 @@ const CAPABILITY_KEYS = Object.freeze([
   "contextWindow",
   "maxTokens",
   "image",
+  "imageCountBudget",
   "reasoning",
   "reasoningEfforts",
   "tools",
@@ -94,6 +95,7 @@ export function formatModelDiagnostic(model) {
   const thinking = effectiveThinking(model);
   const effortText = thinking.efforts.length ? thinking.efforts.join(",") : "-";
   const images = Array.isArray(model?.input) && model.input.includes("image") ? "yes" : "no";
+  const count = Number.isSafeInteger(model?.imageCountBudget) && model.imageCountBudget > 0 ? model.imageCountBudget : undefined;
   const source = thinking.source === "none" ? "" : ` source=${thinking.source}`;
   const route = model?.pifrostDynamicRoute;
   const dynamic = route?.mode === "context-aware"
@@ -105,7 +107,7 @@ export function formatModelDiagnostic(model) {
     model?.supportsServiceTier === true ? `service-tier[${(model.serviceTiers ?? []).join(",")}]` : undefined,
     model?.pricingStatus ? `pricing=${model.pricingStatus}` : undefined,
   ].filter(Boolean);
-  return `${String(model?.id ?? "").padEnd(16)} context=${String(model?.contextWindow ?? "-").padEnd(8)} max=${String(model?.maxTokens ?? "-").padEnd(8)} thinking=${effortText.padEnd(24)} images=${images}${source}${dynamic}${modern.length ? ` capabilities=${modern.join(",")}` : ""}`;
+  return `${String(model?.id ?? "").padEnd(16)} context=${String(model?.contextWindow ?? "-").padEnd(8)} max=${String(model?.maxTokens ?? "-").padEnd(8)} thinking=${effortText.padEnd(24)} images=${images}${count === undefined ? "" : " image-budget=" + count}${source}${dynamic}${modern.length ? ` capabilities=${modern.join(",")}` : ""}`;
 }
 
 export function formatCapabilitySources(sources) {
@@ -122,6 +124,7 @@ function formatMemberCapabilities(capabilities) {
     `context=${capabilities.contextWindow ?? "?"}`,
     `output=${capabilities.maxTokens ?? "?"}`,
     `image=${capabilities.image ? "yes" : "no"}`,
+    `image-budget=${capabilities.imageCountBudget ?? "unknown"}`,
     `reasoning=${capabilities.reasoning ? "yes" : "no"}`,
     `tools=${capabilities.tools ? "yes" : "no"}`,
     `toolSearch=${capabilities.toolSearch === undefined ? "?" : capabilities.toolSearch ? "yes" : "no"}`,
