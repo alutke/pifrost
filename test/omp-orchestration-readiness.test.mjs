@@ -139,3 +139,47 @@ test("native judgment selector remains eligible independent of chat scope",()=>{
  assert.equal(scoped.checks.find(c=>c.id==="auto-prewalk").status,"ok");
  assert.equal(scoped.status,"locally-compatible");
 });
+
+test("thinking-qualified OMP roles resolve against cached aliases without changing the target",()=>{
+  for(const level of ["off","minimal","low","medium","high","xhigh","max","auto"]){
+    const selector=`bifrost/omp-smol:${level}`;
+    const result=assessOmpOrchestration({
+      settings:{...baseSettings,
+        modelRoles:value({...modelRoles,smol:selector}),
+        enabledModels:value(["bifrost/omp-smol:high"])},
+      catalog,hostVersion:"18.12.2",selectedJudge,
+    });
+    assert.equal(result.status,"locally-compatible",selector);
+    assert.equal(result.target,selector,"diagnostic retains the full OMP model selector");
+    assert.equal(result.checks.find(c=>c.id==="handoff-target").status,"ok",selector);
+  }
+});
+
+test("thinking-qualified target honors OMP provider wildcard scope",()=>{
+  const result=assessOmpOrchestration({
+    settings:{...baseSettings,modelRoles:value({...modelRoles,smol:"BIFROST/OMP-SMOL:HIGH"}),
+      enabledModels:value(["bifrost/*:max"])},
+    catalog,hostVersion:"18.12.2",selectedJudge,
+  });
+  assert.equal(result.status,"locally-compatible");
+  assert.equal(result.checks.find(c=>c.id==="handoff-target").status,"ok");
+});
+
+test("suffix normalization does not hide excluded, missing, stale, or unknown targets",()=>{
+  const roles=value({...modelRoles,smol:"bifrost/omp-smol:high"});
+  const input=(enabled,models=catalog,stale=false,configuredRoles=roles)=>
+    assessOmpOrchestration({settings:{...baseSettings,modelRoles:configuredRoles,
+      enabledModels:value(enabled)},catalog:models,stale,hostVersion:"18.12.2",selectedJudge});
+  const excluded=input(["bifrost/omp-other:high"]);
+  assert.equal(excluded.checks.find(c=>c.id==="handoff-target").status,"warn");
+  assert.match(excluded.checks.find(c=>c.id==="handoff-target").message,/excluded by enabledModels/);
+  const missing=input(["bifrost/omp-smol:max"],{models:[]});
+  assert.equal(missing.checks.find(c=>c.id==="handoff-target").status,"warn");
+  assert.match(missing.checks.find(c=>c.id==="handoff-target").message,/absent from the local model cache/);
+  const stale=input(["bifrost/*"],catalog,true);
+  assert.equal(stale.checks.find(c=>c.id==="handoff-target").status,"warn");
+  const unknown=input(["bifrost/*"],catalog,false,
+    value({...modelRoles,smol:"bifrost/omp-smol:turbo"}));
+  assert.equal(unknown.checks.find(c=>c.id==="handoff-target").status,"unknown");
+  assert.equal(unknown.status,"unverified");
+});

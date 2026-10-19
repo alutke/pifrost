@@ -1,3 +1,8 @@
+## 0.29.1 — 2026-10-19
+
+- Fix auto-prewalk readiness falsely reporting `unknown` for thinking-qualified OMP role selectors such as `bifrost/omp-smol:high` and `:max`. Strip supported thinking suffixes only for cache and simple `enabledModels` eligibility checks; retain the original role value in read-only output.
+- Add regressions for supported suffixes, provider-scope globs, missing/excluded aliases, stale caches and unsupported selectors. No changes to OMP's execution, Bifrost routing, model roles or compatibility safeguards.
+
 ## 0.29.0 — 2026-10-18
 
 - Hardening of Releases A–D: activate native judge by a single verified `modelRoles` update with guarded rollback and no `enabledModels` rewrite (native non-chat roles are not chat-scoped).
