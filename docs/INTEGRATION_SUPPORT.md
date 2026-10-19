@@ -1,4 +1,4 @@
-# Pifrost v0.29.0 — Integration support and verification
+# Pifrost v0.29.1 — Integration support and verification
 
 This page describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.1**. Supported historical host installation: **OMP 18.10.4**; current host contract: **OMP 18.12.1**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **2.3.0**.
 
@@ -43,3 +43,7 @@ The smoke runs text and synthetic-image judgments for `jev-1.14.0` and `openai/g
 CI runs package and source contracts, the native-extension mocked-registration test, the model metadata tests, judge role rollback tests, historical/current compiled installation, and the workaround-registry reference validator. All assertions beyond these gates require separate evidence. Never remove routing/transport/reasoning guards based on an OMP version number alone.
 
 For optional **read-only** live gateway image-budget inventory inspection, set `PIFROST_LIVE_IMAGE_METADATA=1` and run `npm run smoke:image-metadata` with the same Bifrost URL and test Virtual Key. No image or decision request is submitted; counts may legitimately be zero because the fields are optional.
+
+## Thinking-qualified auto-prewalk target checks (v0.29.1)
+
+`pifrost omp readiness` checks a role such as `bifrost/omp-smol:high` using the underlying logical ID `omp-smol`, while preserving the full OMP selector in the read-only report. OMP-supported thinking suffixes are also removed when comparing basic `enabledModels` patterns. Unsupported selectors, complex scopes, missing aliases and stale caches still produce conservative unknown/warning results. No Bifrost route or OMP setting is changed by this diagnostic fix.

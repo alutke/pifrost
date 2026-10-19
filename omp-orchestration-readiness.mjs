@@ -15,19 +15,26 @@ function asRecord(raw) {
 function check(id, status, message, action) {
   return { id, status, message, ...(action ? {action} : {}) };
 }
+// Thinking levels are OMP selector metadata, not part of the logical model ID.
+// Preserve the original selector for diagnostics and runtime; normalize only for
+// conservative read-only scope/cache comparisons.
+function modelIdentity(selector) {
+  return selector.replace(/:(off|minimal|low|medium|high|xhigh|max|auto)$/i,"");
+}
 function allowed(model, models) {
   if (!Array.isArray(models) || !models.every(x=>typeof x==="string")) return undefined;
   if (!models.length) return true;
-  if (!model || !model.includes("/")) return undefined;
+  const identity=modelIdentity(model);
+  if (!identity || !identity.includes("/") || identity.includes(":")) return undefined;
   let unknown=false;
   for (let pattern of models) {
-    pattern=pattern.replace(/:(off|minimal|low|medium|high|xhigh|auto)$/i,"");
+    pattern=modelIdentity(pattern);
     if (/[{}[\]!\\]/.test(pattern) || pattern.includes("**") || !/^[a-z\d/_.*?+-]+$/i.test(pattern)) {
       unknown=true; continue;
     }
     const quoted=pattern.replace(/[.+^$|()]/g,"\\$&").replace(/\*/g,".*").replace(/\?/g,".");
     const regex=new RegExp("^"+quoted+"$","i");
-    if(regex.test(model) || regex.test(model.slice(model.indexOf("/")+1)))return true;
+    if(regex.test(identity) || regex.test(identity.slice(identity.indexOf("/")+1)))return true;
   }
   return unknown?undefined:false;
 }
@@ -85,7 +92,7 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
   }else if(allowed(target,enabled)===undefined){
     checks.push(check("handoff-target","unknown","Unknown or complex OMP chat scope; cannot establish target eligibility locally."));
   }else{
-    const m=/^bifrost\/(omp-[a-z0-9_.-]+)$/i.exec(target);
+    const m=/^bifrost\/(omp-[a-z0-9_.-]+)$/i.exec(modelIdentity(target));
     const cached=Array.isArray(catalog?.models)?catalog.models:undefined;
     if(m && cached && !cached.some(x=>String(x?.id).toLowerCase()===m[1].toLowerCase())){
       checks.push(check("handoff-target","warn","Target "+target+" is absent from the local model cache; live OMP registry may differ.","pifrost models refresh --force"));
