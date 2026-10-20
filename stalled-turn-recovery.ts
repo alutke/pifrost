@@ -73,9 +73,14 @@ export function detectStalledTurn(event: StalledTurnEnd): "leaked-planning-stop"
 	// thinking-end tags), not solely inside an archived transcript or quote.
 	const withoutClosers = tail.replace(/(?:\s*<\/thinking>\s*)+$/giu, "").trim();
 	const ending = withoutClosers.slice(-650);
-	if (!/\b(?:let(?:'s| us)|i(?:'ll| will| should| need to)|we(?:'ll| will| should| need to)|next(?: i| we)?|now(?: i| we)?)\s+(?:start|write|patch|add|implement|run|check|fix|inspect|test|verify|update|review|build|commit|push|do|proceed|finish|measure|retest|remove|read)\b/iu.test(ending)) {
-		return undefined;
-	}
+	const planning = /\b(?:let(?:'s| us)|i(?:'ll| will| should| need to)|we(?:'ll| will| should| need to)|next(?: i| we)?|now(?: i| we)?)\s+(?:start|write|patch|add|implement|run|check|fix|inspect|test|verify|update|review|build|commit|push|do|proceed|finish|measure|retest|remove|read)\b/giu;
+	const matches = [...ending.matchAll(planning)];
+	const lastPlan = matches.at(-1);
+	if (!lastPlan || lastPlan.index === undefined) return undefined;
+	const afterPlan = ending.slice(lastPlan.index + lastPlan[0].length);
+	// Reject genuine final reports that merely quote earlier planning output.
+	if (/(?:^|\n)\s*(?:#{1,5}\s*(?:final|summary|report|results|outcome)\b|all work is complete\b)/iu.test(afterPlan)) return undefined;
+	if (afterPlan.length > 180) return undefined;
 	return "leaked-planning-stop";
 }
 
