@@ -59,7 +59,15 @@ test("OMP cold startup registers discoverable models before returning, then reus
 			registerProvider(id: string, config: any) { registered.push({ id, config }); },
 			registerCommand() {},
             on(name: string, handler: (...args: any[]) => Promise<void>) {
-                if (name === "before_agent_start" || name === "agent_end") handlers.set(name, handler);
+                if (name === "before_agent_start" || name === "agent_end") {
+                    // Multiple independent OMP extensions/hooks may subscribe to
+                    // the same lifecycle event. Preserve their registration order.
+                    const previous = handlers.get(name);
+                    handlers.set(name, async (...args: any[]) => {
+                        if (previous) await previous(...args);
+                        await handler(...args);
+                    });
+                }
             },
             sendMessage(message: any, options: any) { followUps.push({ message, options }); },
             async exec(command: string, args: string[]) {
