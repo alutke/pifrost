@@ -5,8 +5,14 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.1
+0.29.2
 ```
+
+## Stalled-turn recovery (v0.29.2)
+
+Pifrost uses OMP's supported `agent_end` event to detect a narrow failure mode: a tool-using **main** agent receives a normal provider stop but ends by emitting leaked thinking/planning syntax and an intended next action without calling its tool. In that case Pifrost requests **one** continuation using OMP's `sendMessage(..., { deliverAs: "followUp", triggerTurn: true })` and marks the message as agent-generated. The continuation tells the agent to inspect current results/workspace before any further side effects.
+
+The guard does not route or replay a request, infer missing tool calls, modify the gateway's success/fallback semantics, write session history or install a service. It skips user queues, OMP scheduled/background continuations, subagents, errors, explicit tool calls, normal final answers and plan-only tasks. A second suspicious stop after the one recovery displays an exhaustion warning and stops; a new human prompt resets the bound. **This is not a general completion checker:** unmarked premature model stops can still require manual continuation. Diagnostics are displayed in interactive OMP; inspect `/pifrost trace` for the physical Bifrost route and consider compaction or an alternative model if recurrent.
 
 ## Architecture and ownership
 
