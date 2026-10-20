@@ -88,13 +88,13 @@ test("OMP cold startup registers discoverable models before returning, then reus
                 },
             },
         };
-        await onPrompt({ type: "before_agent_start" }, ctx);
-        await onPrompt({ type: "before_agent_start" }, ctx);
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, ctx);
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, ctx);
         assert.equal(onDemandRuns, 1, "subsequent prompts are throttled without a background service");
         assert.deepEqual(refreshed, [["bifrost", "online"]], "only the Bifrost model registry is refreshed");
-        await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "task" } });
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, { ...ctx, agent: { kind: "task" } });
         assert.equal(onDemandRuns, 1, "subagent prompts never start management checks");
-        await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "sub", name: "seance" } });
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, { ...ctx, agent: { kind: "sub", name: "seance" } });
         assert.equal(onDemandRuns, 1, "isolated seance never invokes Bifrost management reconciliation");
         const onEnd = handlers.get("agent_end");
         assert.ok(onEnd, "OMP main agent end hook is registered");
