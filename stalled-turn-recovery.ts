@@ -98,7 +98,7 @@ export function createStalledTurnRecoveryCoordinator() {
 	return {
 		/** A new human prompt permits one new attempt; our own follow-up does not. */
 		onPrompt(sessionId: string, prompt: string): void {
-			if (!prompt.includes(STALLED_TURN_RECOVERY_MARKER)) attempted.delete(sessionId);
+			if (typeof prompt === "string" && !prompt.includes(STALLED_TURN_RECOVERY_MARKER)) attempted.delete(sessionId);
 		},
 		onSessionEnd(sessionId: string): void {
 			attempted.delete(sessionId);
