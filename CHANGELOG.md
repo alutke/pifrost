@@ -1,3 +1,9 @@
+## 0.29.2 — 2026-10-20
+
+- Recover one high-confidence OMP main-agent stalled turn when a successful model response ends with leaked planning/reasoning markers, an explicit next-action intention, and evidence of recent tool work. Resume through OMP's supported follow-up message mechanism; never invent/replay tool calls or alter Bifrost routing, provider errors, or output-stream retry semantics.
+- Fail closed for ordinary final answers, plan-only turns, active tool calls, non-successful responses, queued prompts, subagents, automatic OMP continuations and background tasks. Cap automatic continuation to one attempt per human prompt, with visible warnings when recovery fails or repeats.
+- Add focused regression coverage for real-world DeepSeek/CommandCode stopping signatures, false positives, bounded retries and prompt/session cleanup. Requires no service or background timer.
+
 ## 0.29.1 — 2026-10-19
 
 - Fix auto-prewalk readiness falsely reporting `unknown` for thinking-qualified OMP role selectors such as `bifrost/omp-smol:high` and `:max`. Strip supported thinking suffixes only for cache and simple `enabledModels` eligibility checks; retain the original role value in read-only output.
