@@ -29,6 +29,8 @@ If <code>pifrost doctor</code> is healthy, you are done.
 
 Inside OMP, use <code>/pifrost trace</code> to inspect the most recent request-level routing provenance for the current session, including the model Bifrost actually served and whether a fallback fired.
 
+**Stalled-turn safeguard (v0.29.2):** When a tool-using main agent prematurely ends with leaked reasoning/planning text instead of its intended next tool action, Pifrost can request one OMP-owned follow-up. It never replays tools, retries a successful provider stream or changes Bifrost routing. Ordinary completions are unaffected; see the [technical reference](docs/REFERENCE.md#stalled-turn-recovery-v0292) for limits and diagnostics.
+
 For current integration details and verification limits, see the [technical reference](docs/REFERENCE.md). For release-specific changes and earlier compatibility decisions, see the [changelog](CHANGELOG.md).
 
 ## What Pifrost solves
@@ -128,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.1
+0.29.2
 ```
 
 Bun also works:

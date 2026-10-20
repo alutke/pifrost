@@ -51,6 +51,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
         delete process.env.PIFROST_AUTO_SYNC;
         let onDemandRuns = 0;
         const handlers = new Map<string, (...args: any[]) => Promise<void>>();
+        const followUps: Array<{ message: any; options: any }> = [];
 		const registered: Array<{ id: string; config: any }> = [];
 		const pi = {
 			registerFlag() {},
@@ -58,8 +59,17 @@ test("OMP cold startup registers discoverable models before returning, then reus
 			registerProvider(id: string, config: any) { registered.push({ id, config }); },
 			registerCommand() {},
             on(name: string, handler: (...args: any[]) => Promise<void>) {
-                if (name === "before_agent_start") handlers.set(name, handler);
+                if (name === "before_agent_start" || name === "agent_end") {
+                    // Multiple independent OMP extensions/hooks may subscribe to
+                    // the same lifecycle event. Preserve their registration order.
+                    const previous = handlers.get(name);
+                    handlers.set(name, async (...args: any[]) => {
+                        if (previous) await previous(...args);
+                        await handler(...args);
+                    });
+                }
             },
+            sendMessage(message: any, options: any) { followUps.push({ message, options }); },
             async exec(command: string, args: string[]) {
                 assert.equal(command, "pifrost");
                 assert.deepEqual(args, ["routes", "reconcile", "--json"]);
@@ -78,20 +88,39 @@ test("OMP cold startup registers discoverable models before returning, then reus
         const refreshed: Array<[string, string]> = [];
         const ctx = {
             agent: { kind: "main" }, hasUI: false,
+            sessionManager: { getSessionId: () => "cold-start-1" },
+            setTimeout() { /* compaction runs only on real OMP session timers */ },
             modelRegistry: {
                 async refreshProvider(provider: string, strategy: string) {
                     refreshed.push([provider, strategy]);
                 },
             },
         };
-        await onPrompt({ type: "before_agent_start" }, ctx);
-        await onPrompt({ type: "before_agent_start" }, ctx);
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, ctx);
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, ctx);
         assert.equal(onDemandRuns, 1, "subsequent prompts are throttled without a background service");
         assert.deepEqual(refreshed, [["bifrost", "online"]], "only the Bifrost model registry is refreshed");
-        await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "task" } });
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, { ...ctx, agent: { kind: "task" } });
         assert.equal(onDemandRuns, 1, "subagent prompts never start management checks");
-        await onPrompt({ type: "before_agent_start" }, { ...ctx, agent: { kind: "sub", name: "seance" } });
+        await onPrompt({ type: "before_agent_start", prompt: "Please continue this task" }, { ...ctx, agent: { kind: "sub", name: "seance" } });
         assert.equal(onDemandRuns, 1, "isolated seance never invokes Bifrost management reconciliation");
+        const onEnd = handlers.get("agent_end");
+        assert.ok(onEnd, "OMP main agent end hook is registered");
+        const simulatedStall = {
+            type: "agent_end",
+            messages: [
+                { role: "user", content: [{ type: "text", text: "Implement fix" }] },
+                { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "done" }] },
+                { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Let's patch the remaining files. </thinking></thinking>" }] },
+            ],
+        };
+        await onEnd(simulatedStall, ctx);
+        assert.equal(followUps.length, 1, "one OMP follow-up is enqueued");
+        assert.equal(followUps[0]?.message.attribution, "agent", "recovery is not presented as a human user prompt");
+        assert.equal(followUps[0]?.options.triggerTurn, true);
+        assert.equal(followUps[0]?.options.deliverAs, "followUp");
+        await onEnd(simulatedStall, ctx);
+        assert.equal(followUps.length, 1, "second failed settle cannot loop");
 		const persisted = JSON.parse(readFileSync(cachePath, "utf8"));
 		assert.equal(persisted.models.length, 1);
 		assert.equal(persisted.aliasFingerprint, aliasConfigFingerprint(JSON.parse(readFileSync(aliasPath, "utf8"))));

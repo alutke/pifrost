@@ -76,6 +76,7 @@ import {
 	estimateOmpContextInputTokens,
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
+import { createStalledTurnRecoveryCoordinator } from "./stalled-turn-recovery.ts";
 import {
 	applyDynamicRouteProfiles,
 	canUseNativeBifrostRoute,
@@ -162,6 +163,7 @@ function installDynamicRouteProfiles(
 const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 	(logicalModel) => runtimeDynamicRoutes.get(logicalModel.toLowerCase()),
 );
+const stalledTurnRecovery = createStalledTurnRecoveryCoordinator();
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -1035,8 +1037,31 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	// inside an extension event handler: LLM-backed compaction can legitimately
 	// exceed OMP's generic 30-second handler budget. The coordinator only runs
 	// while the session is idle and fails open to the final-wire skip guard.
-	pi.on("agent_end", (_event, ctx) => {
-		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
+	pi.on("before_agent_start", (event, ctx) => {
+		if (ctx.agent.kind === "main") {
+			stalledTurnRecovery.onPrompt(ctx.sessionManager.getSessionId(), event.prompt);
+		}
+	});
+	pi.on("agent_end", (event, ctx) => {
+		const sessionId = ctx.sessionManager.getSessionId();
+		bindAgentSession(sessionId, ctx.agent);
+		// Only a high-confidence, successful terminal planning leak can request
+		// ONE OMP-owned follow-up. Never retry the provider response or replay tools.
+		stalledTurnRecovery.onAgentEnd(event, {
+			sessionId,
+			isMain: ctx.agent.kind === "main",
+			hasQueuedMessages: "hasQueuedMessages" in ctx && typeof ctx.hasQueuedMessages === "function"
+				? ctx.hasQueuedMessages() : false,
+			sendContinuation: message => pi.sendMessage({
+				customType: "pifrost-stalled-turn-recovery",
+				content: message,
+				display: false,
+				attribution: "agent",
+			}, { deliverAs: "followUp", triggerTurn: true }),
+			notify: (message, level) => {
+				if (ctx.hasUI) ctx.ui.notify(message, level);
+			},
+		});
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_start", (_event, ctx) => {
@@ -1047,6 +1072,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		const sessionId = ctx.sessionManager.getSessionId();
 		releaseAgentSession(sessionId);
 		releasePifrostRouteTraces(sessionId);
+		stalledTurnRecovery.onSessionEnd(sessionId);
 	});
 
 	pi.registerCommand("pifrost", {
