@@ -78,6 +78,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
         const refreshed: Array<[string, string]> = [];
         const ctx = {
             agent: { kind: "main" }, hasUI: false,
+            sessionManager: { getSessionId: () => "cold-start-1" },
             modelRegistry: {
                 async refreshProvider(provider: string, strategy: string) {
                     refreshed.push([provider, strategy]);
