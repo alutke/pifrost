@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.12
+0.29.13
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -395,3 +395,7 @@ To disable stalled-turn handling entirely, export `PIFROST_STALLED_TURN_MODE=off
 ## Release 3 — architecture consolidation and transport hardening (v0.29.12)
 
 Per-OMP-installation runtime route snapshots are atomically published; each inference request captures a single immutable generation for route planning, output budget, gateway protocol and replay metadata. The import boundary checker now parses actual TypeScript/JavaScript syntax and is covered by adversarial tests. MCP streamable HTTP responses are bounded at 8 MiB by default, and authenticated MCP/control-plane HTTP calls refuse redirects. These limits are on **control/MCP response bytes**, never LLM output tokens. See [Release 3](RELEASE_3_ARCHITECTURE.md).
+
+## Release 4 — target-scoped output budgets and documentation governance (v0.29.13)
+
+Locally dispatched physical attempts apply confirmed/advertised limits of the actual first target; lower ceilings in the Bifrost fallback list do not reduce a higher-capacity primary. Opaque logical Bifrost routes retain member inventory as diagnostics only, since Bifrost owns target selection. A weaker fallback may reject a larger request: consult the [output budget reference](OUTPUT_BUDGET.md). The [integration support matrix](INTEGRATION_SUPPORT.md), [OMP compatibility notes](OMP_COMPATIBILITY.md), policy snapshot and package version are checked for release drift in CI. See [Release 4](RELEASE_4_BUDGET_GOVERNANCE.md).

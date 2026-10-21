@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.12
+0.29.13
 ```
 
 Bun also works:
@@ -688,3 +688,7 @@ The default for `PIFROST_STALLED_TURN_MODE` is now `auto` (one safe OMP follow-u
 ### Release 3 — architecture isolation and HTTP/MCP safety (v0.29.12)
 
 Every OMP extension installation now owns an independently refreshed, atomic route-catalogue snapshot. A stream captures exactly one generation before dispatch, preventing concurrent refreshes from mixing routing metadata. Executable TypeScript AST import-boundary tests complement existing architecture checks. Authenticated control-plane and MCP calls now refuse HTTP redirects; MCP JSON/SSE is byte-bounded at 8 MiB by default, independent of model output token limits. No daemon, new provider router or user-visible model capability cap was introduced. [Technical contract](docs/RELEASE_3_ARCHITECTURE.md).
+
+### Release 4 — output capacity and documentation governance (v0.29.13)
+
+Output budgets for locally dispatched compatibility attempts now use the selected physical target's actual ceiling instead of the weakest fallback member. Native and opaque logical Bifrost aliases keep physical members diagnostic-only rather than imposing arbitrary gateway-wide caps. Exact physical endpoint limits and explicit user/operator caps still apply; a weaker fallback may reject a larger request and remains Bifrost's responsibility. Release-aware documentation checks keep support-matrix headings, package versions and pinned OMP dependencies consistent. New [security policy](SECURITY.md), [contributing guidance](CONTRIBUTING.md) and [.github/CODEOWNERS](.github/CODEOWNERS) accompany this release. [Release 4 details](docs/RELEASE_4_BUDGET_GOVERNANCE.md).

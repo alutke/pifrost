@@ -38,6 +38,10 @@ export interface OutputBudgetInput {
   requestedTokens?: number | null;
   advertisedTokens?: number | null;
   members?: readonly OutputBudgetMember[];
+  /** Physical ceiling scope: all (legacy), primary (locally dispatched target)
+   * or diagnostic (opaque Bifrost logical route; member constraints cannot
+   * safely be attributed to the target selected by Bifrost). */
+  memberPolicy?: "all" | "primary" | "diagnostic";
   contextWindow?: number;
   estimatedInputTokens?: number;
   /** Distinguishes explicit user-specified output limits from OMP defaults. */
@@ -104,11 +108,16 @@ export function resolveOutputBudget(input: OutputBudgetInput): OutputBudgetDecis
 
   let verifiedMembers = 0;
   const members = input.members ?? [];
+  const physicalMembers = input.memberPolicy === "diagnostic" ? []
+    : input.memberPolicy === "primary" ? members.slice(0,1) : members;
+  // Member coverage is observational across the full chain even when only
+  // the actually addressed primary supplies a hard output-token ceiling.
   for (const member of members) {
     const confirmed = confirmedProviderOutputCeiling(member.reference);
     const live = member.source === "live" ? validTokenLimit(member.maxTokens) : undefined;
     const advertisedMember = validTokenLimit(member.maxTokens);
     if (confirmed !== undefined || live !== undefined) verifiedMembers++;
+    if (!physicalMembers.includes(member)) continue;
     add("confirmed-endpoint", confirmed);
     add("live-member", live);
     // Preserve member model capabilities from the catalog, but never let an
@@ -116,7 +125,7 @@ export function resolveOutputBudget(input: OutputBudgetInput): OutputBudgetDecis
     if (member.source !== "fallback") add("catalog-member", advertisedMember);
     add("context-headroom", maxContextOutput(member.contextWindow, member.estimatedInputTokens));
   }
-  if (!members.length) {
+  if (!members.length && input.memberPolicy !== "diagnostic") {
     // A directly addressed physical provider still benefits from evidence
     // confirmed for its exact entitlement-specific qualified name.
     add("confirmed-endpoint", confirmedProviderOutputCeiling(input.logicalModel));

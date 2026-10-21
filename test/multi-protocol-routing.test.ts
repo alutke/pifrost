@@ -260,15 +260,15 @@ test("once a Responses attempt emits model output Pifrost never replays on Chat"
 	}
 });
 
-test("attempt output cap is clamped to the weakest same-protocol Bifrost fallback", () => {
+test("attempt output cap follows selected physical primary, not weaker same-protocol fallback", () => {
 	const route = plan();
 	const chat = route.attempts[1]!;
 	chat.members[0] = { ...chat.members[0]!, maxTokens: 384_000 };
 	chat.members[1] = { ...chat.members[1]!, maxTokens: 131_072 };
 
-	assert.equal(pifrostAttemptMaxTokens(chat, 262_144), 131_072);
+	assert.equal(pifrostAttemptMaxTokens(chat, 262_144), 262_144);
 	assert.equal(pifrostAttemptMaxTokens(chat, 64_000), 64_000);
-	assert.equal(pifrostAttemptMaxTokens(chat), 131_072);
+	assert.equal(pifrostAttemptMaxTokens(chat), 384_000);
 });
 
 test("confirmed fallback output maximum overrides inflated catalog metadata", () => {
@@ -604,4 +604,14 @@ test("R1-08 every allowed physical fallback rechecks live route before dispatch"
   }, { beforeAttempt:async()=>{checked++;},retryPreOutputError:()=>true });
   assert.equal(checked,2);
   assert.equal(dispatched,2);
+});
+
+test("R4-05 attempt budget follows primary; weaker same-protocol fallback does not cap output",()=>{
+  const first={...member("provider/strong", "openai-completions"),maxTokens:131072};
+  const next={...member("provider/weak", "openai-completions"),maxTokens:8192};
+  const attempt={protocol:"openai-completions" as const,primary:first.reference,
+    fallbacks:[next.reference],members:[first,next]};
+  assert.equal(pifrostAttemptMaxTokens(attempt,131072),131072);
+  assert.equal(pifrostAttemptMaxTokens({...attempt,primary:next.reference,members:[next]},131072),8192);
+  assert.equal(pifrostAttemptMaxTokens(attempt,4096),4096);
 });
