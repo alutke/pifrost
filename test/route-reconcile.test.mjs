@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-  createOnDemandRouteCheck, reconcileRouteSnapshot, withReconcileLock,
+  createOnDemandRouteCheck, reconcileRouteSnapshot, attestCompatibilityRoute, compatibilityMemberDigest, withReconcileLock,
   RouteReconcileError,
 } from "../route-reconcile.mjs";
 import { routePolicyFingerprint } from "../route-policy-fingerprint.mjs";
@@ -144,4 +144,32 @@ test("failed OMP registry refresh is retried on next prompt even before throttle
   assert.equal(checks, 1, "must not requery management API for a model-registry-only retry");
   assert.equal(refreshes, 2);
   assert.equal((await runCheck({})).status, "throttled");
+});
+
+test("R1-04 read-only physical-route attestation requires two consistent live gateway reads", async () => {
+  const rules = [{id:"rule",name:"omp-default",enabled:true,
+    cel_expression:"request.model == 'omp-default'",
+    targets:[{provider:"provider",model:"a",weight:1}]}];
+  const manifest = {aliases:{"omp-default":{name:"omp-default",chain:["provider/a"],
+    dynamicRouting:{mode:"context-aware",source:"bifrost-simple-rule"}}}};
+  const snapshot = { rules, manifest, policyFingerprint:routePolicyFingerprint(rules) };
+  let reads = 0;
+  const result = await attestCompatibilityRoute({alias:"omp-default",
+    capture:async()=>{reads++;return snapshot;},now:()=>Date.parse("2026-10-21T12:00:00Z")});
+  assert.equal(reads,2);
+  assert.equal(result.status,"verified");
+  assert.equal(result.policyFingerprint,snapshot.policyFingerprint);
+  assert.equal(result.memberDigest,compatibilityMemberDigest(["provider/a"]));
+  assert.equal(result.verifiedAt,"2026-10-21T12:00:00.000Z");
+  await assert.rejects(attestCompatibilityRoute({alias:"omp-default",
+    capture:async()=>({...snapshot,manifest:{aliases:{"omp-default":{...manifest.aliases["omp-default"],dynamicRouting:undefined}}}})}),
+    /gateway-route-not-compatible/u);
+});
+test("R1-05 live policy changing between attestation reads fails without any writes", async () => {
+  const f=setup({after(callback){callback();}});
+  const first=f.snapshot(), second=f.snapshot([{...f.rule,enabled:false}]);
+  let reads=0;
+  await assert.rejects(attestCompatibilityRoute({alias:"omp-advisor",
+    capture:async()=>++reads===1?first:second}),/gateway-policy-changing/u);
+  assert.equal(reads,2);
 });
