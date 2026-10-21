@@ -320,7 +320,7 @@ test("Release D: OMP natively serializes missing DeepSeek Responses replay when 
   },{
     apiKey:"sk-not-a-real-key",sessionId:"release-d-omp-native-serializer",maxTokens:4096,
     reasoning:"high",statefulResponses:false,fetch:fakeFetch,
-    onPayload:(body:Record<string,unknown>)=>{captured=body;return body;},
+    onPayload:(body:unknown)=>{captured=body as Record<string,any>;return body;},
   });
   try { for await(const _event of stream) { /* synthetic upstream error */ } }
   catch { /* only the outgoing serialized body is under test */ }
