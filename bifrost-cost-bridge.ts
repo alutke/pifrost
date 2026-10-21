@@ -3,6 +3,7 @@ import { classifyInferenceFailure, type InferenceFailureCode } from "./inference
 import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
 import type { OutputBudgetDecision } from "./output-budget.ts";
 import type { RouteContractEvidence } from "./route-compatibility.ts";
+import type { ReasoningReplayAudit } from "./reasoning-integrity.ts";
 
 function finiteNonNegative(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -26,6 +27,8 @@ export interface BifrostCostCapture {
 	outputBudget?: OutputBudgetDecision;
 	/** Cached route-contract metadata, never used to select Bifrost providers. */
 	routeContract?: RouteContractEvidence;
+	/** Counts only; excludes prompt, reasoning contents and provider signatures. */
+	replayAudit?: ReasoningReplayAudit;
 	retryAfterSeconds?: number;
 	cacheHit?: boolean;
 	cacheHitType?: string;

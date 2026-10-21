@@ -77,3 +77,22 @@ test("Release C: trace distinguishes physical service from cached preferred mode
   assert.doesNotMatch(verbose,/reason=session-affinity|credential|api-key=/iu);
   releasePifrostRouteTraces(sid);
 });
+
+test("Release D: strict-replay wire diagnostics contain counts and never thinking content",()=>{
+  const sid="release-d-replay";
+  recordBifrostCaptureTrace(sid,{
+    logicalModel:"omp-default",routeMode:"bifrost-direct",protocol:"openai-responses",
+    attempt:1,requestedPrimary:"omp-default",outcome:"error",
+  },{
+    failureCode:"REASONING_REPLAY_INVALID",
+    replayAudit:{protocol:"openai-responses",requirement:"all-assistant-runs",assistantRuns:100,
+      runsRequiringReasoning:100,missingRequiredRuns:100,toolCalls:210,
+      nativeReasoningItems:0,reason:"incompatible-history"},
+  });
+  const compact=formatPifrostRouteTraces(sid,{compact:true});
+  assert.match(compact,/invalid replay history; no upstream request sent/u);
+  const verbose=formatPifrostRouteTraces(sid,{compact:false});
+  assert.match(verbose,/replay=incompatible-history replay-contract=all-assistant-runs assistant-runs=100 replay-required=100 replay-missing=100/u);
+  assert.doesNotMatch(verbose,/SECRET_THINKING|reasoning_content=|call_id=/u);
+  releasePifrostRouteTraces(sid);
+});
