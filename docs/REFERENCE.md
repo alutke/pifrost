@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.5
+0.29.6
 ```
 
 ## Stalled-turn recovery (v0.29.2)
@@ -329,3 +329,8 @@ unknown encoder contracts fail before physical dispatch. The original live
 Bifrost rule remains authoritative for pinned, conditional, weighted, or opaque
 routes, and no key permissions are changed. See
 [Route compatibility](ROUTE_COMPATIBILITY.md).
+
+
+### Reasoning replay integrity (v0.29.6)
+
+OMP owns the serialization and provider-approved non-substantive reasoning replay markers. Pifrost passes a common strict replay requirement to OMP only where all known physical members agree, then validates strict history shape before upstream submission. Native reasoning, encrypted signatures, and tool call IDs remain unmodified; no arbitrary reasoning policy is imposed on unknown routes. See [Reasoning integrity](REASONING_INTEGRITY.md).
