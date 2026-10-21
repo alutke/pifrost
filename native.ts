@@ -1202,11 +1202,12 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		stalledTurnRecovery.onAgentEnd(event, {
 			sessionId,
 			isMain: ctx.agent.kind === "main",
-			hasQueuedMessages: ctx.hasPendingMessages() || (
+			hasQueuedMessages: (typeof ctx.hasPendingMessages === "function" && ctx.hasPendingMessages()) || (
 				"hasQueuedMessages" in ctx && typeof ctx.hasQueuedMessages === "function"
 					? ctx.hasQueuedMessages() : false),
-			hasRunningAsyncWork: (ctx.getAsyncJobSnapshot()?.running.length ?? 0) > 0,
-			isIdle: ctx.isIdle(),
+			hasRunningAsyncWork: typeof ctx.getAsyncJobSnapshot === "function" &&
+				(ctx.getAsyncJobSnapshot()?.running.length ?? 0) > 0,
+			isIdle: typeof ctx.isIdle === "function" ? ctx.isIdle() : undefined,
 			sendContinuation: message => pi.sendMessage({
 				customType: "pifrost-stalled-turn-recovery",
 				content: message,
