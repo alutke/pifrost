@@ -45,23 +45,19 @@ export interface OutputBudgetInput {
   environment?: Readonly<Record<string, string | undefined>>;
 }
 
-const ROLE_CAPS: Readonly<Record<string, number>> = {
-  default: 32_768, task: 16_384, advisor: 16_384, plan: 32_768,
-  smol: 8_192, tiny: 8_192, commit: 8_192,
-};
-const GENERAL_ROLE_CAP = 32_768;
-const CONTEXT_HEADROOM = 2_048;
-const POSITIVE_LIMIT = 10_000_000;
+// Do not impose role-based defaults: the full verified model capability is available.
+// Operators can opt into per-role or global caps, but none is active by default.
+const CONTEXT_HEADROOM = 0;
 
 export class OutputBudgetCapacityError extends Error {
   constructor(message: string) { super(message); this.name = "OutputBudgetCapacityError"; }
 }
 function validTokenLimit(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 1 && value <= POSITIVE_LIMIT
-    ? value : undefined;
+  return typeof value === "number" && Number.isFinite(value) && value >= 1 &&
+    Number.isSafeInteger(Math.floor(value)) ? Math.floor(value) : undefined;
 }
-/** Return undefined if no operational cap applies. 0 explicitly disables that
- * optional cap, not the provider ceiling or contextual capacity constraints. */
+/** No role has a default artificial cap. Opt-in values only.
+ * 0 explicitly disables the optional cap, never the provider ceiling. */
 export function operationalOutputCap(
   logicalModel: string,
   env: Readonly<Record<string, string | undefined>> = process.env,
@@ -73,14 +69,14 @@ export function operationalOutputCap(
     : env.PIFROST_OUTPUT_CAP_TOKENS !== undefined ? "PIFROST_OUTPUT_CAP_TOKENS" : undefined;
   if (key) {
     const value = env[key]?.trim();
-    if (!value || !/^(0|[1-9][0-9]{0,7})$/u.test(value)) {
-      throw new OutputBudgetCapacityError(`Invalid ${key}: expected integer 0 (disable) or 1..${POSITIVE_LIMIT}`);
+    if (!value || !/^(0|[1-9][0-9]*)$/u.test(value)) {
+      throw new OutputBudgetCapacityError(`Invalid ${key}: expected 0 (disable) or a positive safe integer`);
     }
     const parsed = Number(value);
-    if (parsed > POSITIVE_LIMIT) throw new OutputBudgetCapacityError(`Invalid ${key}: exceeds supported limit`);
+    if (!Number.isSafeInteger(parsed)) throw new OutputBudgetCapacityError(`Invalid ${key}: exceeds safe integer range`);
     return parsed || undefined;
   }
-  return role ? ROLE_CAPS[role] ?? GENERAL_ROLE_CAP : undefined;
+  return undefined;
 }
 function maxContextOutput(contextWindow: number | undefined, estimatedInput: number | undefined): number | undefined {
   if (validTokenLimit(contextWindow) === undefined || estimatedInput === undefined ||
@@ -98,7 +94,7 @@ export function resolveOutputBudget(input: OutputBudgetInput): OutputBudgetDecis
   };
   const requested = validTokenLimit(input.requestedTokens);
   if (input.requestedTokens != null && requested === undefined) {
-    throw new OutputBudgetCapacityError("Invalid requested output-token budget; must be a positive bounded integer");
+    throw new OutputBudgetCapacityError("Invalid requested output-token budget; must be a positive safe integer");
   }
   add("requested", requested);
   add("advertised", validTokenLimit(input.advertisedTokens));
@@ -115,7 +111,9 @@ export function resolveOutputBudget(input: OutputBudgetInput): OutputBudgetDecis
     if (confirmed !== undefined || live !== undefined) verifiedMembers++;
     add("confirmed-endpoint", confirmed);
     add("live-member", live);
-    add("catalog-member", advertisedMember);
+    // Preserve member model capabilities from the catalog, but never let an
+    // explicitly synthetic fallback default masquerade as a physical limit.
+    if (member.source !== "fallback") add("catalog-member", advertisedMember);
     add("context-headroom", maxContextOutput(member.contextWindow, member.estimatedInputTokens));
   }
   if (!members.length) {

@@ -29,7 +29,7 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 			includePhysicalModels: false,
 			aliases: { "omp-advisor": {
 				name: "omp-advisor",
-				chain: ["opencode-go/muse-spark-1.3-contributor", "Xiaomi MIMO/mimo-v2.6-flash"],
+				chain: ["opencode-go/muse-spark-1.3-contributor", "CommandCode GOAT/deepseek/deepseek-v4.1-flash"],
 			} },
 		};
 		writeFileSync(aliasPath, JSON.stringify(aliasConfig));
@@ -50,7 +50,7 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 			reasoningEfforts: [], tools: true,
 			members: [
 				{ reference: "opencode-go/muse-spark-1.3-contributor", status: "resolved", protocols: ["openai-responses"] },
-				{ reference: "Xiaomi MIMO/mimo-v2.6-flash", status: "resolved", protocols: ["openai-completions"] },
+				{ reference: "CommandCode GOAT/deepseek/deepseek-v4.1-flash", status: "resolved", protocols: ["openai-completions"] },
 			],
 		};
 		writeCatalogCache({ models: [model], diagnostics: [diagnostic] }, {
@@ -108,7 +108,7 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		// Regression: the same opaque logical route must no longer forward OMP's
 		// inflated 712434-token default through either Responses or Chat. Even
 		// if a custom onPayload hook raises both fields, final-wire capping wins.
-		const oversized = provider!.streamSimple({ ...agentModel, maxTokens: 131072 }, {
+		const oversized = provider!.streamSimple({ ...agentModel, maxTokens: 712434 }, {
 			messages: [{ role: "user", content: [{ type: "text", text: "test oversize envelope" }], timestamp: Date.now() }],
 		}, {
 			sessionId: "test-session-budget", apiKey: vk, maxTokens: 712434, fetch: fakeFetch,
@@ -119,9 +119,9 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		for await (const _event of oversized) { /* Mock protocol errors are expected. */ }
 		assert.equal(attempts.length, 4);
 		for (const attempt of attempts.slice(2)) {
-			assert.equal(attempt.maxOutput, 16384);
-			assert.equal(attempt.maxCompletion, 16384);
-			if (attempt.maxTokens !== undefined) assert.ok(attempt.maxTokens <= 16384);
+			assert.equal(attempt.maxOutput, 393216);
+			assert.equal(attempt.maxCompletion, 393216);
+			if (attempt.maxTokens !== undefined) assert.ok(attempt.maxTokens <= 393216);
 		}
 		assert.deepEqual(attempts.slice(2).map(a=>a.model), ["omp-advisor", "omp-advisor"]);
 	} finally {

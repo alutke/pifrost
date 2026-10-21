@@ -600,10 +600,10 @@ OMP integration diagnostics: `pifrost omp readiness` checks native prewalk, `/se
 ### Output-budget protection (v0.29.4)
 
 Per-request output caps now apply across logical OMP roles and physical
-provider attempts, with conservative defaults for `omp-*` roles and
-confirmed provider-specific limits. Use `/pifrost trace verbose` to see
-requested versus applied tokens and the limiting source. Override the
-operational cap with `PIFROST_OUTPUT_CAP_TOKENS` or a role-specific
-`PIFROST_OUTPUT_CAP_DEFAULT` / `_TASK` / `_ADVISOR` etc.
-A value of `0` disables only the optional operational cap, never an
-underlying model ceiling. See [Output budget policy](docs/OUTPUT_BUDGET.md).
+provider attempts using known provider/member capabilities **without arbitrary
+role-based defaults**. Pifrost retains the full model output allowance unless
+a supported physical/provider limit or an explicitly opted-in operator cap
+requires reduction. Use `/pifrost trace verbose` to see requested versus
+applied tokens, source and unknown-member coverage. Optional cap variables
+include `PIFROST_OUTPUT_CAP_TOKENS` and role-specific `PIFROST_OUTPUT_CAP_DEFAULT`,
+`_TASK`, `_ADVISOR`, etc.; `0` disables only the optional cap. See [Output budget policy](docs/OUTPUT_BUDGET.md).

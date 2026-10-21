@@ -352,9 +352,8 @@ function streamDynamicPifrostRoute(
 		logicalModel: model.id,
 		requestedTokens: options?.maxTokens ?? model.maxTokens,
 		advertisedTokens: model.maxTokens,
-		members: profile.members.map(member => ({
-			reference: member.reference, maxTokens: member.maxTokens, source: member.maxTokensSource,
-		})),
+		// The prewalk must not be limited by members it later excludes.
+		// Apply the actual eligible fallback envelope at dispatch instead.
 		explicit: rawOptions?.maxTokens !== undefined,
 	});
 	const planningBody = dynamicRoutePlanningBody(model, context, {
@@ -440,8 +439,8 @@ function streamDynamicPifrostRoute(
 				reference: member.reference,
 				maxTokens: member.maxTokens,
 				source: member.maxTokensSource,
-				contextWindow: member.contextWindow,
-				estimatedInputTokens: estimatedInputTokensByMember.get(member.reference),
+				// OMP's prewalk already checks approximate input/context eligibility.
+				// Never further shorten output solely from an unverified token estimate.
 			})),
 			explicit: rawOptions?.maxTokens !== undefined,
 		});
@@ -604,21 +603,15 @@ function streamPifrostOpenAI(
 	recordAgentRequest(sessionId, model.id);
 	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
-	const directBudget = () => {
-		const physical = physicalPolicyIdentity(model.id);
-		const inputTokens = physical ? estimateOmpContextInputTokens(context,
-			createModelAwareContextTokenizer({
-				api: model.api, identity: model.identity, id: physical.id, tokenizer: model.tokenizer,
-			})) : undefined;
-		return resolveOutputBudget({
-			logicalModel: model.id,
-			requestedTokens: options?.maxTokens ?? model.maxTokens,
-			advertisedTokens: model.maxTokens,
-			members: runtimeOutputMembers.get(model.id.toLowerCase()),
-			...(physical && typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow, estimatedInputTokens: inputTokens } : {}),
-			explicit: rawOptions?.maxTokens !== undefined,
-		});
-	};
+	const directBudget = () => resolveOutputBudget({
+		logicalModel: model.id,
+		requestedTokens: options?.maxTokens ?? model.maxTokens,
+		advertisedTokens: model.maxTokens,
+		members: runtimeOutputMembers.get(model.id.toLowerCase()),
+		// Do not derive a restrictive output cap from estimated input tokens.
+		// OMP retains ownership of context accounting and compaction.
+		explicit: rawOptions?.maxTokens !== undefined,
+	});
 	if (profile) {
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}

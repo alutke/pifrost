@@ -295,10 +295,9 @@ the sanitized regression fixture.
 ## Output-token and capacity protection — Release B (v0.29.4)
 
 Pifrost validates output budgets across direct requests, logical Bifrost aliases
-and physical compatibility attempts. When a logical OMP alias is used, the
-initial per-response operational defaults are 32,768 tokens for default/plan,
-16,384 for task/advisor, 8,192 for smol/tiny/commit, and 32,768 for other
-`omp-*` roles. Direct physical models have **no new operational default**.
+and physical compatibility attempts. **No OMP role has a fixed output-token
+cap by default.** Model output is only restricted by applicable physical or
+provider limits, or by an optional cap explicitly configured by the operator.
 
 Set `PIFROST_OUTPUT_CAP_TOKENS` for a global operational override or
 `PIFROST_OUTPUT_CAP_DEFAULT`, `_TASK`, `_ADVISOR`, `_PLAN`,

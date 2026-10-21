@@ -10,16 +10,17 @@ fallback order, session affinity, virtual-key permissions and usage accounting.
 Pifrost calculates the minimum supported ceiling using:
 
 1. The requested `maxTokens` (or OMP-advertised default).
-2. Any matching OMP role operational cap (including optional environment override).
+2. An **opt-in** operator cap only if explicitly supplied as an environment override.
 3. The original model metadata output ceiling.
 4. All known physical route members' output ceilings. Provider-scoped,
    evidence-confirmed and live-advertised ceilings take precedence over
    inflated catalog defaults; no limit from one provider is copied to another.
-5. Known context-window headroom after input estimate and 2,048 token reserve.
+5. Context headroom **only if exact input accounting is explicitly supplied**. OMP itself owns normal context estimates and compaction; Pifrost does not reduce model output from approximate history-token counts.
 
 Unresolved or stale route metadata is *not* treated as verification.
-A general 32K operational cap reduces risk for opaque `omp-*` aliases,
-but does not prove a smaller/unknown actual model's limit. Complete live
+No implicit cap is invented for an `omp-*` alias. If its model
+and physical members have unknown capacity, Release B does **not** claim
+that the resulting request is verified safe. Full live
 contract verification and affinity compatibility are Release C.
 
 The same budget is applied before route capacity planning, to native
@@ -29,33 +30,34 @@ clamped, including higher values introduced by an upstream payload hook.
 Pifrost does not inject a field if OMP omitted it for provider compatibility;
 that limitation is surfaced through its existing transport contracts.
 
-## Defaults and overrides
+## No arbitrary defaults; optional overrides
 
-| Logical role | Default output cap |
-| --- | ---: |
-| `omp-default`, `omp-plan` | 32768 |
-| `omp-task`, `omp-advisor` | 16384 |
-| `omp-smol`, `omp-tiny`, `omp-commit` | 8192 |
-| Other `omp-*` roles | 32768 |
-| Direct non-OMP physical models | No new default |
+All `omp-*` roles and direct physical models retain their advertised
+output capabilities by default. No fixed 8K, 16K, 32K or other role cap
+is imposed.
 
-Override globally using `PIFROST_OUTPUT_CAP_TOKENS=<integer>`, or per role
-using `PIFROST_OUTPUT_CAP_DEFAULT`, `PIFROST_OUTPUT_CAP_TASK`,
-`PIFROST_OUTPUT_CAP_ADVISOR`, etc. Role-specific values take precedence.
-`0` disables *only* the operational cap, never provider/route capacity limits.
-Malformed values fail with a local, actionable error instead of being ignored.
+If desired, specify `PIFROST_OUTPUT_CAP_TOKENS=<positive integer>` to opt
+into a global output cap, or a role-specific variable such as
+`PIFROST_OUTPUT_CAP_DEFAULT`, `PIFROST_OUTPUT_CAP_TASK` or
+`PIFROST_OUTPUT_CAP_ADVISOR`. Role-specific settings take precedence.
+`0` disables *only* the optional cap; physical-provider limits remain
+in force. Invalid settings fail explicitly.
 
-Explicit OMP max token requests remain visible as the **requested** value.
-If their cap is reduced, `/pifrost trace` reports the effective ceiling and
-`/pifrost trace verbose` reports the limiting source and available member
-provenance. Use overrides deliberately when a role needs longer outputs.
+Unverified or synthetic fallback defaults do not count as proven
+physical-provider limits. The trace reports unknown member coverage.
+No provider-specific confirmed ceiling is copied across entitlements.
+
+Explicit OMP token requests remain visible as the **requested** value.
+When a *verified* ceiling lowers a request, `/pifrost trace` reports it;
+`/pifrost trace verbose` reports the constraint's source.
 
 ## Regression evidence
 
 The unit suite reproduces the 20 October 2026 request for 712434 tokens.
-It confirms a 32768 default `omp-default` per-response ceiling, and a
-393216 provider-confirmed CommandCode GOAT/DeepSeek V4.1 Flash cap when
-operational limits are disabled or the physical model is called directly.
+It confirms **no arbitrary role restriction**, and a 393216
+provider-confirmed CommandCode GOAT/DeepSeek V4.1 Flash cap when that
+physical member is included in the known route. Without verified member
+metadata the request is not falsely described as safe.
 No prompt data, upstream thinking, tool arguments, or credentials are saved.
 
 ## Out of scope
