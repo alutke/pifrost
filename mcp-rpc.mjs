@@ -1,3 +1,5 @@
+import { readTextLimited, requestSignal } from "./http-client.mjs";
+
 function matchingEnvelope(value, expectedId) {
   if (Array.isArray(value)) {
     return value.find((item) => item && typeof item === "object" && item.id === expectedId);
@@ -43,27 +45,24 @@ export function parseMcpJsonRpcResponse(text, expectedId) {
 }
 
 export async function postMcpJsonRpc(endpoint, virtualKey, request, options = {}) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 15_000);
-  try {
-    const fetchImpl = options.fetch ?? globalThis.fetch;
-    const response = await fetchImpl(endpoint, {
-      method: "POST",
-      headers: {
-        "x-bf-vk": virtualKey,
-        "Content-Type": "application/json",
-        Accept: "application/json, text/event-stream",
-      },
-      body: JSON.stringify(request),
-      signal: controller.signal,
-    });
-    const text = await response.text();
-    const body = parseMcpJsonRpcResponse(text, request.id);
-    if (!body && response.ok) {
-      throw new Error(`MCP response did not contain JSON-RPC id ${String(request.id)}`);
-    }
-    return { ok: response.ok, status: response.status, body, raw: text };
-  } finally {
-    clearTimeout(timer);
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+  const response = await fetchImpl(endpoint, {
+    method: "POST",
+    headers: {
+      "x-bf-vk": virtualKey,
+      "Content-Type": "application/json",
+      Accept: "application/json, text/event-stream",
+    },
+    body: JSON.stringify(request),
+    // An auth-bearing MCP call must not follow an untrusted Location header.
+    redirect: "error",
+    signal: requestSignal(options.signal, options.timeoutMs ?? 15_000),
+  });
+  // Cap streamed JSON and SSE by actual bytes, not only Content-Length.
+  const text = await readTextLimited(response, options.maxResponseBytes ?? 8 * 1024 * 1024);
+  const body = parseMcpJsonRpcResponse(text, request.id);
+  if (!body && response.ok) {
+    throw new Error(`MCP response did not contain JSON-RPC id ${String(request.id)}`);
   }
+  return { ok: response.ok, status: response.status, body, raw: text };
 }
