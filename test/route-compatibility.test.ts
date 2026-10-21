@@ -102,5 +102,5 @@ test("R1-06 physical compatibility dispatch needs fresh matching live fingerprin
     {...valid,alias:"omp-advisor"},
     {...valid,verifiedAt:new Date(at-16000).toISOString()},
     {...valid,status:"unverified"},
-  ]) assert.throws(()=>assertLiveCompatibilityAttestation(p,changed,at),/physical dispatch blocked/u);
+  ]) assert.throws(()=>assertLiveCompatibilityAttestation(p,changed,at),/[Pp]hysical dispatch blocked/u);
 });
