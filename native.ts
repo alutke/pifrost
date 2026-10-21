@@ -109,7 +109,8 @@ import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { inspectInferenceRequest } from "./request-diagnostics.ts";
 import { auditReasoningReplay, unanimousStrictReasoningRequirement, strictReplayCompatOverrides, reasoningReplayRequirementFromCompat, ReasoningReplayIntegrityError, type ReasoningReplayRequirement, type ReasoningWireProtocol } from "./reasoning-integrity.ts";
-import { dynamicRouteContract, opaqueRouteContract, compatibilityExecutionError } from "./route-compatibility.ts";
+import { dynamicRouteContract, opaqueRouteContract, compatibilityExecutionError, assertLiveCompatibilityAttestation } from "./route-compatibility.ts";
+import { evaluateAttemptTransition } from "./attempt-retry-policy.ts";
 import { resolveOutputBudget, clampOutputTokenFields, type OutputBudgetMember } from "./output-budget.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
@@ -400,6 +401,7 @@ function streamDynamicPifrostRoute(
 	rawOptions: SimpleStreamOptions | undefined,
 	sessionId: string,
 	profile: DynamicRouteProfile,
+	verifyLiveRoute?: (profile: DynamicRouteProfile) => Promise<void>,
 ) {
 	const deferredTools = deferredToolNames(context.tools);
 	const betweenToolsThinking = options?.disableReasoning === true && profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true);
@@ -477,8 +479,18 @@ function streamDynamicPifrostRoute(
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
 
-	void runPifrostProtocolPlan(model, executionPlan, outer, (attempt, attemptIndex) => {
+	// Management-plane verification happens before the first physical HTTP
+	// attempt, only for a locally lowered compatibility route. The CLI owns
+	// admin credentials; the OMP inference runtime never receives them.
+	let physicalAttemptCapture: BifrostCostCapture | undefined;
+	void (async () => {
+		if (!nativeGatewayRoute) {
+			if (!verifyLiveRoute) throw new Error("Pifrost compatibility dispatch requires read-only live Bifrost route attestation");
+			await verifyLiveRoute(profile);
+		}
+		await runPifrostProtocolPlan(model, executionPlan, outer, (attempt, attemptIndex) => {
 		const costCapture: BifrostCostCapture = { routeContract };
+		physicalAttemptCapture = costCapture;
 		const baseFetch = createBifrostCostBridgeFetch(underlyingFetch, costCapture);
 		const transportModel = buildPifrostTransportModel(nativeGatewayRoute
 			? createPifrostNativeRouteModelSpec(model, attempt)
@@ -634,7 +646,11 @@ function streamDynamicPifrostRoute(
 			chatReasoningFilter,
 			nativeGatewayRoute ? plan.logicalModel : undefined,
 		);
-	}).catch((error) => outer.fail(error));
+		}, {
+			retryPreOutputError: error =>
+				evaluateAttemptTransition("physical-compatibility", error, physicalAttemptCapture).permitted,
+		});
+	})().catch((error) => outer.fail(error));
 
 	return outer;
 }
@@ -651,6 +667,7 @@ function streamPifrostOpenAI(
 	model: Model,
 	context: Context,
 	rawOptions?: SimpleStreamOptions,
+	verifyLiveRoute?: (profile: DynamicRouteProfile) => Promise<void>,
 ) {
 	const sessionId = nonEmpty(rawOptions?.sessionId);
 	if (!sessionId) {
@@ -669,7 +686,7 @@ function streamPifrostOpenAI(
 		explicit: rawOptions?.maxTokens !== undefined,
 	});
 	if (profile) {
-		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
+		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile, verifyLiveRoute);
 	}
 
 	// Unknown or opaque Bifrost rule semantics never authorize copied physical
@@ -1098,7 +1115,18 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			baseUrl: config.url,
 			apiKey: providerApiKey,
 			api: PIFROST_API,
-			streamSimple: streamPifrostOpenAI,
+			streamSimple: (model, context, options) => streamPifrostOpenAI(model, context, options, async profile => {
+				// Read-only double-snapshot attestation. No daemon, persistent
+				// service or management credential in this provider process.
+				const result = await pi.exec("pifrost", ["routes", "attest", profile.id, "--json"], { timeout: 12_000 });
+				if (result.code !== 0) {
+					throw new Error(`Pifrost blocked physical compatibility dispatch for ${profile.id}: live Bifrost route attestation unavailable or drifted. Run pifrost routes sync and restart OMP`);
+				}
+				let evidence: unknown;
+				try { evidence = JSON.parse(result.stdout); }
+				catch { throw new Error("Pifrost live Bifrost route attestation returned invalid JSON; physical dispatch blocked"); }
+				assertLiveCompatibilityAttestation(profile, evidence);
+			}),
 			// Bifrost 2.x accepts sk-bf-* VKs as OpenAI Bearer credentials.
 			// Legacy VK values remain x-bf-vk-only and therefore suppress the
 			// generated Authorization header.
