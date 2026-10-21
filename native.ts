@@ -78,6 +78,7 @@ import {
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
 import { createStalledTurnRecoveryCoordinator, stalledTurnMode } from "./stalled-turn-recovery.ts";
+import { createRuntimeRouteState, type RuntimeRouteSnapshot } from "./runtime-route-state.ts";
 import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
 import { handleRecoveryCommand } from "./recovery-command.ts";
 import {
@@ -154,60 +155,6 @@ installOmpCatalogRuntime({
 		),
 });
 
-let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
-let runtimeGatewayProtocols = new Map<string, readonly GatewayWireProtocol[]>();
-let runtimeAliasDiagnostics = new Map<string, AliasDiagnostic>();
-let runtimeOpaqueReplayPolicies = new Map<string, { chat: ReasoningReplayRequirement; responses: ReasoningReplayRequirement }>();
-/** Observation-only physical bounds from the refreshed model catalog. */
-let runtimeOutputMembers = new Map<string, readonly OutputBudgetMember[]>();
-
-function installDynamicRouteProfiles(
-	models: readonly import("./index.ts").BifrostProviderModel[],
-	diagnostics: readonly AliasDiagnostic[] = [],
-): void {
-	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
-	runtimeAliasDiagnostics = new Map(diagnostics.map(diagnostic => [diagnostic.id.toLowerCase(), diagnostic]));
-	runtimeOpaqueReplayPolicies = new Map(diagnostics.map(diagnostic => {
-		const resolve = (protocol: ReasoningWireProtocol): ReasoningReplayRequirement => {
-			const members = diagnostic.members ?? [];
-			const complete = members.length > 0 &&
-				members.length === diagnostic.chain.length &&
-				diagnostic.unresolved.length === 0 &&
-				members.every(item => item.status === "resolved" && item.capabilities?.reasoning === true);
-			// Bifrost can accept a Responses gateway request and translate it to
-			// physical Chat. Probe the target's required history semantics for
-			// the gateway ingress, not only its advertised upstream protocol.
-			if (!complete) return "unknown";
-			const requirements = members.map(item => {
-				const identity = physicalPolicyIdentity(item.reference);
-				return identity
-					? resolvePifrostReasoningReplayRequirement(identity.provider, identity.id, protocol)
-					: "unknown";
-			});
-			return unanimousStrictReasoningRequirement(requirements, true);
-		};
-		return [diagnostic.id.toLowerCase(), {
-			chat: resolve("openai-completions"),
-			responses: resolve("openai-responses"),
-		}] as const;
-	}));
-	runtimeOutputMembers = new Map(diagnostics.map(item => [item.id.toLowerCase(),
-		(item.members ?? []).map(member => ({
-			reference: member.reference,
-			...(member.capabilities?.maxTokens !== undefined ? { maxTokens: member.capabilities.maxTokens } : {}),
-			...(member.sources?.maxTokens ? { source: member.sources.maxTokens } : {}),
-		})),
-	] as const));
-	runtimeGatewayProtocols = new Map(
-		diagnostics.map(item => [item.id.toLowerCase(), gatewayProtocolOrder(item)] as const)
-			.filter((entry): entry is readonly [string, readonly GatewayWireProtocol[]] => entry[1] !== undefined),
-	);
-}
-
-const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
-	(logicalModel) => runtimeDynamicRoutes.get(logicalModel.toLowerCase()),
-);
-const recoveryNotices = createRecoveryNoticeCoordinator();
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -662,7 +609,8 @@ function streamDynamicPifrostRoute(
 function streamPifrostOpenAI(
 	model: Model,
 	context: Context,
-	rawOptions?: SimpleStreamOptions,
+	rawOptions: SimpleStreamOptions | undefined,
+	routeSnapshot: RuntimeRouteSnapshot,
 	verifyLiveRoute?: (profile: DynamicRouteProfile) => Promise<void>,
 ) {
 	const sessionId = nonEmpty(rawOptions?.sessionId);
@@ -670,13 +618,13 @@ function streamPifrostOpenAI(
 		throw new Error("Pifrost requires OMP to supply an inference session id");
 	}
 	recordAgentRequest(sessionId, model.id);
-	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
+	const profile = routeSnapshot.dynamicRoutes.get(model.id.toLowerCase());
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
 	const directBudget = () => resolveOutputBudget({
 		logicalModel: model.id,
 		requestedTokens: options?.maxTokens ?? model.maxTokens,
 		advertisedTokens: model.maxTokens,
-		members: runtimeOutputMembers.get(model.id.toLowerCase()),
+		members: routeSnapshot.outputMembers.get(model.id.toLowerCase()),
 		// Do not derive a restrictive output cap from estimated input tokens.
 		// OMP retains ownership of context accounting and compaction.
 		explicit: rawOptions?.maxTokens !== undefined,
@@ -688,9 +636,9 @@ function streamPifrostOpenAI(
 	// Unknown or opaque Bifrost rule semantics never authorize copied physical
 	// fallback chains. Protocol selection changes only the gateway ingress;
 	// each request carries the exact original logical alias to Bifrost.
-	const protocolOrder = runtimeGatewayProtocols.get(model.id.toLowerCase());
-	const routeContract = opaqueRouteContract(model.id, runtimeAliasDiagnostics.get(model.id.toLowerCase()));
-	const opaqueReplay = runtimeOpaqueReplayPolicies.get(model.id.toLowerCase());
+	const protocolOrder = routeSnapshot.gatewayProtocols.get(model.id.toLowerCase());
+	const routeContract = opaqueRouteContract(model.id, routeSnapshot.aliasDiagnostics.get(model.id.toLowerCase()));
+	const opaqueReplay = routeSnapshot.opaqueReplayPolicies.get(model.id.toLowerCase());
 	const transportCompat = (protocol: ReasoningWireProtocol) => ({
 		...model.compatConfig,
 		...strictReplayCompatOverrides(protocol === "openai-responses"
@@ -884,6 +832,7 @@ function forceRefreshRequested(): boolean {
 async function fetchFreshCatalog(
 	config: BifrostConfig,
 	aliasSource: ReturnType<typeof loadAliasConfig>,
+	publishRoutes: (models: readonly import("./index.ts").BifrostProviderModel[], diagnostics: readonly AliasDiagnostic[]) => void,
 	resolvedApiKey?: string,
 ): Promise<PifrostCatalog> {
 	const liveConfig: BifrostConfig = {
@@ -935,7 +884,7 @@ async function fetchFreshCatalog(
 			(reference) => liveById.get(reference.trim().toLowerCase()),
 		);
 	}
-	installDynamicRouteProfiles(catalog.models, catalog.diagnostics);
+	publishRoutes(catalog.models, catalog.diagnostics);
 	writeCatalogCache(catalog, { config: liveConfig, aliasConfig: aliasSource.config });
 	return catalog;
 }
@@ -981,6 +930,11 @@ async function installOmpNativeTextTokenCounter(): Promise<void> {
 }
 
 export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
+	const runtimeRouteState = createRuntimeRouteState();
+	const recoveryNotices = createRecoveryNoticeCoordinator();
+	const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
+		logicalModel => runtimeRouteState.capture().dynamicRoutes.get(logicalModel.toLowerCase()),
+	);
 	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 	await installOmpNativeTextTokenCounter();
 	registerBifrostRichContentBridge(pi);
@@ -1028,14 +982,14 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		const startupCache = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 		if (startupCache) {
 			diagnostics = startupCache.diagnostics;
-			installDynamicRouteProfiles(startupCache.models, startupCache.diagnostics);
+			runtimeRouteState.publish(startupCache.models, startupCache.diagnostics);
 		}
 
 		const refresh = (resolvedApiKey?: string): Promise<PifrostCatalog> => {
 			if (!refreshInFlight) {
 				// A prior OMP prompt may have reconciled a new Bifrost policy.
                 aliasSource = loadAliasConfig(flag("pifrost-aliases"));
-                refreshInFlight = fetchFreshCatalog(config, aliasSource, resolvedApiKey).finally(() => {
+                refreshInFlight = fetchFreshCatalog(config, aliasSource, (models, diagnostics) => { runtimeRouteState.publish(models, diagnostics); }, resolvedApiKey).finally(() => {
 					refreshInFlight = undefined;
 				});
 			}
@@ -1112,7 +1066,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			baseUrl: config.url,
 			apiKey: providerApiKey,
 			api: PIFROST_API,
-			streamSimple: (model, context, options) => streamPifrostOpenAI(model, context, options, async profile => {
+			streamSimple: (model, context, options) => streamPifrostOpenAI(model, context, options, runtimeRouteState.capture(), async profile => {
 				// Read-only double-snapshot attestation. No daemon, persistent
 				// service or management credential in this provider process.
 				const result = await pi.exec("pifrost", ["routes", "attest", profile.id, "--json"], { timeout: 12_000 });
@@ -1138,7 +1092,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached && !forceRefreshRequested()) {
 					diagnostics = cached.diagnostics;
-					installDynamicRouteProfiles(cached.models, cached.diagnostics);
+					runtimeRouteState.publish(cached.models, cached.diagnostics);
 					if (!cacheIsFresh(cached, refreshIntervalMs)) scheduleBackgroundRefresh(resolvedApiKey);
 					return cached.models;
 				}
@@ -1440,7 +1394,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			try {
 				if (command === "refresh") {
-					const catalog = await fetchFreshCatalog(config, aliasSource);
+					const catalog = await fetchFreshCatalog(config, aliasSource, (models, diagnostics) => { runtimeRouteState.publish(models, diagnostics); });
 					diagnostics = catalog.diagnostics;
 					ctx.ui.notify(
 						`${formatDoctorSummary(diagnostics, aliasSource.path)}\nCatalog refreshed. Restart OMP to load the new model capabilities.`,
@@ -1452,7 +1406,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached) diagnostics = cached.diagnostics;
 				if (!cached && diagnostics.length === 0) {
-					const catalog = await fetchFreshCatalog(config, aliasSource);
+					const catalog = await fetchFreshCatalog(config, aliasSource, (models, diagnostics) => { runtimeRouteState.publish(models, diagnostics); });
 					diagnostics = catalog.diagnostics;
 				}
 				bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);

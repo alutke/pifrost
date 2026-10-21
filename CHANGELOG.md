@@ -1,3 +1,10 @@
+## 0.29.12 — 2026-10-21
+
+- Release 3 architecture consolidation: per-extension, per-request atomic routing metadata generations replace mutable process-global route maps; concurrent refreshes retain request consistency.
+- AST-based architecture import checks with negative tests, supplementing the runtime conformance suite.
+- Harden authenticated HTTP and MCP JSON-RPC calls against redirects and limit MCP SSE/JSON response memory to 8 MiB by default, independently of model output capacity.
+- Cover cross-extension isolation, concurrent request snapshots, invalid refresh rollback and auth-bearing redirects in regression tests; no service or second provider router.
+
 ## 0.29.11 — 2026-10-21
 
 - Default high-confidence stalled-turn handling to bounded automatic OMP continuation without provider retries or tool replay.

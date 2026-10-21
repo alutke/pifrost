@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.11",
+  "version": "0.29.12",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -24,6 +24,7 @@
   "files": [
     "index.ts",
     "native.ts",
+    "runtime-route-state.ts",
     "transport-model.ts",
     "cache.ts",
     "config-store.ts",
@@ -44,6 +45,7 @@
     "docs/CROSS_PROVIDER_HARDENING.md",
     "docs/RELEASE_1_EXECUTION_SAFETY.md",
     "docs/RELEASE_2_LIFECYCLE_REASONING.md",
+    "docs/RELEASE_3_ARCHITECTURE.md",
     "stalled-turn-recovery.ts",
     "route-policy-fingerprint.mjs",
     "route-policy-fingerprint.d.mts",

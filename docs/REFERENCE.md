@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.11
+0.29.12
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -391,3 +391,7 @@ Stalled-turn detection gives a notice, not an automatic follow-up by default. `/
 Default when `PIFROST_STALLED_TURN_MODE` is unset or empty: **auto**. Pifrost detects a narrowly defined unfinished planning turn, then may request **one** normal OMP-owned follow-up for that user prompt if the main agent has settled and has no queued or running async work. OMP still controls tools, provider calls and session state. It never replays a previous tool call or retries a successful model stream at the transport layer.
 
 To disable stalled-turn handling entirely, export `PIFROST_STALLED_TURN_MODE=off` before starting OMP. Accepted synonyms: `0`, `false`, `no`, `disable`, `disabled`. `PIFROST_STALLED_TURN_MODE=notice` keeps the advisory/manual `/pifrost stalled continue` workflow with UI confirmation. Unknown non-empty values fall back to `notice` for safety. `/pifrost stalled status` reports the active mode and session state. Changes take effect on restarting the OMP extension; no background service is needed. Automatic follow-up can execute further, potentially non-idempotent work, so disable it in workflows where user approval must precede any extra tool actions.
+
+## Release 3 — architecture consolidation and transport hardening (v0.29.12)
+
+Per-OMP-installation runtime route snapshots are atomically published; each inference request captures a single immutable generation for route planning, output budget, gateway protocol and replay metadata. The import boundary checker now parses actual TypeScript/JavaScript syntax and is covered by adversarial tests. MCP streamable HTTP responses are bounded at 8 MiB by default, and authenticated MCP/control-plane HTTP calls refuse redirects. These limits are on **control/MCP response bytes**, never LLM output tokens. See [Release 3](RELEASE_3_ARCHITECTURE.md).
