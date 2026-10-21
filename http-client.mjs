@@ -45,10 +45,13 @@ export async function requestJson(url, options = {}) {
       headers["Content-Type"] ??= "application/json";
       body = typeof options.body === "string" ? options.body : JSON.stringify(options.body);
     }
-    const response = await fetch(url, {
+    const response = await (options.fetch ?? globalThis.fetch)(url, {
       method: options.method ?? (body ? "POST" : "GET"),
       headers,
       body,
+      // No bearer/basic/virtual-key management secret may be forwarded to
+      // an HTTP redirect destination. Bifrost endpoints are direct URLs.
+      redirect: "error",
       signal: requestSignal(options.signal, options.timeoutMs ?? 20_000),
     });
     const text = await readTextLimited(response, options.maxResponseBytes ?? 8 * 1024 * 1024);
