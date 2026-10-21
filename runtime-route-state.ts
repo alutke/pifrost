@@ -39,6 +39,14 @@ function buildSnapshot(
   diagnostics: readonly AliasDiagnostic[],
   generation: number,
 ): RuntimeRouteSnapshot {
+  for (const diagnostic of diagnostics) {
+    if (!diagnostic || typeof diagnostic.id !== "string" || !diagnostic.id.trim() ||
+        !Array.isArray(diagnostic.chain) ||
+        !Array.isArray(diagnostic.unresolved) ||
+        (diagnostic.members !== undefined && !Array.isArray(diagnostic.members))) {
+      throw new Error("Invalid route diagnostics; retaining previous atomic catalogue generation");
+    }
+  }
   const dynamicRoutes = extractDynamicRouteProfiles(models);
   const aliasDiagnostics = new Map(diagnostics.map(item => [item.id.toLowerCase(), item] as const));
   const opaqueReplayPolicies = new Map(diagnostics.map(diagnostic => {
