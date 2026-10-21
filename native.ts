@@ -106,6 +106,7 @@ import {
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { inspectInferenceRequest } from "./request-diagnostics.ts";
+import { dynamicRouteContract, opaqueRouteContract, compatibilityExecutionError } from "./route-compatibility.ts";
 import { resolveOutputBudget, clampOutputTokenFields, type OutputBudgetMember } from "./output-budget.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
@@ -150,6 +151,7 @@ installOmpCatalogRuntime({
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 let runtimeGatewayProtocols = new Map<string, readonly GatewayWireProtocol[]>();
+let runtimeAliasDiagnostics = new Map<string, AliasDiagnostic>();
 /** Observation-only physical bounds from the refreshed model catalog. */
 let runtimeOutputMembers = new Map<string, readonly OutputBudgetMember[]>();
 
@@ -158,6 +160,7 @@ function installDynamicRouteProfiles(
 	diagnostics: readonly AliasDiagnostic[] = [],
 ): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
+	runtimeAliasDiagnostics = new Map(diagnostics.map(item => [item.id.toLowerCase(), item]));
 	runtimeOutputMembers = new Map(diagnostics.map(item => [item.id.toLowerCase(),
 		(item.members ?? []).map(member => ({
 			reference: member.reference,
@@ -401,12 +404,11 @@ function streamDynamicPifrostRoute(
 		compatibilityByMember,
 		outputCapExplicit: rawOptions?.maxTokens !== undefined,
 	});
+	const routeContract = dynamicRouteContract(profile, plan);
 	const nativeGatewayRoute = canUseNativeBifrostRoute(profile, plan);
-	if (!nativeGatewayRoute) {
-		const stale = compatibilityRouteSnapshotError(profile);
-		if (stale) throw new Error(stale);
-	}
-	const routeMode = nativeGatewayRoute ? "bifrost-native" : "pifrost-compatibility";
+	const routeError = compatibilityExecutionError(profile, plan);
+	if (routeError) throw new Error(routeError);
+	const routeMode = routeContract.mode;
 	const exceptionReason = nativeGatewayRoute ? undefined
 		: plan.excluded.length ? "member-eligibility"
 		: plan.attempts.length > 1 ? "wire-protocol-or-encoder-boundary"
@@ -424,7 +426,7 @@ function streamDynamicPifrostRoute(
 	const outer = new AssistantMessageEventStream();
 
 	void runPifrostProtocolPlan(model, executionPlan, outer, (attempt, attemptIndex) => {
-		const costCapture: BifrostCostCapture = {};
+		const costCapture: BifrostCostCapture = { routeContract };
 		const baseFetch = createBifrostCostBridgeFetch(underlyingFetch, costCapture);
 		const transportModel = buildPifrostTransportModel(nativeGatewayRoute
 			? createPifrostNativeRouteModelSpec(model, attempt)
@@ -620,6 +622,7 @@ function streamPifrostOpenAI(
 	// fallback chains. Protocol selection changes only the gateway ingress;
 	// each request carries the exact original logical alias to Bifrost.
 	const protocolOrder = runtimeGatewayProtocols.get(model.id.toLowerCase());
+	const routeContract = opaqueRouteContract(model.id, runtimeAliasDiagnostics.get(model.id.toLowerCase()));
 	const streamChat = (attemptIndex = 0) => {
 	const directPhysical = physicalPolicyIdentity(model.id);
 		const transportModel = buildPifrostTransportModel({
@@ -628,7 +631,7 @@ function streamPifrostOpenAI(
 			api: "openai-completions",
 			compat: model.compatConfig,
 		} as ModelSpec<"openai-completions">);
-		const costCapture: BifrostCostCapture = {};
+		const costCapture: BifrostCostCapture = { routeContract };
 		const outputBudget = directBudget();
 		costCapture.outputBudget = outputBudget;
 		const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
@@ -698,7 +701,7 @@ function streamPifrostOpenAI(
 		const transportModel = buildPifrostTransportModel({
 			...model, api: "openai-responses", compat: model.compatConfig,
 		} as ModelSpec<"openai-responses">);
-		const capture: BifrostCostCapture = {};
+		const capture: BifrostCostCapture = { routeContract };
 		const outputBudget = directBudget();
 		capture.outputBudget = outputBudget;
 		const fetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, capture);
