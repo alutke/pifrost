@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.9
+0.29.10
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -381,3 +381,7 @@ Nine provider entitlement namespaces have regression coverage for physical
 model identity, actual caps, Chat/Responses shapes, native reasoning and tool
 result pairing. No service, automatic model switching or arbitrary role caps.
 See [Cross-provider hardening](CROSS_PROVIDER_HARDENING.md).
+
+## Release 2 — stalled turns and replay evidence (v0.29.10)
+
+Stalled-turn detection gives a notice, not an automatic follow-up by default. `/pifrost stalled [status|continue]` allows one user-confirmed OMP continuation only in an interactive idle top-level session, with no queued messages or running async jobs; conditions are rechecked after confirmation. `PIFROST_STALLED_TURN_MODE=auto` explicitly opts into automatic continuation. The final-wire reasoning audit is structural-only: empty native Chat fields and unsigned empty Responses markers are counted without assuming the physical provider accepted them. `/pifrost trace verbose` records completed Bifrost streams separately. No reasoning or secrets enter diagnostics. See [Release 2 contract](RELEASE_2_LIFECYCLE_REASONING.md).
