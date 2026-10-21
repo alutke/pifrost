@@ -33,7 +33,7 @@ export function assessRecovery(trace: RecoveryTraceEvidence | undefined): Recove
   const code: InferenceFailureCode | undefined = trace.failureCode && trace.failureCode !== "UNKNOWN"
     ? trace.failureCode
     : trace.replayAudit?.reason === "incompatible-history" ? "REASONING_REPLAY_INVALID" : undefined;
-  if (!code || code === "UNKNOWN") return undefined;
+  if (!code) return undefined;
 
   const mayFork = code === "REASONING_REPLAY_INVALID" && trace.outputStarted !== true;
   const reason = code === "REASONING_REPLAY_INVALID"
