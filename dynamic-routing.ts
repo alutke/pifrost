@@ -22,6 +22,8 @@ export interface DynamicRouteMemberProfile {
 	resolvedModelId: string;
 	contextWindow: number;
 	maxTokens: number;
+	/** Catalog provenance; only live or an evidence-backed endpoint contract is verified. */
+	maxTokensSource?: string;
 	input: ("text" | "image")[];
 	reasoning: boolean;
 	supportsTools: boolean;
@@ -203,6 +205,7 @@ export function applyDynamicRouteProfiles(
 				resolvedModelId: member.id,
 				contextWindow: member.contextWindow,
 				maxTokens: member.maxTokens,
+				...(member.capabilitySources?.maxTokens ? { maxTokensSource: member.capabilitySources.maxTokens } : {}),
 				input: [...member.input],
 				reasoning: member.reasoning,
 				supportsTools: member.supportsTools,
