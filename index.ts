@@ -177,6 +177,8 @@ export interface PifrostAliasDefinition {
 
 export interface PifrostAliasConfig {
 	includePhysicalModels?: boolean;
+	/** Full Bifrost control-plane rule hash, not a live affinity attestation. */
+	policyFingerprint?: string;
 	/** Timestamp of the last management-plane route sync; not a live-rule guarantee. */
 	synchronizedAt?: string;
 	aliases: Record<string, PifrostAliasDefinition | string[]>;

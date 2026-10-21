@@ -21,7 +21,7 @@ test("mock gateway sees logical alias and owns a native route match and provenan
   ];
   const profile={ id:"omp-default",mode:"context-aware",source:"bifrost-simple-rule",
     members:models,staticContextWindow:128000,advertisedContextWindow:128000,maxTokens:16000,
-    bands:[],synchronizedAt:new Date().toISOString() } as unknown as DynamicRouteProfile;
+    bands:[],synchronizedAt:new Date().toISOString(),policyFingerprint:routePolicyFingerprint(rules) } as unknown as DynamicRouteProfile;
   const planned=planDynamicRouteAttempts(profile,{model:"omp-default",messages:[{role:"user",content:"test"}],max_tokens:1000},
     {estimatedInputTokens:100,compatibilityByMember:new Map(models.map(x=>[x.reference,"same-wire"]))});
   assert.equal(canUseNativeBifrostRoute(profile,planned),true);

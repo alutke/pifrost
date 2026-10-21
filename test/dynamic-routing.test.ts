@@ -117,9 +117,10 @@ test("compatibility exceptions reject unsynchronised and expired local rule snap
 	const route = profile();
 	const now = Date.parse("2026-10-14T07:00:00Z");
 	assert.match(compatibilityRouteSnapshotError(route, now) ?? "", /route-sync timestamp/u);
-	assert.equal(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "2026-10-13T07:00:00Z" }, now), undefined);
-	assert.match(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "2026-09-20T07:00:00Z" }, now) ?? "", /last synchronized/u);
-	assert.match(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "not-a-date" }, now) ?? "", /route-sync timestamp/u);
+	assert.equal(compatibilityRouteSnapshotError({ ...route, policyFingerprint: "a".repeat(64), synchronizedAt: "2026-10-13T07:00:00Z" }, now), undefined);
+	assert.match(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "2026-10-13T07:00:00Z" }, now) ?? "", /policy fingerprint/u);
+	assert.match(compatibilityRouteSnapshotError({ ...route, policyFingerprint: "a".repeat(64), synchronizedAt: "2026-09-20T07:00:00Z" }, now) ?? "", /last synchronized/u);
+	assert.match(compatibilityRouteSnapshotError({ ...route, policyFingerprint: "a".repeat(64), synchronizedAt: "not-a-date" }, now) ?? "", /route-sync timestamp/u);
 });
 
 test("dynamic alias advertises the largest context while retaining safe output ceiling", () => {
