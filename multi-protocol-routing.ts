@@ -246,13 +246,17 @@ export async function runPifrostProtocolPlan(
 	plan: DynamicRoutePlan,
 	outer: PifrostProtocolOutput,
 	dispatch: PifrostAttemptDispatcher,
-	options: { retryPreOutputError?: (error: unknown) => boolean } = {},
+	options: { beforeAttempt?: (attempt: DynamicRouteAttempt, index: number) => Promise<void>; retryPreOutputError?: (error: unknown) => boolean } = {},
 ): Promise<void> {
 	let lastErrorEvent: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
 	const thrown: unknown[] = [];
 
 	for (let attemptIndex = 0; attemptIndex < plan.attempts.length; attemptIndex++) {
 		const attempt = plan.attempts[attemptIndex]!;
+		// A live-policy check is a dispatch guard, NOT a retryable inference
+		// error. Re-attest before every physical attempt, including fallbacks.
+		try { await options.beforeAttempt?.(attempt, attemptIndex); }
+		catch (error) { outer.fail(error); return; }
 		let inner: PifrostAttemptStream;
 		try {
 			inner = dispatch(attempt, attemptIndex);
