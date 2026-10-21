@@ -1,3 +1,10 @@
+## 0.29.5 — 2026-10-21
+
+- Release C: strengthen physical-provider compatibility boundaries for every OMP logical role; native Bifrost passthrough requires complete compatible physical Chat encoders across all reachable members, not just the configured primary.
+- Local physical fallback exceptions now require the full routing-policy fingerprint and recent sync provenance. Unknown encoder policies fail before a locally constructed physical request; Bifrost's pinned, weighted and conditional rules are never reimplemented.
+- Add request-scoped route-contract evidence to /pifrost trace: scope, verified rule metadata, mixed protocols, encoder completeness, gateway-served versus cached primary and unknown selection cause. No credentials or prompt bodies retained.
+- Retain v0.29.4's full output capability, no automatic model switching or unnecessary token caps; no background service and no Bifrost permission changes.
+
 ## 0.29.4 — 2026-10-21
 
 - Release B: enforce one conservative output-token budget across native Bifrost aliases, physical compatibility attempts, and direct physical requests; clamp limits again after final OMP payload serialization without changing provider-specific token-field choice.

@@ -115,6 +115,8 @@ for (const path of [
   "bifrost-rich-content.ts",
   "bifrost-cost-bridge.ts",
   "request-provenance.ts",
+  "route-compatibility.ts",
+  "docs/ROUTE_COMPATIBILITY.md",
   "output-budget.ts",
   "docs/OUTPUT_BUDGET.md",
   "inference-failure.ts",

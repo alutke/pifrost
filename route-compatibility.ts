@@ -30,14 +30,11 @@ export function dynamicRouteContract(profile: DynamicRouteProfile, plan: Dynamic
   const native = canUseNativeBifrostRoute(profile, plan);
   const snapshotError = compatibilityRouteSnapshotError(profile);
   const knownProtocols = new Set(profile.members.flatMap(m=>m.protocols ?? []));
-  const eligible = new Set(plan.attempts.flatMap(a=>a.members.map(m=>m.reference)));
   return {
     mode: native ? "bifrost-native" : "pifrost-compatibility",
     verification: snapshotError ? "missing-verified-snapshot" : "verified-local-snapshot",
     possibleMembers: profile.members.length,
-    unknownMembers: profile.members.filter(m =>
-      !m.protocols?.length || !eligible.has(m.reference)
-    ).length,
+    unknownMembers: profile.members.filter(m => !m.protocols?.length).length,
     mixedProtocols: knownProtocols.has("openai-completions") && knownProtocols.has("openai-responses"),
     encodersComplete: plan.encoderContractsComplete === true,
     gatewaySelectionCause: "unknown",
@@ -49,7 +46,7 @@ export function dynamicRouteContract(profile: DynamicRouteProfile, plan: Dynamic
  * Catalog knowledge can warn about mixed protocols, never grant permission to
  * reproduce Bifrost's rule or claim native-encoder equivalence. */
 export function opaqueRouteContract(
-  logicalModel: string,
+  _logicalModel: string,
   diagnostic: AliasDiagnostic | undefined,
 ): RouteContractEvidence {
   const members = diagnostic?.members ?? [];

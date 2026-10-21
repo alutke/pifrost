@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.4
+0.29.5
 ```
 
 Bun also works:
@@ -607,3 +607,16 @@ requires reduction. Use `/pifrost trace verbose` to see requested versus
 applied tokens, source and unknown-member coverage. Optional cap variables
 include `PIFROST_OUTPUT_CAP_TOKENS` and role-specific `PIFROST_OUTPUT_CAP_DEFAULT`,
 `_TASK`, `_ADVISOR`, etc.; `0` disables only the optional cap. See [Output budget policy](docs/OUTPUT_BUDGET.md).
+
+
+### Physical-provider compatibility (v0.29.5)
+
+Gateway-owned, pinned and conditional Bifrost routes retain their original
+routing rules and permissions. For a locally lowered compatibility exception,
+Pifrost now requires a synced full rule-policy fingerprint and complete OMP
+physical wire contract for eligible models. Native Bifrost Chat passthrough
+requires compatible encoders across the whole reachable chain, including
+possible session-affinity members. `/pifrost trace verbose` distinguishes
+cached primary from gateway-reported serving model, without guessing whether
+a difference came from affinity or fallback. No extra output caps or background
+processes. See [Route compatibility](docs/ROUTE_COMPATIBILITY.md).

@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.4
+0.29.5
 ```
 
 ## Stalled-turn recovery (v0.29.2)
@@ -317,3 +317,15 @@ to see the exact limit and source, plus member metadata provenance.
 See [Output budget policy](OUTPUT_BUDGET.md). This release **does not**
 repair reasoning replay, verify opaque routing rules, change Bifrost
 permissions or introduce new fallback/retry behaviour.
+
+
+## Physical routing compatibility — Release C (v0.29.5)
+
+Pifrost applies provider-specific physical wire contracts to fallback groups.
+A native Bifrost rule is used only when the full known reachable chain has
+consistent, resolved Chat encoders. Locally constructed compatibility requests
+require an up-to-date routing-rule snapshot with a verified policy fingerprint;
+unknown encoder contracts fail before physical dispatch. The original live
+Bifrost rule remains authoritative for pinned, conditional, weighted, or opaque
+routes, and no key permissions are changed. See
+[Route compatibility](ROUTE_COMPATIBILITY.md).

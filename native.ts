@@ -80,7 +80,6 @@ import { createStalledTurnRecoveryCoordinator } from "./stalled-turn-recovery.ts
 import {
 	applyDynamicRouteProfiles,
 	canUseNativeBifrostRoute,
-	compatibilityRouteSnapshotError,
 	extractDynamicRouteProfiles,
 	planDynamicRouteAttempts,
 	resolveDynamicMemberProtocolForRequest,
