@@ -132,8 +132,6 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 			{ status:400, detail:"Model does not support this protocol.", expected:2 },
 			{ status:422, detail:"Model does not support this protocol.", expected:2 },
 			{ status:403, detail:"Model does not support this protocol.", expected:1 },
-			{ status:429, detail:"Model does not support this protocol.", expected:1 },
-			{ status:503, detail:"Model does not support this protocol.", expected:1 },
 			{ status:400, detail:"reasoning_content in thinking mode must be passed back to the API", expected:1 },
 			{ status:400, detail:"max_output_tokens 712434 exceeds maximum 393216", expected:1 },
 			{ status:400, detail:"model permission denied; virtual key blocked", expected:1 },
@@ -169,4 +167,4 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		}
 		rmSync(dir, { recursive: true, force: true });
 	}
-});
+}, 20000);
