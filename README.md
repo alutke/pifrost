@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.11
+0.29.12
 ```
 
 Bun also works:
@@ -684,3 +684,7 @@ Stalled-turn recovery is advisory by default. `/pifrost stalled status` and `/pi
 ### Stalled-turn default (v0.29.11)
 
 The default for `PIFROST_STALLED_TURN_MODE` is now `auto` (one safe OMP follow-up after a high-confidence stalled turn). To **disable** detection, notices and continuation completely, set `PIFROST_STALLED_TURN_MODE=off` and restart OMP. `PIFROST_STALLED_TURN_MODE=notice` keeps the manual confirmation workflow from v0.29.10. Accepted disable synonyms: `0`, `false`, `no`, `disabled`, `disable`. An invalid non-empty setting defaults to `notice` rather than unexpectedly auto-running tools.
+
+### Release 3 — architecture isolation and HTTP/MCP safety (v0.29.12)
+
+Every OMP extension installation now owns an independently refreshed, atomic route-catalogue snapshot. A stream captures exactly one generation before dispatch, preventing concurrent refreshes from mixing routing metadata. Executable TypeScript AST import-boundary tests complement existing architecture checks. Authenticated control-plane and MCP calls now refuse HTTP redirects; MCP JSON/SSE is byte-bounded at 8 MiB by default, independent of model output token limits. No daemon, new provider router or user-visible model capability cap was introduced. [Technical contract](docs/RELEASE_3_ARCHITECTURE.md).
