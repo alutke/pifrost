@@ -99,7 +99,7 @@ import {
 	pifrostAttemptMaxTokens,
 	pifrostDirectMaxTokens,
 	gatewayProtocolOrder,
-	isGatewayProtocolRejection,
+	isVerifiedGatewayProtocolRejection,
 	type GatewayWireProtocol,
 	normalizePifrostReasoningOptions,
 	shouldOmitOpaqueReasoningSummary,
@@ -684,6 +684,9 @@ function streamPifrostOpenAI(
 			? opaqueReplay?.responses ?? "unknown"
 			: opaqueReplay?.chat ?? "unknown"),
 	});
+	// One ingress attempt at a time. The capture is selected by the dispatcher
+	// and contains the actual gateway status for this attempt only.
+	let gatewayProtocolAttempt: BifrostCostCapture | undefined;
 	const streamChat = (attemptIndex = 0) => {
 	const directPhysical = physicalPolicyIdentity(model.id);
 		const transportModel = buildPifrostTransportModel({
@@ -693,6 +696,7 @@ function streamPifrostOpenAI(
 			compat: transportCompat("openai-completions"),
 		} as ModelSpec<"openai-completions">);
 		const costCapture: BifrostCostCapture = { routeContract };
+		gatewayProtocolAttempt = costCapture;
 		const outputBudget = directBudget();
 		costCapture.outputBudget = outputBudget;
 		const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
@@ -764,6 +768,7 @@ function streamPifrostOpenAI(
 			...model, api: "openai-responses", compat: transportCompat("openai-responses"),
 		} as ModelSpec<"openai-responses">);
 		const capture: BifrostCostCapture = { routeContract };
+		gatewayProtocolAttempt = capture;
 		const outputBudget = directBudget();
 		capture.outputBudget = outputBudget;
 		const fetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, capture);
@@ -847,7 +852,7 @@ function streamPifrostOpenAI(
 	void runPifrostProtocolPlan(
 		model, plan, outer,
 		(attempt, index) => attempt.protocol === "openai-responses" ? streamResponses(index) : streamChat(index),
-		{ retryPreOutputError: isGatewayProtocolRejection },
+		{ retryPreOutputError: error => isVerifiedGatewayProtocolRejection(error, gatewayProtocolAttempt) },
 	).catch(error => outer.fail(error));
 	return outer;
 }
