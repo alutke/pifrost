@@ -354,7 +354,9 @@ function streamDynamicPifrostRoute(
 	const plannedBudget = resolveOutputBudget({
 		logicalModel: model.id,
 		requestedTokens: options?.maxTokens ?? model.maxTokens,
-		advertisedTokens: model.maxTokens,
+		// Explicit OMP maxTokens on a physical compatibility route must not be
+		// silently capped by an alias's weakest-member catalogue projection.
+		advertisedTokens: rawOptions?.maxTokens !== undefined ? undefined : model.maxTokens,
 		// The prewalk must not be limited by members it later excludes.
 		// Apply the actual eligible fallback envelope at dispatch instead.
 		explicit: rawOptions?.maxTokens !== undefined,
@@ -440,18 +442,23 @@ function streamDynamicPifrostRoute(
 		const outputBudget = resolveOutputBudget({
 			logicalModel: model.id,
 			requestedTokens: options?.maxTokens ?? model.maxTokens,
-			advertisedTokens: model.maxTokens,
+			// A user-specified cap can exceed the alias's conservative
+			// synthetic capacity when the physical target actually supports it.
+			advertisedTokens: rawOptions?.maxTokens !== undefined ? undefined : model.maxTokens,
 			members: attempt.members.map(member => ({
 				reference: member.reference,
 				maxTokens: member.maxTokens,
 				source: member.maxTokensSource,
-				// OMP's prewalk already checks approximate input/context eligibility.
-				// Never further shorten output solely from an unverified token estimate.
 			})),
+			// Native alias passthrough is governed by Bifrost's live rule,
+			// which may select a different member; don't assert a physical
+			// bound. Only local compatibility dispatch has a known primary.
+			memberPolicy: nativeGatewayRoute ? "diagnostic" : "primary",
 			explicit: rawOptions?.maxTokens !== undefined,
 		});
 		costCapture.outputBudget = outputBudget;
-		const maxTokens = pifrostAttemptMaxTokens(attempt, outputBudget.effectiveTokens);
+		const maxTokens = nativeGatewayRoute ? outputBudget.effectiveTokens
+			: pifrostAttemptMaxTokens(attempt, outputBudget.effectiveTokens);
 		if (attempt.protocol === "openai-responses") {
 			const upstreamOnPayload = options?.onPayload;
 			const upstreamOnSseEvent = options?.onSseEvent;
@@ -625,6 +632,9 @@ function streamPifrostOpenAI(
 		requestedTokens: options?.maxTokens ?? model.maxTokens,
 		advertisedTokens: model.maxTokens,
 		members: routeSnapshot.outputMembers.get(model.id.toLowerCase()),
+		// Opaque logical aliases leave target selection and fallback semantics
+		// with Bifrost. Member capacities are diagnostics, not hard caps.
+		memberPolicy: "diagnostic",
 		// Do not derive a restrictive output cap from estimated input tokens.
 		// OMP retains ownership of context accounting and compaction.
 		explicit: rawOptions?.maxTokens !== undefined,
