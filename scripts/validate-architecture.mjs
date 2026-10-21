@@ -219,7 +219,7 @@ if (!replayGuard.includes('validation: "structural-only" | "not-checked"') ||
 }
 if(!native.includes("guardPifrostReasoningReplay(capped, transportModel") ||
    !replayGuard.includes("unanimousStrictReasoningRequirement(") ||
-   !native.includes("resolvePifrostReasoningReplayRequirement(") ||
+   !runtimeRouteState.includes("resolvePifrostReasoningReplayRequirement(") ||
    !native.includes("strictReplayCompatOverrides(")) {
   errors.push("Release D must preserve physical replay guards and OMP-owned strict history serialization");
 }
