@@ -1,3 +1,10 @@
+## 0.29.4 — 2026-10-21
+
+- Release B: enforce one conservative output-token budget across native Bifrost aliases, physical compatibility attempts, and direct physical requests; clamp limits again after final OMP payload serialization without changing provider-specific token-field choice.
+- Protect logical OMP roles with configurable per-response operational defaults and explicit diagnostics for requested/effective caps, source and route member verification. Preserve Bifrost routing, fallback order, reasoning level and credentials.
+- Add exact-entitlement confirmed CommandCode GOAT DeepSeek V4.1 Flash output ceiling (393,216, from the 20 Oct HTTP 400); never apply it to unrelated providers/models. Include context headroom and all known member ceilings, with clear local errors where no safe headroom remains.
+- Add synthetic oversize request and route-fallback regression tests. Does not change reasoning replay, virtual-key permissions, provider selection or retry policy.
+
 ## 0.29.3 — 2026-10-21
 
 - Release A: add sanitized, deterministic fixtures for the 555-entry DeepSeek reasoning replay error, the 712,434-token output request, virtual-key denial, affinity mismatch and three-attempt exhaustion.
