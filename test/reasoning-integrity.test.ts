@@ -86,3 +86,46 @@ test("D-08: only unanimous strict physical policies authorize OMP replay overrid
   });
   assert.deepEqual(strictReplayCompatOverrides(unknown),{});
 });
+
+test("R2-04 empty Chat native replay fields count as structural presence, NOT provider acceptance",()=>{
+	const payload={messages:[{role:"assistant",tool_calls:[{id:"1"}],reasoning_content:""}]};
+	const result=enforceReasoningReplay(payload,chat("tool-call-runs"),true);
+	assert.equal(result.reason,"verified"); // backward compatible shape result, not upstream acceptance
+	assert.equal(result.validation,"structural-only");
+	assert.equal(result.gatewayOutcome,"not-observed");
+	assert.equal(result.nativeReasoningItems,1);
+	assert.equal(result.emptyNativeReasoningItems,1);
+	assert.doesNotMatch(JSON.stringify(result),/tool_calls|reasoning_content/u);
+});
+test("R2-05 structured Responses markers without encrypted content or text are flagged without fabrication",()=>{
+	const item={type:"reasoning",content:[]};
+	const payload={input:[{role:"user",content:"secret"},item,{type:"message",role:"assistant",content:[]}]};
+	const before=JSON.stringify(payload);
+	const result=enforceReasoningReplay(payload,responses("all-assistant-runs"),true);
+	assert.equal(result.validation,"structural-only");
+	assert.equal(result.gatewayOutcome,"not-observed");
+	assert.equal(result.emptyNativeReasoningItems,1);
+	assert.equal(JSON.stringify(payload),before);
+	assert.doesNotMatch(JSON.stringify(result),/secret/u);
+});
+test("R2-06 original 555-item Responses replay stays incompatible until every required assistant boundary has native reasoning",()=>{
+	const items:Record<string,unknown>[]=[];
+	let call=0;
+	for(let i=0;i<100;i++) {
+		if(i<35)items.push({role:"user",content:"private"});
+		items.push({type:"message",role:"assistant",content:[{type:"output_text",text:"visible thinking does not count"}]});
+		for(let j=0;j<(i<10?3:2);j++){
+			items.push({type:"function_call",call_id:"t"+call,arguments:"{}"});
+			items.push({type:"function_call_output",call_id:"t"+call,output:"result"});
+			call++;
+		}
+	}
+	assert.equal(items.length,555);
+	const first=auditReasoningReplay({input:items},responses("all-assistant-runs"),true);
+	assert.equal(first.runsRequiringReasoning,210);
+	assert.equal(first.missingRequiredRuns,210);
+	assert.equal(first.gatewayOutcome,"not-observed");
+	// Without a signed physical-provider contract this audit may only reject
+	// missing structure; it never creates encrypted native reasoning markers.
+	assert.equal(items.filter(v=>v.type==="reasoning").length,0);
+});
