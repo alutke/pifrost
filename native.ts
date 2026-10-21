@@ -479,16 +479,10 @@ function streamDynamicPifrostRoute(
 	const reasoning = resolvePifrostReasoningEffort(model, options);
 	const outer = new AssistantMessageEventStream();
 
-	// Management-plane verification happens before the first physical HTTP
-	// attempt, only for a locally lowered compatibility route. The CLI owns
-	// admin credentials; the OMP inference runtime never receives them.
+	// Physical exceptions re-attest before *every* attempt; no admin key
+	// enters OMP inference. The route is always compared to the live gateway.
 	let physicalAttemptCapture: BifrostCostCapture | undefined;
-	void (async () => {
-		if (!nativeGatewayRoute) {
-			if (!verifyLiveRoute) throw new Error("Pifrost compatibility dispatch requires read-only live Bifrost route attestation");
-			await verifyLiveRoute(profile);
-		}
-		await runPifrostProtocolPlan(model, executionPlan, outer, (attempt, attemptIndex) => {
+	void runPifrostProtocolPlan(model, executionPlan, outer, (attempt, attemptIndex) => {
 		const costCapture: BifrostCostCapture = { routeContract };
 		physicalAttemptCapture = costCapture;
 		const baseFetch = createBifrostCostBridgeFetch(underlyingFetch, costCapture);
@@ -646,11 +640,14 @@ function streamDynamicPifrostRoute(
 			chatReasoningFilter,
 			nativeGatewayRoute ? plan.logicalModel : undefined,
 		);
-		}, {
-			retryPreOutputError: error =>
-				evaluateAttemptTransition("physical-compatibility", error, physicalAttemptCapture).permitted,
-		});
-	})().catch((error) => outer.fail(error));
+	}, {
+		beforeAttempt: nativeGatewayRoute ? undefined : async () => {
+			if (!verifyLiveRoute) throw new Error("Pifrost compatibility dispatch requires read-only live Bifrost route attestation");
+			await verifyLiveRoute(profile);
+		},
+		retryPreOutputError: error =>
+			evaluateAttemptTransition("physical-compatibility", error, physicalAttemptCapture).permitted,
+	}).catch((error) => outer.fail(error));
 
 	return outer;
 }
