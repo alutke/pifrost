@@ -13,16 +13,11 @@ test("D-01: original 555-entry OMP request has no native reasoning, rejects befo
   for(let n=0;n<100;n++) {
     if(n<35)input.push({role:"user",content:[]});
     input.push({type:"message",role:"assistant",content:[{type:"output_text",text:"<thinking>visible text</thinking>"}]});
-    for(let j=0;j<2;j++) {
+    for(let j=0;j<(n<10?3:2);j++) {
       input.push({type:"function_call",name:"mock_tool",call_id:"n"+call,arguments:"{}"});
       input.push({type:"function_call_output",call_id:"n"+call,output:""});
       call++;
     }
-  }
-  for(let n=0;n<10;n++) {
-    input.push({type:"function_call",name:"mock_tool",call_id:"n"+call,arguments:"{}"});
-    input.push({type:"function_call_output",call_id:"n"+call,output:""});
-    call++;
   }
   assert.equal(input.length,555);
   const payload={model:"omp-default",input,reasoning:{effort:"high"},max_output_tokens:712434};
