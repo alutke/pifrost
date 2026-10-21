@@ -4,6 +4,7 @@ import { gatewayFailureAdvice, type GatewayFailureClass } from "./gateway-reliab
 import { inferenceFailureAdvice, type InferenceFailureCode } from "./inference-failure.ts";
 import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
 import type { OutputBudgetDecision } from "./output-budget.ts";
+import { gatewaySelectionRelativeToPrimary, type RouteContractEvidence } from "./route-compatibility.ts";
 
 export interface PifrostRouteTrace {
 	timestamp: number;
@@ -24,6 +25,7 @@ export interface PifrostRouteTrace {
 	failureCode?: InferenceFailureCode;
 	requestDiagnostics?: InferenceRequestDiagnostics;
 	outputBudget?: OutputBudgetDecision;
+	routeContract?: RouteContractEvidence;
 	retryAfterSeconds?: number;
 	outputStarted?: boolean;
 	cacheHit?: boolean;
@@ -88,6 +90,7 @@ export function recordBifrostCaptureTrace(
 		...(capture.failureCode ? { failureCode: capture.failureCode } : {}),
 		...(capture.requestDiagnostics ? { requestDiagnostics: { ...capture.requestDiagnostics } } : {}),
 		...(capture.outputBudget ? { outputBudget: { ...capture.outputBudget, constraints: [...capture.outputBudget.constraints] } } : {}),
+		...(capture.routeContract ? { routeContract: { ...capture.routeContract } } : {}),
 		...(capture.retryAfterSeconds !== undefined ? { retryAfterSeconds: capture.retryAfterSeconds } : {}),
 		...(capture.outputStarted !== undefined ? { outputStarted: capture.outputStarted } : {}),
 		...(capture.cacheHit !== undefined ? { cacheHit: capture.cacheHit } : {}),
@@ -199,6 +202,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 	const shown=Math.min(options.last??10,20);
 	const lines = ["Pifrost request trace (newest first; up to "+shown+" requests)", "Gateway request details do not establish that a Bifrost routing rule matched.", ""];
 	for (const trace of [...current].reverse().slice(0, shown)) {
+    const selection = gatewaySelectionRelativeToPrimary(trace.routeContract, trace.provider, trace.resolvedModel);
     if(options.compact){
       const served=trace.resolvedModel
         ? (trace.provider?trace.provider+"/":"")+trace.resolvedModel
@@ -207,6 +211,8 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
       lines.push("    Model: "+served);
       lines.push("    Route: "+(trace.routeMode??"unverified")+
         (trace.isFallback||((trace.fallbackIndex??0)>0)?" (fallback attempted)":""));
+      if(selection==="differs-from-cached-primary") lines.push("    Selection: differs from cached primary; gateway reason unknown (affinity/fallback not inferred)");
+      if(trace.routeContract?.mode==="pifrost-compatibility" && trace.routeContract.verification!=="verified-local-snapshot") lines.push("    Contract: local policy verification required");
       if(trace.outputBudget?.reduced) lines.push("    Output: capped to "+trace.outputBudget.effectiveTokens+" tokens"+
         (trace.outputBudget.requestedTokens ? " (requested "+trace.outputBudget.requestedTokens+")" : "")+
         "; limiting="+trace.outputBudget.limitingSource);
@@ -231,6 +237,9 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			`requested=${trace.requestedPrimary}`,
 			trace.requestedModel ? `gateway-request=${trace.requestedProvider ? `${trace.requestedProvider}/` : ""}${trace.requestedModel}` : undefined,
 			gatewayRouteEvidence(trace) ? `route-evidence=${gatewayRouteEvidence(trace)}` : undefined,
+			trace.routeContract ? `contract=${trace.routeContract.mode} policy=${trace.routeContract.verification} members=${trace.routeContract.possibleMembers} unknown-members=${trace.routeContract.unknownMembers} encoders=${trace.routeContract.encodersComplete ? "complete" : "incomplete"} mixed-protocols=${trace.routeContract.mixedProtocols ? "yes" : "no"} affinity-scope=all-known-members` : undefined,
+			trace.routeContract?.policyFingerprintPrefix ? `policy-fingerprint=${trace.routeContract.policyFingerprintPrefix}` : undefined,
+			selection!=="unverified" ? `selection=${selection} selection-cause=unverified` : undefined,
 			trace.compatibilityBoundaryCount
 				? `wire-boundaries=${trace.compatibilityBoundaryCount} boundary-retry=pre-output-only`
 				: undefined,
@@ -270,7 +279,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			].join(" ") : undefined,
 			`outcome=${trace.outcome}`,
 		].filter((value): value is string => typeof value === "string" && value.length > 0);
-		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=)/u.test(item));
+		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=|contract=|policy-fingerprint=|selection=)/u.test(item));
 		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
 		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
 		const reasoning = details.filter(item => /^(?:history-removed=|history-mixed=|history-nested=|history-prose=|history-ambiguous=)/u.test(item));
