@@ -155,7 +155,6 @@ installOmpCatalogRuntime({
 		),
 });
 
-const recoveryNotices = createRecoveryNoticeCoordinator();
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -932,6 +931,7 @@ async function installOmpNativeTextTokenCounter(): Promise<void> {
 
 export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	const runtimeRouteState = createRuntimeRouteState();
+	const recoveryNotices = createRecoveryNoticeCoordinator();
 	const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 		logicalModel => runtimeRouteState.capture().dynamicRoutes.get(logicalModel.toLowerCase()),
 	);
