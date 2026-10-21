@@ -36,7 +36,7 @@ test("Release B: weakest route member wins and physical headroom is respected", 
   assert.equal(d.effectiveTokens,131072);
   assert.equal(d.memberCount,2);
   assert.throws(()=>resolveOutputBudget({logicalModel:"omp-task",requestedTokens:32768,
-    members:[{reference:"provider/a",maxTokens:65536,source:"live",contextWindow:100000,estimatedInputTokens:99000}],
+    members:[{reference:"provider/a",maxTokens:65536,source:"live",contextWindow:100000,estimatedInputTokens:100000}],
     environment:{PIFROST_OUTPUT_CAP_TASK:"0"}}),/no output headroom/u);
 });
 test("Release B: no artificial role defaults, and operator caps are opt-in only", () => {
