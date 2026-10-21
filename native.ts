@@ -136,6 +136,7 @@ import {
 	formatPifrostSessionCosts,
 	recordBifrostCaptureTrace,
 	releasePifrostRouteTraces,
+	latestPifrostRouteTrace,
 } from "./request-provenance.ts";
 
 installPifrostModelPolicyResolver((spec) => resolveModelPolicy(spec));

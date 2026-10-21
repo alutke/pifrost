@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { parsePifrostTraceOptions,formatPifrostRouteTraces,
-  recordBifrostCaptureTrace,releasePifrostRouteTraces,
+  recordBifrostCaptureTrace,releasePifrostRouteTraces,latestPifrostRouteTrace,
 } from "../request-provenance.ts";
 test("OMP trace options are bounded, composable and backward compatible",()=>{
   assert.deepEqual(parsePifrostTraceOptions(""),{compact:true});
@@ -95,4 +95,21 @@ test("Release D: strict-replay wire diagnostics contain counts and never thinkin
   assert.match(verbose,/replay=incompatible-history replay-contract=all-assistant-runs assistant-runs=100 replay-required=100 replay-missing=100/u);
   assert.doesNotMatch(verbose,/SECRET_THINKING|reasoning_content=|call_id=/u);
   releasePifrostRouteTraces(sid);
+});
+
+test("Release E: use last attempted result, not an earlier failed fallback",()=>{
+ const sessionId="recovery-last-outcome";
+ assert.equal(latestPifrostRouteTrace(sessionId),undefined);
+ recordBifrostCaptureTrace(sessionId,{logicalModel:"omp-default",protocol:"openai-responses",
+   attempt:1,requestedPrimary:"omp-default",outcome:"error"},{
+     failureCode:"REASONING_REPLAY_INVALID",httpStatus:400,outputStarted:false
+   });
+ assert.equal(latestPifrostRouteTrace(sessionId)?.failureCode,"REASONING_REPLAY_INVALID");
+ recordBifrostCaptureTrace(sessionId,{logicalModel:"omp-default",protocol:"openai-completions",
+   attempt:2,requestedPrimary:"omp-default",outcome:"done"},{
+     httpStatus:200,outputStarted:true
+   });
+ assert.equal(latestPifrostRouteTrace(sessionId)?.outcome,"done");
+ releasePifrostRouteTraces(sessionId);
+ assert.equal(latestPifrostRouteTrace(sessionId),undefined);
 });

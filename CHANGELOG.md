@@ -1,3 +1,10 @@
+## 0.29.7 — 2026-10-21
+
+- Release E: add a bounded, non-retrying recovery notice for the latest failed inference attempt and a privacy-safe `/pifrost recover status` command; successful later fallbacks suppress stale alerts.
+- Add explicitly confirmed `/pifrost recover fork` for pre-output reasoning replay errors, using OMP's documented new-session command API. The user supplies a continuation brief; the original session remains saved and only the brief is sent to the new session.
+- Guard recovery against active turns, pending messages, asynchronous jobs, subagent/non-TUI contexts and cancelled dialogs. No tool calls, assistant thinking, signatures or transcript history copied; no automatic model switching, service or provider retry.
+- Extend synthetic failure and OMP trace tests; preserve full model output allowances and Bifrost's routing authority.
+
 ## 0.29.6 — 2026-10-21
 
 - Release D: final-wire Chat/Responses replay validation for verified strict physical provider policies; incomplete strict history fails locally before upstream dispatch with no tool replay.
