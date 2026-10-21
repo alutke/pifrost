@@ -87,7 +87,7 @@ test("Release D: strict-replay wire diagnostics contain counts and never thinkin
     failureCode:"REASONING_REPLAY_INVALID",
     replayAudit:{protocol:"openai-responses",requirement:"all-assistant-runs",assistantRuns:100,
       runsRequiringReasoning:100,missingRequiredRuns:100,toolCalls:210,
-      nativeReasoningItems:0,reason:"incompatible-history"},
+      nativeReasoningItems:0,emptyNativeReasoningItems:0,validation:"structural-only",gatewayOutcome:"not-observed",reason:"incompatible-history"},
   });
   const compact=formatPifrostRouteTraces(sid,{compact:true});
   assert.match(compact,/invalid replay history; no upstream request sent/u);
