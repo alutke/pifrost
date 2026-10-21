@@ -119,12 +119,9 @@ test("OMP cold startup registers discoverable models before returning, then reus
             ],
         };
         await onEnd(simulatedStall, ctx);
-        assert.equal(followUps.length, 1, "one OMP follow-up is enqueued");
-        assert.equal(followUps[0]?.message.attribution, "agent", "recovery is not presented as a human user prompt");
-        assert.equal(followUps[0]?.options.triggerTurn, true);
-        assert.equal(followUps[0]?.options.deliverAs, "followUp");
+        assert.equal(followUps.length, 0, "Release 2 default must never enqueue automatically");
         await onEnd(simulatedStall, ctx);
-        assert.equal(followUps.length, 1, "second failed settle cannot loop");
+        assert.equal(followUps.length, 0, "duplicate terminal observations must not enqueue");
         assert.ok(commandHandler, "OMP /pifrost recovery command registered");
         const failureSession="cold-start-1";
         recordBifrostCaptureTrace(failureSession,{
@@ -151,6 +148,16 @@ test("OMP cold startup registers discoverable models before returning, then reus
             return {cancelled:false};
           },
         };
+        await commandHandler("stalled status",recoveryCtx);
+        assert.ok(notices.some(x=>x.includes("possible stalled") || x.includes("possible stalled planning")), "must expose pending observation");
+        assert.equal(followUps.length,0);
+        await commandHandler("stalled continue",recoveryCtx);
+        assert.equal(followUps.length,1,"approval queues exactly one OMP continuation");
+        assert.equal(followUps[0]?.message.attribution,"agent","continuation is not impersonated as user input");
+        assert.equal(followUps[0]?.options.triggerTurn,true);
+        assert.equal(followUps[0]?.options.deliverAs,"followUp");
+        await commandHandler("stalled continue",recoveryCtx);
+        assert.equal(followUps.length,1,"consumed continuation cannot run twice");
         await commandHandler("recover status",recoveryCtx);
         assert.ok(notices.some(x=>x.includes("REASONING_REPLAY_INVALID")));
         assert.equal(recoveryMessages.length,0,"status never enqueues a user turn");
