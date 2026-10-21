@@ -1,4 +1,4 @@
-# OMP compatibility — Pifrost 0.29.0 (Releases A–D hardening)
+# OMP compatibility — Pifrost v0.29.13
 
 ## Tested contract and ownership
 
@@ -33,7 +33,7 @@
 | Bifrost route updated during active OMP session | New model registry refresh only; no management secrets in inference process |
 | CLI/plugin installation on packaged and released binaries | Both historical minimum and current smoke tests succeed |
 
-## Explicitly out of scope for Release A
+## Historical: explicitly out of scope for Release A
 
 Native image judgments, cross-provider decision routing, auto-prewalk activation, session consultations and new daemon/watch implementations. Follow-up releases may integrate them only after their contracts and live gateway endpoints have been verified.
 
@@ -60,3 +60,16 @@ An image-count cap is published to OMP only when valid explicit metadata appears
 - The static `workaround-register.mjs` remains a retained-only inventory. `scripts/validate-workarounds.mjs` checks identifiers and referenced tests. No automated retirement without targeted tests, reviewed evidence and an explicit change.
 
 See [Integration support matrix](INTEGRATION_SUPPORT.md) for exact claims and limitations.
+
+
+## Release 4 integration boundaries (v0.29.13)
+
+The packaged OMP policy snapshot remains pinned to 18.12.1, with
+historical minimum install compatibility checked against 18.10.4.
+Release 4 changes output-token budgeting, not transport replay or
+the host's native execution semantics. A physical exception enforces
+limits for the known first physical member; Bifrost-native aliases keep
+physical member capacities diagnostic-only. Read
+[the updated output budget policy](OUTPUT_BUDGET.md) for fallback
+trade-offs and [the current support matrix](INTEGRATION_SUPPORT.md)
+for the difference between mocked checks and live conformance.
