@@ -52,7 +52,7 @@ test("E-04: clean fork is always user-approved and invokes OMP newSession, not s
   const {host,calls}=mock();
   assert.equal(await handleRecoveryCommand("fork",trace(),host),"forked");
   assert.deepEqual(calls,["input","confirm","newSession:/tmp/original.jsonl","userMessage"]);
-  assert.match(recoveryContinuationPrompt("Fix Release E"),/verify whether they already occurred/u);
+  assert.match(recoveryContinuationPrompt("Fix Release E"),/verifying whether they already occurred/u);
 });
 test("E-05: modal cancellation and OMP cancelled session do not enqueue tool work",async()=>{
   let m=mock();m.state.approved=false;
