@@ -210,6 +210,35 @@ export function gatewayProtocolOrder(diagnostic: AliasDiagnostic | undefined): r
 /** Require an explicit error from the gateway; never retry generic failures,
  * quota, auth, timeouts, or failures after output was committed.
  */
+export interface GatewayProtocolRetryEvidence {
+	/** Captured from the same outgoing Bifrost response, not inferred from text. */
+	readonly httpStatus?: number;
+	readonly failureCode?: string;
+	readonly failureClass?: string;
+	readonly outputStarted?: boolean;
+}
+
+/**
+ * A second *gateway ingress protocol* may be attempted only for a verified,
+ * pre-output request-contract rejection. We do not use a 403/429/5xx, an
+ * unauthorized model, a missing replay item, or a token-budget rejection as
+ * grounds to send the same history a second time.
+ *
+ * This gates a single protocol probe for an opaque Bifrost logical alias;
+ * it never chooses an upstream physical provider, overrides Bifrost routing,
+ * or introduces an external retry loop.
+ */
+export function isVerifiedGatewayProtocolRejection(
+	value: unknown,
+	evidence: GatewayProtocolRetryEvidence | undefined,
+): boolean {
+	if (evidence?.httpStatus !== 400 && evidence?.httpStatus !== 422) return false;
+	if (evidence.outputStarted === true) return false;
+	if (evidence.failureClass && evidence.failureClass !== "request") return false;
+	if (evidence.failureCode && !["PROTOCOL_INCOMPATIBLE", "OTHER_REQUEST", "UNKNOWN"].includes(evidence.failureCode)) return false;
+	return isGatewayProtocolRejection(value);
+}
+
 export function isGatewayProtocolRejection(value: unknown): boolean {
 	const message = typeof value === "string" ? value
 		: value instanceof Error ? value.message

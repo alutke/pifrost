@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.7
+0.29.8
 ```
 
 Bun also works:
@@ -638,3 +638,19 @@ assistant or tool history, invent reasoning, repeat tool calls, switch routes,
 or change output-token limits. Busy/queued sessions and active async jobs block
 a fork. Earlier failed fallbacks that later succeeded cannot trigger one.
 See [Controlled recovery](docs/CONTROLLED_RECOVERY.md).
+
+
+### Release F — cross-provider hardening (v0.29.8)
+
+Pifrost's opaque Bifrost alias ingress fallback from Responses to Chat is now
+strictly gated by evidence from the **same gateway request**. Only a recognised
+pre-output protocol error with HTTP 400/422 can justify a second protocol
+probe. Authorization (401/403), quota (402/429), timeout (408/504), upstream
+5xx, reasoning-history and output-token errors never cause an additional
+protocol attempt. The original alias, session identity, live Bifrost rule,
+reasoning settings, tool call IDs and model output ceilings are preserved.
+
+Nine provider entitlement namespaces have regression coverage for physical
+model identity, actual caps, Chat/Responses shapes, native reasoning and tool
+result pairing. No service, automatic model switching or arbitrary role caps.
+See [Cross-provider hardening](docs/CROSS_PROVIDER_HARDENING.md).

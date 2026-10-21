@@ -124,6 +124,42 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 			if (attempt.maxTokens !== undefined) assert.ok(attempt.maxTokens <= 393216);
 		}
 		assert.deepEqual(attempts.slice(2).map(a=>a.model), ["omp-advisor", "omp-advisor"]);
+
+		// F: an ingress protocol probe is permitted only for *verified*
+		// unsupported-protocol HTTP 400/422; authorization, quota, reasoning
+		// and output errors must not replay the request on a second protocol.
+		const cases = [
+			{ status:400, detail:"Model does not support this protocol.", expected:2 },
+			{ status:422, detail:"Model does not support this protocol.", expected:2 },
+			{ status:403, detail:"Model does not support this protocol.", expected:1 },
+			{ status:400, detail:"reasoning_content in thinking mode must be passed back to the API", expected:1 },
+			{ status:400, detail:"max_output_tokens 712434 exceeds maximum 393216", expected:1 },
+			{ status:400, detail:"model permission denied; virtual key blocked", expected:1 },
+			{ status:400, detail:"an unrelated request error", expected:1 },
+		];
+		for (const [index, item] of cases.entries()) {
+			const actual: Array<{path:string;model:string | undefined;session:string|null}> = [];
+			const caseFetch:typeof fetch = async (input,init)=>{
+				const body = typeof init?.body === "string" ? JSON.parse(init.body) as {model?:string} : {};
+				const headers = new Headers(init?.headers);
+				actual.push({path:new URL(String(input)).pathname,model:body.model,
+					session:headers.get("x-bf-session-id")});
+				return new Response(JSON.stringify({error:{type:"invalid_request_error",message:item.detail}}),{
+					status:item.status,headers:{"content-type":"application/json"},
+				});
+			};
+			const sid="release-f-wire-"+index;
+			const stream=provider!.streamSimple(agentModel, {
+				messages:[{role:"user",content:[{type:"text",text:"test protocol failover"}],timestamp:Date.now()}],
+			}, {sessionId:sid,apiKey:vk,maxTokens:128,fetch:caseFetch});
+			try { for await(const _event of stream) {} } catch { /* intentional mock HTTP failure */ }
+			assert.equal(actual.length,item.expected,`status ${item.status}: ${item.detail}`);
+			assert.ok(actual.every(a=>a.model==="omp-advisor" && a.session===sid),
+				"Every attempt must retain original gateway alias and session; no physical rerouting");
+			assert.deepEqual(actual.map(a=>a.path),item.expected===2
+				? ["/v1/responses","/v1/chat/completions"] : ["/v1/responses"]);
+		}
+
 	} finally {
 		for (const key of keys) {
 			if (saved[key] === undefined) delete process.env[key];
@@ -131,4 +167,4 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		}
 		rmSync(dir, { recursive: true, force: true });
 	}
-});
+}, 20000);
