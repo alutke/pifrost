@@ -52,3 +52,28 @@ test("Release B: output capping is visible in both trace views without user cont
   assert.doesNotMatch(verbose,/secret|api-key|prompt=/iu);
   releasePifrostRouteTraces(sid);
 });
+
+test("Release C: trace distinguishes physical service from cached preferred model without inferring affinity",()=>{
+  const sid="release-c-affinity-evidence";
+  recordBifrostCaptureTrace(sid,{
+    logicalModel:"omp-default",routeMode:"bifrost-direct",protocol:"openai-responses",
+    attempt:1,requestedPrimary:"omp-default",outcome:"done",
+  },{
+    resolvedModel:"deepseek/deepseek-v4.1-flash",provider:"commandcode",
+    requestId:"request-not-for-summary",
+    routeContract:{
+      mode:"bifrost-direct",verification:"gateway-owned-unverified",
+      possibleMembers:3,unknownMembers:0,mixedProtocols:true,encodersComplete:false,
+      gatewaySelectionCause:"unknown",cachedPrimary:"OpenCode Go/deepseek/deepseek-v4.1-flash",
+    }
+  });
+  const compact=formatPifrostRouteTraces(sid,{compact:true});
+  assert.match(compact,/differs from cached primary; gateway reason unknown/u);
+  assert.doesNotMatch(compact,/request-not-for-summary|session affinity caused/u);
+  const verbose=formatPifrostRouteTraces(sid,{compact:false});
+  assert.match(verbose,/selection=differs-from-cached-primary selection-cause=unverified/u);
+  assert.match(verbose,/contract=bifrost-direct policy=gateway-owned-unverified members=3/u);
+  assert.match(verbose,/affinity-scope=all-known-members/u);
+  assert.doesNotMatch(verbose,/reason=session-affinity|credential|api-key=/iu);
+  releasePifrostRouteTraces(sid);
+});

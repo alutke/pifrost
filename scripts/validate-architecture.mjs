@@ -10,6 +10,7 @@ const runtime = [
   "capability-bridge.ts",
   "context-estimator.ts",
   "dynamic-routing.ts",
+  "route-compatibility.ts",
   "multi-protocol-routing.ts",
   "protocol-capability.ts",
   "route-eligibility.ts",
@@ -166,9 +167,18 @@ if (!dynamicRoutes.includes("export function canUseNativeBifrostRoute(") ||
     !multiProtocol.includes("requestModelId: logicalModel.id")) {
   errors.push("Complete compatible Chat routes must preserve the Bifrost logical alias");
 }
-if (!native.includes("compatibilityRouteSnapshotError(profile)") ||
+const routeCompatibility = readFileSync(resolve(root, "route-compatibility.ts"), "utf8");
+if (!native.includes("compatibilityExecutionError(profile, plan)") ||
+    !routeCompatibility.includes("compatibilityRouteSnapshotError(profile)") ||
+    !routeCompatibility.includes("plan.encoderContractsComplete !== true") ||
     !multiProtocol.includes("createPifrostMemberModelSpec(logicalModel, attempt.members[0]!, \"openai-completions\")")) {
   errors.push("Physical route exceptions need fresh synchronized provenance and physical wire policy");
+}
+if (!dynamicRoutes.includes("plan.encoderContractsComplete !== true") ||
+    !dynamicRoutes.includes("policyFingerprint") ||
+    !native.includes("opaqueRouteContract(") ||
+    !routeCompatibility.includes("gatewaySelectionRelativeToPrimary(")) {
+  errors.push("Release C must prevent unknown physical encoders from native passthrough and retain gateway route attribution");
 }
 if (!/statefulResponses\s*:\s*false/u.test(native)) {
   errors.push("Pifrost dynamic Responses must remain stateless across heterogeneous Bifrost fallback routes");

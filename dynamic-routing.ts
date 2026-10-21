@@ -55,6 +55,8 @@ export interface DynamicRouteProfile {
 	maxTokens: number;
 	/** Time of last management-plane route sync, not a live gateway attestation. */
 	synchronizedAt?: string;
+	/** Verified full rule-policy digest from routes sync (not a model-list hash). */
+	policyFingerprint?: string;
 	members: DynamicRouteMemberProfile[];
 	bands: DynamicRouteBand[];
 }
@@ -86,6 +88,8 @@ export interface DynamicRoutePlan {
 	attempts: DynamicRouteAttempt[];
 	excluded: Array<{ reference: string; reasons: string[] }>;
 	compatibilityBreaks?: Array<{ previous: string; next: string; protocol: PifrostWireProtocol }>;
+	/** OMP materialized a known physical encoder contract for every eligible member. */
+	encoderContractsComplete?: boolean;
 }
 
 export interface DynamicRouteEstimateOptions {
@@ -236,6 +240,7 @@ export function applyDynamicRouteProfiles(
 			// context-window down-ranking without silently increasing output ceilings.
 			maxTokens: model.maxTokens,
 			...(typeof aliasConfig.synchronizedAt === "string" ? { synchronizedAt: aliasConfig.synchronizedAt } : {}),
+			...(typeof aliasConfig.policyFingerprint === "string" ? { policyFingerprint: aliasConfig.policyFingerprint } : {}),
 			members,
 			bands: routeBands(members),
 		};
@@ -551,6 +556,10 @@ export function planDynamicRouteAttempts(
 		attempts,
 		excluded: evaluated.excluded,
 		...(compatibilityBreaks.length ? { compatibilityBreaks } : {}),
+		encoderContractsComplete: Boolean(options.compatibilityByMember) && evaluated.eligible.every(
+			item => typeof options.compatibilityByMember?.get(item.member.reference) === "string"
+				&& (options.compatibilityByMember?.get(item.member.reference)?.length ?? 0) > 0,
+		),
 	};
 }
 
@@ -563,6 +572,7 @@ export function planDynamicRouteAttempts(
  */
 export function canUseNativeBifrostRoute(profile: DynamicRouteProfile, plan: DynamicRoutePlan): boolean {
 	if (plan.logicalModel !== profile.id || plan.excluded.length > 0 || plan.attempts.length !== 1) return false;
+	if (plan.encoderContractsComplete !== true) return false;
 	if (plan.compatibilityBreaks?.length) return false;
 	const attempt = plan.attempts[0]!;
 	if (attempt.protocol !== "openai-completions") return false;
@@ -586,6 +596,9 @@ export function compatibilityRouteSnapshotError(
 	now = Date.now(),
 	maxAgeMs = MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS,
 ): string | undefined {
+	if (!profile.policyFingerprint || !/^[a-f0-9]{64}$/u.test(profile.policyFingerprint)) {
+		return `Pifrost compatibility route ${profile.id} has no verified rule-policy fingerprint; run pifrost routes sync and restart OMP`;
+	}
 	const synchronizedAt = typeof profile.synchronizedAt === "string" ? Date.parse(profile.synchronizedAt) : NaN;
 	if (!Number.isFinite(synchronizedAt) || synchronizedAt > now + 60_000) {
 		return `Pifrost compatibility route ${profile.id} has no verified route-sync timestamp; run pifrost routes sync and restart OMP`;

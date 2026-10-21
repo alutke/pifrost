@@ -2,6 +2,7 @@ import { classifyGatewayHttpStatus, parseGatewayRetryAfter, safeGatewayHeaderTok
 import { classifyInferenceFailure, type InferenceFailureCode } from "./inference-failure.ts";
 import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
 import type { OutputBudgetDecision } from "./output-budget.ts";
+import type { RouteContractEvidence } from "./route-compatibility.ts";
 
 function finiteNonNegative(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -23,6 +24,8 @@ export interface BifrostCostCapture {
 	requestDiagnostics?: InferenceRequestDiagnostics;
 	/** Provenance-only cap decision made before HTTP dispatch; no prompts/keys. */
 	outputBudget?: OutputBudgetDecision;
+	/** Cached route-contract metadata, never used to select Bifrost providers. */
+	routeContract?: RouteContractEvidence;
 	retryAfterSeconds?: number;
 	cacheHit?: boolean;
 	cacheHitType?: string;
