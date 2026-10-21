@@ -1394,7 +1394,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			try {
 				if (command === "refresh") {
-					const catalog = await fetchFreshCatalog(config, aliasSource);
+					const catalog = await refresh();
 					diagnostics = catalog.diagnostics;
 					ctx.ui.notify(
 						`${formatDoctorSummary(diagnostics, aliasSource.path)}\nCatalog refreshed. Restart OMP to load the new model capabilities.`,
@@ -1406,7 +1406,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				const cached = loadCatalogCache({ config, aliasConfig: aliasSource.config });
 				if (cached) diagnostics = cached.diagnostics;
 				if (!cached && diagnostics.length === 0) {
-					const catalog = await fetchFreshCatalog(config, aliasSource);
+					const catalog = await refresh();
 					diagnostics = catalog.diagnostics;
 				}
 				bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
