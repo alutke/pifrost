@@ -631,9 +631,12 @@ export function rewriteDynamicOpenAIRequest(
 	const evaluated = evaluateDynamicRoute(profile, body, options, [PIFROST_WIRE_PROTOCOL]);
 	const primary = evaluated.eligible[0]!.member.reference;
 	const fallbacks = evaluated.eligible.slice(1).map((item) => item.member.reference);
+	// Legacy explicit-rewrite helper is not installed by the native provider.
+	// Keep the same target-scoped budget semantics: a weaker Bifrost fallback
+	// must not silently lower the primary model's requested output capacity.
 	const safeOutputCeiling = Math.min(
 		evaluated.outputReserveTokens,
-		...evaluated.eligible.map((item) => item.member.maxTokens),
+		evaluated.eligible[0]!.member.maxTokens,
 	);
 	return {
 		body: {
