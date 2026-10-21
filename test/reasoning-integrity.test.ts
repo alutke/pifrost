@@ -9,9 +9,21 @@ const chat = (requirement: ReasoningReplayContract["requirement"]): ReasoningRep
  ({requirement,protocol:"openai-completions",source:"physical-omp-policy"});
 test("D-01: original 555-entry OMP request has no native reasoning, rejects before Bifrost when contract is verified strict",()=>{
   const input:Record<string,unknown>[]=[];
-  for(let n=0;n<35;n++)input.push({role:"user",content:[]});
-  for(let n=0;n<100;n++)input.push({type:"message",role:"assistant",content:[{type:"output_text",text:"<thinking>visible text</thinking>"}]});
-  for(let n=0;n<210;n++){input.push({type:"function_call",name:"mock_tool",call_id:"n"+n,arguments:"{}"});input.push({type:"function_call_output",call_id:"n"+n,output:""});}
+  let call=0;
+  for(let n=0;n<100;n++) {
+    if(n<35)input.push({role:"user",content:[]});
+    input.push({type:"message",role:"assistant",content:[{type:"output_text",text:"<thinking>visible text</thinking>"}]});
+    for(let j=0;j<2;j++) {
+      input.push({type:"function_call",name:"mock_tool",call_id:"n"+call,arguments:"{}"});
+      input.push({type:"function_call_output",call_id:"n"+call,output:""});
+      call++;
+    }
+  }
+  for(let n=0;n<10;n++) {
+    input.push({type:"function_call",name:"mock_tool",call_id:"n"+call,arguments:"{}"});
+    input.push({type:"function_call_output",call_id:"n"+call,output:""});
+    call++;
+  }
   assert.equal(input.length,555);
   const payload={model:"omp-default",input,reasoning:{effort:"high"},max_output_tokens:712434};
   const audit=auditReasoningReplay(payload,responses("all-assistant-runs"),true);
@@ -46,7 +58,7 @@ test("D-05: Chat guards require OMP's native replay field, not visible <thinking
   const body={messages:[{role:"user",content:"hi"},{role:"assistant",content:"<thinking>not valid replay</thinking>",tool_calls:[{id:"1"}]}]};
   assert.equal(auditReasoningReplay(body,chat("tool-call-runs"),true).missingRequiredRuns,1);
   assert.throws(()=>enforceReasoningReplay(body,chat("tool-call-runs"),true),ReasoningReplayIntegrityError);
-  body.messages[1]!.reasoning_content=""; // OMP's documented empty-field Chat fallback is accepted for serialization
+  (body.messages[1]! as Record<string,unknown>).reasoning_content=""; // native Chat replay field
   assert.equal(enforceReasoningReplay(body,chat("tool-call-runs"),true).reason,"verified");
 });
 test("D-06: preservation and idempotence across all legitimate reasoning forms",()=>{
