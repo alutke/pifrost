@@ -131,10 +131,10 @@ export function bifrostAttemptExtraBody(attempt: DynamicRouteAttempt): Record<st
 }
 
 /**
- * Return the output-token ceiling that is safe for every physical member in a
- * Bifrost attempt. The caller's requested max is a ceiling rather than a
- * requirement, so heterogeneous fallback groups are clamped to their weakest
- * member instead of rejecting otherwise-capable models.
+ * Bound the locally dispatched *primary* physical target, not all Bifrost
+ * fallbacks. Bifrost retains fallback ownership and may report a target-level
+ * rejection if its chosen fallback accepts fewer output tokens. We must not
+ * silently reduce a strong primary because a lower-capacity fallback exists.
  */
 export function pifrostAttemptMaxTokens(
 	attempt: DynamicRouteAttempt,
@@ -147,6 +147,7 @@ export function pifrostAttemptMaxTokens(
 		members: attempt.members.map(member => ({
 			reference: member.reference, maxTokens: member.maxTokens, source: member.maxTokensSource,
 		})),
+		memberPolicy: "primary",
 		environment: {}, // Helper is physical-only; OMP role caps apply at dispatch.
 	}).effectiveTokens;
 }
