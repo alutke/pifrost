@@ -316,7 +316,7 @@ test("Release D: OMP natively serializes missing DeepSeek Responses replay when 
   };
   const user={role:"user",content:[{type:"text",text:"continue"}],timestamp:Date.now()};
   const stream=streamOpenAIResponses(model,{
-    systemPrompt:"synthetic test",messages:[previous,user] as any,tools:[],
+    systemPrompt:["synthetic test"],messages:[previous,user] as any,tools:[],
   },{
     apiKey:"sk-not-a-real-key",sessionId:"release-d-omp-native-serializer",maxTokens:4096,
     reasoning:"high",statefulResponses:false,fetch:fakeFetch,
