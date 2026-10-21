@@ -539,7 +539,7 @@ function streamDynamicPifrostRoute(
 					// cleanup to stderr on every streamed model request.
 					const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
-				guardPifrostReasoningReplay(capped, transportModel, attempt.protocol, options, costCapture);
+				guardPifrostReasoningReplay(capped, transportModel, "openai-responses", options, costCapture);
 				return capped;
 				},
 				onSseEvent: (event, requestModel) => {
@@ -599,7 +599,7 @@ function streamDynamicPifrostRoute(
 				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
-				guardPifrostReasoningReplay(capped, transportModel, attempt.protocol, options, costCapture);
+				guardPifrostReasoningReplay(capped, transportModel, "openai-completions", options, costCapture);
 				return capped;
 			},
 			onSseEvent: (event, requestModel) => {
