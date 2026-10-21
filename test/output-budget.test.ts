@@ -63,3 +63,12 @@ test("Release B: absent caps are not invented; invalid/empty budgets fail clearl
   assert.throws(()=>resolveOutputBudget({logicalModel:"unknown/physical",environment:{}}),/No safe output limit/u);
   assert.throws(()=>resolveOutputBudget({logicalModel:"omp-default",requestedTokens:-10,environment:{}}),/Invalid requested/u);
 });
+
+test("Release B: physical direct context headroom caps output independently of role defaults",()=>{
+  const result=resolveOutputBudget({
+    logicalModel:"physical/model",requestedTokens:65536,advertisedTokens:131072,
+    contextWindow:100000,estimatedInputTokens:80000,environment:{},
+  });
+  assert.equal(result.effectiveTokens,17952);
+  assert.equal(result.limitingSource,"context-headroom");
+});

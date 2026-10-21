@@ -271,6 +271,18 @@ test("attempt output cap is clamped to the weakest same-protocol Bifrost fallbac
 	assert.equal(pifrostAttemptMaxTokens(chat), 131_072);
 });
 
+test("confirmed fallback output maximum overrides inflated catalog metadata", () => {
+	const route = plan();
+	const attempt = route.attempts[1]!;
+	attempt.members = [{
+		...attempt.members[0]!,
+		reference: "CommandCode GOAT/deepseek/deepseek-v4.1-flash",
+		maxTokens: 712_434,
+		maxTokensSource: "bifrost-datasheet",
+	}];
+	assert.equal(pifrostAttemptMaxTokens(attempt, 712_434), 393_216);
+});
+
 test("single-member Responses attempt preserves a supported larger requested ceiling", () => {
 	const route = plan();
 	const responses = route.attempts[0]!;

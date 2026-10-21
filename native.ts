@@ -604,13 +604,21 @@ function streamPifrostOpenAI(
 	recordAgentRequest(sessionId, model.id);
 	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
-	const directBudget = () => resolveOutputBudget({
-		logicalModel: model.id,
-		requestedTokens: options?.maxTokens ?? model.maxTokens,
-		advertisedTokens: model.maxTokens,
-		members: runtimeOutputMembers.get(model.id.toLowerCase()),
-		explicit: rawOptions?.maxTokens !== undefined,
-	});
+	const directBudget = () => {
+		const physical = physicalPolicyIdentity(model.id);
+		const inputTokens = physical ? estimateOmpContextInputTokens(context,
+			createModelAwareContextTokenizer({
+				api: model.api, identity: model.identity, id: physical.id, tokenizer: model.tokenizer,
+			})) : undefined;
+		return resolveOutputBudget({
+			logicalModel: model.id,
+			requestedTokens: options?.maxTokens ?? model.maxTokens,
+			advertisedTokens: model.maxTokens,
+			members: runtimeOutputMembers.get(model.id.toLowerCase()),
+			...(physical ? { contextWindow: model.contextWindow, estimatedInputTokens: inputTokens } : {}),
+			explicit: rawOptions?.maxTokens !== undefined,
+		});
+	};
 	if (profile) {
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}

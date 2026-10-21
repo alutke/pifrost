@@ -34,6 +34,7 @@ function withBifrostFallbacks(
 
 // Shared by all provider families and Chat/Responses protocol paths.
 import { physicalPolicyIdentity } from "./request-compatibility.ts";
+import { resolveOutputBudget } from "./output-budget.ts";
 export { physicalPolicyIdentity, shouldOmitOpaqueReasoningSummary, normalizePifrostReasoningOptions, pifrostDirectMaxTokens } from "./request-compatibility.ts";
 
 /**
@@ -138,15 +139,15 @@ export function pifrostAttemptMaxTokens(
 	attempt: DynamicRouteAttempt,
 	requestedMaxTokens?: number,
 ): number | undefined {
-	const memberCeilings = attempt.members
-		.map((member) => member.maxTokens)
-		.filter((value) => Number.isFinite(value) && value > 0);
-	const routeCeiling = memberCeilings.length ? Math.min(...memberCeilings) : undefined;
-	const requested = typeof requestedMaxTokens === "number" && Number.isFinite(requestedMaxTokens) && requestedMaxTokens > 0
-		? Math.floor(requestedMaxTokens)
-		: undefined;
-	if (requested !== undefined && routeCeiling !== undefined) return Math.min(requested, routeCeiling);
-	return requested ?? routeCeiling;
+	if (!attempt.members.length && requestedMaxTokens === undefined) return undefined;
+	return resolveOutputBudget({
+		logicalModel: "physical-compatibility",
+		requestedTokens: requestedMaxTokens,
+		members: attempt.members.map(member => ({
+			reference: member.reference, maxTokens: member.maxTokens, source: member.maxTokensSource,
+		})),
+		environment: {}, // Helper is physical-only; OMP role caps apply at dispatch.
+	}).effectiveTokens;
 }
 
 function logicalAssistantMessage(
