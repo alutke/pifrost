@@ -85,9 +85,13 @@ export function detectStalledTurn(event: StalledTurnEnd): "leaked-planning-stop"
 }
 
 /** A stall is only an observation, never proof that another turn is safe. */
-export type StalledTurnMode = "notice" | "auto";
+export type StalledTurnMode = "auto" | "notice" | "off";
+/** Auto is the default. Invalid non-empty values fail safe to advisory mode. */
 export function stalledTurnMode(value: string | undefined): StalledTurnMode {
-	return value?.trim().toLowerCase() === "auto" ? "auto" : "notice";
+	const configured = value?.trim().toLowerCase();
+	if (!configured || configured === "auto") return "auto";
+	if (["off", "disabled", "disable", "false", "no", "0"].includes(configured)) return "off";
+	return "notice";
 }
 export interface StalledTurnRecoveryContext {
 	sessionId: string;
@@ -102,10 +106,11 @@ export type StalledTurnState = "none" | "pending" | "consumed";
 
 /**
  * Per-session, per-human-prompt observation and one-shot continuation gate.
- * Default: notice only. A manual continuation requires explicit approval from
- * the interactive OMP command, checked again after the approval dialog.
+ * Default: one automatic OMP-owned follow-up after a high-confidence stall.
+ * Explicit "off" disables detection, notifications and follow-ups; "notice"
+ * retains the user-confirmed interactive OMP flow.
  */
-export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "notice") {
+export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "auto") {
 	const attempted = new Set<string>();
 	const pending = new Set<string>();
 
@@ -114,13 +119,15 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "no
 		ctx.hasRunningAsyncWork !== true && ctx.isIdle !== false;
 
 	const continuePending = (ctx: StalledTurnRecoveryContext): boolean => {
-		if (!available(ctx) || !pending.has(ctx.sessionId) || attempted.has(ctx.sessionId)) return false;
+		if (mode === "off" || !available(ctx) || !pending.has(ctx.sessionId) || attempted.has(ctx.sessionId)) return false;
 		// Consume before queueing so a synchronous OMP event cannot duplicate it.
 		attempted.add(ctx.sessionId);
 		pending.delete(ctx.sessionId);
 		try {
 			ctx.sendContinuation(STALLED_TURN_CONTINUATION);
-			ctx.notify?.("Pifrost: one OMP-managed continuation queued after approval. Check workspace state before any side effects.", "warning");
+			ctx.notify?.(mode === "auto"
+				? "Pifrost: model stopped in leaked planning; queued one OMP-managed continuation. Check workspace state before any side effects."
+				: "Pifrost: one OMP-managed continuation queued after approval. Check workspace state before any side effects.", "warning");
 			return true;
 		} catch {
 			ctx.notify?.("Pifrost: could not enqueue continuation; no automatic retry. Inspect the session before proceeding.", "error");
@@ -129,6 +136,7 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "no
 	};
 
 	return {
+		mode,
 		onPrompt(sessionId: string, prompt: string): void {
 			if (typeof prompt === "string" && !prompt.includes(STALLED_TURN_RECOVERY_MARKER)) {
 				attempted.delete(sessionId);
@@ -144,6 +152,7 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "no
 		},
 		continuePending,
 		onAgentEnd(event: StalledTurnEnd, ctx: StalledTurnRecoveryContext): boolean {
+			if (mode === "off") return false;
 			if (!ctx.isMain || !ctx.sessionId || ctx.hasQueuedMessages || ctx.hasRunningAsyncWork === true || !detectStalledTurn(event)) return false;
 			if (attempted.has(ctx.sessionId)) {
 				ctx.notify?.("Pifrost: another planning leak after one continuation. Recovery exhausted; inspect /pifrost trace or use a new session.", "error");
@@ -155,9 +164,9 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "no
 					ctx.notify?.("Pifrost: possible unfinished planning detected; no action taken. Inspect the workspace, then use /pifrost stalled continue to approve a single OMP-managed continuation.", "warning");
 				}
 			}
-			// Explicit opt-in auto mode retains the former bounded behaviour,
-			// but only when OMP has no pending work and is idle. Notice-only is
-			// intentionally the default for non-idempotent tool workflows.
+			// Automatic mode is the default but still bounded to one settled,
+			// tool-using OMP main-agent turn, with no queued or async work.
+			// Advisory mode requires separate explicit user confirmation.
 			return mode === "auto" ? continuePending(ctx) : false;
 		},
 	};

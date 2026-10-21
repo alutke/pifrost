@@ -34,7 +34,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
 	const keys = [
 		"BIFROST_URL", "BIFROST_API_KEY", "BIFROST_VIRTUAL_KEY",
 		"PIFROST_CONFIG_DIR", "PIFROST_ALIASES", "PIFROST_CACHE_FILE",
-		"PIFROST_FORCE_REFRESH", "PIFROST_NATIVE_JUDGE_MODEL", "PIFROST_AUTO_SYNC"
+		"PIFROST_FORCE_REFRESH", "PIFROST_NATIVE_JUDGE_MODEL", "PIFROST_AUTO_SYNC", "PIFROST_STALLED_TURN_MODE"
 	] as const;
 	const before = Object.fromEntries(keys.map(key => [key, process.env[key]]));
 	await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
@@ -50,6 +50,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
 		delete process.env.PIFROST_FORCE_REFRESH;
 		delete process.env.PIFROST_NATIVE_JUDGE_MODEL;
         delete process.env.PIFROST_AUTO_SYNC;
+        process.env.PIFROST_STALLED_TURN_MODE = "notice"; // explicit manual-mode integration coverage
         let onDemandRuns = 0;
         let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
         const recoveryMessages:string[] = [];
@@ -119,7 +120,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
             ],
         };
         await onEnd(simulatedStall, ctx);
-        assert.equal(followUps.length, 0, "Release 2 default must never enqueue automatically");
+        assert.equal(followUps.length, 0, "explicit notice mode must never enqueue automatically");
         await onEnd(simulatedStall, ctx);
         assert.equal(followUps.length, 0, "duplicate terminal observations must not enqueue");
         assert.ok(commandHandler, "OMP /pifrost recovery command registered");
@@ -181,6 +182,31 @@ test("OMP cold startup registers discoverable models before returning, then reus
 			(item: { id: string }) => item.id
 		), ["omp-cold-start-model"]);
 		assert.equal(requests, 1, "warm startup must remain offline/cache-first");
+
+		// Regression: settings are read per OMP extension instance, not once
+		// when native.ts was imported; no daemon or global state survives restart.
+		const bootInMode = async (mode: string | undefined) => {
+			if (mode === undefined) delete process.env.PIFROST_STALLED_TURN_MODE;
+			else process.env.PIFROST_STALLED_TURN_MODE = mode;
+			const sent: Array<{message:any,options:any}> = [];
+			let end: ((event:any, ctx:any) => void | Promise<void>) | undefined;
+			await nativeExtension({
+				...pi,
+				registerProvider() {},
+				registerCommand() {},
+				on(name:string, listener:(event:any,ctx:any)=>void|Promise<void>) {
+					if (name === "agent_end") end = listener;
+				},
+				sendMessage(message:any, options:any) { sent.push({message,options}); },
+			} as unknown as Parameters<typeof nativeExtension>[0]);
+			assert.ok(end);
+			await end(simulatedStall,ctx);
+			await end(simulatedStall,ctx);
+			return sent;
+		};
+		assert.equal((await bootInMode("off")).length,0, "off mode must suppress native hook follow-ups");
+		assert.equal((await bootInMode(undefined)).length,1, "unset mode must default to bounded automatic follow-up");
+		assert.equal(requests,1,"restarting extension in each mode must use cached models");
 	} finally {
 		for (const key of keys) {
 			const value = before[key];

@@ -1,5 +1,7 @@
 # Release 2 — OMP lifecycle and reasoning conformance (v0.29.10)
 
+> **Later default change (v0.29.11):** This page documents v0.29.10 historical behaviour. Current Pifrost defaults to bounded `auto`; set `PIFROST_STALLED_TURN_MODE=off` to disable it or `notice` for the manual approval flow. See [current reference](REFERENCE.md#stalled-turn-mode-configuration-v02911).
+
 ## Scope and design rule
 
 OMP owns agent execution, tool calls, queues, session history, confirmations

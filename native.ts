@@ -207,7 +207,6 @@ function installDynamicRouteProfiles(
 const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 	(logicalModel) => runtimeDynamicRoutes.get(logicalModel.toLowerCase()),
 );
-const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 const recoveryNotices = createRecoveryNoticeCoordinator();
 
 function nonEmpty(value: string | undefined): string | undefined {
@@ -982,6 +981,7 @@ async function installOmpNativeTextTokenCounter(): Promise<void> {
 }
 
 export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
+	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 	await installOmpNativeTextTokenCounter();
 	registerBifrostRichContentBridge(pi);
 	pi.registerFlag("bifrost-url", {
@@ -1207,7 +1207,10 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					? ctx.hasQueuedMessages() : false),
 			hasRunningAsyncWork: typeof ctx.getAsyncJobSnapshot === "function" &&
 				(ctx.getAsyncJobSnapshot()?.running.length ?? 0) > 0,
-			isIdle: typeof ctx.isIdle === "function" ? ctx.isIdle() : undefined,
+			// agent_end is OMP's settled-turn signal. Some OMP versions have
+			// not yet set isIdle() true while dispatching the end callback;
+			// queue/async guards and event.willContinue protect auto mode.
+			// Manual continuation rechecks isIdle() after user approval.
 			sendContinuation: message => pi.sendMessage({
 				customType: "pifrost-stalled-turn-recovery",
 				content: message,
@@ -1269,17 +1272,23 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				}
 				const state = stalledTurnRecovery.status(sessionId);
 				if (action === "status") {
-					ctx.ui.notify(state === "pending"
+					ctx.ui.notify("Stalled-turn mode: " + stalledTurnRecovery.mode + ". " + (stalledTurnRecovery.mode === "off"
+						? "Detection and automatic continuation are disabled."
+						: state === "pending"
 						? "A possible stalled planning turn is pending. No continuation has been sent. Inspect completed work; use /pifrost stalled continue to approve one OMP continuation."
 						: state === "consumed"
 						? "One stalled-turn continuation was already consumed for this prompt; no further automatic attempt."
-						: "No unhandled stalled-turn observation for this OMP session.", "info");
+						: "No unhandled stalled-turn observation for this OMP session."), "info");
 					return;
 				}
 				const safeToContinue = () => ctx.agent.kind === "main" && ctx.mode === "tui" &&
 					ctx.hasUI && ctx.isIdle() && !ctx.hasPendingMessages() &&
 					(ctx.getAsyncJobSnapshot()?.running.length ?? 0) === 0 &&
 					ctx.sessionManager.getSessionId() === sessionId;
+				if (stalledTurnRecovery.mode === "off") {
+					ctx.ui.notify("Stalled-turn recovery is disabled (PIFROST_STALLED_TURN_MODE=off). No continuation sent.", "warning");
+					return;
+				}
 				if (state !== "pending" || !safeToContinue()) {
 					ctx.ui.notify("Continuation unavailable: no pending stall, active/queued work, or non-interactive OMP session.", "warning");
 					return;

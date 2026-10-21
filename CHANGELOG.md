@@ -1,3 +1,10 @@
+## 0.29.11 — 2026-10-21
+
+- Default high-confidence stalled-turn handling to bounded automatic OMP continuation without provider retries or tool replay.
+- Add explicit `PIFROST_STALLED_TURN_MODE=off` to disable detection, notices and follow-ups; retain `notice` for manual approval and safe fallback on invalid settings.
+- Create mode state per extension instance, preserving OMP settled-turn semantics and existing one-shot, queued-message and async-job safety guards.
+- Expand coordinator and native OMP tests for default, disabled and manual modes.
+
 ## 0.29.10 — 2026-10-21
 
 - Release 2: notice-only stalled-turn recovery by default, one confirmed idle-safe `/pifrost stalled continue`, bounded opt-in auto mode, no services.

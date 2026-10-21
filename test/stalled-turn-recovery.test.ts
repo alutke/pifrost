@@ -61,8 +61,8 @@ test("does not retransmit completed tool calls or consume messages with tool cal
 	}), undefined);
 });
 
-test("explicit opt-in auto mode permits only one OMP follow-up per human prompt", () => {
-	const recovery = createStalledTurnRecoveryCoordinator("auto");
+test("default auto mode permits only one OMP follow-up per human prompt", () => {
+	const recovery = createStalledTurnRecoveryCoordinator();
 	const sent: string[] = [];
 	const warnings: string[] = [];
 	const context = {
@@ -130,11 +130,16 @@ test("recovery marker cannot be mistaken for another stalled assistant response"
 	)), undefined);
 });
 
-test("R2-01 notice-only is default and never queues tool-capable agent work", () => {
-	assert.equal(stalledTurnMode(undefined), "notice");
-	assert.equal(stalledTurnMode("1"), "notice");
+test("R2-01 explicit notice mode never queues without manual approval", () => {
+	assert.equal(stalledTurnMode(undefined), "auto");
+	assert.equal(stalledTurnMode(""), "auto");
 	assert.equal(stalledTurnMode("AUTO"), "auto");
-	const recovery = createStalledTurnRecoveryCoordinator();
+	assert.equal(stalledTurnMode("notice"), "notice");
+	assert.equal(stalledTurnMode("1"), "notice");
+	for (const setting of ["off", "OFF", "disable", "disabled", "false", "no", "0"]) {
+		assert.equal(stalledTurnMode(setting), "off", setting);
+	}
+	const recovery = createStalledTurnRecoveryCoordinator("notice");
 	let sends=0;
 	const notices: string[]=[];
 	const ctx={ sessionId:"manual-1",isMain:true,hasQueuedMessages:false,
@@ -156,7 +161,7 @@ test("R2-01 notice-only is default and never queues tool-capable agent work", ()
 	assert.equal(sends,1);
 });
 test("R2-02 user cancellation leaves pending observation, human prompt and shutdown clear it", () => {
-	const recovery=createStalledTurnRecoveryCoordinator();
+	const recovery=createStalledTurnRecoveryCoordinator("notice");
 	const ctx={sessionId:"manual-2",isMain:true,hasQueuedMessages:false,sendContinuation:()=>{}};
 	recovery.onAgentEnd(observed,ctx);
 	assert.equal(recovery.status(ctx.sessionId),"pending");
@@ -180,4 +185,40 @@ test("R2-03 auto mode refuses queued messages, live async work or non-idle OMP",
 	assert.equal(sent,0);
 	assert.equal(recovery.continuePending({...ctx,isIdle:true}),true);
 	assert.equal(sent,1);
+});
+
+test("R3-01 off mode suppresses detection, UI notices and OMP follow-ups", () => {
+	const recovery = createStalledTurnRecoveryCoordinator("off");
+	const notices: string[] = [], sent: string[] = [];
+	const ctx = {
+		sessionId: "disabled-session", isMain: true,
+		hasQueuedMessages: false, isIdle: true,
+		sendContinuation: (message: string) => { sent.push(message); },
+		notify: (message: string) => { notices.push(message); },
+	};
+	assert.equal(recovery.mode, "off");
+	assert.equal(recovery.onAgentEnd(observed, ctx), false);
+	assert.equal(recovery.status(ctx.sessionId), "none");
+	assert.equal(recovery.continuePending(ctx), false);
+	recovery.onPrompt(ctx.sessionId, "another prompt");
+	assert.equal(recovery.onAgentEnd(observed, ctx), false);
+	assert.deepEqual(sent, []);
+	assert.deepEqual(notices, []);
+});
+test("R3-02 default auto never starts while queue or async work is active and does not duplicate a follow-up", () => {
+	const recovery = createStalledTurnRecoveryCoordinator();
+	const messages: string[] = [];
+	const ctx = {
+		sessionId: "default-auto-guards", isMain: true,
+		hasQueuedMessages: false, hasRunningAsyncWork: false,
+		sendContinuation: (message: string) => messages.push(message),
+	};
+	assert.equal(recovery.mode, "auto");
+	assert.equal(recovery.onAgentEnd(observed, {...ctx,hasQueuedMessages:true}), false);
+	assert.equal(recovery.onAgentEnd(observed, {...ctx,hasRunningAsyncWork:true}), false);
+	assert.equal(recovery.onAgentEnd({...observed,willContinue:true}, ctx), false);
+	assert.equal(recovery.onAgentEnd({...observed,awaitingAsyncWork:true}, ctx), false);
+	assert.equal(recovery.onAgentEnd(observed, ctx), true);
+	assert.equal(recovery.onAgentEnd(observed, ctx), false);
+	assert.deepEqual(messages, [STALLED_TURN_CONTINUATION]);
 });
