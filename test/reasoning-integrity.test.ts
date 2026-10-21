@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import test from "node:test";
 import {auditReasoningReplay,enforceReasoningReplay,reasoningReplayRequirementFromCompat,ReasoningReplayIntegrityError,
-type ReasoningReplayContract} from "../reasoning-integrity.ts";
+type ReasoningReplayContract,unanimousStrictReasoningRequirement,strictReplayCompatOverrides} from "../reasoning-integrity.ts";
 const responses = (requirement: ReasoningReplayContract["requirement"]): ReasoningReplayContract =>
  ({requirement,protocol:"openai-responses",source:"physical-omp-policy"});
 const chat = (requirement: ReasoningReplayContract["requirement"]): ReasoningReplayContract =>
@@ -76,4 +76,18 @@ test("D-07: unverified model constraints may not be converted into mandatory str
   assert.equal(reasoningReplayRequirementFromCompat({requiresReasoningContentForToolCalls:true}),"tool-call-runs");
   assert.equal(reasoningReplayRequirementFromCompat({requiresReasoningContentForAllAssistantTurns:true}),"all-assistant-runs");
   assert.equal(reasoningReplayRequirementFromCompat({requiresReasoningContentForAllAssistantTurns:false,requiresReasoningContentForToolCalls:false}),"not-required");
+});
+
+test("D-08: only unanimous strict physical policies authorize OMP replay override",()=>{
+  const all="all-assistant-runs", tools="tool-call-runs", unknown="unknown", none="not-required";
+  assert.equal(unanimousStrictReasoningRequirement([all,all,all],true),all);
+  assert.equal(unanimousStrictReasoningRequirement([tools,tools],true),tools);
+  assert.equal(unanimousStrictReasoningRequirement([all,tools],true),unknown);
+  assert.equal(unanimousStrictReasoningRequirement([all,none],true),unknown);
+  assert.equal(unanimousStrictReasoningRequirement([all,all],false),unknown);
+  assert.equal(unanimousStrictReasoningRequirement([],true),unknown);
+  assert.deepEqual(strictReplayCompatOverrides(all),{
+    requiresReasoningContentForAllAssistantTurns:true,requiresReasoningContentForToolCalls:true
+  });
+  assert.deepEqual(strictReplayCompatOverrides(unknown),{});
 });

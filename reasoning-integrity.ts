@@ -143,3 +143,30 @@ export function reasoningReplayRequirementFromCompat(compat: unknown): Reasoning
       c.requiresReasoningContentForToolCalls === false) return "not-required";
   return "unknown";
 }
+
+/** Choose a common OMP serialization contract only when *every* reachable
+ * gateway member was resolved and reports the same strict requirement. An
+ * unknown/tolerant/heterogeneous member must not be forced into a foreign
+ * reasoning format or silently excluded from Bifrost's fallback chain. */
+export function unanimousStrictReasoningRequirement(
+  requirements: readonly ReasoningReplayRequirement[],
+  complete: boolean,
+): ReasoningReplayRequirement {
+  if (!complete || !requirements.length) return "unknown";
+  const first = requirements[0];
+  return (first === "all-assistant-runs" || first === "tool-call-runs") &&
+    requirements.every(value => value === first) ? first : "unknown";
+}
+
+/** Only the documented OMP replay switches are set. This lets OMP run its
+ * own synthetic non-substantive compatibility logic, not Pifrost's. */
+export function strictReplayCompatOverrides(requirement: ReasoningReplayRequirement): Record<string, boolean> {
+  if (requirement === "all-assistant-runs") return {
+    requiresReasoningContentForAllAssistantTurns: true,
+    requiresReasoningContentForToolCalls: true,
+  };
+  if (requirement === "tool-call-runs") return {
+    requiresReasoningContentForToolCalls: true,
+  };
+  return {};
+}
