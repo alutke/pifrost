@@ -615,7 +615,7 @@ function streamPifrostOpenAI(
 			requestedTokens: options?.maxTokens ?? model.maxTokens,
 			advertisedTokens: model.maxTokens,
 			members: runtimeOutputMembers.get(model.id.toLowerCase()),
-			...(physical ? { contextWindow: model.contextWindow, estimatedInputTokens: inputTokens } : {}),
+			...(physical && typeof model.contextWindow === "number" ? { contextWindow: model.contextWindow, estimatedInputTokens: inputTokens } : {}),
 			explicit: rawOptions?.maxTokens !== undefined,
 		});
 	};
