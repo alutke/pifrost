@@ -4,6 +4,7 @@
  * The CLI child owns management authentication; no secrets reach the OMP
  * provider or model registry. No timers, cron jobs or background workers.
  */
+import { createHash } from "node:crypto";
 import { openSync, readFileSync, writeFileSync, closeSync, unlinkSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import {
@@ -43,6 +44,49 @@ export async function captureRouteSnapshot(env = process.env) {
     manifest: deriveAliasesRobust(discovered.rules),
     policyFingerprint: routePolicyFingerprint(discovered.rules),
   });
+}
+
+/** Deterministic digest of the exact ordered gateway-derived member chain. */
+export function compatibilityMemberDigest(references) {
+  if (!Array.isArray(references) || !references.length ||
+      !references.every(ref => typeof ref === "string" && ref.trim())) {
+    throw new RouteReconcileError("invalid-route-members");
+  }
+  return createHash("sha256").update(JSON.stringify(references)).digest("hex");
+}
+
+/**
+ * One-shot management-plane attestation. Two independent reads rule out an
+ * actively changing policy; no manifest/model files are written. It still
+ * cannot atomically lock Bifrost against edits after attestation.
+ */
+export async function attestCompatibilityRoute({
+  alias, capture = () => captureRouteSnapshot(), now = () => Date.now(),
+} = {}) {
+  if (typeof alias !== "string" || !/^omp-[a-z0-9_-]+$/iu.test(alias)) {
+    throw new RouteReconcileError("invalid-route-alias");
+  }
+  const first = validateRemoteSnapshot(await capture());
+  const second = validateRemoteSnapshot(await capture());
+  if (first.policyFingerprint !== second.policyFingerprint ||
+      diffAliases(first.manifest, second.manifest).length > 0) {
+    throw new RouteReconcileError("gateway-policy-changing");
+  }
+  const found = second.manifest.aliases[alias];
+  if (!found || Array.isArray(found) ||
+      found.dynamicRouting?.mode !== "context-aware" ||
+      found.dynamicRouting?.source !== "bifrost-simple-rule" ||
+      (found.routingPins?.length ?? 0) > 0) {
+    throw new RouteReconcileError("gateway-route-not-compatible");
+  }
+  return {
+    schemaVersion: 1,
+    status: "verified",
+    alias,
+    policyFingerprint: second.policyFingerprint,
+    memberDigest: compatibilityMemberDigest(found.chain),
+    verifiedAt: new Date(now()).toISOString(),
+  };
 }
 
 function alive(pid) {
