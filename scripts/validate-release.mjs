@@ -214,6 +214,8 @@ try {
   for (const path of [
     "package.json",
     "native.ts",
+    "attempt-retry-policy.ts",
+    "docs/RELEASE_1_EXECUTION_SAFETY.md",
     "transport-model.ts",
     "capability-bridge.ts",
     "context-estimator.ts",

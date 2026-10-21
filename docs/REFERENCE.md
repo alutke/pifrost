@@ -5,8 +5,26 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.8
+0.29.9
 ```
+
+## Release 1 — execution safety (v0.29.9)
+
+A physical compatibility exception may run only after a read-only CLI
+`pifrost routes attest <omp-alias> --json` returns two matching snapshots
+of Bifrost's **live** full policy, together with the exact ordered-member digest.
+Pifrost compares this with the in-memory route profile and requires an
+attestation no older than 15 seconds. The CLI does not refresh, rewrite or
+start a persistent watcher, and its management secrets never reach inference.
+If the check fails, physical dispatch stops before HTTP transmission; native
+logical-alias passthrough does not require management credentials.
+
+The shared attempt transition policy rejects request, authentication, quota,
+permission, reasoning, output-budget and timeout failures. An opaque ingress
+change requires Bifrost's HTTP 400/422 protocol rejection; crossing physical
+encoder boundaries requires verified upstream 502/503 pre-output evidence.
+This is not a new provider router or automatic replay of historical tools.
+See [Release 1 contract](RELEASE_1_EXECUTION_SAFETY.md).
 
 ## Stalled-turn recovery (v0.29.2)
 

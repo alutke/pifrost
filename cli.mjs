@@ -25,7 +25,7 @@ import {
 } from "./route-cli.mjs";
 import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
 import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
-import { reconcileRouteSnapshot, RouteReconcileError } from "./route-reconcile.mjs";
+import { reconcileRouteSnapshot, attestCompatibilityRoute, RouteReconcileError } from "./route-reconcile.mjs";
 import { commandCatalog, flagRequiresValue, isKnownFlag, cliUsageError, validateCliInvocation, commandUsage, operationLabel } from "./cli-command-schema.mjs";
 import { reportHealth, listFilter, operationSummary, safeUiText } from "./cli-health.mjs";
 import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
@@ -162,6 +162,7 @@ Usage:
   pifrost routes list
   pifrost routes diff
   pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
+  pifrost routes attest <alias> --json    Read-only live policy/member attestation for OMP
   pifrost routes sync [--no-refresh]
   pifrost routes reconcile --json         Safe user-triggered comparison and sync (OMP integration)
   pifrost routes diagnose
@@ -924,6 +925,19 @@ async function commandRoutesVerify(flags = {}) {
   const result = writeAliasManifest({ ...local, synchronizedAt: stamp, policyFingerprint });
   console.log(`Verified full Bifrost rule policy unchanged; refreshed local verification at ${stamp}.`);
   console.log(`Manifest: ${result.path}; restart OMP to refresh active compatibility profiles.`);
+}
+
+async function commandRoutesAttest(alias, flags = {}) {
+  try {
+    const attestation = await attestCompatibilityRoute({ alias });
+    if (flags.json) console.log(JSON.stringify(attestation));
+    else console.log(`Bifrost live route attested: ${attestation.alias} policy=${attestation.policyFingerprint.slice(0,12)} members=${attestation.memberDigest.slice(0,12)}`);
+  } catch (error) {
+    const code = error instanceof RouteReconcileError ? error.code : "gateway-check-failed";
+    if (flags.json) console.log(JSON.stringify({ schemaVersion:1, status:"unverified", reason:code }));
+    else console.error("Bifrost compatibility route attestation failed: "+code);
+    process.exitCode = 2;
+  }
 }
 
 async function commandRoutesSync(flags = {}) {
@@ -2485,6 +2499,7 @@ const COMMANDS = new Map([
   ["routes list", (_args,flags) => commandRoutesList(flags)],
   ["routes diff", () => commandRoutesDiff()],
   ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
+  ["routes attest", (args, flags) => commandRoutesAttest(args[0], flags)],
   ["routes sync", (_args, flags) => commandRoutesSync(flags)],
   ["routes reconcile", (_args, flags) => commandRoutesReconcile(flags)],
   ["routes diagnose", () => commandRoutesDiagnose()],

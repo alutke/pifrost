@@ -12,6 +12,7 @@ const runtime = [
   "dynamic-routing.ts",
   "route-compatibility.ts",
   "multi-protocol-routing.ts",
+  "attempt-retry-policy.ts",
   "protocol-capability.ts",
   "route-eligibility.ts",
   "route-inventory.ts",
@@ -184,9 +185,20 @@ if (!dynamicRoutes.includes("plan.encoderContractsComplete !== true") ||
   errors.push("Release C must prevent unknown physical encoders from native passthrough and retain gateway route attribution");
 }
 if (!native.includes("isVerifiedGatewayProtocolRejection(error, gatewayProtocolAttempt)") ||
-    !multiProtocol.includes('evidence?.httpStatus !== 400 && evidence?.httpStatus !== 422') ||
-    !multiProtocol.includes("evidence.outputStarted === true")) {
-  errors.push("Release F requires evidence-bound, pre-output HTTP protocol fallback for opaque Bifrost routes");
+    !multiProtocol.includes('evaluateAttemptTransition("gateway-ingress"') ||
+    !readFileSync(resolve(root,"attempt-retry-policy.ts"),"utf8").includes("status === 400 || status === 422")) {
+  errors.push("Release F requires shared evidence-bound, pre-output HTTP protocol fallback for opaque Bifrost routes");
+}
+const transitionPolicy=readFileSync(resolve(root,"attempt-retry-policy.ts"),"utf8");
+const reconcile=readFileSync(resolve(root,"route-reconcile.mjs"),"utf8");
+if (!native.includes('evaluateAttemptTransition("physical-compatibility"') ||
+    !multiProtocol.includes("!options.retryPreOutputError?.(error)") ||
+    !native.includes("await verifyLiveRoute(profile)") ||
+    !native.includes('["routes", "attest", profile.id, "--json"]') ||
+    !routeCompatibility.includes("assertLiveCompatibilityAttestation(") ||
+    !reconcile.includes("attestCompatibilityRoute(") ||
+    !transitionPolicy.includes('status === 502 || status === 503')) {
+  errors.push("Release 1 physical attempts need a shared fail-closed retry contract and live policy/member attestation");
 }
 const recoveryPolicy=readFileSync(resolve(root,"controlled-recovery.ts"),"utf8");
 const recoveryCommand=readFileSync(resolve(root,"recovery-command.ts"),"utf8");

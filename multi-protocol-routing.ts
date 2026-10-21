@@ -6,6 +6,7 @@ import type {
 } from "@oh-my-pi/pi-ai";
 
 import { isCommittedModelOutput, isUncommittedBlockEvent } from "./output-commitment.ts";
+import { evaluateAttemptTransition, isGatewayProtocolRejection, type AttemptFailureEvidence } from "./attempt-retry-policy.ts";
 
 import type { AliasDiagnostic } from "./index.ts";
 import type { PifrostWireProtocol } from "./protocol-capability.ts";
@@ -210,42 +211,14 @@ export function gatewayProtocolOrder(diagnostic: AliasDiagnostic | undefined): r
 /** Require an explicit error from the gateway; never retry generic failures,
  * quota, auth, timeouts, or failures after output was committed.
  */
-export interface GatewayProtocolRetryEvidence {
-	/** Captured from the same outgoing Bifrost response, not inferred from text. */
-	readonly httpStatus?: number;
-	readonly failureCode?: string;
-	readonly failureClass?: string;
-	readonly outputStarted?: boolean;
-}
-
-/**
- * A second *gateway ingress protocol* may be attempted only for a verified,
- * pre-output request-contract rejection. We do not use a 403/429/5xx, an
- * unauthorized model, a missing replay item, or a token-budget rejection as
- * grounds to send the same history a second time.
- *
- * This gates a single protocol probe for an opaque Bifrost logical alias;
- * it never chooses an upstream physical provider, overrides Bifrost routing,
- * or introduces an external retry loop.
- */
+export type GatewayProtocolRetryEvidence = AttemptFailureEvidence;
+/** Backward-compatible export; all transitions use the shared contract. */
 export function isVerifiedGatewayProtocolRejection(
-	value: unknown,
-	evidence: GatewayProtocolRetryEvidence | undefined,
+  value: unknown, evidence: GatewayProtocolRetryEvidence | undefined,
 ): boolean {
-	if (evidence?.httpStatus !== 400 && evidence?.httpStatus !== 422) return false;
-	if (evidence.outputStarted === true) return false;
-	if (evidence.failureClass && evidence.failureClass !== "request") return false;
-	if (evidence.failureCode && !["PROTOCOL_INCOMPATIBLE", "OTHER_REQUEST", "UNKNOWN"].includes(evidence.failureCode)) return false;
-	return isGatewayProtocolRejection(value);
+  return evaluateAttemptTransition("gateway-ingress", value, evidence).permitted;
 }
-
-export function isGatewayProtocolRejection(value: unknown): boolean {
-	const message = typeof value === "string" ? value
-		: value instanceof Error ? value.message
-		: value && typeof value === "object" && "errorMessage" in value
-			? String(value.errorMessage ?? "") : "";
-	return /model does not support (?:this |the )?protocol|unsupported (?:wire )?protocol|protocol (?:is )?not supported/iu.test(message);
-}
+export { isGatewayProtocolRejection };
 
 export interface PifrostAttemptStream extends AsyncIterable<AssistantMessageEvent> {
 	readonly hasPendingLocalWork?: boolean;
@@ -263,7 +236,7 @@ export type PifrostAttemptDispatcher = (
 ) => PifrostAttemptStream;
 
 /**
- * Execute protocol groups in route order. A failed group is retried only until
+ * Execute protocol groups in route order. A failed group may transition only when an explicit policy permits and
  * the first model-output event is emitted; once any text/thinking/tool output
  * is committed, replaying the turn on another protocol would duplicate or
  * contradict already-visible output and is therefore forbidden.
@@ -273,18 +246,22 @@ export async function runPifrostProtocolPlan(
 	plan: DynamicRoutePlan,
 	outer: PifrostProtocolOutput,
 	dispatch: PifrostAttemptDispatcher,
-	options: { retryPreOutputError?: (error: unknown) => boolean } = {},
+	options: { beforeAttempt?: (attempt: DynamicRouteAttempt, index: number) => Promise<void>; retryPreOutputError?: (error: unknown) => boolean } = {},
 ): Promise<void> {
 	let lastErrorEvent: Extract<AssistantMessageEvent, { type: "error" }> | undefined;
 	const thrown: unknown[] = [];
 
 	for (let attemptIndex = 0; attemptIndex < plan.attempts.length; attemptIndex++) {
 		const attempt = plan.attempts[attemptIndex]!;
+		// A live-policy check is a dispatch guard, NOT a retryable inference
+		// error. Re-attest before every physical attempt, including fallbacks.
+		try { await options.beforeAttempt?.(attempt, attemptIndex); }
+		catch (error) { outer.fail(error); return; }
 		let inner: PifrostAttemptStream;
 		try {
 			inner = dispatch(attempt, attemptIndex);
 		} catch (error) {
-			if (options.retryPreOutputError && !options.retryPreOutputError(error)) {
+			if (!options.retryPreOutputError?.(error)) {
 				outer.fail(error);
 				return;
 			}
@@ -313,7 +290,7 @@ export async function runPifrostProtocolPlan(
 						outer.push(event);
 						return;
 					}
-					if (options.retryPreOutputError && !options.retryPreOutputError(event.error)) {
+					if (!options.retryPreOutputError?.(event.error)) {
 						if (startEvent) outer.push(startEvent);
 						for (const pending of pendingBlockEvents) outer.push(pending);
 						outer.push(event);
@@ -348,7 +325,7 @@ export async function runPifrostProtocolPlan(
 				outer.fail(error);
 				return;
 			}
-			if (options.retryPreOutputError && !options.retryPreOutputError(error)) {
+			if (!options.retryPreOutputError?.(error)) {
 				outer.fail(error);
 				return;
 			}

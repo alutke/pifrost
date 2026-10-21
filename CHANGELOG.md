@@ -1,3 +1,10 @@
+## 0.29.9 — 2026-10-21
+
+- Release 1 execution safety: require a read-only double management-plane attestation of the full Bifrost policy and exact ordered physical route members immediately before a locally lowered compatibility dispatch.
+- Restrict physical encoder fallback to verified upstream HTTP 502/503 before output; reject auth, quota, request, replay, token-limit and timeout failures. Use a shared evidence-bound transition policy for ingress and physical paths.
+- Keep OMP session/history ownership, the original native Bifrost alias and provider order, virtual-key governance and service-free route updates unchanged. Management unavailability blocks local physical exceptions, not native Bifrost routing.
+- Add offline regression tests for policy/member drift, live double-snapshot consistency, terminal-error denial and generic-runner fail-closed behaviour.
+
 ## 0.29.8 — 2026-10-21
 
 - Release F: gate opaque Bifrost logical-route ingress protocol fallback on both explicit pre-output protocol rejection and HTTP 400/422 evidence from the same attempt. Never treat auth, model permission, quota, rate limit, upstream timeout, invalid reasoning replay or output-token overshoot as a reason to retry via another ingress protocol.

@@ -3,6 +3,7 @@
  * or infer how gateway session affinity selected a physical model.
  * All data is limited to catalog structure and observed response headers.
  */
+import { createHash } from "node:crypto";
 import type { AliasDiagnostic } from "./index.ts";
 import type { DynamicRouteProfile, DynamicRoutePlan } from "./dynamic-routing.ts";
 import { canUseNativeBifrostRoute, compatibilityRouteSnapshotError } from "./dynamic-routing.ts";
@@ -93,4 +94,27 @@ export function compatibilityExecutionError(
   if (stale) return stale;
   if (plan.encoderContractsComplete !== true) return `Pifrost compatibility route ${profile.id} has unresolved physical encoder contracts; refresh model metadata and rerun pifrost routes verify. Bifrost routing policy has not been changed`;
   return undefined;
+}
+
+/** Machine attestation is produced by a short-lived, read-only CLI process.
+ * It must match both the full live routing-policy digest and the exact ordered
+ * physical members used for the locally constructed request. A seven-day
+ * manifest timestamp alone is never an execution authorisation. */
+export function assertLiveCompatibilityAttestation(
+  profile: DynamicRouteProfile, value: unknown, now = Date.now(),
+): void {
+  const evidence = value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown> : undefined;
+  const expectedMembers = createHash("sha256")
+    .update(JSON.stringify(profile.members.map(member => member.reference)))
+    .digest("hex");
+  const checked = typeof evidence?.verifiedAt === "string" ? Date.parse(evidence.verifiedAt) : NaN;
+  if (evidence?.schemaVersion !== 1 || evidence.status !== "verified" ||
+      evidence.alias !== profile.id ||
+      !profile.policyFingerprint || evidence.policyFingerprint !== profile.policyFingerprint ||
+      evidence.memberDigest !== expectedMembers ||
+      !Number.isFinite(checked) || checked > now + 1000 ||
+      now - checked > 15_000) {
+    throw new Error(`Pifrost compatibility route ${profile.id} lacks a matching fresh live Bifrost policy/member attestation. Physical dispatch blocked; run pifrost routes sync, refresh models and restart OMP. Bifrost routing was not changed`);
+  }
 }
