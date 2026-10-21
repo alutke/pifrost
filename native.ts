@@ -169,8 +169,10 @@ function installDynamicRouteProfiles(
 			const complete = members.length > 0 &&
 				members.length === diagnostic.chain.length &&
 				diagnostic.unresolved.length === 0 &&
-				members.every(item => item.status === "resolved" && item.capabilities?.reasoning === true &&
-					item.protocols?.includes(protocol) === true);
+				members.every(item => item.status === "resolved" && item.capabilities?.reasoning === true);
+			// Bifrost can accept a Responses gateway request and translate it to
+			// physical Chat. Probe the target's required history semantics for
+			// the gateway ingress, not only its advertised upstream protocol.
 			if (!complete) return "unknown";
 			const requirements = members.map(item => {
 				const identity = physicalPolicyIdentity(item.reference);
