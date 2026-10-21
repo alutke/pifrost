@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.8
+0.29.9
 ```
 
 Bun also works:
@@ -654,3 +654,25 @@ Nine provider entitlement namespaces have regression coverage for physical
 model identity, actual caps, Chat/Responses shapes, native reasoning and tool
 result pairing. No service, automatic model switching or arbitrary role caps.
 See [Cross-provider hardening](docs/CROSS_PROVIDER_HARDENING.md).
+
+
+### Release 1 — execution safety (v0.29.9)
+
+Physical compatibility exceptions now require a fresh read-only, double-snapshot
+attestation from Bifrost's management plane before a single upstream request is
+dispatched. The attestation verifies the full live routing-policy fingerprint and
+the exact ordered physical-member digest against OMP's currently loaded route
+profile. No daemon or service is installed; the short-lived `pifrost routes attest
+omp-default --json` CLI command owns management credentials, never the OMP
+inference provider. Management unavailability, rule edits, mismatched members and
+stale responses fail **closed for physical exceptions only**. Native Bifrost
+logical routes remain operational when management access is unavailable.
+
+A common transition policy now applies to both opaque gateway ingress and
+physical compatibility attempts. Opaque ingress may negotiate protocol only
+after a confirmed HTTP 400/422 unsupported-protocol rejection. Physical encoder
+transitions are permitted only after a verified upstream HTTP 502/503, before
+any generated model output, and never after an auth, quota, invalid reasoning,
+output-budget, permission, timeout or unverified error. OMP/Bifrost retain
+their native retry and provider selection responsibilities. Details:
+[Release 1 execution safety](docs/RELEASE_1_EXECUTION_SAFETY.md).
