@@ -578,3 +578,30 @@ test("the generic attempt runner fails closed with no explicit transition policy
   assert.equal(dispatched.length, 1);
   assert.equal(collected.events.at(-1)?.type, "error");
 });
+
+test("R1-07 failed live route attestation blocks upstream dispatch without retry", async () => {
+  const logical=logicalModel(), route=plan(), collected=outputCollector();
+  let dispatched=0, checked=0;
+  await runPifrostProtocolPlan(logical,route,collected.output,attempt=>{
+    dispatched++;
+    return successfulAttempt(attempt.primary,"openai-responses");
+  }, {
+    beforeAttempt: async()=>{ checked++; throw new Error("live-route-drift"); },
+    retryPreOutputError:()=>true,
+  });
+  assert.equal(checked,1);
+  assert.equal(dispatched,0);
+  assert.match(String(collected.failure()),/live-route-drift/u);
+});
+test("R1-08 every allowed physical fallback rechecks live route before dispatch", async () => {
+  const logical=logicalModel(), route=plan(), collected=outputCollector();
+  let checked=0, dispatched=0;
+  await runPifrostProtocolPlan(logical,route,collected.output,attempt=>{
+    dispatched++;
+    return dispatched===1
+      ? failedAttempt(attempt.primary,"openai-responses")
+      : successfulAttempt(attempt.primary,"openai-completions");
+  }, { beforeAttempt:async()=>{checked++;},retryPreOutputError:()=>true });
+  assert.equal(checked,2);
+  assert.equal(dispatched,2);
+});
