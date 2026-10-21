@@ -1,3 +1,9 @@
+## 0.29.13 — 2026-10-21
+
+- Release 4: preserve the selected physical primary's output capacity instead of clamping to the weakest configured Bifrost fallback; opaque logical aliases no longer claim a physical member's ceiling applies to an unknown gateway target.
+- Keep exact-identity verified provider ceilings, user/operator caps, final-wire token fields and route-attestation safety; add heterogeneous fallback, entitlement and gateway diagnostic tests.
+- Refresh living OMP/Bifrost support matrix and output budget docs; add SECURITY.md, CONTRIBUTING.md and CODEOWNERS, with documentation drift and policy-snapshot validation in CI.
+
 ## 0.29.12 — 2026-10-21
 
 - Release 3 architecture consolidation: per-extension, per-request atomic routing metadata generations replace mutable process-global route maps; concurrent refreshes retain request consistency.
