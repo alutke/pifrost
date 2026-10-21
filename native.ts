@@ -77,7 +77,7 @@ import {
 	estimateOmpContextInputTokens,
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
-import { createStalledTurnRecoveryCoordinator } from "./stalled-turn-recovery.ts";
+import { createStalledTurnRecoveryCoordinator, stalledTurnMode } from "./stalled-turn-recovery.ts";
 import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
 import { handleRecoveryCommand } from "./recovery-command.ts";
 import {
@@ -207,7 +207,7 @@ function installDynamicRouteProfiles(
 const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 	(logicalModel) => runtimeDynamicRoutes.get(logicalModel.toLowerCase()),
 );
-const stalledTurnRecovery = createStalledTurnRecoveryCoordinator();
+const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 const recoveryNotices = createRecoveryNoticeCoordinator();
 
 function nonEmpty(value: string | undefined): string | undefined {
@@ -1202,8 +1202,11 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		stalledTurnRecovery.onAgentEnd(event, {
 			sessionId,
 			isMain: ctx.agent.kind === "main",
-			hasQueuedMessages: "hasQueuedMessages" in ctx && typeof ctx.hasQueuedMessages === "function"
-				? ctx.hasQueuedMessages() : false,
+			hasQueuedMessages: ctx.hasPendingMessages() || (
+				"hasQueuedMessages" in ctx && typeof ctx.hasQueuedMessages === "function"
+					? ctx.hasQueuedMessages() : false),
+			hasRunningAsyncWork: (ctx.getAsyncJobSnapshot()?.running.length ?? 0) > 0,
+			isIdle: ctx.isIdle(),
 			sendContinuation: message => pi.sendMessage({
 				customType: "pifrost-stalled-turn-recovery",
 				content: message,
@@ -1254,6 +1257,59 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					agentKind: ctx.agent.kind,
 				});
 			};
+
+
+			if (command === "stalled") {
+				const sessionId = ctx.sessionManager.getSessionId();
+				const action = raw.slice("stalled".length).trim().toLowerCase() || "status";
+				if (action !== "status" && action !== "continue") {
+					ctx.ui.notify("Usage: /pifrost stalled [status|continue]", "warning");
+					return;
+				}
+				const state = stalledTurnRecovery.status(sessionId);
+				if (action === "status") {
+					ctx.ui.notify(state === "pending"
+						? "A possible stalled planning turn is pending. No continuation has been sent. Inspect completed work; use /pifrost stalled continue to approve one OMP continuation."
+						: state === "consumed"
+						? "One stalled-turn continuation was already consumed for this prompt; no further automatic attempt."
+						: "No unhandled stalled-turn observation for this OMP session.", "info");
+					return;
+				}
+				const safeToContinue = () => ctx.agent.kind === "main" && ctx.mode === "tui" &&
+					ctx.hasUI && ctx.isIdle() && !ctx.hasPendingMessages() &&
+					(ctx.getAsyncJobSnapshot()?.running.length ?? 0) === 0 &&
+					ctx.sessionManager.getSessionId() === sessionId;
+				if (state !== "pending" || !safeToContinue()) {
+					ctx.ui.notify("Continuation unavailable: no pending stall, active/queued work, or non-interactive OMP session.", "warning");
+					return;
+				}
+				const confirmed = await ctx.ui.confirm(
+					"Continue unfinished OMP task?",
+					"This may execute more tools or modify files. Inspect the workspace and completed work first. Send ONE OMP follow-up for the existing task?",
+				);
+				if (!confirmed) {
+					ctx.ui.notify("No continuation sent; observation remains pending.", "info");
+					return;
+				}
+				if (!safeToContinue() || stalledTurnRecovery.status(sessionId) !== "pending") {
+					ctx.ui.notify("OMP state changed during confirmation; no continuation sent.", "warning");
+					return;
+				}
+				const resumed = stalledTurnRecovery.continuePending({
+					sessionId, isMain: true, hasQueuedMessages: ctx.hasPendingMessages(),
+					hasRunningAsyncWork: (ctx.getAsyncJobSnapshot()?.running.length ?? 0) > 0,
+					isIdle: ctx.isIdle(),
+					sendContinuation: message => pi.sendMessage({
+						customType: "pifrost-stalled-turn-recovery",
+						content: message,
+						display: false,
+						attribution: "agent",
+					}, { deliverAs: "followUp", triggerTurn: true }),
+					notify: (message, level) => ctx.ui.notify(message, level),
+				});
+				if (!resumed) ctx.ui.notify("No continuation queued; inspect OMP session state.", "warning");
+				return;
+			}
 
 			if (command === "recover") {
 				try {
@@ -1359,7 +1415,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost stalled [status|continue] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
