@@ -1,3 +1,4 @@
+import { checkImportBoundaries } from "./architecture-boundary-ast.mjs";
 import { readFileSync } from "node:fs";
 import { extname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +7,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const runtime = [
   "index.ts",
   "native.ts",
+  "runtime-route-state.ts",
   "transport-model.ts",
   "capability-bridge.ts",
   "context-estimator.ts",
@@ -63,39 +65,10 @@ const controlOnly = new Set([
   "judge-control.mjs",
 ]);
 
-function imports(source) {
-  const out = [];
-  const pattern = /(?:from\s+|import\s*\()["']([^"']+)["']/gu;
-  for (const match of source.matchAll(pattern)) out.push(match[1]);
-  return out;
-}
-
-function localTarget(from, specifier) {
-  if (!specifier.startsWith(".")) return undefined;
-  const absolute = resolve(root, from, "..", specifier);
-  const relative = absolute.slice(root.length).replaceAll("\\", "/");
-  return extname(relative) ? relative : undefined;
-}
-
-const errors = [];
-for (const file of runtime) {
-  const source = readFileSync(resolve(root, file), "utf8");
-  for (const specifier of imports(source)) {
-    const target = localTarget(file, specifier);
-    if (target && controlOnly.has(target)) {
-      errors.push(`${file} must not depend on control-plane module ${target}`);
-    }
-    if (
-      file !== "native.ts" &&
-      (specifier === "@oh-my-pi/pi-catalog" ||
-        specifier.startsWith("@oh-my-pi/pi-catalog/") ||
-        specifier === "@oh-my-pi/pi-natives" ||
-        specifier.startsWith("@oh-my-pi/pi-natives/"))
-    ) {
-      errors.push(`${file} must not import ${specifier}; OMP snapshot/native imports belong at native.ts boundary`);
-    }
-  }
-}
+const errors = checkImportBoundaries(
+  Object.fromEntries(runtime.map(file => [file, readFileSync(resolve(root, file), "utf8")])),
+  controlOnly,
+);
 
 const configStore = readFileSync(resolve(root, "config-store.ts"), "utf8");
 const runtimeLoader = /export function loadStoredRuntimeConfig[\s\S]*?\n\}/u.exec(configStore)?.[0] ?? "";
@@ -155,6 +128,21 @@ if (judgeControl.includes("judgeBatch(") || judgeControl.includes("queueMicrotas
 }
 
 const native = readFileSync(resolve(root, "native.ts"), "utf8");
+const runtimeRouteState = readFileSync(resolve(root, "runtime-route-state.ts"), "utf8");
+if (!native.includes("const runtimeRouteState = createRuntimeRouteState()") ||
+    !native.includes("runtimeRouteState.capture()") ||
+    !native.includes("runtimeRouteState.publish(") ||
+    !runtimeRouteState.includes("current = next") ||
+    /let runtime(?:DynamicRoutes|GatewayProtocols|AliasDiagnostics|OpaqueReplayPolicies|OutputMembers)\b/u.test(native)) {
+  errors.push("Release 3 requires isolated, atomically published, request-scoped route generations");
+}
+const mcpRpc = readFileSync(resolve(root, "mcp-rpc.mjs"), "utf8");
+const httpClient = readFileSync(resolve(root, "http-client.mjs"), "utf8");
+if (!mcpRpc.includes("readTextLimited(response") ||
+    !mcpRpc.includes('redirect: "error"') ||
+    !httpClient.includes('redirect: "error"')) {
+  errors.push("Release 3 must bound MCP responses and disallow credential-bearing redirects");
+}
 if (!native.includes("nativeJudgeGateway(config, mergedEnvironment)") ||
     !native.includes("api: judge.api") || !native.includes('kind: "judge"') ||
     !native.includes("judge.imageEnabled") || !judgeBridge.includes('"/openai/v1"')) {
