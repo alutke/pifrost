@@ -29,7 +29,7 @@ If <code>pifrost doctor</code> is healthy, you are done.
 
 Inside OMP, use <code>/pifrost trace</code> to inspect the most recent request-level routing provenance for the current session, including the model Bifrost actually served and whether a fallback fired.
 
-**Stalled-turn safeguard (v0.29.10):** Pifrost **notifies only by default** when a tool-using turn appears to stop in leaked planning; it never launches another agent turn without approval. Inspect work, then run `/pifrost stalled continue` and explicitly confirm once. Opt-in `PIFROST_STALLED_TURN_MODE=auto` restores the previous one-shot continuation, guarded by OMP idle and queue state. No completed tool calls, provider streams, history or Bifrost routes are replayed. See [Release 2](docs/RELEASE_2_LIFECYCLE_REASONING.md).
+**Stalled-turn safeguard (v0.29.11):** Pifrost **automatically requests one OMP-owned continuation by default** when a tool-using main turn stops with a high-confidence leaked planning signature. It does not replay completed tools, provider streams, history or Bifrost routes. To turn it off, set `PIFROST_STALLED_TURN_MODE=off` before starting OMP; `notice` retains the manual `/pifrost stalled continue` approval path. Queue, async-work and one-shot safety guards remain in place. [Configuration and limitations](docs/REFERENCE.md#stalled-turn-mode-configuration-v02911).
 
 For current integration details and verification limits, see the [technical reference](docs/REFERENCE.md). For release-specific changes and earlier compatibility decisions, see the [changelog](CHANGELOG.md).
 
@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.10
+0.29.11
 ```
 
 Bun also works:
@@ -680,3 +680,7 @@ their native retry and provider selection responsibilities. Details:
 ### Release 2 — lifecycle and reasoning conformance (v0.29.10)
 
 Stalled-turn recovery is advisory by default. `/pifrost stalled status` and `/pifrost stalled continue` provide a bounded, explicitly confirmed continuation, with idle/queue/job/session checks repeated after approval. `PIFROST_STALLED_TURN_MODE=auto` is an opt-in. Replay diagnostics distinguish structural presence of reasoning markers from completed Bifrost gateway processing; neither proves what a converted physical-provider payload contained. Empty native Chat replay fields and unsigned/empty Responses markers are counted without inventing reasoning or restricting heterogeneous models. See [Release 2](docs/RELEASE_2_LIFECYCLE_REASONING.md).
+
+### Stalled-turn default (v0.29.11)
+
+The default for `PIFROST_STALLED_TURN_MODE` is now `auto` (one safe OMP follow-up after a high-confidence stalled turn). To **disable** detection, notices and continuation completely, set `PIFROST_STALLED_TURN_MODE=off` and restart OMP. `PIFROST_STALLED_TURN_MODE=notice` keeps the manual confirmation workflow from v0.29.10. Accepted disable synonyms: `0`, `false`, `no`, `disabled`, `disable`. An invalid non-empty setting defaults to `notice` rather than unexpectedly auto-running tools.
