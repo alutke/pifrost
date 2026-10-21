@@ -1,3 +1,10 @@
+## 0.29.8 — 2026-10-21
+
+- Release F: gate opaque Bifrost logical-route ingress protocol fallback on both explicit pre-output protocol rejection and HTTP 400/422 evidence from the same attempt. Never treat auth, model permission, quota, rate limit, upstream timeout, invalid reasoning replay or output-token overshoot as a reason to retry via another ingress protocol.
+- Preserve original Bifrost logical alias, session affinity identity and live provider fallback controls; no upstream provider selection, direct endpoint rerouting, new output ceilings, or background services.
+- Add nine-provider/entitlement regression matrix across Chat and Responses: policy identity, VK transport headers, tool-call/result correlation, real signed reasoning preservation, strict policy intersection, conservative output budget, and privacy-safe shape diagnostics.
+- Add mocked OMP-to-gateway wire tests covering 400/422 protocol failures and non-retry cases for 403, 429, 503, reasoning-history, output-limit and unrelated request errors.
+
 ## 0.29.7 — 2026-10-21
 
 - Release E: add a bounded, non-retrying recovery notice for the latest failed inference attempt and a privacy-safe `/pifrost recover status` command; successful later fallbacks suppress stale alerts.

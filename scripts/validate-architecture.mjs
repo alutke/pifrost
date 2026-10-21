@@ -183,6 +183,11 @@ if (!dynamicRoutes.includes("plan.encoderContractsComplete !== true") ||
     !routeCompatibility.includes("gatewaySelectionRelativeToPrimary(")) {
   errors.push("Release C must prevent unknown physical encoders from native passthrough and retain gateway route attribution");
 }
+if (!native.includes("isVerifiedGatewayProtocolRejection(error, gatewayProtocolAttempt)") ||
+    !multiProtocol.includes('evidence?.httpStatus !== 400 && evidence?.httpStatus !== 422') ||
+    !multiProtocol.includes("evidence.outputStarted === true")) {
+  errors.push("Release F requires evidence-bound, pre-output HTTP protocol fallback for opaque Bifrost routes");
+}
 const recoveryPolicy=readFileSync(resolve(root,"controlled-recovery.ts"),"utf8");
 const recoveryCommand=readFileSync(resolve(root,"recovery-command.ts"),"utf8");
 if (!native.includes('handleRecoveryCommand(raw.slice("recover".length)') ||

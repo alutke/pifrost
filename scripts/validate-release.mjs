@@ -118,6 +118,7 @@ for (const path of [
   "controlled-recovery.ts",
   "recovery-command.ts",
   "docs/CONTROLLED_RECOVERY.md",
+  "docs/CROSS_PROVIDER_HARDENING.md",
   "reasoning-integrity.ts",
   "docs/REASONING_INTEGRITY.md",
   "route-compatibility.ts",
