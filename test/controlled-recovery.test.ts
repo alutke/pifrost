@@ -74,8 +74,8 @@ test("E-06: no fork while running, queued, async work or subagent; failure remai
 });
 test("E-07: condition rechecked after input before destructive session transition",async()=>{
   const m=mock();
-  m.host.input=async()=>{m.state.pending=true;return m.state.brief;};
-  assert.equal(await handleRecoveryCommand("fork",trace(),m.host),"blocked");
+  const changingHost:RecoveryCommandHost={...m.host,input:async()=>{m.state.pending=true;return m.state.brief;}};
+  assert.equal(await handleRecoveryCommand("fork",trace(),changingHost),"blocked");
   assert.equal(m.calls.includes("newSession:/tmp/original.jsonl"),false);
 });
 test("E-08: status and unknown actions cannot change session",async()=>{

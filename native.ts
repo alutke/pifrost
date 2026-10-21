@@ -78,6 +78,8 @@ import {
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
 import { createStalledTurnRecoveryCoordinator } from "./stalled-turn-recovery.ts";
+import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
+import { handleRecoveryCommand } from "./recovery-command.ts";
 import {
 	applyDynamicRouteProfiles,
 	canUseNativeBifrostRoute,
@@ -204,6 +206,7 @@ const scheduleCompactBeforeContextSkip = createCompactBeforeSkipCoordinator(
 	(logicalModel) => runtimeDynamicRoutes.get(logicalModel.toLowerCase()),
 );
 const stalledTurnRecovery = createStalledTurnRecoveryCoordinator();
+const recoveryNotices = createRecoveryNoticeCoordinator();
 
 function nonEmpty(value: string | undefined): string | undefined {
 	const trimmed = value?.trim();
@@ -1180,6 +1183,14 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				if (ctx.hasUI) ctx.ui.notify(message, level);
 			},
 		});
+		// Terminal failures get one advisory notice only; Pifrost does not
+		// enqueue a retry, re-run tools or alter OMP's pending message queue.
+		if (ctx.agent.kind === "main" && ctx.hasUI && !event.willContinue &&
+			!event.awaitingAsyncWork && !ctx.hasPendingMessages()) {
+			recoveryNotices.notice(sessionId, latestPifrostRouteTrace(sessionId), message => {
+				ctx.ui.notify(message, "warning");
+			});
+		}
 		scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_start", (_event, ctx) => {
@@ -1191,6 +1202,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		releaseAgentSession(sessionId);
 		releasePifrostRouteTraces(sessionId);
 		stalledTurnRecovery.onSessionEnd(sessionId);
+		recoveryNotices.release(sessionId);
 	});
 
 	pi.registerCommand("pifrost", {
@@ -1211,6 +1223,29 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					agentKind: ctx.agent.kind,
 				});
 			};
+
+			if (command === "recover") {
+				try {
+					await handleRecoveryCommand(raw.slice("recover".length),
+						latestPifrostRouteTrace(ctx.sessionManager.getSessionId()), {
+							isMain: ctx.agent.kind === "main",
+							interactive: ctx.mode === "tui" && ctx.hasUI,
+							isIdle: () => ctx.isIdle(),
+							hasPendingMessages: () => ctx.hasPendingMessages(),
+							hasRunningAsyncJobs: () => (ctx.getAsyncJobSnapshot()?.running.length ?? 0) > 0,
+							currentSessionId: ctx.sessionManager.getSessionId(),
+							parentSessionFile: ctx.sessionManager.getSessionFile(),
+							notify: (message, level) => ctx.ui.notify(message, level),
+							input: (title, placeholder) => ctx.ui.input(title, placeholder),
+							confirm: (title, message) => ctx.ui.confirm(title, message),
+							newSession: opts => ctx.newSession(opts),
+							sendUserMessage: message => pi.sendUserMessage(message),
+						});
+				} catch (error) {
+					ctx.ui.notify(`Pifrost recovery could not proceed: ${error instanceof Error ? error.message : "unknown OMP session error"}. The original session is unchanged unless OMP already created the new session; inspect OMP session history before trying again.`, "error");
+				}
+				return;
+			}
 
 			if (command === "costs") {
 				ctx.ui.notify(formatPifrostSessionCosts(ctx.sessionManager.getSessionId()), "info");
@@ -1293,7 +1328,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;

@@ -114,6 +114,12 @@ export function recordBifrostCaptureTrace(
 	});
 }
 
+/** Terminal recovery examines only the most recent gateway attempt.
+ * Earlier failed fallbacks are not grounds to fork after a later success. */
+export function latestPifrostRouteTrace(sessionId: string): Readonly<PifrostRouteTrace> | undefined {
+	return traces.get(sessionId)?.at(-1);
+}
+
 export function releasePifrostRouteTraces(sessionId: string): void {
 	traces.delete(sessionId);
 }
