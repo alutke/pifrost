@@ -93,7 +93,12 @@ export function recordBifrostCaptureTrace(
 		...(capture.requestDiagnostics ? { requestDiagnostics: { ...capture.requestDiagnostics } } : {}),
 		...(capture.outputBudget ? { outputBudget: { ...capture.outputBudget, constraints: [...capture.outputBudget.constraints] } } : {}),
 		...(capture.routeContract ? { routeContract: { ...capture.routeContract } } : {}),
-		...(capture.replayAudit ? { replayAudit: { ...capture.replayAudit } } : {}),
+		...(capture.replayAudit ? { replayAudit: {
+			...capture.replayAudit,
+			// A terminal successful gateway stream proves acceptance by Bifrost,
+			// NOT acceptance of an unchanged payload by its physical provider.
+			gatewayOutcome: base.outcome === "done" ? "completed" : "not-observed",
+		} } : {}),
 		...(capture.retryAfterSeconds !== undefined ? { retryAfterSeconds: capture.retryAfterSeconds } : {}),
 		...(capture.outputStarted !== undefined ? { outputStarted: capture.outputStarted } : {}),
 		...(capture.cacheHit !== undefined ? { cacheHit: capture.cacheHit } : {}),
@@ -267,7 +272,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			trace.requestDiagnostics ? `history-items=${trace.requestDiagnostics.historyItems} assistant-items=${trace.requestDiagnostics.assistantMessages} reasoning-items=${trace.requestDiagnostics.nativeReasoningItems} chat-reasoning=${trace.requestDiagnostics.chatReasoningMessages} tool-calls=${trace.requestDiagnostics.toolCalls} tool-results=${trace.requestDiagnostics.toolResults} orphan-results=${trace.requestDiagnostics.orphanToolResults} tool-definitions=${trace.requestDiagnostics.toolDefinitions}` : undefined,
 			trace.requestDiagnostics?.requestedOutputTokens !== undefined ? `output-requested=${trace.requestDiagnostics.requestedOutputTokens}` : undefined,
 			trace.requestDiagnostics?.reasoningEffort ? `reasoning-effort=${trace.requestDiagnostics.reasoningEffort}` : undefined,
-			trace.replayAudit ? `replay=${trace.replayAudit.reason} replay-contract=${trace.replayAudit.requirement} assistant-runs=${trace.replayAudit.assistantRuns} replay-required=${trace.replayAudit.runsRequiringReasoning} replay-missing=${trace.replayAudit.missingRequiredRuns} native-reasoning-items=${trace.replayAudit.nativeReasoningItems}` : undefined,
+			trace.replayAudit ? `replay=${trace.replayAudit.reason} replay-contract=${trace.replayAudit.requirement} assistant-runs=${trace.replayAudit.assistantRuns} replay-required=${trace.replayAudit.runsRequiringReasoning} replay-missing=${trace.replayAudit.missingRequiredRuns} native-reasoning-items=${trace.replayAudit.nativeReasoningItems} empty-native=${trace.replayAudit.emptyNativeReasoningItems} check=${trace.replayAudit.validation} gateway=${trace.replayAudit.gatewayOutcome} (gateway completion does not prove physical replay acceptance)` : undefined,
 			trace.outputBudget ? `output-effective=${trace.outputBudget.effectiveTokens} output-reduced=${trace.outputBudget.reduced ? "yes" : "no"} output-explicit=${trace.outputBudget.explicit ? "yes" : "no"} output-source=${trace.outputBudget.limitingSource} budget-members=${trace.outputBudget.memberCount} verified-members=${trace.outputBudget.verifiedMemberCount} unknown-members=${trace.outputBudget.unknownMemberCount}` : undefined,
 			trace.retryAfterSeconds !== undefined ? `retry-after=${trace.retryAfterSeconds}s (gateway advisory only)` : undefined,
 			trace.outputStarted !== undefined ? `output-started=${trace.outputStarted ? "yes" : "no"}` : undefined,
