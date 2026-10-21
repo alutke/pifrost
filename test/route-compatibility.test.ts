@@ -1,6 +1,7 @@
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { dynamicRouteContract, opaqueRouteContract, gatewaySelectionRelativeToPrimary, compatibilityExecutionError } from "../route-compatibility.ts";
+import { dynamicRouteContract, opaqueRouteContract, gatewaySelectionRelativeToPrimary, compatibilityExecutionError, assertLiveCompatibilityAttestation } from "../route-compatibility.ts";
 import { planDynamicRouteAttempts, canUseNativeBifrostRoute, type DynamicRouteProfile } from "../dynamic-routing.ts";
 import type { AliasDiagnostic } from "../index.ts";
 import { classifyInferenceFailure } from "../inference-failure.ts";
@@ -86,4 +87,20 @@ test("C-07 virtual-key model denial remains an authorization failure; no protoco
   const error={type:"model_blocked",message:"Model example-model is not allowed for virtual key example-key"};
   assert.equal(classifyInferenceFailure(403,{error}).code,"MODEL_NOT_PERMITTED");
   assert.equal(isGatewayProtocolRejection(new Error(error.message)),false);
+});
+
+test("R1-06 physical compatibility dispatch needs fresh matching live fingerprint and complete ordered membership",()=>{
+  const p=profile(member("provider/a"),member("provider/b"));
+  const at=Date.parse("2026-10-21T12:00:00Z");
+  const valid={schemaVersion:1,status:"verified",alias:p.id,policyFingerprint:p.policyFingerprint,
+    memberDigest:createHash("sha256").update(JSON.stringify(p.members.map(m=>m.reference))).digest("hex"),
+    verifiedAt:new Date(at).toISOString()};
+  assert.doesNotThrow(()=>assertLiveCompatibilityAttestation(p,valid,at+2000));
+  for (const changed of [
+    {...valid,policyFingerprint:"b".repeat(64)},
+    {...valid,memberDigest:"b".repeat(64)},
+    {...valid,alias:"omp-advisor"},
+    {...valid,verifiedAt:new Date(at-16000).toISOString()},
+    {...valid,status:"unverified"},
+  ]) assert.throws(()=>assertLiveCompatibilityAttestation(p,changed,at),/physical dispatch blocked/u);
 });
