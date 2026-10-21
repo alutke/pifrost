@@ -212,12 +212,15 @@ if (!native.includes('handleRecoveryCommand(raw.slice("recover".length)') ||
   errors.push("Release E must use explicit, idle-safe, OMP-owned session recovery with no history or tool replay");
 }
 const stalledPolicy=readFileSync(resolve(root,"stalled-turn-recovery.ts"),"utf8");
-if (!stalledPolicy.includes('export type StalledTurnMode = "notice" | "auto"') ||
+if (!stalledPolicy.includes('export type StalledTurnMode = "auto" | "notice" | "off"') ||
+    !stalledPolicy.includes('createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "auto")') ||
+    !stalledPolicy.includes('if (mode === "off") return false;') ||
+    !native.includes('createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE))') ||
     !stalledPolicy.includes('mode === "auto" ? continuePending(ctx) : false') ||
     !native.includes('if (command === "stalled")') ||
     !native.includes('const confirmed = await ctx.ui.confirm(') ||
     !native.includes("stalledTurnRecovery.continuePending({")) {
-  errors.push("Release 2 requires advisory-by-default stall handling and approved OMP continuation");
+  errors.push("Stalled-turn lifecycle requires auto default, explicit off, guarded one-shot continuation and manual approval");
 }
 const replayGuard=readFileSync(resolve(root,"reasoning-integrity.ts"),"utf8");
 if (!replayGuard.includes('validation: "structural-only" | "not-checked"') ||
