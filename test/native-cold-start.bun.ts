@@ -7,6 +7,7 @@ import test from "node:test";
 
 import nativeExtension from "../native.ts";
 import { aliasConfigFingerprint } from "../cache.ts";
+import { recordBifrostCaptureTrace, releasePifrostRouteTraces } from "../request-provenance.ts";
 
 test("OMP cold startup registers discoverable models before returning, then reuses cache", async () => {
 	const temp = mkdtempSync(join(tmpdir(), "pifrost-omp-cold-start-"));
@@ -50,6 +51,8 @@ test("OMP cold startup registers discoverable models before returning, then reus
 		delete process.env.PIFROST_NATIVE_JUDGE_MODEL;
         delete process.env.PIFROST_AUTO_SYNC;
         let onDemandRuns = 0;
+        let commandHandler: ((args: string, ctx: any) => Promise<void>) | undefined;
+        const recoveryMessages:string[] = [];
         const handlers = new Map<string, (...args: any[]) => Promise<void>>();
         const followUps: Array<{ message: any; options: any }> = [];
 		const registered: Array<{ id: string; config: any }> = [];
@@ -57,7 +60,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
 			registerFlag() {},
 			getFlag() { return undefined; },
 			registerProvider(id: string, config: any) { registered.push({ id, config }); },
-			registerCommand() {},
+			registerCommand(name: string, opts: any) { if (name === "pifrost") commandHandler=opts.handler; },
             on(name: string, handler: (...args: any[]) => Promise<void>) {
                 if (name === "before_agent_start" || name === "agent_end") {
                     // Multiple independent OMP extensions/hooks may subscribe to
@@ -70,6 +73,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
                 }
             },
             sendMessage(message: any, options: any) { followUps.push({ message, options }); },
+            sendUserMessage(message: string) { recoveryMessages.push(message); },
             async exec(command: string, args: string[]) {
                 assert.equal(command, "pifrost");
                 assert.deepEqual(args, ["routes", "reconcile", "--json"]);
@@ -121,6 +125,42 @@ test("OMP cold startup registers discoverable models before returning, then reus
         assert.equal(followUps[0]?.options.deliverAs, "followUp");
         await onEnd(simulatedStall, ctx);
         assert.equal(followUps.length, 1, "second failed settle cannot loop");
+        assert.ok(commandHandler, "OMP /pifrost recovery command registered");
+        const failureSession="cold-start-1";
+        recordBifrostCaptureTrace(failureSession,{
+          logicalModel:"omp-default",routeMode:"bifrost-direct",protocol:"openai-responses",
+          attempt:1,requestedPrimary:"omp-default",outcome:"error",
+        },{failureCode:"REASONING_REPLAY_INVALID",httpStatus:400,outputStarted:false});
+        const notices:string[]=[];
+        const sessions:string[]=[];
+        const sessionFile=join(temp,"original-session.jsonl");
+        const recoveryCtx={
+          mode:"tui",hasUI:true,agent:{kind:"main"},
+          isIdle:()=>true,hasPendingMessages:()=>false,
+          getAsyncJobSnapshot:()=>({running:[]}),
+          sessionManager:{
+            getSessionId:()=>failureSession,getSessionFile:()=>sessionFile,
+          },
+          ui:{
+            notify:(message:string)=>notices.push(message),
+            input:async()=> "Continue this coding task. Inspect workspace and current tests first.",
+            confirm:async()=>true,
+          },
+          newSession:async (opts:{parentSession?:string})=>{
+            sessions.push(opts.parentSession??"");
+            return {cancelled:false};
+          },
+        };
+        await commandHandler("recover status",recoveryCtx);
+        assert.ok(notices.some(x=>x.includes("REASONING_REPLAY_INVALID")));
+        assert.equal(recoveryMessages.length,0,"status never enqueues a user turn");
+        await commandHandler("recover fork",recoveryCtx);
+        assert.deepEqual(sessions,[sessionFile],"uses OMP native parent-session link");
+        assert.equal(recoveryMessages.length,1,"one new user-authored brief, no original transcript");
+        assert.match(recoveryMessages[0]!,/Inspect workspace and current tests first/u);
+        assert.doesNotMatch(recoveryMessages[0]!,/Let's patch the remaining files|<thinking>/u);
+        releasePifrostRouteTraces(failureSession);
+
 		const persisted = JSON.parse(readFileSync(cachePath, "utf8"));
 		assert.equal(persisted.models.length, 1);
 		assert.equal(persisted.aliasFingerprint, aliasConfigFingerprint(JSON.parse(readFileSync(aliasPath, "utf8"))));

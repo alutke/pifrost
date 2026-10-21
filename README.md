@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.6
+0.29.7
 ```
 
 Bun also works:
@@ -625,3 +625,16 @@ processes. See [Route compatibility](docs/ROUTE_COMPATIBILITY.md).
 ### Reasoning replay integrity (v0.29.6)
 
 OMP owns the serialization and provider-approved non-substantive reasoning replay markers. Pifrost passes a common strict replay requirement to OMP only where all known physical members agree, then validates strict history shape before upstream submission. Native reasoning, encrypted signatures, and tool call IDs remain unmodified; no arbitrary reasoning policy is imposed on unknown routes. See [Reasoning integrity](docs/REASONING_INTEGRITY.md).
+
+
+### Controlled OMP session recovery (v0.29.7)
+
+Pifrost now provides `/pifrost recover status` to inspect the latest classified
+inference failure and `/pifrost recover fork` for an explicitly confirmed clean
+session when a strict reasoning-history replay failed before output started.
+A fork starts a **new OMP session** from a user-authored continuation brief,
+linked to the previous session for navigation. It does not copy the original
+assistant or tool history, invent reasoning, repeat tool calls, switch routes,
+or change output-token limits. Busy/queued sessions and active async jobs block
+a fork. Earlier failed fallbacks that later succeeded cannot trigger one.
+See [Controlled recovery](docs/CONTROLLED_RECOVERY.md).

@@ -21,6 +21,8 @@ const runtime = [
   "request-compatibility.ts",
   "reasoning-replay.ts",
   "reasoning-integrity.ts",
+  "controlled-recovery.ts",
+  "recovery-command.ts",
   "reasoning-stream.ts",
   "omp-context-policy.ts",
   "compact-before-skip.ts",
@@ -180,6 +182,17 @@ if (!dynamicRoutes.includes("plan.encoderContractsComplete !== true") ||
     !native.includes("opaqueRouteContract(") ||
     !routeCompatibility.includes("gatewaySelectionRelativeToPrimary(")) {
   errors.push("Release C must prevent unknown physical encoders from native passthrough and retain gateway route attribution");
+}
+const recoveryPolicy=readFileSync(resolve(root,"controlled-recovery.ts"),"utf8");
+const recoveryCommand=readFileSync(resolve(root,"recovery-command.ts"),"utf8");
+if (!native.includes('handleRecoveryCommand(raw.slice("recover".length)') ||
+    !native.includes("latestPifrostRouteTrace(sessionId)") ||
+    !recoveryCommand.includes("host.newSession({ parentSession: host.parentSessionFile })") ||
+    !recoveryCommand.includes("host.sendUserMessage(recoveryContinuationPrompt(cleaned))") ||
+    !recoveryCommand.includes("host.hasRunningAsyncJobs()") ||
+    !recoveryPolicy.includes('trace.outcome === "done"') ||
+    recoveryCommand.includes("appendMessage(")) {
+  errors.push("Release E must use explicit, idle-safe, OMP-owned session recovery with no history or tool replay");
 }
 const replayGuard=readFileSync(resolve(root,"reasoning-integrity.ts"),"utf8");
 if(!native.includes("guardPifrostReasoningReplay(capped, transportModel") ||
