@@ -29,7 +29,7 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 			includePhysicalModels: false,
 			aliases: { "omp-advisor": {
 				name: "omp-advisor",
-				chain: ["opencode-go/muse-spark-1.3-contributor", "Xiaomi MIMO/mimo-v2.6-flash"],
+				chain: ["opencode-go/muse-spark-1.3-contributor", "CommandCode GOAT/deepseek/deepseek-v4.1-flash"],
 			} },
 		};
 		writeFileSync(aliasPath, JSON.stringify(aliasConfig));
@@ -50,7 +50,7 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 			reasoningEfforts: [], tools: true,
 			members: [
 				{ reference: "opencode-go/muse-spark-1.3-contributor", status: "resolved", protocols: ["openai-responses"] },
-				{ reference: "Xiaomi MIMO/mimo-v2.6-flash", status: "resolved", protocols: ["openai-completions"] },
+				{ reference: "CommandCode GOAT/deepseek/deepseek-v4.1-flash", status: "resolved", protocols: ["openai-completions"] },
 			],
 		};
 		writeCatalogCache({ models: [model], diagnostics: [diagnostic] }, {
@@ -74,16 +74,17 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		} as unknown as ExtensionAPI;
 		await nativeExtension(pi);
 		assert.ok(provider, "Bifrost provider must be registered");
-		const attempts: Array<{ url: string; model?: string; protocol?: string; mode?: string }> = [];
+		const attempts: Array<{ url: string; model?: string; protocol?: string; mode?: string; maxOutput?: number; maxCompletion?: number; maxTokens?: number }> = [];
 		const fakeFetch: typeof fetch = async (input, init) => {
 			const endpoint = String(input);
-			const body = typeof init?.body === "string" ? JSON.parse(init.body) as { model?: string } : {};
+			const body = typeof init?.body === "string" ? JSON.parse(init.body) as { model?: string; max_output_tokens?: number; max_completion_tokens?: number; max_tokens?: number } : {};
 			const headers = new Headers(init?.headers);
 			attempts.push({
 				url: endpoint,
 				model: body.model,
 				protocol: headers.get("x-pifrost-route-protocol") ?? undefined,
 				mode: headers.get("x-pifrost-route-mode") ?? undefined,
+				maxOutput: body.max_output_tokens, maxCompletion: body.max_completion_tokens, maxTokens: body.max_tokens,
 			});
 			return new Response(JSON.stringify({ error: { message: "Model does not support this protocol.", type: "invalid_request_error" } }), {
 				status: 400, headers: { "content-type": "application/json" },
@@ -103,6 +104,26 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		assert.deepEqual(attempts.map(item => item.model), ["omp-advisor", "omp-advisor"]);
 		assert.deepEqual(attempts.map(item => item.protocol), ["openai-responses", "openai-completions"]);
 		assert.ok(attempts.every(item => item.mode === "bifrost-direct"));
+
+		// Regression: the same opaque logical route must no longer forward OMP's
+		// inflated 712434-token default through either Responses or Chat. Even
+		// if a custom onPayload hook raises both fields, final-wire capping wins.
+		const oversized = provider!.streamSimple({ ...agentModel, maxTokens: 712434 }, {
+			messages: [{ role: "user", content: [{ type: "text", text: "test oversize envelope" }], timestamp: Date.now() }],
+		}, {
+			sessionId: "test-session-budget", apiKey: vk, maxTokens: 712434, fetch: fakeFetch,
+			onPayload: async (payload: Record<string, unknown>) => ({
+				...payload, max_output_tokens: 712434, max_completion_tokens: 712434,
+			}),
+		});
+		for await (const _event of oversized) { /* Mock protocol errors are expected. */ }
+		assert.equal(attempts.length, 4);
+		for (const attempt of attempts.slice(2)) {
+			assert.equal(attempt.maxOutput, 393216);
+			assert.equal(attempt.maxCompletion, 393216);
+			if (attempt.maxTokens !== undefined) assert.ok(attempt.maxTokens <= 393216);
+		}
+		assert.deepEqual(attempts.slice(2).map(a=>a.model), ["omp-advisor", "omp-advisor"]);
 	} finally {
 		for (const key of keys) {
 			if (saved[key] === undefined) delete process.env[key];

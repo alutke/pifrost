@@ -34,3 +34,21 @@ test("OMP summary hides sensitive IDs and implementation counters, verbose retai
   assert.match(verbose,/route-mode=pifrost-compatibility/u);
   releasePifrostRouteTraces(id);
 });
+test("Release B: output capping is visible in both trace views without user content",()=>{
+  const sid="release-b-capped-trace";
+  recordBifrostCaptureTrace(sid, {
+    logicalModel:"omp-default", routeMode:"bifrost-direct",
+    protocol:"openai-responses", attempt:1, requestedPrimary:"omp-default", outcome:"done",
+  },{
+    outputBudget:{requestedTokens:712434,effectiveTokens:32768,explicit:true,reduced:true,
+      limitingSource:"operational-cap",constraints:[{source:"operational-cap",tokens:32768}],
+      memberCount:2,verifiedMemberCount:1,unknownMemberCount:1},
+  });
+  const compact=formatPifrostRouteTraces(sid,{compact:true});
+  assert.match(compact,/Output: capped to 32768 tokens \(requested 712434\)/u);
+  const verbose=formatPifrostRouteTraces(sid,{compact:false});
+  assert.match(verbose,/output-effective=32768 output-reduced=yes output-explicit=yes/u);
+  assert.match(verbose,/output-source=operational-cap/u);
+  assert.doesNotMatch(verbose,/secret|api-key|prompt=/iu);
+  releasePifrostRouteTraces(sid);
+});

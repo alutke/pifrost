@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.3
+0.29.4
 ```
 
 Bun also works:
@@ -595,3 +595,15 @@ Release CI additionally runs upstream contract, package-install and transport ch
 Pifrost is MIT-licensed and derived from [pi-bifrost-provider](https://github.com/lxdlam/pi-bifrost-provider). See [NOTICE](NOTICE.md) and [LICENSE](LICENSE). Historical compatibility and release-specific detail remains in the [changelog](CHANGELOG.md).
 
 OMP integration diagnostics: `pifrost omp readiness` checks native prewalk, `/seance` and advisor settings read-only. See [Release C guide](docs/REFERENCE.md#release-c--omp-orchestration-readiness-v0270).
+
+
+### Output-budget protection (v0.29.4)
+
+Per-request output caps now apply across logical OMP roles and physical
+provider attempts using known provider/member capabilities **without arbitrary
+role-based defaults**. Pifrost retains the full model output allowance unless
+a supported physical/provider limit or an explicitly opted-in operator cap
+requires reduction. Use `/pifrost trace verbose` to see requested versus
+applied tokens, source and unknown-member coverage. Optional cap variables
+include `PIFROST_OUTPUT_CAP_TOKENS` and role-specific `PIFROST_OUTPUT_CAP_DEFAULT`,
+`_TASK`, `_ADVISOR`, etc.; `0` disables only the optional cap. See [Output budget policy](docs/OUTPUT_BUDGET.md).

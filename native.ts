@@ -106,6 +106,7 @@ import {
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { inspectInferenceRequest } from "./request-diagnostics.ts";
+import { resolveOutputBudget, clampOutputTokenFields, type OutputBudgetMember } from "./output-budget.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
 import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
@@ -149,12 +150,21 @@ installOmpCatalogRuntime({
 
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 let runtimeGatewayProtocols = new Map<string, readonly GatewayWireProtocol[]>();
+/** Observation-only physical bounds from the refreshed model catalog. */
+let runtimeOutputMembers = new Map<string, readonly OutputBudgetMember[]>();
 
 function installDynamicRouteProfiles(
 	models: readonly import("./index.ts").BifrostProviderModel[],
 	diagnostics: readonly AliasDiagnostic[] = [],
 ): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
+	runtimeOutputMembers = new Map(diagnostics.map(item => [item.id.toLowerCase(),
+		(item.members ?? []).map(member => ({
+			reference: member.reference,
+			...(member.capabilities?.maxTokens !== undefined ? { maxTokens: member.capabilities.maxTokens } : {}),
+			...(member.sources?.maxTokens ? { source: member.sources.maxTokens } : {}),
+		})),
+	] as const));
 	runtimeGatewayProtocols = new Map(
 		diagnostics.map(item => [item.id.toLowerCase(), gatewayProtocolOrder(item)] as const)
 			.filter((entry): entry is readonly [string, readonly GatewayWireProtocol[]] => entry[1] !== undefined),
@@ -338,7 +348,17 @@ function streamDynamicPifrostRoute(
 ) {
 	const deferredTools = deferredToolNames(context.tools);
 	const betweenToolsThinking = options?.disableReasoning === true && profile.members.some((member) => member.compat.supportsBetweenToolsThinking === true);
-	const planningBody = dynamicRoutePlanningBody(model, context, options, { deferredTools, betweenToolsThinking });
+	const plannedBudget = resolveOutputBudget({
+		logicalModel: model.id,
+		requestedTokens: options?.maxTokens ?? model.maxTokens,
+		advertisedTokens: model.maxTokens,
+		// The prewalk must not be limited by members it later excludes.
+		// Apply the actual eligible fallback envelope at dispatch instead.
+		explicit: rawOptions?.maxTokens !== undefined,
+	});
+	const planningBody = dynamicRoutePlanningBody(model, context, {
+		...options, maxTokens: plannedBudget.effectiveTokens,
+	}, { deferredTools, betweenToolsThinking });
 	const estimatedInputTokensByMember = new Map<string, number>();
 	const compatibilityByMember = new Map<string, string>();
 	for (const member of profile.members) {
@@ -411,7 +431,21 @@ function streamDynamicPifrostRoute(
 			: createPifrostAttemptModelSpec(model, attempt));
 		const headers = pifrostAttemptHeaders(options?.headers, sessionId, executionPlan, attempt, attemptIndex);
 		headers["x-pifrost-route-mode"] = routeMode;
-		const maxTokens = pifrostAttemptMaxTokens(attempt, options?.maxTokens ?? model.maxTokens ?? undefined);
+		const outputBudget = resolveOutputBudget({
+			logicalModel: model.id,
+			requestedTokens: options?.maxTokens ?? model.maxTokens,
+			advertisedTokens: model.maxTokens,
+			members: attempt.members.map(member => ({
+				reference: member.reference,
+				maxTokens: member.maxTokens,
+				source: member.maxTokensSource,
+				// OMP's prewalk already checks approximate input/context eligibility.
+				// Never further shorten output solely from an unverified token estimate.
+			})),
+			explicit: rawOptions?.maxTokens !== undefined,
+		});
+		costCapture.outputBudget = outputBudget;
+		const maxTokens = pifrostAttemptMaxTokens(attempt, outputBudget.effectiveTokens);
 		if (attempt.protocol === "openai-responses") {
 			const upstreamOnPayload = options?.onPayload;
 			const upstreamOnSseEvent = options?.onSseEvent;
@@ -455,8 +489,9 @@ function streamDynamicPifrostRoute(
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
 					// Counters are available in /pifrost trace; do not log routine
 					// cleanup to stderr on every streamed model request.
-					costCapture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
-				return hygiene.payload;
+					const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+				return capped;
 				},
 				onSseEvent: (event, requestModel) => {
 					observeReasoningSse(hygieneCounters, event);
@@ -513,8 +548,9 @@ function streamDynamicPifrostRoute(
 				chatHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
 				chatHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
 				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
-				costCapture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
-				return hygiene.payload;
+				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+				return capped;
 			},
 			onSseEvent: (event, requestModel) => {
 				observeReasoningSse(chatHygieneCounters, event);
@@ -567,6 +603,15 @@ function streamPifrostOpenAI(
 	recordAgentRequest(sessionId, model.id);
 	const profile = runtimeDynamicRoutes.get(model.id.toLowerCase());
 	const options = normalizePifrostReasoningOptions(model, rawOptions);
+	const directBudget = () => resolveOutputBudget({
+		logicalModel: model.id,
+		requestedTokens: options?.maxTokens ?? model.maxTokens,
+		advertisedTokens: model.maxTokens,
+		members: runtimeOutputMembers.get(model.id.toLowerCase()),
+		// Do not derive a restrictive output cap from estimated input tokens.
+		// OMP retains ownership of context accounting and compaction.
+		explicit: rawOptions?.maxTokens !== undefined,
+	});
 	if (profile) {
 		return streamDynamicPifrostRoute(model, context, options, rawOptions, sessionId, profile);
 	}
@@ -584,6 +629,8 @@ function streamPifrostOpenAI(
 			compat: model.compatConfig,
 		} as ModelSpec<"openai-completions">);
 		const costCapture: BifrostCostCapture = {};
+		const outputBudget = directBudget();
+		costCapture.outputBudget = outputBudget;
 		const baseFetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, costCapture);
 		const upstreamOnPayload = options?.onPayload;
 		const betweenToolsThinking = options?.disableReasoning === true && pifrostSupportsBetweenToolsThinking(model);
@@ -593,7 +640,7 @@ function streamPifrostOpenAI(
 		const streamOptions: OpenAICompletionsOptions = {
 			...options,
 			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
-			maxTokens: pifrostDirectMaxTokens(options?.maxTokens, model.maxTokens),
+			maxTokens: pifrostDirectMaxTokens(outputBudget.effectiveTokens, model.maxTokens),
 			headers: {
 				...pifrostSessionHeaders(options?.headers, sessionId),
 				...(protocolOrder ? {
@@ -619,8 +666,9 @@ function streamPifrostOpenAI(
 				directHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
 				directHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
 				directHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
-				costCapture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
-				return hygiene.payload;
+				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+				return capped;
 			},
 			onSseEvent: (event, requestModel) => {
 				observeReasoningSse(directHygieneCounters, event);
@@ -651,6 +699,8 @@ function streamPifrostOpenAI(
 			...model, api: "openai-responses", compat: model.compatConfig,
 		} as ModelSpec<"openai-responses">);
 		const capture: BifrostCostCapture = {};
+		const outputBudget = directBudget();
+		capture.outputBudget = outputBudget;
 		const fetch = createBifrostCostBridgeFetch(options?.fetch ?? globalThis.fetch, capture);
 		const counters = newReasoningHygieneCounters();
 		const filter = new ResponsesReasoningPrefixFilter(counters, true);
@@ -660,7 +710,7 @@ function streamPifrostOpenAI(
 		const responseOptions: OpenAIResponsesOptions = {
 			...options,
 			apiKey: typeof options?.apiKey === "string" ? options.apiKey : undefined,
-			maxTokens: pifrostDirectMaxTokens(options?.maxTokens, model.maxTokens),
+			maxTokens: pifrostDirectMaxTokens(outputBudget.effectiveTokens, model.maxTokens),
 			headers: {
 				...pifrostSessionHeaders(options?.headers, sessionId),
 				"x-pifrost-logical-model": model.id,
@@ -691,8 +741,9 @@ function streamPifrostOpenAI(
 				counters.replayProseRewritten = hygiene.rewrittenProseMessages;
 				counters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 				counters.replayStructuredRetained = hygiene.retainedReasoningItems;
-				capture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
-				return hygiene.payload;
+				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+				capture.requestDiagnostics = inspectInferenceRequest(capped);
+				return capped;
 			},
 			onSseEvent: (event, requestModel) => {
 				observeReasoningSse(counters, event);

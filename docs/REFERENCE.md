@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.3
+0.29.4
 ```
 
 ## Stalled-turn recovery (v0.29.2)
@@ -290,3 +290,30 @@ limit). This is **diagnostic-only**: no token clamping, reasoning replay
 repair or fallback changes are introduced. See
 [Inference diagnostics](INFERENCE_DIAGNOSTICS.md) for evidence limits and
 the sanitized regression fixture.
+
+
+## Output-token and capacity protection — Release B (v0.29.4)
+
+Pifrost validates output budgets across direct requests, logical Bifrost aliases
+and physical compatibility attempts. **No OMP role has a fixed output-token
+cap by default.** Model output is only restricted by applicable physical or
+provider limits, or by an optional cap explicitly configured by the operator.
+
+Set `PIFROST_OUTPUT_CAP_TOKENS` for a global operational override or
+`PIFROST_OUTPUT_CAP_DEFAULT`, `_TASK`, `_ADVISOR`, `_PLAN`,
+`_SMOL`, `_TINY` etc. for role-specific caps. The environment value `0`
+disables the *operational* cap only: verified physical-model limits remain.
+A malformed setting raises a clear local capacity error.
+
+The selected per-request cap is the minimum of the requested or OMP-advertised
+maximum, applicable role-level operational cap, each known physical member
+ceiling, provider-specific confirmed limits, and any known context headroom.
+Pifrost clamps all token fields already present on the final OMP wire payload,
+without inventing an unsupported provider-specific parameter.
+
+Use `/pifrost trace` to see a reduced budget; `/pifrost trace verbose`
+to see the exact limit and source, plus member metadata provenance.
+
+See [Output budget policy](OUTPUT_BUDGET.md). This release **does not**
+repair reasoning replay, verify opaque routing rules, change Bifrost
+permissions or introduce new fallback/retry behaviour.

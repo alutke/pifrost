@@ -29,6 +29,8 @@ test("every qualified provider retains Bifrost wire identity but receives own OM
 test("evidence-based provider ceilings never leak across entitlements", () => {
   assert.ok(CONFIRMED_ENDPOINT_CONTRACTS.every(c => c.evidence.length > 20));
   assert.equal(confirmedProviderOutputCeiling("CommandCode GOAT/inclusionai/ling-3.1-flash:free"), 32768);
+  assert.equal(confirmedProviderOutputCeiling("CommandCode GOAT/deepseek/deepseek-v4.1-flash"), 393216);
+  assert.equal(confirmedProviderOutputCeiling("OpenCode Go/deepseek/deepseek-v4.1-flash"), undefined);
   for (const name of ["OpenRouter/inclusionai/ling-3.1-flash:free",
     "CommandCode GOAT/inclusionai/ling-3.1-flash",
     "CommandCode GOAT/inclusionai/ling-3.2-flash:free"]) {

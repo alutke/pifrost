@@ -11,6 +11,11 @@ export const CONFIRMED_ENDPOINT_CONTRACTS: readonly ConfirmedEndpointContract[] 
   model: "inclusionai/ling-3.1-flash:free",
   maxOutputTokens: 32768,
   evidence: "CommandCode GOAT upstream HTTP 400 (2026-10-09): max_tokens 65536 exceeds maximum 32768",
+}, {
+  provider: "commandcode",
+  model: "deepseek/deepseek-v4.1-flash",
+  maxOutputTokens: 393_216,
+  evidence: "CommandCode GOAT DeepSeek V4.1 Flash fallback HTTP 400 (2026-10-20): max_output_tokens 712434 exceeds provider limit 393216",
 }];
 
 export function normalizedPhysicalProvider(value: string): string {
