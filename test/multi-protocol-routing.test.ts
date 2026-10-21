@@ -605,3 +605,13 @@ test("R1-08 every allowed physical fallback rechecks live route before dispatch"
   assert.equal(checked,2);
   assert.equal(dispatched,2);
 });
+
+test("R4-05 attempt budget follows primary; weaker same-protocol fallback does not cap output",()=>{
+  const first={...member("provider/strong", "openai-completions"),maxTokens:131072};
+  const next={...member("provider/weak", "openai-completions"),maxTokens:8192};
+  const attempt={protocol:"openai-completions" as const,primary:first.reference,
+    fallbacks:[next.reference],members:[first,next]};
+  assert.equal(pifrostAttemptMaxTokens(attempt,131072),131072);
+  assert.equal(pifrostAttemptMaxTokens({...attempt,primary:next.reference,members:[next]},131072),8192);
+  assert.equal(pifrostAttemptMaxTokens(attempt,4096),4096);
+});
