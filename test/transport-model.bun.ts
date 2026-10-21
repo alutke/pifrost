@@ -5,6 +5,8 @@ import { test } from "bun:test";
 import type { Model, ModelSpec } from "@oh-my-pi/pi-ai";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import { resolveOpenAIRequestSetup } from "@oh-my-pi/pi-ai/providers/openai-shared";
+import { streamOpenAIResponses } from "@oh-my-pi/pi-ai/providers/openai-responses";
+import { auditReasoningReplay, strictReplayCompatOverrides } from "../reasoning-integrity.ts";
 import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { physicalPolicyIdentity, physicalRequestContractKey } from "../request-compatibility.ts";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
@@ -14,6 +16,7 @@ import {
 	installPifrostModelPolicyResolver,
 	installPifrostModelTokenizerResolver,
 	resolvePifrostReasoningWithToolsPolicy,
+	resolvePifrostReasoningReplayRequirement,
 } from "../transport-model.ts";
 import { resolveRouteReasoningWithToolsPolicy } from "../datasheet.ts";
 import { createPifrostMemberModelSpec } from "../multi-protocol-routing.ts";
@@ -284,4 +287,48 @@ test("Release C opt-in registers an OMP-native TypeSafe judge, without rewriting
 			else process.env[name] = saved[name];
 		}
 	}
+});
+
+test("Release D: OMP natively serializes missing DeepSeek Responses replay when strict physical policy is resolved", async()=>{
+  const reference="CommandCode GOAT/deepseek/deepseek-v4.1-flash";
+  assert.equal(resolvePifrostReasoningReplayRequirement("commandcode","deepseek/deepseek-v4.1-flash","openai-responses"),
+    "all-assistant-runs");
+  const spec={
+    id:"deepseek/deepseek-v4.1-flash",requestModelId:reference,
+    name:"DeepSeek Flash",provider:"commandcode",api:"openai-responses",
+    baseUrl:"http://127.0.0.1:8180/v1",reasoning:true,
+    input:["text"],supportsTools:true,cost,contextWindow:1_000_000,maxTokens:131072,
+    compat: strictReplayCompatOverrides("all-assistant-runs"),
+  } as ModelSpec<"openai-responses">;
+  const model=buildPifrostTransportModel(spec);
+  assert.equal(model.compat.requiresReasoningContentForAllAssistantTurns,true);
+  let captured:Record<string,any>|undefined;
+  const fakeFetch: typeof fetch=async(_url,_init)=>new Response(
+    JSON.stringify({error:{type:"invalid_request_error",message:"synthetic test end"}}),
+    {status:400,headers:{"content-type":"application/json"}},
+  );
+  const previous={
+    role:"assistant",api:"openai-responses",provider:"other-provider",model:"other-model",
+    content:[{type:"text",text:"Previous assistant response"}],
+    stopReason:"stop",timestamp:Date.now(),
+    usage:{input:0,output:0,cacheRead:0,cacheWrite:0,totalTokens:0,
+      cost:{input:0,output:0,cacheRead:0,cacheWrite:0,total:0}},
+  };
+  const user={role:"user",content:[{type:"text",text:"continue"}],timestamp:Date.now()};
+  const stream=streamOpenAIResponses(model,{
+    systemPrompt:["synthetic test"],messages:[previous,user] as any,tools:[],
+  },{
+    apiKey:"sk-not-a-real-key",sessionId:"release-d-omp-native-serializer",maxTokens:4096,
+    reasoning:"high",statefulResponses:false,fetch:fakeFetch,
+    onPayload:(body:unknown)=>{captured=body as Record<string,any>;return body;},
+  });
+  try { for await(const _event of stream) { /* synthetic upstream error */ } }
+  catch { /* only the outgoing serialized body is under test */ }
+  assert.ok(captured,"OMP must have produced a final Responses payload");
+  const audit=auditReasoningReplay(captured,{
+    protocol:"openai-responses",requirement:"all-assistant-runs",source:"physical-omp-policy",
+  },true);
+  assert.equal(audit.reason,"verified");
+  assert.ok(audit.nativeReasoningItems>0,"native OMP serializer provides required reasoning item");
+  assert.equal(audit.missingRequiredRuns,0);
 });

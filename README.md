@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.5
+0.29.6
 ```
 
 Bun also works:
@@ -620,3 +620,8 @@ possible session-affinity members. `/pifrost trace verbose` distinguishes
 cached primary from gateway-reported serving model, without guessing whether
 a difference came from affinity or fallback. No extra output caps or background
 processes. See [Route compatibility](docs/ROUTE_COMPATIBILITY.md).
+
+
+### Reasoning replay integrity (v0.29.6)
+
+OMP owns the serialization and provider-approved non-substantive reasoning replay markers. Pifrost passes a common strict replay requirement to OMP only where all known physical members agree, then validates strict history shape before upstream submission. Native reasoning, encrypted signatures, and tool call IDs remain unmodified; no arbitrary reasoning policy is imposed on unknown routes. See [Reasoning integrity](docs/REASONING_INTEGRITY.md).

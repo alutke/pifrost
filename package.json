@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.5",
+  "version": "0.29.6",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -46,6 +46,8 @@
     "omp-context-policy.ts",
     "bifrost-cost-bridge.ts",
     "gateway-reliability.ts",
+    "reasoning-integrity.ts",
+    "docs/REASONING_INTEGRITY.md",
     "route-compatibility.ts",
     "docs/ROUTE_COMPATIBILITY.md",
     "output-budget.ts",

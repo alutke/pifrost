@@ -5,6 +5,7 @@ import { inferenceFailureAdvice, type InferenceFailureCode } from "./inference-f
 import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
 import type { OutputBudgetDecision } from "./output-budget.ts";
 import { gatewaySelectionRelativeToPrimary, type RouteContractEvidence } from "./route-compatibility.ts";
+import type { ReasoningReplayAudit } from "./reasoning-integrity.ts";
 
 export interface PifrostRouteTrace {
 	timestamp: number;
@@ -26,6 +27,7 @@ export interface PifrostRouteTrace {
 	requestDiagnostics?: InferenceRequestDiagnostics;
 	outputBudget?: OutputBudgetDecision;
 	routeContract?: RouteContractEvidence;
+	replayAudit?: ReasoningReplayAudit;
 	retryAfterSeconds?: number;
 	outputStarted?: boolean;
 	cacheHit?: boolean;
@@ -91,6 +93,7 @@ export function recordBifrostCaptureTrace(
 		...(capture.requestDiagnostics ? { requestDiagnostics: { ...capture.requestDiagnostics } } : {}),
 		...(capture.outputBudget ? { outputBudget: { ...capture.outputBudget, constraints: [...capture.outputBudget.constraints] } } : {}),
 		...(capture.routeContract ? { routeContract: { ...capture.routeContract } } : {}),
+		...(capture.replayAudit ? { replayAudit: { ...capture.replayAudit } } : {}),
 		...(capture.retryAfterSeconds !== undefined ? { retryAfterSeconds: capture.retryAfterSeconds } : {}),
 		...(capture.outputStarted !== undefined ? { outputStarted: capture.outputStarted } : {}),
 		...(capture.cacheHit !== undefined ? { cacheHit: capture.cacheHit } : {}),
@@ -213,6 +216,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
         (trace.isFallback||((trace.fallbackIndex??0)>0)?" (fallback attempted)":""));
       if(selection==="differs-from-cached-primary") lines.push("    Selection: differs from cached primary; gateway reason unknown (affinity/fallback not inferred)");
       if(trace.routeContract?.mode==="pifrost-compatibility" && trace.routeContract.verification!=="verified-local-snapshot") lines.push("    Contract: local policy verification required");
+      if(trace.replayAudit?.reason==="incompatible-history") lines.push("    Reasoning: invalid replay history; no upstream request sent");
       if(trace.outputBudget?.reduced) lines.push("    Output: capped to "+trace.outputBudget.effectiveTokens+" tokens"+
         (trace.outputBudget.requestedTokens ? " (requested "+trace.outputBudget.requestedTokens+")" : "")+
         "; limiting="+trace.outputBudget.limitingSource);
@@ -257,6 +261,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			trace.requestDiagnostics ? `history-items=${trace.requestDiagnostics.historyItems} assistant-items=${trace.requestDiagnostics.assistantMessages} reasoning-items=${trace.requestDiagnostics.nativeReasoningItems} chat-reasoning=${trace.requestDiagnostics.chatReasoningMessages} tool-calls=${trace.requestDiagnostics.toolCalls} tool-results=${trace.requestDiagnostics.toolResults} orphan-results=${trace.requestDiagnostics.orphanToolResults} tool-definitions=${trace.requestDiagnostics.toolDefinitions}` : undefined,
 			trace.requestDiagnostics?.requestedOutputTokens !== undefined ? `output-requested=${trace.requestDiagnostics.requestedOutputTokens}` : undefined,
 			trace.requestDiagnostics?.reasoningEffort ? `reasoning-effort=${trace.requestDiagnostics.reasoningEffort}` : undefined,
+			trace.replayAudit ? `replay=${trace.replayAudit.reason} replay-contract=${trace.replayAudit.requirement} assistant-runs=${trace.replayAudit.assistantRuns} replay-required=${trace.replayAudit.runsRequiringReasoning} replay-missing=${trace.replayAudit.missingRequiredRuns} native-reasoning-items=${trace.replayAudit.nativeReasoningItems}` : undefined,
 			trace.outputBudget ? `output-effective=${trace.outputBudget.effectiveTokens} output-reduced=${trace.outputBudget.reduced ? "yes" : "no"} output-explicit=${trace.outputBudget.explicit ? "yes" : "no"} output-source=${trace.outputBudget.limitingSource} budget-members=${trace.outputBudget.memberCount} verified-members=${trace.outputBudget.verifiedMemberCount} unknown-members=${trace.outputBudget.unknownMemberCount}` : undefined,
 			trace.retryAfterSeconds !== undefined ? `retry-after=${trace.retryAfterSeconds}s (gateway advisory only)` : undefined,
 			trace.outputStarted !== undefined ? `output-started=${trace.outputStarted ? "yes" : "no"}` : undefined,
@@ -283,7 +288,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
 		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
 		const reasoning = details.filter(item => /^(?:history-removed=|history-mixed=|history-nested=|history-prose=|history-ambiguous=)/u.test(item));
-		const requestShape = details.filter(item => /^(?:history-items=|output-requested=|reasoning-effort=|output-effective=)/u.test(item));
+		const requestShape = details.filter(item => /^(?:history-items=|output-requested=|reasoning-effort=|output-effective=|replay=)/u.test(item));
 		lines.push(`  ${trace.logicalModel} - ${trace.outcome === "done" ? "completed" : "failed"}`);
 		lines.push(`    Model: served=${served}`);
 		lines.push(`    Routing: ${route.join(" ")}`);

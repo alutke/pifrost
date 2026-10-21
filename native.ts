@@ -33,6 +33,7 @@ import {
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import {
 	buildPifrostTransportModel,
+	resolvePifrostReasoningReplayRequirement,
 	installPifrostModelPolicyResolver,
 	installPifrostModelTokenizerResolver,
 } from "./transport-model.ts";
@@ -105,6 +106,7 @@ import {
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
 import { inspectInferenceRequest } from "./request-diagnostics.ts";
+import { auditReasoningReplay, unanimousStrictReasoningRequirement, strictReplayCompatOverrides, reasoningReplayRequirementFromCompat, ReasoningReplayIntegrityError, type ReasoningReplayRequirement, type ReasoningWireProtocol } from "./reasoning-integrity.ts";
 import { dynamicRouteContract, opaqueRouteContract, compatibilityExecutionError } from "./route-compatibility.ts";
 import { resolveOutputBudget, clampOutputTokenFields, type OutputBudgetMember } from "./output-budget.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
@@ -151,6 +153,7 @@ installOmpCatalogRuntime({
 let runtimeDynamicRoutes = new Map<string, DynamicRouteProfile>();
 let runtimeGatewayProtocols = new Map<string, readonly GatewayWireProtocol[]>();
 let runtimeAliasDiagnostics = new Map<string, AliasDiagnostic>();
+let runtimeOpaqueReplayPolicies = new Map<string, { chat: ReasoningReplayRequirement; responses: ReasoningReplayRequirement }>();
 /** Observation-only physical bounds from the refreshed model catalog. */
 let runtimeOutputMembers = new Map<string, readonly OutputBudgetMember[]>();
 
@@ -159,7 +162,31 @@ function installDynamicRouteProfiles(
 	diagnostics: readonly AliasDiagnostic[] = [],
 ): void {
 	runtimeDynamicRoutes = extractDynamicRouteProfiles(models);
-	runtimeAliasDiagnostics = new Map(diagnostics.map(item => [item.id.toLowerCase(), item]));
+	runtimeAliasDiagnostics = new Map(diagnostics.map(diagnostic => [diagnostic.id.toLowerCase(), diagnostic]));
+	runtimeOpaqueReplayPolicies = new Map(diagnostics.map(diagnostic => {
+		const resolve = (protocol: ReasoningWireProtocol): ReasoningReplayRequirement => {
+			const members = diagnostic.members ?? [];
+			const complete = members.length > 0 &&
+				members.length === diagnostic.chain.length &&
+				diagnostic.unresolved.length === 0 &&
+				members.every(item => item.status === "resolved" && item.capabilities?.reasoning === true);
+			// Bifrost can accept a Responses gateway request and translate it to
+			// physical Chat. Probe the target's required history semantics for
+			// the gateway ingress, not only its advertised upstream protocol.
+			if (!complete) return "unknown";
+			const requirements = members.map(item => {
+				const identity = physicalPolicyIdentity(item.reference);
+				return identity
+					? resolvePifrostReasoningReplayRequirement(identity.provider, identity.id, protocol)
+					: "unknown";
+			});
+			return unanimousStrictReasoningRequirement(requirements, true);
+		};
+		return [diagnostic.id.toLowerCase(), {
+			chat: resolve("openai-completions"),
+			responses: resolve("openai-responses"),
+		}] as const;
+	}));
 	runtimeOutputMembers = new Map(diagnostics.map(item => [item.id.toLowerCase(),
 		(item.members ?? []).map(member => ({
 			reference: member.reference,
@@ -340,6 +367,28 @@ function pifrostAttemptHeaders(
 	return result;
 }
 
+/** Read-only final-wire guard; replay reconstruction belongs to OMP.
+ * Audit contains counts only, never message or reasoning contents. */
+function guardPifrostReasoningReplay(
+  payload: unknown, transportModel: Model, protocol: ReasoningWireProtocol,
+  options: SimpleStreamOptions | undefined, capture: BifrostCostCapture,
+): void {
+  const requirement = reasoningReplayRequirementFromCompat(transportModel.compat);
+  const body = payload && typeof payload === "object" && !Array.isArray(payload)
+    ? payload as Record<string, unknown> : undefined;
+  const effort = body?.reasoning && typeof body.reasoning === "object"
+    ? (body.reasoning as Record<string, unknown>).effort : body?.reasoning_effort;
+  const active = transportModel.reasoning === true &&
+    options?.disableReasoning !== true && options?.forceReasoningOff !== true &&
+    (typeof effort === "string" || options?.reasoning !== undefined);
+  const audit = auditReasoningReplay(payload, {requirement,protocol,source:"physical-omp-policy"},active);
+  capture.replayAudit = audit;
+  if (audit.reason === "incompatible-history") {
+    capture.failureCode = "REASONING_REPLAY_INVALID";
+    throw new ReasoningReplayIntegrityError(audit);
+  }
+}
+
 function streamDynamicPifrostRoute(
 	model: Model,
 	context: Context,
@@ -492,6 +541,7 @@ function streamDynamicPifrostRoute(
 					// cleanup to stderr on every streamed model request.
 					const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+				guardPifrostReasoningReplay(capped, transportModel, "openai-responses", options, costCapture);
 				return capped;
 				},
 				onSseEvent: (event, requestModel) => {
@@ -551,6 +601,7 @@ function streamDynamicPifrostRoute(
 				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+				guardPifrostReasoningReplay(capped, transportModel, "openai-completions", options, costCapture);
 				return capped;
 			},
 			onSseEvent: (event, requestModel) => {
@@ -622,13 +673,20 @@ function streamPifrostOpenAI(
 	// each request carries the exact original logical alias to Bifrost.
 	const protocolOrder = runtimeGatewayProtocols.get(model.id.toLowerCase());
 	const routeContract = opaqueRouteContract(model.id, runtimeAliasDiagnostics.get(model.id.toLowerCase()));
+	const opaqueReplay = runtimeOpaqueReplayPolicies.get(model.id.toLowerCase());
+	const transportCompat = (protocol: ReasoningWireProtocol) => ({
+		...model.compatConfig,
+		...strictReplayCompatOverrides(protocol === "openai-responses"
+			? opaqueReplay?.responses ?? "unknown"
+			: opaqueReplay?.chat ?? "unknown"),
+	});
 	const streamChat = (attemptIndex = 0) => {
 	const directPhysical = physicalPolicyIdentity(model.id);
 		const transportModel = buildPifrostTransportModel({
 			...model,
 			...(directPhysical ? { id: directPhysical.id, provider: directPhysical.provider, requestModelId: directPhysical.requestModelId } : {}),
 			api: "openai-completions",
-			compat: model.compatConfig,
+			compat: transportCompat("openai-completions"),
 		} as ModelSpec<"openai-completions">);
 		const costCapture: BifrostCostCapture = { routeContract };
 		const outputBudget = directBudget();
@@ -670,6 +728,7 @@ function streamPifrostOpenAI(
 				directHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
 				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+				guardPifrostReasoningReplay(capped, transportModel, "openai-completions", options, costCapture);
 				return capped;
 			},
 			onSseEvent: (event, requestModel) => {
@@ -698,7 +757,7 @@ function streamPifrostOpenAI(
 	}
 	const streamResponses = (attemptIndex: number) => {
 		const transportModel = buildPifrostTransportModel({
-			...model, api: "openai-responses", compat: model.compatConfig,
+			...model, api: "openai-responses", compat: transportCompat("openai-responses"),
 		} as ModelSpec<"openai-responses">);
 		const capture: BifrostCostCapture = { routeContract };
 		const outputBudget = directBudget();
@@ -745,6 +804,7 @@ function streamPifrostOpenAI(
 				counters.replayStructuredRetained = hygiene.retainedReasoningItems;
 				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				capture.requestDiagnostics = inspectInferenceRequest(capped);
+				guardPifrostReasoningReplay(capped, transportModel, "openai-responses", options, capture);
 				return capped;
 			},
 			onSseEvent: (event, requestModel) => {

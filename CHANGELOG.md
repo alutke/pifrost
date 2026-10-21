@@ -1,3 +1,9 @@
+## 0.29.6 — 2026-10-21
+
+- Release D: final-wire Chat/Responses replay validation for verified strict physical provider policies; incomplete strict history fails locally before upstream dispatch with no tool replay.
+- Unanimous strict contracts across resolved opaque Bifrost route members are passed to OMP's built-in non-substantive replay reconstruction. Preserve all genuine reasoning, model settings, unknown and heterogeneous routes.
+- Shape-only tracing and a sanitized 555-entry regression fixture. No invented reasoning, no additional output caps, no service or permission changes.
+
 ## 0.29.5 — 2026-10-21
 
 - Release C: strengthen physical-provider compatibility boundaries for every OMP logical role; native Bifrost passthrough requires complete compatible physical Chat encoders across all reachable members, not just the configured primary.

@@ -1,4 +1,5 @@
 import type { Api, Model, ModelSpec } from "@oh-my-pi/pi-ai";
+import { reasoningReplayRequirementFromCompat, type ReasoningReplayRequirement } from "./reasoning-integrity.ts";
 
 export type PifrostModelPolicy = {
 	thinking: Model["thinking"];
@@ -87,6 +88,28 @@ export function resolvePifrostReasoningWithToolsPolicy(
 	} catch {
 		return undefined;
 	}
+}
+
+/**
+ * Probe the same pinned pi-catalog policy used by physical OMP transports.
+ * Never infer a strict policy from model name alone.
+ */
+export function resolvePifrostReasoningReplayRequirement(
+  provider: string,
+  modelId: string,
+  api: PifrostReasoningWithToolsApi,
+): ReasoningReplayRequirement {
+  if (!resolvePolicySnapshot || !provider || !modelId) return "unknown";
+  try {
+    const policy = resolvePolicySnapshot({
+      id:modelId, name:modelId, provider, api:ompPolicyProbeApi(provider,api),
+      reasoning:true, input:["text"], supportsTools:true,
+      cost:POLICY_PROBE_COST, contextWindow:128_000, maxTokens:8192,
+    } as ModelSpec<OmpPolicyProbeApi>);
+    return reasoningReplayRequirementFromCompat(policy.compat);
+  } catch {
+    return "unknown";
+  }
 }
 
 const AUTHOR_PREFIX = /^[A-Za-z][A-Za-z0-9 .+&'-]{0,23}: /;

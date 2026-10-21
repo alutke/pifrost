@@ -20,6 +20,7 @@ const runtime = [
   "endpoint-contracts.ts",
   "request-compatibility.ts",
   "reasoning-replay.ts",
+  "reasoning-integrity.ts",
   "reasoning-stream.ts",
   "omp-context-policy.ts",
   "compact-before-skip.ts",
@@ -179,6 +180,13 @@ if (!dynamicRoutes.includes("plan.encoderContractsComplete !== true") ||
     !native.includes("opaqueRouteContract(") ||
     !routeCompatibility.includes("gatewaySelectionRelativeToPrimary(")) {
   errors.push("Release C must prevent unknown physical encoders from native passthrough and retain gateway route attribution");
+}
+const replayGuard=readFileSync(resolve(root,"reasoning-integrity.ts"),"utf8");
+if(!native.includes("guardPifrostReasoningReplay(capped, transportModel") ||
+   !replayGuard.includes("unanimousStrictReasoningRequirement(") ||
+   !native.includes("resolvePifrostReasoningReplayRequirement(") ||
+   !native.includes("strictReplayCompatOverrides(")) {
+  errors.push("Release D must preserve physical replay guards and OMP-owned strict history serialization");
 }
 if (!/statefulResponses\s*:\s*false/u.test(native)) {
   errors.push("Pifrost dynamic Responses must remain stateless across heterogeneous Bifrost fallback routes");
