@@ -22,7 +22,7 @@ test("D-01: original 555-entry OMP request has no native reasoning, rejects befo
   assert.equal(input.length,555);
   const payload={model:"omp-default",input,reasoning:{effort:"high"},max_output_tokens:712434};
   const audit=auditReasoningReplay(payload,responses("all-assistant-runs"),true);
-  assert.equal(audit.missingRequiredRuns,100);
+  assert.equal(audit.missingRequiredRuns,210); // Tool-result boundaries create separate assistant replay runs.
   assert.equal(audit.nativeReasoningItems,0);
   assert.equal(audit.reason,"incompatible-history");
   assert.throws(()=>enforceReasoningReplay(payload,responses("all-assistant-runs"),true),ReasoningReplayIntegrityError);
