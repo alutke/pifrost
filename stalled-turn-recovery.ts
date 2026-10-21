@@ -84,44 +84,81 @@ export function detectStalledTurn(event: StalledTurnEnd): "leaked-planning-stop"
 	return "leaked-planning-stop";
 }
 
+/** A stall is only an observation, never proof that another turn is safe. */
+export type StalledTurnMode = "notice" | "auto";
+export function stalledTurnMode(value: string | undefined): StalledTurnMode {
+	return value?.trim().toLowerCase() === "auto" ? "auto" : "notice";
+}
 export interface StalledTurnRecoveryContext {
 	sessionId: string;
 	isMain: boolean;
 	hasQueuedMessages: boolean;
+	hasRunningAsyncWork?: boolean;
+	isIdle?: boolean;
 	sendContinuation: (message: string) => void;
 	notify?: (message: string, level: "warning" | "error") => void;
 }
+export type StalledTurnState = "none" | "pending" | "consumed";
 
-export function createStalledTurnRecoveryCoordinator() {
+/**
+ * Per-session, per-human-prompt observation and one-shot continuation gate.
+ * Default: notice only. A manual continuation requires explicit approval from
+ * the interactive OMP command, checked again after the approval dialog.
+ */
+export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "notice") {
 	const attempted = new Set<string>();
+	const pending = new Set<string>();
+
+	const available = (ctx: StalledTurnRecoveryContext): boolean =>
+		ctx.isMain && Boolean(ctx.sessionId) && !ctx.hasQueuedMessages &&
+		ctx.hasRunningAsyncWork !== true && ctx.isIdle !== false;
+
+	const continuePending = (ctx: StalledTurnRecoveryContext): boolean => {
+		if (!available(ctx) || !pending.has(ctx.sessionId) || attempted.has(ctx.sessionId)) return false;
+		// Consume before queueing so a synchronous OMP event cannot duplicate it.
+		attempted.add(ctx.sessionId);
+		pending.delete(ctx.sessionId);
+		try {
+			ctx.sendContinuation(STALLED_TURN_CONTINUATION);
+			ctx.notify?.("Pifrost: one OMP-managed continuation queued after approval. Check workspace state before any side effects.", "warning");
+			return true;
+		} catch {
+			ctx.notify?.("Pifrost: could not enqueue continuation; no automatic retry. Inspect the session before proceeding.", "error");
+			return false;
+		}
+	};
 
 	return {
-		/** A new human prompt permits one new attempt; our own follow-up does not. */
 		onPrompt(sessionId: string, prompt: string): void {
-			if (typeof prompt === "string" && !prompt.includes(STALLED_TURN_RECOVERY_MARKER)) attempted.delete(sessionId);
+			if (typeof prompt === "string" && !prompt.includes(STALLED_TURN_RECOVERY_MARKER)) {
+				attempted.delete(sessionId);
+				pending.delete(sessionId);
+			}
 		},
 		onSessionEnd(sessionId: string): void {
 			attempted.delete(sessionId);
+			pending.delete(sessionId);
 		},
+		status(sessionId: string): StalledTurnState {
+			return pending.has(sessionId) ? "pending" : attempted.has(sessionId) ? "consumed" : "none";
+		},
+		continuePending,
 		onAgentEnd(event: StalledTurnEnd, ctx: StalledTurnRecoveryContext): boolean {
-			if (!ctx.isMain || !ctx.sessionId || ctx.hasQueuedMessages) return false;
-			if (!detectStalledTurn(event)) return false;
-
+			if (!available(ctx) || !detectStalledTurn(event)) return false;
 			if (attempted.has(ctx.sessionId)) {
-				ctx.notify?.("Pifrost: model stopped in planning text again after one recovery. Automatic recovery is exhausted; inspect /pifrost trace, compact the session or choose another Bifrost route.", "error");
+				ctx.notify?.("Pifrost: another planning leak after one continuation. Recovery exhausted; inspect /pifrost trace or use a new session.", "error");
 				return false;
 			}
-			// Latch BEFORE sending: even a synchronously delivered follow-up
-			// cannot recursively enqueue another attempt.
-			attempted.add(ctx.sessionId);
-			try {
-				ctx.sendContinuation(STALLED_TURN_CONTINUATION);
-				ctx.notify?.("Pifrost: model ended in unfinished planning. Requested one OMP-managed continuation (no provider retry or tool replay).", "warning");
-				return true;
-			} catch {
-				ctx.notify?.("Pifrost: could not enqueue stalled-turn continuation. No further automatic attempts; continue manually after checking the workspace.", "error");
-				return false;
+			if (!pending.has(ctx.sessionId)) {
+				pending.add(ctx.sessionId);
+				if (mode !== "auto") {
+					ctx.notify?.("Pifrost: possible unfinished planning detected; no action taken. Inspect the workspace, then use /pifrost stalled continue to approve a single OMP-managed continuation.", "warning");
+				}
 			}
+			// Explicit opt-in auto mode retains the former bounded behaviour,
+			// but only when OMP has no pending work and is idle. Notice-only is
+			// intentionally the default for non-idempotent tool workflows.
+			return mode === "auto" ? continuePending(ctx) : false;
 		},
 	};
 }
