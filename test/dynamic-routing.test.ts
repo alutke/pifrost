@@ -448,7 +448,7 @@ test("runtime compiler refuses dynamic routing when the alias carries Bifrost ke
 	assert.equal(extractDynamicRouteProfiles(catalog.models).size, 0);
 });
 
-test("heterogeneous fallback groups clamp oversized Chat output caps instead of excluding lower-ceiling models", () => {
+test("heterogeneous fallback groups preserve primary Chat output capacity instead of limiting to weakest fallback", () => {
 	const route = profile();
 	route.members[0] = { ...route.members[0]!, maxTokens: 384_000 };
 	route.members[1] = { ...route.members[1]!, maxTokens: 131_072 };
@@ -464,7 +464,7 @@ test("heterogeneous fallback groups clamp oversized Chat output caps instead of 
 	});
 	assert.equal(result.body.model, "provider/large");
 	assert.deepEqual(result.body.fallbacks, ["provider/small", "provider/large-two"]);
-	assert.equal(result.body.max_completion_tokens, 65_536);
+	assert.equal(result.body.max_completion_tokens, 262_144);
 	assert.deepEqual(result.decision.excluded, []);
 });
 
