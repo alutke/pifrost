@@ -144,7 +144,7 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "no
 		},
 		continuePending,
 		onAgentEnd(event: StalledTurnEnd, ctx: StalledTurnRecoveryContext): boolean {
-			if (!available(ctx) || !detectStalledTurn(event)) return false;
+			if (!ctx.isMain || !ctx.sessionId || ctx.hasQueuedMessages || ctx.hasRunningAsyncWork === true || !detectStalledTurn(event)) return false;
 			if (attempted.has(ctx.sessionId)) {
 				ctx.notify?.("Pifrost: another planning leak after one continuation. Recovery exhausted; inspect /pifrost trace or use a new session.", "error");
 				return false;
