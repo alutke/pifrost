@@ -105,6 +105,7 @@ import {
 } from "./multi-protocol-routing.ts";
 import { createCompactBeforeSkipCoordinator } from "./compact-before-skip.ts";
 import { physicalRequestContractKey, physicalPolicyIdentity } from "./request-compatibility.ts";
+import { inspectInferenceRequest } from "./request-diagnostics.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
 import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
@@ -454,7 +455,8 @@ function streamDynamicPifrostRoute(
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
 					// Counters are available in /pifrost trace; do not log routine
 					// cleanup to stderr on every streamed model request.
-					return hygiene.payload;
+					costCapture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
+				return hygiene.payload;
 				},
 				onSseEvent: (event, requestModel) => {
 					observeReasoningSse(hygieneCounters, event);
@@ -511,6 +513,7 @@ function streamDynamicPifrostRoute(
 				chatHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
 				chatHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
 				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
+				costCapture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
 				return hygiene.payload;
 			},
 			onSseEvent: (event, requestModel) => {
@@ -616,6 +619,7 @@ function streamPifrostOpenAI(
 				directHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
 				directHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
 				directHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
+				costCapture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
 				return hygiene.payload;
 			},
 			onSseEvent: (event, requestModel) => {
@@ -687,6 +691,7 @@ function streamPifrostOpenAI(
 				counters.replayProseRewritten = hygiene.rewrittenProseMessages;
 				counters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 				counters.replayStructuredRetained = hygiene.retainedReasoningItems;
+				capture.requestDiagnostics = inspectInferenceRequest(hygiene.payload);
 				return hygiene.payload;
 			},
 			onSseEvent: (event, requestModel) => {

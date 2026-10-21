@@ -1,4 +1,6 @@
 import { classifyGatewayHttpStatus, parseGatewayRetryAfter, safeGatewayHeaderToken, type GatewayFailureClass } from "./gateway-reliability.ts";
+import { classifyInferenceFailure, type InferenceFailureCode } from "./inference-failure.ts";
+import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
 
 function finiteNonNegative(value: unknown): number | undefined {
 	return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
@@ -14,6 +16,10 @@ export interface BifrostCostCapture {
 	/** Captured from actual model stream deltas; not a retry instruction. */
 	outputStarted?: boolean;
 	failureClass?: GatewayFailureClass;
+	/** Diagnostic-only code; never a retry policy. */
+	failureCode?: InferenceFailureCode;
+	/** Wire structure only: no prompts, reasoning or tool arguments. */
+	requestDiagnostics?: InferenceRequestDiagnostics;
 	retryAfterSeconds?: number;
 	cacheHit?: boolean;
 	cacheHitType?: string;
@@ -224,6 +230,7 @@ export async function bridgeBifrostUsageCostResponse(
 	const text = await response.text();
 	try {
 		const parsed = JSON.parse(text);
+		if (capture && response.status >= 400) capture.failureCode = classifyInferenceFailure(response.status, parsed).code;
 		const bridged = bridgeBifrostUsageCostPayload(parsed, capture);
 		return new Response(JSON.stringify(bridged), {
 			status: response.status,
