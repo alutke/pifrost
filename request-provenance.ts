@@ -264,9 +264,9 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			`outcome=${trace.outcome}`,
 		].filter((value): value is string => typeof value === "string" && value.length > 0);
 		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=)/u.test(item));
-		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
+		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
 		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
-		const reasoning = details.filter(item => item.startsWith("history-"));
+		const reasoning = details.filter(item => /^(?:history-removed=|history-mixed=|history-nested=|history-prose=|history-ambiguous=)/u.test(item));
 		const requestShape = details.filter(item => /^(?:history-items=|output-requested=|reasoning-effort=)/u.test(item));
 		lines.push(`  ${trace.logicalModel} - ${trace.outcome === "done" ? "completed" : "failed"}`);
 		lines.push(`    Model: served=${served}`);
