@@ -1,6 +1,6 @@
-# Pifrost v0.29.1 — Integration support and verification
+# Pifrost integration support — v0.29.13
 
-This page describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.1**. Supported historical host installation: **OMP 18.10.4**; current host contract: **OMP 18.12.1**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **2.3.0**.
+This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.1**. Supported historical host installation: **OMP 18.10.4**; current host contract: **OMP 18.12.1**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **2.3.0**.
 
 | Capability | 18.10.4 compiled host | 18.12.1 compiled host | Live physical provider |
 | --- | --- | --- | --- |
@@ -44,6 +44,21 @@ CI runs package and source contracts, the native-extension mocked-registration t
 
 For optional **read-only** live gateway image-budget inventory inspection, set `PIFROST_LIVE_IMAGE_METADATA=1` and run `npm run smoke:image-metadata` with the same Bifrost URL and test Virtual Key. No image or decision request is submitted; counts may legitimately be zero because the fields are optional.
 
-## Thinking-qualified auto-prewalk target checks (v0.29.1)
+## Historical: thinking-qualified auto-prewalk target checks (v0.29.1)
 
 `pifrost omp readiness` checks a role such as `bifrost/omp-smol:high` using the underlying logical ID `omp-smol`, while preserving the full OMP selector in the read-only report. OMP-supported thinking suffixes are also removed when comparing basic `enabledModels` patterns. Unsupported selectors, complex scopes, missing aliases and stale caches still produce conservative unknown/warning results. No Bifrost route or OMP setting is changed by this diagnostic fix.
+
+
+## Release 4 evidence update (v0.29.13)
+
+- CI validates atomic per-request route snapshots, target-scoped output ceilings,
+  Bifrost logical alias passthrough, confirmed entitlement-scoped endpoint caps,
+  MCP response size bounds and denied credential redirects.
+- Compiled OMP 18.10.4 and 18.12.1 test **installation/plugin discovery**.
+  Native integration uses a mocked Bifrost endpoint; no production provider
+  fallback or live user session is proven.
+- Release documentation/policy snapshot drift, missing private security guidance,
+  and missing owner declarations are CI failures.
+- Live provider output, requested fallback token handling, command/tool side
+  effects and billing must be assessed with a separate, explicitly approved,
+  potentially billable conformance probe.
