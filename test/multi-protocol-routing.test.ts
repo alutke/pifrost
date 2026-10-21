@@ -573,7 +573,7 @@ test("the generic attempt runner fails closed with no explicit transition policy
   const dispatched: string[] = [];
   await runPifrostProtocolPlan(logical, route, collected.output, attempt => {
     dispatched.push(attempt.primary);
-    return failedAttempt(attempt.primary, attempt.protocol);
+    return failedAttempt(attempt.primary, "openai-responses");
   });
   assert.equal(dispatched.length, 1);
   assert.equal(collected.events.at(-1)?.type, "error");
