@@ -211,7 +211,21 @@ if (!native.includes('handleRecoveryCommand(raw.slice("recover".length)') ||
     recoveryCommand.includes("appendMessage(")) {
   errors.push("Release E must use explicit, idle-safe, OMP-owned session recovery with no history or tool replay");
 }
+const stalledPolicy=readFileSync(resolve(root,"stalled-turn-recovery.ts"),"utf8");
+if (!stalledPolicy.includes('export type StalledTurnMode = "notice" | "auto"') ||
+    !stalledPolicy.includes('mode === "auto" ? continuePending(ctx) : false') ||
+    !native.includes('if (command === "stalled")') ||
+    !native.includes('const confirmed = await ctx.ui.confirm(') ||
+    !native.includes("stalledTurnRecovery.continuePending({")) {
+  errors.push("Release 2 requires advisory-by-default stall handling and approved OMP continuation");
+}
 const replayGuard=readFileSync(resolve(root,"reasoning-integrity.ts"),"utf8");
+if (!replayGuard.includes('validation: "structural-only" | "not-checked"') ||
+    !replayGuard.includes('gatewayOutcome: "not-observed" | "completed"') ||
+    !replayGuard.includes("emptyNativeReasoningItems") ||
+    !readFileSync(resolve(root,"request-provenance.ts"),"utf8").includes('base.outcome === "done"')) {
+  errors.push("Release 2 must distinguish replay structure from gateway completion");
+}
 if(!native.includes("guardPifrostReasoningReplay(capped, transportModel") ||
    !replayGuard.includes("unanimousStrictReasoningRequirement(") ||
    !native.includes("resolvePifrostReasoningReplayRequirement(") ||

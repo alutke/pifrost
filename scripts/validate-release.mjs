@@ -216,6 +216,7 @@ try {
     "native.ts",
     "attempt-retry-policy.ts",
     "docs/RELEASE_1_EXECUTION_SAFETY.md",
+  "docs/RELEASE_2_LIFECYCLE_REASONING.md",
     "transport-model.ts",
     "capability-bridge.ts",
     "context-estimator.ts",

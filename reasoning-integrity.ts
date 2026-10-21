@@ -20,6 +20,12 @@ export interface ReasoningReplayAudit {
   missingRequiredRuns: number;
   toolCalls: number;
   nativeReasoningItems: number;
+  /** Replay markers with no substantive native payload (not proof of acceptance). */
+  emptyNativeReasoningItems: number;
+  /** A local final-wire check is structural; Bifrost may transform the request. */
+  validation: "structural-only" | "not-checked";
+  /** Only a completed Bifrost stream may establish gateway-level acceptance. */
+  gatewayOutcome: "not-observed" | "completed";
   /** No item content, IDs, model reasoning, or user messages are retained. */
   reason: "verified" | "incompatible-history" | "not-required" | "contract-unknown" | "not-applicable";
 }
@@ -35,15 +41,21 @@ export class ReasoningReplayIntegrityError extends Error {
 function object(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined;
 }
-function hasChatNativeReasoning(message: Record<string, unknown>): boolean {
+function chatNativeReasoning(message: Record<string, unknown>): "present" | "empty" | "missing" {
+  let empty = false;
   for (const key of ["reasoning_content", "reasoning_text", "reasoning"]) {
     const value = message[key];
-    // A present, possibly empty native replay field is OMP's documented Chat
-    // representation; only the target provider can decide if it accepts it.
-    if (typeof value === "string") return true;
-    if (Array.isArray(value) && value.length > 0) return true;
+    // Empty strings and arrays are valid structural fields for some OMP
+    // compatibility encoders, but never proof of provider acceptance.
+    if (typeof value === "string") {
+      if (value.trim().length > 0) return "present";
+      empty = true;
+    } else if (Array.isArray(value)) {
+      if (value.length > 0) return "present";
+      empty = true;
+    }
   }
-  return false;
+  return empty ? "empty" : "missing";
 }
 function isResponsesToolCall(item: Record<string, unknown>): boolean {
   return ["function_call","custom_tool_call","computer_call","local_shell_call"].includes(String(item.type));
@@ -73,6 +85,7 @@ export function auditReasoningReplay(
   let runsRequiringReasoning = 0;
   let missingRequiredRuns = 0;
   let nativeReasoningItems = 0;
+  let emptyNativeReasoningItems = 0;
   let toolCalls = 0;
   if (body && active && contract.protocol === "openai-responses" && Array.isArray(body.input)) {
     let hasAssistant = false, hasReasoning = false, hasCall = false;
@@ -91,6 +104,14 @@ export function auditReasoningReplay(
       if (isResponsesBoundary(item)) { flush(); continue; }
       if (item.type === "reasoning") {
         nativeReasoningItems++;
+        const blocks = Array.isArray(item.content) ? item.content : [];
+        const hasText = blocks.some(part => {
+          const record = object(part);
+          return record?.type === "reasoning_text" &&
+            typeof record.text === "string" && record.text.trim().length > 0;
+        });
+        if (!hasText && typeof item.encrypted_content !== "string" &&
+            typeof item.id !== "string") emptyNativeReasoningItems++;
         hasReasoning = true; hasAssistant = true;
       } else if (isResponsesToolCall(item)) {
         toolCalls++; hasCall = true; hasAssistant = true;
@@ -108,8 +129,12 @@ export function auditReasoningReplay(
       toolCalls += calls;
       if (reasoningRequired(contract.requirement, calls > 0)) {
         runsRequiringReasoning++;
-        if (!hasChatNativeReasoning(message)) missingRequiredRuns++;
-        else nativeReasoningItems++;
+        const presence = chatNativeReasoning(message);
+        if (presence === "missing") missingRequiredRuns++;
+        else {
+          nativeReasoningItems++;
+          if (presence === "empty") emptyNativeReasoningItems++;
+        }
       }
     }
   }
@@ -119,6 +144,10 @@ export function auditReasoningReplay(
     protocol: contract.protocol,
     requirement: contract.requirement,
     assistantRuns, runsRequiringReasoning, missingRequiredRuns, toolCalls, nativeReasoningItems,
+    emptyNativeReasoningItems,
+    validation: body && active && (Array.isArray(contract.protocol === "openai-responses" ? body.input : body.messages))
+      ? "structural-only" : "not-checked",
+    gatewayOutcome: "not-observed",
     reason: !active ? "not-applicable" : unknown ? "contract-unknown"
       : !mandatory ? "not-required" : missingRequiredRuns ? "incompatible-history" : "verified",
   };

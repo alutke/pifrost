@@ -3,6 +3,7 @@ import test from "node:test";
 import {
 	createStalledTurnRecoveryCoordinator,
 	detectStalledTurn,
+	stalledTurnMode,
 	STALLED_TURN_CONTINUATION,
 	STALLED_TURN_RECOVERY_MARKER,
 	type StalledTurnEnd,
@@ -60,8 +61,8 @@ test("does not retransmit completed tool calls or consume messages with tool cal
 	}), undefined);
 });
 
-test("only one OMP-managed follow-up per human prompt, with clear exhaustion", () => {
-	const recovery = createStalledTurnRecoveryCoordinator();
+test("explicit opt-in auto mode permits only one OMP follow-up per human prompt", () => {
+	const recovery = createStalledTurnRecoveryCoordinator("auto");
 	const sent: string[] = [];
 	const warnings: string[] = [];
 	const context = {
@@ -107,7 +108,7 @@ test("queued user actions, background continuation, and subagents always win", (
 });
 
 test("a failed enqueue is bounded, without attempting tool replay", () => {
-	const recovery = createStalledTurnRecoveryCoordinator();
+	const recovery = createStalledTurnRecoveryCoordinator("auto");
 	let tries = 0;
 	const notifications: string[] = [];
 	const ctx = {
@@ -127,4 +128,56 @@ test("recovery marker cannot be mistaken for another stalled assistant response"
 	assert.equal(detectStalledTurn(ending(
 		STALLED_TURN_RECOVERY_MARKER + "\nLet's run more tests. </thinking></thinking>"
 	)), undefined);
+});
+
+test("R2-01 notice-only is default and never queues tool-capable agent work", () => {
+	assert.equal(stalledTurnMode(undefined), "notice");
+	assert.equal(stalledTurnMode("1"), "notice");
+	assert.equal(stalledTurnMode("AUTO"), "auto");
+	const recovery = createStalledTurnRecoveryCoordinator();
+	let sends=0;
+	const notices: string[]=[];
+	const ctx={ sessionId:"manual-1",isMain:true,hasQueuedMessages:false,
+		sendContinuation:()=>{sends++;},notify:(message:string)=>notices.push(message) };
+	assert.equal(recovery.onAgentEnd(observed,ctx),false);
+	assert.equal(recovery.status(ctx.sessionId),"pending");
+	assert.equal(sends,0);
+	assert.equal(notices.length,1);
+	assert.match(notices[0]!, /no action taken/i);
+	assert.equal(recovery.onAgentEnd(observed,ctx),false);
+	assert.equal(notices.length,1,"duplicate terminal events must not spam notices");
+	assert.equal(recovery.continuePending({...ctx,isIdle:false}),false);
+	assert.equal(recovery.continuePending({...ctx,hasRunningAsyncWork:true}),false);
+	assert.equal(sends,0);
+	assert.equal(recovery.continuePending({...ctx,isIdle:true}),true);
+	assert.equal(sends,1);
+	assert.equal(recovery.status(ctx.sessionId),"consumed");
+	assert.equal(recovery.continuePending(ctx),false);
+	assert.equal(sends,1);
+});
+test("R2-02 user cancellation leaves pending observation, human prompt and shutdown clear it", () => {
+	const recovery=createStalledTurnRecoveryCoordinator();
+	const ctx={sessionId:"manual-2",isMain:true,hasQueuedMessages:false,sendContinuation:()=>{}};
+	recovery.onAgentEnd(observed,ctx);
+	assert.equal(recovery.status(ctx.sessionId),"pending");
+	recovery.onPrompt(ctx.sessionId,STALLED_TURN_CONTINUATION);
+	assert.equal(recovery.status(ctx.sessionId),"pending");
+	recovery.onPrompt(ctx.sessionId,"New user task");
+	assert.equal(recovery.status(ctx.sessionId),"none");
+	recovery.onAgentEnd(observed,ctx);
+	recovery.onSessionEnd(ctx.sessionId);
+	assert.equal(recovery.status(ctx.sessionId),"none");
+});
+test("R2-03 auto mode refuses queued messages, live async work or non-idle OMP", () => {
+	const recovery=createStalledTurnRecoveryCoordinator("auto");
+	let sent=0;
+	const ctx={sessionId:"auto-safety",isMain:true,hasQueuedMessages:false,isIdle:false,
+		sendContinuation:()=>{sent++;}};
+	assert.equal(recovery.onAgentEnd(observed,ctx),false);
+	assert.equal(recovery.status(ctx.sessionId),"pending");
+	assert.equal(recovery.onAgentEnd(observed,{...ctx,isIdle:true,hasRunningAsyncWork:true}),false);
+	assert.equal(recovery.onAgentEnd(observed,{...ctx,isIdle:true,hasQueuedMessages:true}),false);
+	assert.equal(sent,0);
+	assert.equal(recovery.continuePending({...ctx,isIdle:true}),true);
+	assert.equal(sent,1);
 });

@@ -29,7 +29,7 @@ If <code>pifrost doctor</code> is healthy, you are done.
 
 Inside OMP, use <code>/pifrost trace</code> to inspect the most recent request-level routing provenance for the current session, including the model Bifrost actually served and whether a fallback fired.
 
-**Stalled-turn safeguard (v0.29.2):** When a tool-using main agent prematurely ends with leaked reasoning/planning text instead of its intended next tool action, Pifrost can request one OMP-owned follow-up. It never replays tools, retries a successful provider stream or changes Bifrost routing. Ordinary completions are unaffected; see the [technical reference](docs/REFERENCE.md#stalled-turn-recovery-v0292) for limits and diagnostics.
+**Stalled-turn safeguard (v0.29.10):** Pifrost **notifies only by default** when a tool-using turn appears to stop in leaked planning; it never launches another agent turn without approval. Inspect work, then run `/pifrost stalled continue` and explicitly confirm once. Opt-in `PIFROST_STALLED_TURN_MODE=auto` restores the previous one-shot continuation, guarded by OMP idle and queue state. No completed tool calls, provider streams, history or Bifrost routes are replayed. See [Release 2](docs/RELEASE_2_LIFECYCLE_REASONING.md).
 
 For current integration details and verification limits, see the [technical reference](docs/REFERENCE.md). For release-specific changes and earlier compatibility decisions, see the [changelog](CHANGELOG.md).
 
@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.9
+0.29.10
 ```
 
 Bun also works:
@@ -676,3 +676,7 @@ any generated model output, and never after an auth, quota, invalid reasoning,
 output-budget, permission, timeout or unverified error. OMP/Bifrost retain
 their native retry and provider selection responsibilities. Details:
 [Release 1 execution safety](docs/RELEASE_1_EXECUTION_SAFETY.md).
+
+### Release 2 — lifecycle and reasoning conformance (v0.29.10)
+
+Stalled-turn recovery is advisory by default. `/pifrost stalled status` and `/pifrost stalled continue` provide a bounded, explicitly confirmed continuation, with idle/queue/job/session checks repeated after approval. `PIFROST_STALLED_TURN_MODE=auto` is an opt-in. Replay diagnostics distinguish structural presence of reasoning markers from completed Bifrost gateway processing; neither proves what a converted physical-provider payload contained. Empty native Chat replay fields and unsigned/empty Responses markers are counted without inventing reasoning or restricting heterogeneous models. See [Release 2](docs/RELEASE_2_LIFECYCLE_REASONING.md).

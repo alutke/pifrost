@@ -1,3 +1,9 @@
+## 0.29.10 — 2026-10-21
+
+- Release 2: notice-only stalled-turn recovery by default, one confirmed idle-safe `/pifrost stalled continue`, bounded opt-in auto mode, no services.
+- Separate structural replay validation from completed Bifrost gateway outcome; count empty native reasoning placeholders without assuming provider acceptance.
+- Regression cases for the 555-item incident, queues and async work, replay marker ambiguity and disclosure-safe diagnostic fields.
+
 ## 0.29.9 — 2026-10-21
 
 - Release 1 execution safety: require a read-only double management-plane attestation of the full Bifrost policy and exact ordered physical route members immediately before a locally lowered compatibility dispatch.
