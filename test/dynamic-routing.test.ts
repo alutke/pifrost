@@ -116,7 +116,7 @@ test("native passthrough applies to every standard OMP role alias", () => {
 test("compatibility exceptions reject unsynchronised and expired local rule snapshots", () => {
 	const route = profile();
 	const now = Date.parse("2026-10-14T07:00:00Z");
-	assert.match(compatibilityRouteSnapshotError(route, now) ?? "", /route-sync timestamp/u);
+	assert.match(compatibilityRouteSnapshotError({ ...route, policyFingerprint: "a".repeat(64) }, now) ?? "", /route-sync timestamp/u);
 	assert.equal(compatibilityRouteSnapshotError({ ...route, policyFingerprint: "a".repeat(64), synchronizedAt: "2026-10-13T07:00:00Z" }, now), undefined);
 	assert.match(compatibilityRouteSnapshotError({ ...route, synchronizedAt: "2026-10-13T07:00:00Z" }, now) ?? "", /policy fingerprint/u);
 	assert.match(compatibilityRouteSnapshotError({ ...route, policyFingerprint: "a".repeat(64), synchronizedAt: "2026-09-20T07:00:00Z" }, now) ?? "", /last synchronized/u);
