@@ -198,7 +198,7 @@ test("attempt specs use native protocol endpoints and preserve same-protocol Bif
 	assert.equal(bifrostAttemptExtraBody(route.attempts[0]!), undefined);
 });
 
-test("pre-output Responses failure falls through to the Chat protocol group", async () => {
+test("synthetic approved pre-output transition falls through to the Chat protocol group", async () => {
 	const logical = logicalModel();
 	const route = plan();
 	const dispatched: Array<{ protocol: string; model: string }> = [];
@@ -209,7 +209,7 @@ test("pre-output Responses failure falls through to the Chat protocol group", as
 		return attempt.protocol === "openai-responses"
 			? failedAttempt(attempt.primary, "openai-responses")
 			: successfulAttempt(attempt.primary, "openai-completions");
-	});
+	}, { retryPreOutputError: () => true });
 
 	assert.equal(collected.failure(), undefined);
 	assert.deepEqual(dispatched, [
@@ -333,7 +333,7 @@ test("opaque CommandCode DeepSeek Responses summary is omitted without disabling
 });
 
 
-test("same-protocol incompatible pre-output fallback uses second physical policy safely", async () => {
+test("approved same-protocol pre-output transition uses second physical policy safely", async () => {
 	const logical = logicalModel();
 	const m1 = member("opencode-go/model-a", "openai-completions");
 	const m2 = member("CommandCode GOAT/model-b", "openai-completions");
@@ -345,7 +345,7 @@ test("same-protocol incompatible pre-output fallback uses second physical policy
 	await runPifrostProtocolPlan(logical,route,collected.output,a=>{
 		visited.push(a.primary);
 		return a.primary===m1.reference ? failedAttempt(a.primary,"openai-completions") : successfulAttempt(a.primary,"openai-completions");
-	});
+	}, { retryPreOutputError: () => true });
 	assert.deepEqual(visited,[m1.reference,m2.reference]);
 	assert.deepEqual(collected.events.map(e=>e.type),["start","done"]);
 });
@@ -414,7 +414,7 @@ test("logical alias mapping preserves actual physical origin after cross-protoco
 			upstreamModel: "deepseek-v4",
 		};
 		return eventStream([{ type: "start", partial: physical }, { type: "done", reason: "stop", message: physical }]);
-	});
+	}, { retryPreOutputError: () => true });
 	const terminal = received.find((event) => event.type === "done");
 	assert.ok(terminal && terminal.type === "done");
 	assert.equal(terminal.message.provider, "bifrost");
@@ -440,7 +440,7 @@ test("empty text/thinking starts and zero-length deltas do not prevent fallback"
       {type:"thinking_delta",contentIndex:0,delta:"",partial},
       {type:"error",reason:"error",error:failure}
     ]);
-  });
+  }, { retryPreOutputError: () => true });
   assert.equal(visited.length,2);
   assert.deepEqual(collected.events.map(e=>e.type),["start","done"]);
 });
@@ -566,4 +566,15 @@ test("a thrown protocol error may retry but a generic thrown error cannot", asyn
 	}, { retryPreOutputError: isGatewayProtocolRejection });
 	assert.deepEqual(genericInvoked, ["openai-completions"]);
 	assert.match(String(generic.failure()), /Gateway offline/u);
+});
+
+test("the generic attempt runner fails closed with no explicit transition policy", async () => {
+  const logical = logicalModel(), route = plan(), collected = outputCollector();
+  const dispatched: string[] = [];
+  await runPifrostProtocolPlan(logical, route, collected.output, attempt => {
+    dispatched.push(attempt.primary);
+    return failedAttempt(attempt.primary, attempt.protocol);
+  });
+  assert.equal(dispatched.length, 1);
+  assert.equal(collected.events.at(-1)?.type, "error");
 });
