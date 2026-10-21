@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.2
+0.29.3
 ```
 
 ## Stalled-turn recovery (v0.29.2)
@@ -278,3 +278,15 @@ Current guidance is consolidated in [Integration support](INTEGRATION_SUPPORT.md
 `pifrost omp readiness` reports `locally-compatible` rather than `ready` for settings-only observations. Cached models, OMP host version and selected judge roles do not prove live gateway decisions or historical consultations. Unknown chat-model scope syntax is marked unverified rather than rejected. The separate `pifrost omp workarounds --verbose` report lists retained safeguards and their regression references; `npm run check` verifies those references exist.
 
 The optional `npm run smoke:judgments` is potentially billable, requires `PIFROST_LIVE_JUDGMENTS=1`, `BIFROST_URL` and `BIFROST_VIRTUAL_KEY`; it checks text and image typed decisions on the specified TypeSafe/OpenAI native routes. It is not run in ordinary CI or automatically on install. OMP/Bifrost/physical provider image validation remains authoritative; enabling Jev images is experimental and requires provider-side validation.
+
+
+## Inference diagnostics — Release A (v0.29.3)
+
+OMP `/pifrost trace` now reports classified upstream reasoning replay,
+output limit and Bifrost virtual-key model denial errors when recognizable
+metadata is available. `/pifrost trace verbose` adds privacy-safe wire
+structure counts (history, reasoning items, tool calls and requested output
+limit). This is **diagnostic-only**: no token clamping, reasoning replay
+repair or fallback changes are introduced. See
+[Inference diagnostics](INFERENCE_DIAGNOSTICS.md) for evidence limits and
+the sanitized regression fixture.

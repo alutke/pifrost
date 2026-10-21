@@ -2452,6 +2452,10 @@ async function commandDoctor(flags = {}) {
   await commandModelsDoctor({ verbose:true });
   console.log("");
   commandRoutesEffective();
+  console.log("");
+  console.log("Inference diagnostics: inside OMP use /pifrost trace verbose for typed failures,");
+  console.log("  gateway-reported physical model and aggregate request shape (no prompts or credentials).");
+  console.log("  Route fingerprint verification cannot prove session affinity or replay validity.");
   try {
     getRepoRoot();
     console.log("");

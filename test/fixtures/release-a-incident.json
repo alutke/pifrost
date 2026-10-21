@@ -1,0 +1,76 @@
+{
+  "schemaVersion": 1,
+  "description": "Sanitized structural reproduction of the 20 October 2026 Pifrost/Bifrost failure. No original history, prompts, IDs, tool arguments, credentials, or reasoning text.",
+  "request": {
+    "protocol": "openai-responses",
+    "model": "omp-default",
+    "historyItems": 555,
+    "assistantMessages": 100,
+    "userMessages": 35,
+    "toolCalls": 210,
+    "toolResults": 210,
+    "nativeReasoningItems": 0,
+    "maxOutputTokens": 712434,
+    "reasoningEffort": "high"
+  },
+  "incidents": [
+    {
+      "case": "A-01",
+      "kind": "request-shape",
+      "expected": "missing-native-reasoning"
+    },
+    {
+      "case": "A-02",
+      "kind": "failure",
+      "status": 400,
+      "error": {
+        "error": {
+          "type": "invalid_request_error",
+          "message": "The reasoning_content in the thinking mode must be passed back to the API."
+        }
+      },
+      "code": "REASONING_REPLAY_INVALID"
+    },
+    {
+      "case": "A-03",
+      "kind": "failure",
+      "status": 400,
+      "error": {
+        "error": {
+          "type": "invalid_request_error",
+          "message": "max_tokens: 712434 exceeds maximum 393216"
+        }
+      },
+      "code": "OUTPUT_LIMIT_EXCEEDED"
+    },
+    {
+      "case": "A-04",
+      "kind": "failure",
+      "status": 403,
+      "error": {
+        "error": {
+          "type": "model_blocked",
+          "message": "Model sample-model is not allowed for virtual key sample-key"
+        }
+      },
+      "code": "MODEL_NOT_PERMITTED"
+    },
+    {
+      "case": "A-05",
+      "kind": "routing-evidence",
+      "configuredPrimary": "provider-a/model-a",
+      "affinitySelected": "provider-b/model-b",
+      "expected": "different-physical-provider"
+    },
+    {
+      "case": "A-06",
+      "kind": "fallback-exhaustion",
+      "attemptCodes": [
+        "REASONING_REPLAY_INVALID",
+        "OUTPUT_LIMIT_EXCEEDED",
+        "MODEL_NOT_PERMITTED"
+      ],
+      "expected": "three-failed-attempts"
+    }
+  ]
+}

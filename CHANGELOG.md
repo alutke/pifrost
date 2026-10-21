@@ -1,3 +1,9 @@
+## 0.29.3 — 2026-10-21
+
+- Release A: add sanitized, deterministic fixtures for the 555-entry DeepSeek reasoning replay error, the 712,434-token output request, virtual-key denial, affinity mismatch and three-attempt exhaustion.
+- Classify Bifrost JSON error responses into stable privacy-safe codes. Extend OMP /pifrost trace with typed failures, aggregate request structure, reasoning-item counts and requested output caps, without storing prompts or raw errors.
+- Add read-only inference guidance to verbose doctor and a documented diagnostic evidence boundary. No changes to routing, retry policies, output token enforcement, reasoning replay, permissions or background processes.
+
 ## 0.29.2 — 2026-10-20
 
 - Recover one high-confidence OMP main-agent stalled turn when a successful model response ends with leaked planning/reasoning markers, an explicit next-action intention, and evidence of recent tool work. Resume through OMP's supported follow-up message mechanism; never invent/replay tool calls or alter Bifrost routing, provider errors, or output-stream retry semantics.

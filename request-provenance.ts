@@ -1,6 +1,8 @@
 import type { BifrostCostCapture } from "./bifrost-cost-bridge.ts";
 import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import { gatewayFailureAdvice, type GatewayFailureClass } from "./gateway-reliability.ts";
+import { inferenceFailureAdvice, type InferenceFailureCode } from "./inference-failure.ts";
+import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
 
 export interface PifrostRouteTrace {
 	timestamp: number;
@@ -18,6 +20,8 @@ export interface PifrostRouteTrace {
 	traceId?: string;
 	httpStatus?: number;
 	failureClass?: GatewayFailureClass;
+	failureCode?: InferenceFailureCode;
+	requestDiagnostics?: InferenceRequestDiagnostics;
 	retryAfterSeconds?: number;
 	outputStarted?: boolean;
 	cacheHit?: boolean;
@@ -79,6 +83,8 @@ export function recordBifrostCaptureTrace(
 		...(capture.traceId ? { traceId: capture.traceId } : {}),
 		...(capture.httpStatus !== undefined ? { httpStatus: capture.httpStatus } : {}),
 		...(capture.failureClass ? { failureClass: capture.failureClass } : {}),
+		...(capture.failureCode ? { failureCode: capture.failureCode } : {}),
+		...(capture.requestDiagnostics ? { requestDiagnostics: { ...capture.requestDiagnostics } } : {}),
 		...(capture.retryAfterSeconds !== undefined ? { retryAfterSeconds: capture.retryAfterSeconds } : {}),
 		...(capture.outputStarted !== undefined ? { outputStarted: capture.outputStarted } : {}),
 		...(capture.cacheHit !== undefined ? { cacheHit: capture.cacheHit } : {}),
@@ -200,7 +206,8 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
         (trace.isFallback||((trace.fallbackIndex??0)>0)?" (fallback attempted)":""));
       lines.push("    Cost: "+(money(trace.totalCost)??"unknown")+
         (trace.upstreamLatencyMs===undefined?"":"; upstream "+Math.round(trace.upstreamLatencyMs)+" ms"));
-      if(trace.failureClass)lines.push("    Issue: "+trace.failureClass+
+      if(trace.failureCode && trace.failureCode!=="UNKNOWN")lines.push("    Issue: "+trace.failureCode+" - "+inferenceFailureAdvice(trace.failureCode));
+      else if(trace.failureClass)lines.push("    Issue: "+trace.failureClass+
         (gatewayFailureAdvice(trace.failureClass)?" - "+gatewayFailureAdvice(trace.failureClass):""));
       else if(trace.outcome!=="done")lines.push("    Issue: no gateway failure classification available");
       lines.push("    More detail: /pifrost trace verbose");
@@ -231,6 +238,10 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			trace.traceId ? `trace-id=${trace.traceId}` : undefined,
 			trace.httpStatus !== undefined ? `http=${trace.httpStatus}` : undefined,
 			trace.failureClass ? `failure=${trace.failureClass}` : undefined,
+			trace.failureCode ? `failure-code=${trace.failureCode}` : undefined,
+			trace.requestDiagnostics ? `history-items=${trace.requestDiagnostics.historyItems} assistant-items=${trace.requestDiagnostics.assistantMessages} reasoning-items=${trace.requestDiagnostics.nativeReasoningItems} chat-reasoning=${trace.requestDiagnostics.chatReasoningMessages} tool-calls=${trace.requestDiagnostics.toolCalls} tool-results=${trace.requestDiagnostics.toolResults} orphan-results=${trace.requestDiagnostics.orphanToolResults} tool-definitions=${trace.requestDiagnostics.toolDefinitions}` : undefined,
+			trace.requestDiagnostics?.requestedOutputTokens !== undefined ? `output-requested=${trace.requestDiagnostics.requestedOutputTokens}` : undefined,
+			trace.requestDiagnostics?.reasoningEffort ? `reasoning-effort=${trace.requestDiagnostics.reasoningEffort}` : undefined,
 			trace.retryAfterSeconds !== undefined ? `retry-after=${trace.retryAfterSeconds}s (gateway advisory only)` : undefined,
 			trace.outputStarted !== undefined ? `output-started=${trace.outputStarted ? "yes" : "no"}` : undefined,
 			trace.cacheHit !== undefined ? `cache-hit=${trace.cacheHit ? "yes" : "no"}` : undefined,
@@ -253,16 +264,19 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			`outcome=${trace.outcome}`,
 		].filter((value): value is string => typeof value === "string" && value.length > 0);
 		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=)/u.test(item));
-		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
+		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
 		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
-		const reasoning = details.filter(item => item.startsWith("history-"));
+		const reasoning = details.filter(item => /^(?:history-removed=|history-mixed=|history-nested=|history-prose=|history-ambiguous=)/u.test(item));
+		const requestShape = details.filter(item => /^(?:history-items=|output-requested=|reasoning-effort=)/u.test(item));
 		lines.push(`  ${trace.logicalModel} - ${trace.outcome === "done" ? "completed" : "failed"}`);
 		lines.push(`    Model: served=${served}`);
 		lines.push(`    Routing: ${route.join(" ")}`);
 		if (gateway.length) lines.push(`    Gateway: ${gateway.join(" ")}`);
 		if (usage.length) lines.push(`    Usage: ${usage.join(" ")}`);
 		if (reasoning.length) lines.push(`    Reasoning cleanup: ${reasoning.join(" ")}`);
-		if (trace.failureClass) lines.push(`    Next: ${gatewayFailureAdvice(trace.failureClass)}`);
+		if (requestShape.length) lines.push(`    Request structure: ${requestShape.join(" ")}`);
+		if (trace.failureCode && trace.failureCode !== "UNKNOWN") lines.push(`    Next: ${inferenceFailureAdvice(trace.failureCode)}`);
+		else if (trace.failureClass) lines.push(`    Next: ${gatewayFailureAdvice(trace.failureClass)}`);
 		lines.push("");
 	}
 	return lines.join("\n");
