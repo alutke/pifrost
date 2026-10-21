@@ -93,3 +93,57 @@ test("Release B: role override never raises confirmed physical limit",()=>{
   assert.equal(d.effectiveTokens,393216);
   assert.equal(d.limitingSource,"confirmed-endpoint");
 });
+
+test("R4-01 physical primary retains its 131K output despite weak 8K fallback",()=>{
+  const members=[
+    {reference:"provider/primary",maxTokens:131072,source:"live"},
+    {reference:"provider/fallback",maxTokens:8192,source:"live"},
+  ];
+  const primary=resolveOutputBudget({logicalModel:"omp-default",requestedTokens:131072,
+    advertisedTokens:131072,members,memberPolicy:"primary",environment:{}});
+  assert.equal(primary.effectiveTokens,131072);
+  assert.equal(primary.memberCount,2);
+  assert.equal(primary.verifiedMemberCount,2);
+  assert.ok(!primary.constraints.some(item=>item.tokens===8192));
+  // The second physical target has its own limit, if it is dispatched separately.
+  const fallback=resolveOutputBudget({logicalModel:"omp-default",requestedTokens:131072,
+    members:[members[1]!],memberPolicy:"primary",environment:{}});
+  assert.equal(fallback.effectiveTokens,8192);
+  assert.equal(fallback.limitingSource,"live-member");
+});
+test("R4-02 opaque logical Bifrost route treats member capacities as diagnostic only",()=>{
+  const budget=resolveOutputBudget({logicalModel:"omp-default",requestedTokens:131072,
+    advertisedTokens:131072,members:[
+      {reference:"provider/first",maxTokens:131072,source:"live"},
+      {reference:"provider/fallback",maxTokens:8192,source:"live"},
+    ],memberPolicy:"diagnostic",environment:{}});
+  assert.equal(budget.effectiveTokens,131072);
+  assert.equal(budget.memberCount,2);
+  assert.equal(budget.verifiedMemberCount,2);
+  assert.ok(!budget.constraints.some(c=>["catalog-member","live-member","confirmed-endpoint"].includes(c.source)));
+});
+test("R4-03 exact confirmed physical primary cap still applies and operator cap is never bypassed",()=>{
+  const chain=[
+    {reference:"CommandCode GOAT/deepseek/deepseek-v4.1-flash",maxTokens:712434,source:"bifrost-datasheet"},
+    {reference:"provider/limited-fallback",maxTokens:8192,source:"live"},
+  ];
+  const full=resolveOutputBudget({logicalModel:"omp-default",requestedTokens:712434,
+    members:chain,memberPolicy:"primary",environment:{}});
+  assert.equal(full.effectiveTokens,393216);
+  assert.equal(full.limitingSource,"confirmed-endpoint");
+  const overridden=resolveOutputBudget({logicalModel:"omp-default",requestedTokens:712434,
+    members:chain,memberPolicy:"primary",environment:{PIFROST_OUTPUT_CAP_DEFAULT:"16384"}});
+  assert.equal(overridden.effectiveTokens,16384);
+  assert.equal(overridden.limitingSource,"operational-cap");
+});
+test("R4-04 confirmed fallback limit may be known but must not be copied to primary",()=>{
+  const chain=[
+    {reference:"OpenCode Go/deepseek/deepseek-v4.1-flash",maxTokens:712434,source:"live"},
+    {reference:"CommandCode GOAT/deepseek/deepseek-v4.1-flash",maxTokens:712434,source:"live"},
+  ];
+  const result=resolveOutputBudget({logicalModel:"omp-default",requestedTokens:712434,
+    members:chain,memberPolicy:"primary",environment:{}});
+  assert.equal(result.effectiveTokens,712434);
+  assert.equal(result.memberCount,2);
+  assert.ok(!result.constraints.some(c=>c.tokens===393216));
+});
