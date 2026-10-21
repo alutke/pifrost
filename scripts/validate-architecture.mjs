@@ -185,9 +185,9 @@ if (!dynamicRoutes.includes("plan.encoderContractsComplete !== true") ||
   errors.push("Release C must prevent unknown physical encoders from native passthrough and retain gateway route attribution");
 }
 if (!native.includes("isVerifiedGatewayProtocolRejection(error, gatewayProtocolAttempt)") ||
-    !multiProtocol.includes('evidence?.httpStatus !== 400 && evidence?.httpStatus !== 422') ||
-    !multiProtocol.includes("evidence.outputStarted === true")) {
-  errors.push("Release F requires evidence-bound, pre-output HTTP protocol fallback for opaque Bifrost routes");
+    !multiProtocol.includes('evaluateAttemptTransition("gateway-ingress"') ||
+    !readFileSync(resolve(root,"attempt-retry-policy.ts"),"utf8").includes("status === 400 || status === 422")) {
+  errors.push("Release F requires shared evidence-bound, pre-output HTTP protocol fallback for opaque Bifrost routes");
 }
 const transitionPolicy=readFileSync(resolve(root,"attempt-retry-policy.ts"),"utf8");
 const reconcile=readFileSync(resolve(root,"route-reconcile.mjs"),"utf8");
