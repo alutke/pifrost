@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.10
+0.29.11
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -385,3 +385,9 @@ See [Cross-provider hardening](CROSS_PROVIDER_HARDENING.md).
 ## Release 2 — stalled turns and replay evidence (v0.29.10)
 
 Stalled-turn detection gives a notice, not an automatic follow-up by default. `/pifrost stalled [status|continue]` allows one user-confirmed OMP continuation only in an interactive idle top-level session, with no queued messages or running async jobs; conditions are rechecked after confirmation. `PIFROST_STALLED_TURN_MODE=auto` explicitly opts into automatic continuation. The final-wire reasoning audit is structural-only: empty native Chat fields and unsigned empty Responses markers are counted without assuming the physical provider accepted them. `/pifrost trace verbose` records completed Bifrost streams separately. No reasoning or secrets enter diagnostics. See [Release 2 contract](RELEASE_2_LIFECYCLE_REASONING.md).
+
+## Stalled-turn mode configuration (v0.29.11)
+
+Default when `PIFROST_STALLED_TURN_MODE` is unset or empty: **auto**. Pifrost detects a narrowly defined unfinished planning turn, then may request **one** normal OMP-owned follow-up for that user prompt if the main agent has settled and has no queued or running async work. OMP still controls tools, provider calls and session state. It never replays a previous tool call or retries a successful model stream at the transport layer.
+
+To disable stalled-turn handling entirely, export `PIFROST_STALLED_TURN_MODE=off` before starting OMP. Accepted synonyms: `0`, `false`, `no`, `disable`, `disabled`. `PIFROST_STALLED_TURN_MODE=notice` keeps the advisory/manual `/pifrost stalled continue` workflow with UI confirmation. Unknown non-empty values fall back to `notice` for safety. `/pifrost stalled status` reports the active mode and session state. Changes take effect on restarting the OMP extension; no background service is needed. Automatic follow-up can execute further, potentially non-idempotent work, so disable it in workflows where user approval must precede any extra tool actions.
