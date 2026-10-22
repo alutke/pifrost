@@ -1,4 +1,4 @@
-# Output-budget policy — Release 4 behaviour, current v0.29.19
+# Output-budget policy — Release 4 behaviour, current v0.29.20
 
 Bifrost still owns physical provider selection, fallback order, virtual-key
 permissions, and accounting. Pifrost enforces request/output-token ceilings
@@ -8,70 +8,66 @@ defaults, replay provider failures, or take ownership of Bifrost fallback.
 
 ## Which ceiling applies?
 
-1. **Locally dispatched physical compatibility attempt.** Apply the
-   user-requested maximum, any explicit operator cap, and verified/live
-   output ceilings for the **first physical target actually addressed** in
-   the attempt. The available Bifrost same-protocol fallback targets remain
-   in their original order but their lower ceilings do *not* reduce the
-   primary model's maximum.
-2. **Native/opaque logical alias via Bifrost.** Apply the user's requested
-   maximum, OMP-advertised logical alias ceiling, and explicit operator cap.
-   Physical chain members are **diagnostic only**: Pifrost does not know
-   which member Bifrost will select at dispatch and cannot assert that a
-   fallback's output limit applies to the current physical request.
-3. **Direct physical model.** Exact, entitlement-specific confirmed
-   endpoint limits remain enforceable. An unrelated provider with the same
-   model name must not inherit that limit.
-4. **Explicit context headroom.** Only exact context/input accounting
-   supplied directly to the budget helper constrains remaining output.
-   Approximate OMP prewalk estimates do not reduce the budget.
+1. **Locally dispatched physical compatibility attempt.** Apply the requested
+   maximum, explicit operator cap and verified/live physical ceilings for the
+   actual primary addressed in that request. A weak fallback does not
+   automatically restrict a directly dispatched, capable primary.
+2. **Native or opaque Bifrost logical alias.** Bifrost owns target selection,
+   session affinity and fallback. Before forwarding a single logical request,
+   Pifrost constrains the output budget by the narrowest **independently
+   confirmed, exact entitlement-specific endpoint ceiling** among the known
+   route candidates. Unverified `live` or fallback catalogue maxima are
+   excluded from this physical safety envelope. The logical alias advertised
+   maximum and explicitly configured operator caps still apply.
+3. **Direct physical model.** Use exact, entitlement-qualified evidence for
+   that provider/model; a similarly named model on a different entitlement
+   is not automatically constrained.
+4. **Exact context headroom.** Direct, exact helper inputs can constrain output
+   headroom. Approximate prewalk estimates do not silently reduce output.
 
-A user-specified `maxTokens` for a locally selected physical compatibility
-target is not overridden by the alias's synthetic conservative model
-advertisement. If no explicit request exists, OMP's ordinary advertised
-model default still applies. Pifrost cannot enlarge a number that OMP has
-already normalized down before calling this extension.
+The gateway envelope is a deliberate trade-off: for one logical request,
+Bifrost can select any route member (including by session affinity). The
+smallest *verified* hard limit prevents an observed limit violation without
+taking over routing; it can constrain an otherwise more capable member if
+the gateway may dispatch to a confirmed smaller one. Where that is undesirable,
+configure separate Bifrost routes or a local physical dispatch exception.
 
-A gateway may subsequently select a fallback with lower capacity. Such a
-fallback can reject the larger request, and Bifrost owns that outcome.
-Pifrost does **not** retry after committed output, lower a successful
-primary to guarantee every possible fallback, or assert end-to-end
-compatibility from metadata. When operators require every fallback to
-succeed with the same request, use a deliberately compatible Bifrost chain
-or a conscious lower user/operator cap.
+Unknown or overestimated provider limits can still cause an upstream 400.
+They must be diagnosed as `OUTPUT_LIMIT_EXCEEDED` when the provider supplies
+a token-range error. Pifrost cannot infer all future provider limits from
+catalogue metadata, and does not silently retry HTTP inference calls: the
+previous request may have reached provider-managed tools.
 
 ## Safeguards retained
 
-- Known physical output ceilings still cap the correct selected provider.
-  For example, evidence-confirmed CommandCode GOAT / DeepSeek V4.1 Flash
-  requests are bounded to 393,216 tokens *when that physical target is
-  actually dispatched*. That ceiling does not get copied to an OpenCode Go
-  or other route member.
+- The 22 October 2026 OpenCode Go / DeepSeek V4.1 Flash response and prior
+  CommandCode GOAT / DeepSeek V4.1 Flash response independently establish a
+  393,216-token limit for their *exact* respective endpoints. A logical alias
+  whose candidate chain includes either is clamped to this verified ceiling.
+  Other providers do not inherit it based on a similar model name.
 - `PIFROST_OUTPUT_CAP_TOKENS` and per-role
-  `PIFROST_OUTPUT_CAP_DEFAULT`, `PIFROST_OUTPUT_CAP_TASK`, etc. still
-  apply and can only lower a budget. A value of `0` disables just that
-  optional cap.
-- The final-wire clamp includes only existing `max_tokens`,
-  `max_completion_tokens`, and `max_output_tokens` fields, even if a
-  payload hook raised them after planning. OMP remains owner of the
-  serializer; no new fields are injected.
-- Diagnostics count all observed physical route members and known/unknown
-  ceiling evidence, while only the selected physical target is eligible
-  to constrain the request.
-- No artificial 8K, 16K or 32K OMP role caps have been added.
+  `PIFROST_OUTPUT_CAP_DEFAULT`, `PIFROST_OUTPUT_CAP_TASK`, etc. remain
+  optional and lower-only; `0` disables only that operator cap.
+- Final-wire clamping covers existing `max_tokens`,
+  `max_completion_tokens` and `max_output_tokens` after any OMP payload
+  callback; Pifrost never invents a provider-specific token field.
+- Diagnostics preserve confirmed versus unverified member provenance. No
+  artificial universal 8K, 16K, 32K or 393K role ceiling is imposed.
 
-## Regression evidence and verification limits
+## Regression evidence and limits
 
-The suite covers a 131K primary paired with an 8K fallback, a confirmed
-393,216-token CommandCode primary, the same model through a different
-entitlement, explicit 16K operator override and an opaque native Bifrost
-logical alias. It reproduces the previous 712,434-token rejected request
-without claiming a different provider must share the same ceiling.
+Tests cover 670,395 requested vs. 393,216 confirmed, Bifrost-controlled
+native and opaque routes, session-affinity/fallback candidates, direct
+primary-only compatibility exceptions, weak unverified fallbacks, explicit
+operator caps, payload-hook mutations and the original protocol-fallback
+test. The range error is classified without retaining original prompt,
+credentials or tool arguments.
 
-These are deterministic tests of Pifrost's request policy. Real upstream
-acceptance depends on the gateway's live provider, model, entitlement and
-selected fallback; opt-in billable provider tests are still required to
-establish full live conformance.
+This proves local request construction and classification, not that Bifrost
+or a third-party provider will honour the cap at egress. The existing
+gateway egress diagnostics below remain authoritative when Bifrost strips
+an output parameter. No additional daemon, polling service or billable
+probe is introduced.
 
 ## Release 5B — gateway egress evidence
 
