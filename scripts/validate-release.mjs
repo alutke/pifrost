@@ -10,7 +10,7 @@ const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 const reference = readFileSync(new URL("docs/REFERENCE.md", root), "utf8");
 const integrationSupport = readFileSync(new URL("docs/INTEGRATION_SUPPORT.md", root), "utf8");
-if (!integrationSupport.includes("OMP 18.12.1") || !integrationSupport.includes("18.10.4") ||
+if (!integrationSupport.includes(`OMP ${pkg.dependencies["@oh-my-pi/pi-ai"]}`) || !integrationSupport.includes("18.10.4") ||
     !integrationSupport.includes("billable")) throw new Error("Integration support matrix must document host and live-test limits");
 const cliLib = readFileSync(new URL("cli-lib.mjs", root), "utf8");
 const native = readFileSync(new URL("native.ts", root), "utf8");
@@ -125,6 +125,7 @@ for (const path of [
   "docs/ROUTE_COMPATIBILITY.md",
   "output-budget.ts",
   "docs/RELEASE_4_BUDGET_GOVERNANCE.md",
+    "docs/RELEASE_5A_CONTRACT_FOUNDATION.md",
   "SECURITY.md",
   "CONTRIBUTING.md",
   "scripts/validate-documentation.mjs",
@@ -220,6 +221,7 @@ try {
     "native.ts",
     "runtime-route-state.ts",
     "docs/RELEASE_4_BUDGET_GOVERNANCE.md",
+    "docs/RELEASE_5A_CONTRACT_FOUNDATION.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
     "scripts/validate-documentation.mjs",
