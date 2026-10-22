@@ -704,3 +704,7 @@ Pifrost treats HTTP 413 as terminal, preserves the full supported Chat/Responses
 ### Release 5C — model-aware image accounting and complete discovery (v0.29.16)
 
 Pifrost now delegates image-token pricing to the pinned OMP 18.12.5 public model-lineage policy, including measured DeepSeek V4.1 Flash image billing. Node-only/older-host diagnostics retain a tested portable fallback. Gateway model discovery follows explicit pagination cursors and rejects incomplete provider-key inventories instead of caching a partial model list as complete. No image-count limit or model output cap is invented. See [Release 5C](docs/RELEASE_5C_CONTEXT_DISCOVERY.md).
+
+### Release 5D — lifecycle recovery and MCP replay-risk evidence (v0.29.17)
+
+OMP planning-stall recovery now refuses unresolved or uncertain tool outcomes and invalidates pending approvals when compaction or session history changes. Pifrost's own MCP tools/call calls never retry after ambiguous failure; `MCP_OUTCOME_UNCERTAIN` means a mutation may have committed. Repository MCP diagnostics flag approval-free non-idempotent or unknown tools affected by [Bifrost #8795](https://github.com/maximhq/bifrost/issues/8795). **Bifrost internal retries are not fixed by this release.** See [Release 5D](docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md).
