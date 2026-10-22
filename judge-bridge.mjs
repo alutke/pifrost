@@ -82,6 +82,15 @@ export function validateNativeJudgeResponse(body, questions) {
         !(typeof answer.confidence === "number" && Number.isFinite(answer.confidence)))) {
       throw new Error("Bifrost native judge response has an invalid choice answer for " + id);
     }
+    if (kind === "box") {
+      const edges = answer.box;
+      const probability = n => typeof n === "number" && Number.isFinite(n) && n >= 0 && n <= 1;
+      if (!edges || !probability(edges.top) || !probability(edges.bottom) ||
+          !probability(edges.left) || !probability(edges.right) ||
+          !(edges.top < edges.bottom && edges.left < edges.right) || !probability(answer.confidence)) {
+        throw new Error("Bifrost native judge returned an invalid normalized box answer for " + id);
+      }
+    }
     if (kind === "score" && !(typeof answer.score === "number" && Number.isFinite(answer.score)) ||
         kind === "score" && (!answer.probabilities || typeof answer.probabilities !== "object")) {
       throw new Error("Bifrost native judge response has an invalid score answer for " + id);
