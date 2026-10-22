@@ -35,9 +35,11 @@ function toolDefinitionsFromClient(client, config) {
         tool?.input_schema ??
         tool?.parameters ??
         tool?.function?.parameters;
+      const annotations = tool?.annotations ?? tool?.function?.annotations;
       return {
         name,
         ...(description ? { description } : {}),
+        ...(annotations && typeof annotations === "object" && !Array.isArray(annotations) ? { annotations: { ...annotations } } : {}),
         ...(inputSchema && typeof inputSchema === "object" ? { inputSchema } : {}),
       };
     })
@@ -154,6 +156,24 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
     return { tool, granted: true, executable, autoExecutable };
   });
   const warnings = [];
+  // Bifrost 2.3.2 upstream issue #8795: ordinary gateway retries may
+  // duplicate a committed mutation after its response is lost. Tool hints
+  // are advisory, not an end-to-end idempotency guarantee. Do not silently
+  // widen/narrow grants; expose the risky auto-execute intersection.
+  const mutationRiskRows = rows.filter(row => row.autoExecutable === true).map(row => {
+    const definition = (client?.toolDefinitions ?? []).find(entry => entry.name === row.tool);
+    const annotations = definition?.annotations;
+    const annotatedReadOnly = annotations?.readOnlyHint === true && annotations?.destructiveHint !== true;
+    const annotatedIdempotent = annotations?.idempotentHint === true;
+    const explicitlyNonIdempotent = annotations?.idempotentHint === false;
+    const risk = annotatedReadOnly ? "annotated-read-only" :
+      explicitlyNonIdempotent ? "non-idempotent" :
+      annotatedIdempotent ? "annotated-idempotent" : "unverified";
+    return { tool: row.tool, risk, requiresReview: risk === "non-idempotent" || risk === "unverified" };
+  });
+  for (const item of mutationRiskRows.filter(item=>item.requiresReview)) {
+    warnings.push(`Bifrost MCP retry-risk (#8795): auto-execute ${item.tool} is ${item.risk}; a committed side effect may be repeated after a lost response. Limit auto-execution until its idempotency is verified upstream`);
+  }
   if (autoPolicyKnown && Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
     warnings.push("auto-execute wildcard grants every executable tool approval-free execution");
   }
@@ -167,6 +187,8 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
   }
   return {
     rows,
+    mutationRiskRows,
+    unsafeAutoExecuteCount: mutationRiskRows.filter(item=>item.requiresReview).length,
     grantedCount: rows.length,
     executableCount: executePolicyKnown ? rows.filter((row) => row.executable === true).length : undefined,
     autoExecutableCount: autoPolicyKnown ? rows.filter((row) => row.autoExecutable === true).length : undefined,
