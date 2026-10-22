@@ -1,3 +1,11 @@
+## 0.29.20 — 2026-10-22
+
+- Correct output-token budget enforcement for opaque and native Bifrost logical routes: retain Bifrost ownership of routing, session affinity and fallback, while applying only independently verified exact endpoint ceilings across candidate members. Keep speculative catalogue and low fallback metadata from artificially restricting capable models.
+- Confirm OpenCode Go DeepSeek V4.1 Flash's 393,216 output-token limit from the 22 October incident; the existing CommandCode GOAT verified limit covers the other affected candidate. Clamp Responses and Chat token fields after OMP payload hooks without altering user history.
+- Classify `max_tokens must be between` and equivalent bounds errors as `OUTPUT_LIMIT_EXCEEDED` rather than `OTHER_REQUEST`; add synthetic provider/limit and full native gateway-protocol regressions.
+- Keep the one-shot, safety-gated OMP automatic continuation as the default for successful leaked-planning stalls; recognise explicit `true`, `yes`, `1` and `on` settings as enabled. Never blindly retry HTTP failures, unresolved tool effects or cancelled turns.
+- No new service, physical route selection, model-wide hard cap, virtual-key policy mutation or automatic tool replay.
+
 ## 0.29.19 — 2026-10-22
 
 - Release 5F: read-only OMP 18.12.5 judgment image bounds and confirmed Jev 1.14 box capability, with explicit `--image --box` probe and normalized coordinate checks.

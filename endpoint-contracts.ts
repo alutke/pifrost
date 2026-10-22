@@ -16,6 +16,11 @@ export const CONFIRMED_ENDPOINT_CONTRACTS: readonly ConfirmedEndpointContract[] 
   model: "deepseek/deepseek-v4.1-flash",
   maxOutputTokens: 393_216,
   evidence: "CommandCode GOAT DeepSeek V4.1 Flash fallback HTTP 400 (2026-10-20): max_output_tokens 712434 exceeds provider limit 393216",
+}, {
+  provider: "opencode-go",
+  model: "deepseek-v4.1-flash",
+  maxOutputTokens: 393_216,
+  evidence: "OpenCode Go DeepSeek V4.1 Flash affinity HTTP 400 (2026-10-22): max_tokens must be between 1 and 393216",
 }];
 
 export function normalizedPhysicalProvider(value: string): string {

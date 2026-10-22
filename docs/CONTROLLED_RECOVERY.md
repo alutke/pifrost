@@ -56,3 +56,18 @@ completed operations: Pifrost does not infer unseen work.
 
 This release does not repair Bifrost Responses-to-Chat conversion and does
 not automatically solve provider permissions or output-token errors.
+
+## Default-on automatic continuation
+
+`PIFROST_STALLED_TURN_MODE` defaults to `auto`. A *successful* main-agent
+turn that demonstrably stops in leaked planning can enqueue **one**
+OMP-owned continuation if its tool results are settled and no messages, async
+jobs, cancellation, history rewrite or uncertain tool outcomes remain. The
+continuation checks existing workspace state before external actions; it never
+blindly replays tools or the HTTP inference request.
+
+Use `PIFROST_STALLED_TURN_MODE=auto` (or `true`, `1`, `yes`, `on`) to
+explicitly enable the default; `notice` requires manual approval and `off`
+disables automatic continuation. Upstream token-range HTTP errors
+and virtual-key permission failures are not successful stalled turns, so they
+receive diagnosis rather than unsafe automatic re-execution.

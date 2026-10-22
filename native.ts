@@ -453,10 +453,10 @@ function streamDynamicPifrostRoute(
 				maxTokens: member.maxTokens,
 				source: member.maxTokensSource,
 			})),
-			// Native alias passthrough is governed by Bifrost's live rule,
-			// which may select a different member; don't assert a physical
-			// bound. Only local compatibility dispatch has a known primary.
-			memberPolicy: nativeGatewayRoute ? "diagnostic" : "primary",
+			// Bifrost owns native route selection, including session affinity and
+			// fallback. The verified gateway envelope applies only observed,
+			// exact physical ceilings; local exceptions retain primary-only caps.
+			memberPolicy: nativeGatewayRoute ? "gateway" : "primary",
 			explicit: rawOptions?.maxTokens !== undefined,
 		});
 		costCapture.outputBudget = outputBudget;
@@ -638,9 +638,10 @@ function streamPifrostOpenAI(
 		requestedTokens: options?.maxTokens ?? model.maxTokens,
 		advertisedTokens: model.maxTokens,
 		members: routeSnapshot.outputMembers.get(model.id.toLowerCase()),
-		// Opaque logical aliases leave target selection and fallback semantics
-		// with Bifrost. Member capacities are diagnostics, not hard caps.
-		memberPolicy: "diagnostic",
+		// The physical choice remains with Bifrost (including affinity and
+		// fallback); exact, confirmed endpoint ceilings provide a safe common
+		// output envelope without trusting inflated catalogue maxima.
+		memberPolicy: "gateway",
 		// Do not derive a restrictive output cap from estimated input tokens.
 		// OMP retains ownership of context accounting and compaction.
 		explicit: rawOptions?.maxTokens !== undefined,

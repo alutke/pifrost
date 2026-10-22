@@ -62,7 +62,7 @@ export function classifyInferenceFailure(status: number, errorPayload?: unknown)
   } else if (status === 400 || status === 422) {
     if (/(reasoning_content|reasoning_text).{0,180}(must be passed back|required|missing|empty)|thinking mode.{0,160}(reasoning_content|reasoning_text)/u.test(evidence)) {
       code = "REASONING_REPLAY_INVALID";
-    } else if (/(max_(?:output_|completion_)?tokens|output tokens?).{0,120}(exceeds?|above|maximum|limit|too large)|exceeds? (?:the )?(?:maximum|model limit).{0,100}tokens/u.test(evidence)) {
+    } else if (/(max_(?:output_|completion_)?tokens|output tokens?).{0,120}(exceeds?|above|maximum|limit|too large|must be between|out of range|at most|less than or equal)|exceeds? (?:the )?(?:maximum|model limit).{0,100}tokens/u.test(evidence)) {
       code = "OUTPUT_LIMIT_EXCEEDED";
     } else if (/(route|routing).{0,100}(stale|unknown|not found|unavailable|invalid)|(unknown|stale).{0,100}(route|routing)/u.test(evidence)) {
       code = "ROUTE_CONTRACT_UNKNOWN";

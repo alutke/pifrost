@@ -96,3 +96,16 @@ test("new diagnostics surface in compact and verbose traces without raw error te
   assert.doesNotMatch(compact,/safe-req/u);
   releasePifrostRouteTraces(sid);
 });
+
+test("P0: provider range validation errors classify as output-limit faults",()=> {
+  for (const payload of [
+    {error:{code:"server_error",message:"Upstream request failed: [invalid_request_error] max_tokens must be between 1 and 393216"}},
+    {error:{type:"invalid_request_error",message:JSON.stringify({type:"invalid_request_error",message:"max_tokens: 670395 exceeds maximum 393216 trace_id: REDACTED"})}},
+    {error:{message:"max_output_tokens must be between 1 and 393216"}},
+    {error:{message:"max_completion_tokens out of range: maximum 393216"}},
+  ]) {
+    const decision=classifyInferenceFailure(400,payload);
+    assert.equal(decision.code,"OUTPUT_LIMIT_EXCEEDED");
+    assert.doesNotMatch(JSON.stringify(decision),/REDACTED|670395/u);
+  }
+});

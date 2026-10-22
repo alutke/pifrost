@@ -133,8 +133,9 @@ export type StalledTurnMode = "auto" | "notice" | "off";
 /** Auto is the default. Invalid non-empty values fail safe to advisory mode. */
 export function stalledTurnMode(value: string | undefined): StalledTurnMode {
 	const configured = value?.trim().toLowerCase();
-	if (!configured || configured === "auto") return "auto";
+	if (!configured || ["auto", "enabled", "enable", "on", "yes", "true", "1"].includes(configured)) return "auto";
 	if (["off", "disabled", "disable", "false", "no", "0"].includes(configured)) return "off";
+	// Explicit notice/manual mode, or an unrecognised setting, stays advisory.
 	return "notice";
 }
 export interface StalledTurnRecoveryContext {
