@@ -20,7 +20,7 @@ test("R4-06 living release documentation matches current package and policy snap
 test("R4-07 stale host-support/compatibility headings fail CI",()=>{
   for(const path of ["docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md","docs/OUTPUT_BUDGET.md"]) {
     const contents=fixture();
-    contents[path]=contents[path].replace("0.29.13","0.29.0");
+    contents[path]=contents[path].replace("0.29.14","0.29.0");
     assert.ok(validateDocumentation(contents).some(x=>x.includes(path)),path);
   }
 });
