@@ -59,6 +59,12 @@ export function gatewayInjectedToolDiagnostics(payload, clients) {
     }
     const active = comparable(provider.provider_status) === "active";
     const concerns = [];
+    const injectedNames = new Set();
+    for (const entry of tools) {
+      const name = comparable(entry.name);
+      if (injectedNames.has(name)) concerns.push("duplicate provider-injected tool name; execution mapping ambiguous");
+      injectedNames.add(name);
+    }
     if (status === "configured") {
       if (!active) concerns.push("provider not active");
       if (!clientsReadable) concerns.push("MCP client list unavailable; execution unverified");
@@ -76,7 +82,8 @@ export function gatewayInjectedToolDiagnostics(payload, clients) {
       concerns.push("provider injected-tools schema requires review");
     }
     // Preserve old report fields for legacy single-tool integrations.
-    policies.push({ provider: name, status, client: tools[0]?.client ?? "", tool: tools[0]?.tool ?? "", tools, active, concerns: [...new Set(concerns)] });
+    policies.push({ provider: name, status, client: tools[0]?.client ?? "", tool: tools[0]?.tool ?? "", tools, active,
+      executionOwner: "bifrost", approvalOwner: "gateway-policy", concerns: [...new Set(concerns)] });
   }
   policies.sort((a, b) => a.provider.localeCompare(b.provider));
   return { schemaReported, clientsReadable, policies, configured: policies.filter(p => p.status === "configured").reduce((sum, p) => sum + p.tools.length, 0) };
@@ -96,6 +103,10 @@ export function formatGatewayInjectedToolDiagnostics(report) {
       : "";
     lines.push("  " + p.provider + ": " + p.status + target);
     for (const concern of p.concerns) lines.push("    WARN " + concern);
+  }
+  if (report.configured > 0) {
+    lines.push("  WARN Provider-injected tools execute inside Bifrost; OMP's visible MCP tool list and approvals are not a complete gateway authorization boundary.");
+    lines.push("  Do not add duplicate OMP tool definitions for the same provider-injected tools; inspect gateway grants and approval-free policy.");
   }
   lines.push("  Metadata cannot prove per-VK permission or live execution; gateway policy and provider fallback remain authoritative.");
   return lines.join("\n");
