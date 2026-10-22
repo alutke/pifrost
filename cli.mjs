@@ -40,6 +40,7 @@ import { classifyResearchResult } from "./research-results.mjs";
 import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
 import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-boundary.mjs";
 import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
+import { decisionProviderInventory, resolvePinnedOmpJudgeCapabilities } from "./judge-certification.mjs";
 import { OMP_ORCHESTRATION_SETTING_IDS, assessOmpOrchestration, formatOmpOrchestration } from "./omp-orchestration-readiness.mjs";
 import { inspectPifrostWorkarounds, formatPifrostWorkarounds } from "./workaround-register.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
@@ -156,9 +157,10 @@ Usage:
   pifrost global configure-omp
   pifrost omp readiness [--json|--verbose] Read-only prewalk, seance and advisor readiness
   pifrost omp workarounds [--json|--verbose] Read-only compatibility retirement register
-  pifrost judge status                      Inspect opt-in native OMP judge and gateway model availability
+  pifrost judge status                      Inspect opt-in OMP judge bounds and gateway model availability
+  pifrost judge providers                   Read-only Azure/Databricks Decisions model visibility
   pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
-  pifrost judge probe [--image|--decisions] Billed native image or canonical Decisions conformance
+  pifrost judge probe [--image] [--box] [--decisions] Explicitly billed native Decisions conformance
   pifrost routes list
   pifrost routes diff
   pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
@@ -2319,6 +2321,10 @@ async function commandJudgeStatus() {
   const judge = nativeJudgeGateway(judgeRuntimeConfig());
   console.log("  native judgment transport: " + judge.api);
   console.log("  image judgments: " + (judge.imageEnabled ? "opted in (experimental for Jev)" : "disabled"));
+  const capabilities = await resolvePinnedOmpJudgeCapabilities(judge);
+  console.log("  OMP image bounds: " + capabilities.imageBounds + (capabilities.bounds ? " " + JSON.stringify(capabilities.bounds) : ""));
+  console.log("  Jev box questions: " + capabilities.boxQuestions + (capabilities.ompBoxWire ? " (OMP wire: " + capabilities.ompBoxWire + ")" : ""));
+  console.log("  Capabilities are metadata, not live gateway execution.");
   const current = readOmpConfigValueResult("modelRoles");
   const roles = current.status === "ok" && current.value && typeof current.value === "object"
     && !Array.isArray(current.value) ? current.value : undefined;
@@ -2337,6 +2343,20 @@ async function commandJudgeStatus() {
   console.log("  Native endpoint model listing is not a billable judgment conformance check.");
   console.log("  TypeSafe System One and OpenAI Decisions use separate native wire formats.");
   console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
+}
+
+async function commandJudgeProviders() {
+  const config = judgeRuntimeConfig();
+  if (!config.url || !config.virtualKey) throw new Error("Bifrost inference URL and Virtual Key required");
+  const body = await requestJson(config.url.replace(/\/+$/u, "") + "/models", {
+    method: "GET", timeoutMs: 8000, maxResponseBytes: 512000,
+    headers: { "x-bf-vk": config.virtualKey },
+  });
+  const inventory = decisionProviderInventory(body);
+  console.log("Bifrost Decisions provider visibility (read-only /v1/models):");
+  for (const row of inventory.providers) console.log(`  ${row.provider}: ${row.status} (${row.listedModels.length} model(s))`);
+  console.log("  Listing does not prove /v1/decisions support, provider authorization, or correct answers.");
+  console.log("  Separately approved billable endpoint probes are needed for live certification.");
 }
 
 async function commandJudgeActivate(flags = {}) {
@@ -2368,7 +2388,7 @@ async function commandJudgeActivate(flags = {}) {
 }
 
 async function commandJudgeProbe(flags = {}) {
-  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true, image: flags.image === true });
+  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true, image: flags.image === true, box: flags.box === true });
   console.log("Bifrost " + result.kind + " judgment conformance: OK");
   console.log("  model: " + result.model);
   console.log("  typed answers checked: " + result.answered);
@@ -2493,6 +2513,7 @@ const COMMANDS = new Map([
   ["omp readiness", (_args, flags) => commandOmpReadiness(flags)],
   ["omp workarounds", (_args, flags) => commandOmpWorkarounds(flags)],
   ["judge status", () => commandJudgeStatus()],
+  ["judge providers", () => commandJudgeProviders()],
   ["judge activate", (_args, flags) => commandJudgeActivate(flags)],
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
   ["global configure-omp", (_args, flags) => {

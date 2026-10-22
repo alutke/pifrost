@@ -1,3 +1,4 @@
+import { inspectGatewayUsageCounters, gatewayCostEvidence, type ResponsesCacheIntent, type GatewayCacheCounters } from "./inference-cache-evidence.ts";
 import { classifyGatewayHttpStatus, parseGatewayRetryAfter, safeGatewayHeaderToken, type GatewayFailureClass } from "./gateway-reliability.ts";
 import { classifyInferenceFailure, type InferenceFailureCode } from "./inference-failure.ts";
 import type { InferenceRequestDiagnostics } from "./request-diagnostics.ts";
@@ -11,6 +12,10 @@ function finiteNonNegative(value: unknown): number | undefined {
 
 export interface BifrostCostCapture {
 	total?: number;
+	/** Request-only cache intent, never provider acceptance. */
+	cacheIntent?: ResponsesCacheIntent;
+	/** Upstream-reported token counters, never inferred prices. */
+	usageCounters?: GatewayCacheCounters;
 	breakdown?: Record<string, unknown>;
 	requestId?: string;
 	traceId?: string;
@@ -62,6 +67,8 @@ function recordBodyExtraFields(value: unknown, capture?: BifrostCostCapture): vo
   const body = value as Record<string, unknown>;
   const wrapped = body.response && typeof body.response === "object" && !Array.isArray(body.response)
     ? body.response as Record<string, unknown> : undefined;
+  const reported = inspectGatewayUsageCounters(body.usage ?? wrapped?.usage);
+  if (reported) capture.usageCounters = reported;
   const extra = body.extra_fields ?? wrapped?.extra_fields;
   if (!extra || typeof extra !== "object" || Array.isArray(extra)) return;
   const fields = extra as Record<string, unknown>;
@@ -362,6 +369,8 @@ export interface PifrostUsageWithCost {
  * parsing. Kept dependency-free so this compatibility module remains safe in
  * clean GitHub plugin installs and Node-based unit tests.
  */
+export { gatewayCostEvidence };
+
 export function applyBifrostAuthoritativeCost<T extends PifrostUsageWithCost>(
 	usage: T,
 	capture: BifrostCostCapture,

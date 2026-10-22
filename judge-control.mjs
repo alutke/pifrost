@@ -171,6 +171,9 @@ export async function probeNativeJudge(config, env = process.env, options = {}) 
   if (options.image === true && !judge.imageEnabled) {
     throw new Error("Image judgment probing is disabled; opt in with PIFROST_NATIVE_JUDGE_IMAGES=1");
   }
+  if (options.box === true && (options.image !== true || judge.api !== "typesafe" || judge.model.toLowerCase() !== "jev-1.14.0")) {
+    throw new Error("Box probe requires explicit --image --box with verified TypeSafe jev-1.14.0; no inference sent");
+  }
   if (options.decisions === true && judge.api === "openai-decisions") {
     throw new Error("OpenAI Decisions already uses its native endpoint; --decisions is for the TypeSafe canonical comparison");
   }
@@ -189,13 +192,18 @@ export async function probeNativeJudge(config, env = process.env, options = {}) 
     nativeBody.assets = { "pifrost-fixture-image": { type: "image", format: "png", data_base64: image } };
     nativeBody.questions.visual = { type: "noul", instructions: "Is the referenced white image predominantly white?" };
   }
+  if (options.box === true) {
+    if (kind !== "systemone") throw new Error("Box probe is supported only by TypeSafe System One Jev 1.14.0");
+    nativeBody.questions.visual_box = { type: "box", instructions: "Locate the entire white image identified by pifrost-fixture-image" };
+  }
   const body = kind === "decisions" ? canonicalDecisionProbeRequest(judge.model)
     : kind === "systemone" ? nativeBody : openAIDecisionProbeRequest(judge.requestModelId, image);
   const response = await request(url, {
     method: "POST", headers: authHeaders(judge), body, timeoutMs: 20_000, maxResponseBytes: 512_000,
   });
   const expected = { urgent: "noul", category: "choice", severity: "score",
-    ...(image ? { visual: "noul" } : {}) };
+    ...(image ? { visual: "noul" } : {}),
+    ...(options.box === true ? { visual_box: "box" } : {}) };
   const result = kind === "decisions"
     ? validateCanonicalDecisionResponse(response, expected)
     : kind === "systemone" ? validateNativeJudgeResponse(response, expected)

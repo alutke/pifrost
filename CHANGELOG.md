@@ -1,3 +1,11 @@
+## 0.29.19 — 2026-10-22
+
+- Release 5F: read-only OMP 18.12.5 judgment image bounds and confirmed Jev 1.14 box capability, with explicit `--image --box` probe and normalized coordinate checks.
+- Introduce read-only Azure/Databricks Decisions inventory without suggesting that model listing proves canonical endpoint support, and retain TypeSafe/OpenAI native wires.
+- Inspect actual OpenAI Responses 30-minute/12-hour caching intent without changing cache policy; offer a separately gated two-request billable cache canary with no automatic retries.
+- Capture gateway-reported prompt cache reads/writes (including 12h and 30m buckets), preserve unknown/missing usage and cost, and improve OMP request trace cost/model provenance.
+- Add deterministic judgment, cache, cost, trace and evidence regression tests. No daemon, billable default, global cache enablement, new routing engine or upstream Bifrost retry patch.
+
 ## 0.29.18 — 2026-10-22
 
 - Release 5E: distinguish native Responses deferred tool search from Bifrost-managed Code Mode and injected-tool discovery; avoid duplicate tool-search definitions and ambiguous deferred names.

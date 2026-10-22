@@ -21,7 +21,7 @@ const values = {
 const bools = new Set([
   "help","all","version","verbose","strict","json","dry-run","yes","skip-test",
   "skip-omp","no-refresh","force","image","tools","reasoning","tool-search",
-  "between-tools","delete-remote","recover-by-name","decisions","rotate-existing",
+  "between-tools","delete-remote","recover-by-name","decisions","box","rotate-existing",
   "no-mcp-instructions","install-matching-skills","no-skill-discovery",
 ]);
 const general = ["help"];
@@ -40,8 +40,9 @@ const rows = [
   ["omp readiness",0,0,["json","verbose"],"read-only"],
   ["omp workarounds",0,0,["json","verbose"],"read-only"],
   ["judge status",0,0,read,"read-only"],
+  ["judge providers",0,0,read,"read-only"],
   ["judge activate",0,0,["dry-run"],"local-change"],
-  ["judge probe",0,0,["decisions","image","yes"],"billed"],
+  ["judge probe",0,0,["decisions","image","box","yes"],"billed"],
   ["routes list",0,0,[...filters,...read],"read-only"],
   ["routes diff",0,0,read,"read-only"],
   ["routes verify",0,0,["dry-run",...read],"local-change"],

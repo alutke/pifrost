@@ -23,6 +23,7 @@ import { resolveImageTokenization, imageTokens } from "@oh-my-pi/pi-catalog/comp
 import { resolveModelTokenizer } from "@oh-my-pi/pi-catalog/model-tokenizer";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import { nativeJudgeGateway } from "./judge-bridge.mjs";
+import { inspectResponsesCacheRequest } from "./inference-cache-evidence.ts";
 import { installPifrostTextTokenCounter, installPifrostImageTokenPolicy } from "./omp-context-policy.ts";
 import {
 	applyBifrostAuthoritativeCost,
@@ -506,6 +507,9 @@ function streamDynamicPifrostRoute(
 					// cleanup to stderr on every streamed model request.
 					const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
+
+				costCapture.cacheIntent = inspectResponsesCacheRequest(capped, "openai-responses");
+
 				guardPifrostReasoningReplay(capped, transportModel, "openai-responses", options, costCapture);
 				return capped;
 				},
@@ -786,6 +790,9 @@ function streamPifrostOpenAI(
 				counters.replayStructuredRetained = hygiene.retainedReasoningItems;
 				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
 				capture.requestDiagnostics = inspectInferenceRequest(capped);
+
+				capture.cacheIntent = inspectResponsesCacheRequest(capped, "openai-responses");
+
 				guardPifrostReasoningReplay(capped, transportModel, "openai-responses", options, capture);
 				return capped;
 			},

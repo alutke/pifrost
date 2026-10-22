@@ -1,4 +1,4 @@
-# Pifrost integration support — v0.29.18
+# Pifrost integration support — v0.29.19
 
 This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.5**. Supported historical host installation: **OMP 18.10.4**; prior compiled host **18.12.1**; current host contract: **OMP 18.12.5**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **Bifrost 2.3.2** (including 2.3.0 historical fixtures).
 
@@ -97,3 +97,11 @@ For optional **read-only** live gateway image-budget inventory inspection, set `
 - OpenAPI MCP client-source hints and Code Mode underlying grants are derived only from management metadata. They do not prove live authentication, tool execution, operation safety, OMP approval visibility or provider-side retry behaviour.
 - Bounded Code Mode result-shape diagnostics, duplicate injected tool-name warnings and optional token-scoped progress parsing are deterministic unit-tested. Progress is post-response inspection, not a background stream.
 - Upstream Bifrost #8795 may still replay committed tools internally; this phase does not fix it. A separately approved disposable 2.3.2 deployment and actual OMP host are required for live conformance; no billable or mutating tests ran in CI.
+
+## Release 5F judgment, cache and cost evidence (v0.29.19)
+
+- OMP 18.12.5 native image bounds and box-support APIs are consumed read-only where importable; capability and actual Jev 1.14 execution remain distinct. Compiled OMP compatibility is checked in CI; no real OMP judge session is claimed.
+- Bifrost Azure/Databricks `/v1/models` visibility is not canonical `/v1/decisions` conformance. New `pifrost judge providers` performs no judgment or permission write.
+- Incoming `prompt_cache_options.ttl=12h` and mixed explicit breakpoints are observed but not automatically configured. The optional two-request `PIFROST_LIVE_CACHE=1` script is potentially billable and excluded from CI.
+- Cache read/write counters and Bifrost cost are logged only when gateway actually reports them; missing fields stay unknown and reported zeros stay zero. A physical-model header is gateway evidence, not external invoice or independently verified provider egress.
+- Unit tests and pinned cross-version CI cannot prove 12-hour persistence, Moonshot/DeepSeek supplier pricing, actual Azure/Databricks Decisions output or OMP image/box UI behaviour. Separate user-approved live certification and provider logs remain necessary.

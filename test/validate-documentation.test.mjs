@@ -8,7 +8,7 @@ const files=[
   "package.json","package-lock.json","README.md","docs/REFERENCE.md",
   "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
   "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-  "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md","SECURITY.md",
+  "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md","docs/RELEASE_5F_CERTIFICATION.md","SECURITY.md",
   "CONTRIBUTING.md",".github/CODEOWNERS",
 ];
 function fixture() {
@@ -20,7 +20,7 @@ test("R4-06 living release documentation matches current package and policy snap
 test("R4-07 stale host-support/compatibility headings fail CI",()=>{
   for(const path of ["docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md","docs/OUTPUT_BUDGET.md"]) {
     const contents=fixture();
-    contents[path]=contents[path].replace("0.29.18","0.29.0");
+    contents[path]=contents[path].replace("0.29.19","0.29.0");
     assert.ok(validateDocumentation(contents).some(x=>x.includes(path)),path);
   }
 });
