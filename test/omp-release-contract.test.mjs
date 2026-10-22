@@ -28,6 +28,7 @@ test("CI validates both supported legacy and current released OMP binaries", () 
   assert.match(ci, /omp-18\.10\.4/);
   assert.match(ci, /omp-18\.12\.1/);
   assert.match(ci, /omp-18\.12\.5/);
+  assert.match(ci, /fdbc8136084c9a10439569157b2af62312e2b0d801cab54c73e89476da798e7e/u);
   assert.match(ci, /sha256sum -c -/);
   assert.match(ci, /Validate minimum and current OMP contracts/);
 });
