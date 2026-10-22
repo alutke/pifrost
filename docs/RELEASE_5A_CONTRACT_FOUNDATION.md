@@ -27,7 +27,7 @@ contracts, **not real provider execution or the installed Bifrost binary**.
 
 ## Operator gateway upgrade warning
 
-Bifrost 2.3.1 introduced multiple schema migrations, including irreversible
+Bifrost 2.3.1 introduced multiple database migrations, including irreversible
 storage changes for OpenAPI MCP clients, virtual-key metadata and gateway
 configuration. Before deploying Bifrost 2.3.2 to an existing database:
 
