@@ -42,7 +42,7 @@ jobs:
         run: node scripts/validate-hound-contract.mjs
       - name: Validate minimum and current OMP contracts
         run: node scripts/validate-omp-contract.mjs
-      - name: Validate with packaged OMP 18.12.1 CLI/plugin loader
+      - name: Validate with packaged OMP 18.12.5 CLI/plugin loader
         run: |
           export HOME="$RUNNER_TEMP/omp-home-local"
           mkdir -p "$HOME"
@@ -97,6 +97,29 @@ jobs:
           OMP_BIN="$RUNNER_TEMP/omp-18.12.1"
           REF="${{ github.event.pull_request.head.sha || github.sha }}"
           export HOME="$RUNNER_TEMP/omp-home-current-compiled"
+          mkdir -p "$HOME"
+          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${REF}" --force
+          "$OMP_BIN" plugin list
+
+      - name: Validate with current OMP 18.12.5 binary
+        run: |
+          OMP_BIN="$RUNNER_TEMP/omp-18.12.5"
+          curl --fail --location --silent --show-error \
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.12.5/omp-linux-x64" \
+            --output "$OMP_BIN"
+          test -s "$OMP_BIN"
+          echo "OMP-18.12.5 SHA256 $(sha256sum "$OMP_BIN")"
+          chmod +x "$OMP_BIN"
+          export HOME="$RUNNER_TEMP/omp-home-18125-binary"
+          mkdir -p "$HOME"
+          "$OMP_BIN" --version
+          "$OMP_BIN" install . --force
+          "$OMP_BIN" plugin list
+      - name: Validate GitHub plugin install with current compiled OMP 18.12.5
+        run: |
+          OMP_BIN="$RUNNER_TEMP/omp-18.12.5"
+          REF="${{ github.event.pull_request.head.sha || github.sha }}"
+          export HOME="$RUNNER_TEMP/omp-home-18125-github"
           mkdir -p "$HOME"
           "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${REF}" --force
           "$OMP_BIN" plugin list
