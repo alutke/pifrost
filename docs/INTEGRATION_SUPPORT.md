@@ -1,8 +1,8 @@
-# Pifrost integration support — v0.29.13
+# Pifrost integration support — v0.29.14
 
-This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.1**. Supported historical host installation: **OMP 18.10.4**; current host contract: **OMP 18.12.1**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **2.3.0**.
+This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.5**. Supported historical host installation: **OMP 18.10.4**; prior compiled host **18.12.1**; current host contract: **OMP 18.12.5**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **Bifrost 2.3.2** (including 2.3.0 historical fixtures).
 
-| Capability | 18.10.4 compiled host | 18.12.1 compiled host | Live physical provider |
+| Capability | 18.10.4 compiled host | 18.12.5 compiled host | Live physical provider |
 | --- | --- | --- | --- |
 | Plugin installation / `omp plugin list` | Tested in CI | Tested in CI | Not applicable |
 | Native extension registration with mocked model discovery | Shared integration test (not executed inside the compiled host) | Shared integration test (not executed inside the compiled host) | Not proven |
@@ -54,7 +54,7 @@ For optional **read-only** live gateway image-budget inventory inspection, set `
 - CI validates atomic per-request route snapshots, target-scoped output ceilings,
   Bifrost logical alias passthrough, confirmed entitlement-scoped endpoint caps,
   MCP response size bounds and denied credential redirects.
-- Compiled OMP 18.10.4 and 18.12.1 test **installation/plugin discovery**.
+- Compiled OMP 18.10.4 and OMP 18.12.5 test **installation/plugin discovery** (with additional historical 18.12.1 coverage).
   Native integration uses a mocked Bifrost endpoint; no production provider
   fallback or live user session is proven.
 - Release documentation/policy snapshot drift, missing private security guidance,
@@ -62,3 +62,10 @@ For optional **read-only** live gateway image-budget inventory inspection, set `
 - Live provider output, requested fallback token handling, command/tool side
   effects and billing must be assessed with a separate, explicitly approved,
   potentially billable conformance probe.
+
+## Release 5A evidence update (v0.29.14)
+
+- The five pinned OMP package versions and the policy snapshot are all **18.12.5**; the current compiled host gate is 18.12.5, alongside 18.10.4 minimum-host and 18.12.1 historical checks.
+- Bifrost 2.3.2 security and 2.3.1 feature contracts are checked against immutable upstream release commits. This validates public/source contracts, **not** the installed gateway's version or live transport semantics.
+- Bifrost 2.3.1 introduces additive and some non-reversible database migrations. Before independently upgrading the actual gateway, back up the configuration/database and rehearse migrations. 2.3.2 requires rebuilding custom Go plugins with Go 1.27.3; it introduces no additional database migration.
+- Upgrade does not enable tool search, auto-executing OpenAPI MCP tools, newer judgment wire modes, new response header placement, or any paid live probe. Later 5B–5F phases assess those behaviours.
