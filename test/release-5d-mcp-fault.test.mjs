@@ -82,15 +82,17 @@ test("R5D-04 annotations are advisory; known read-only auto execution is disting
       {name:"delete_workspace",annotations:{destructiveHint:true,idempotentHint:false}},
       {name:"unknown_operation"},
       {name:"update_status",annotations:{idempotentHint:true}},
+      {name:"contradictory_tool",annotations:{readOnlyHint:true,idempotentHint:false}},
     ],
   });
   const result=mcpClientExecutionDiagnostics(client,["*"]);
-  assert.equal(result.unsafeAutoExecuteCount,3);
+  assert.equal(result.unsafeAutoExecuteCount,4);
   assert.equal(result.mutationRiskRows.find(x=>x.tool==="get_status").risk,"annotated-read-only");
   assert.equal(result.mutationRiskRows.find(x=>x.tool==="create_ticket").risk,"non-idempotent");
   assert.equal(result.mutationRiskRows.find(x=>x.tool==="delete_workspace").risk,"non-idempotent");
   assert.equal(result.mutationRiskRows.find(x=>x.tool==="unknown_operation").risk,"unverified");
   assert.equal(result.mutationRiskRows.find(x=>x.tool==="update_status").risk,"annotated-idempotent");
+  assert.equal(result.mutationRiskRows.find(x=>x.tool==="contradictory_tool").risk,"non-idempotent");
   assert.ok(result.warnings.some(x=>x.includes("#8795")&&x.includes("create_ticket")));
   assert.ok(result.warnings.some(x=>x.includes("auto-execute wildcard")));
   assert.ok(!result.warnings.some(x=>x.includes("auto-execute get_status is")));
