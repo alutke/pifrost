@@ -19,7 +19,7 @@ function pngBase64(width: number, height: number): string {
 	return bytes.toString("base64");
 }
 
-test("mirrors OMP 18.8 image-tokenization families for Pifrost candidates", () => {
+test("portable historical image-tokenization families remain testable for Node consumers", () => {
 	assert.deepEqual(
 		resolvePifrostImageTokenization({
 			id: "gpt-6-astra",

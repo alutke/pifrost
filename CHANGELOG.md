@@ -1,3 +1,10 @@
+## 0.29.16 — 2026-10-22
+
+- Release 5C: consume pinned OMP 18.12.5 model-lineage image tokenization through the public pi-catalog API; preserve Node-safe fallback while adding measured DeepSeek V4.1 Flash ViT patch pricing.
+- Price image-heavy context prewalk per candidate without old universal OpenAI/Claude overcount. Preserve exact upstream-model usage anchors and bounded unknown-image estimates; no new hard role/output limits.
+- Follow Bifrost explicit model-list pagination and fail safely on missing/repeated cursors, incomplete pages or provider-key failure evidence, avoiding silent partial inventory caching.
+- Add regression fixtures for 25-frame archives, official OMP parity, fallback and Bifrost pagination failure cases; retain 18.12.5 OMP and 2.3.2 Bifrost contracts.
+
 ## 0.29.15 — 2026-10-22
 
 - Release 5B: treat Bifrost HTTP 413 request_too_large as terminal and report safe, redacted remediation without retrying the same request or altering OMP history.

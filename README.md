@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.15
+0.29.16
 ```
 
 Bun also works:
@@ -700,3 +700,7 @@ Pifrost pins OMP 18.12.5 across its five dependent packages and verifies histori
 ### Release 5B — inference protocol and output-limit hardening (v0.29.15)
 
 Pifrost treats HTTP 413 as terminal, preserves the full supported Chat/Responses wire contract and `xhigh` reasoning choices, and reports Bifrost-confirmed conversion and dropped `max_*` output limits in `/pifrost trace verbose`. The reported gateway egress gap is diagnostic; Pifrost does not compensate for missing Bifrost datasheet parameters or add default output caps. See [Release 5B](docs/RELEASE_5B_INFERENCE_HARDENING.md).
+
+### Release 5C — model-aware image accounting and complete discovery (v0.29.16)
+
+Pifrost now delegates image-token pricing to the pinned OMP 18.12.5 public model-lineage policy, including measured DeepSeek V4.1 Flash image billing. Node-only/older-host diagnostics retain a tested portable fallback. Gateway model discovery follows explicit pagination cursors and rejects incomplete provider-key inventories instead of caching a partial model list as complete. No image-count limit or model output cap is invented. See [Release 5C](docs/RELEASE_5C_CONTEXT_DISCOVERY.md).

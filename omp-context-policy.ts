@@ -2,6 +2,7 @@ export type PifrostImageDetail = "auto" | "low" | "high" | "original";
 
 export interface PifrostImageTokenTarget {
 	id?: string;
+	provider?: string;
 	api?: string;
 	tokenizer?: string;
 	identity?: {
@@ -21,7 +22,7 @@ interface PatchSizing {
 	patchBudget?: number;
 }
 
-type ImageTokenization =
+export type ImageTokenization =
 	| {
 		regime: "openai-patch";
 		multiplier: number;
@@ -31,6 +32,7 @@ type ImageTokenization =
 		auto: "high" | "original";
 	  }
 	| { regime: "anthropic-patch"; maxEdge: number; maxTokens: number }
+	| { regime: "deepseek-patch"; patchSize: number; downsample: number; maxTokens: number; minPixels: number; verified?: boolean }
 	| { regime: "fixed"; tokens: number };
 
 const UNKNOWN_IMAGE_SIZE: ImageSize = { width: 65_535, height: 65_535 };
@@ -51,6 +53,18 @@ const WEBP_VP8 = new TextEncoder().encode("VP8 ");
 export type PifrostTextTokenCounter = (value: string | string[], tokenizer: string) => number;
 
 let hostTextTokenCounter: PifrostTextTokenCounter | undefined;
+/** OMP 18.12.5 catalog owns evolving image-lineage policy; inject from native.ts. */
+export type PifrostImageRuleResolver = (target: PifrostImageTokenTarget) => ImageTokenization | undefined;
+export type PifrostImageRuleCounter = (rule: ImageTokenization, size: ImageSize, detail?: PifrostImageDetail) => number;
+let catalogImageRuleResolver: PifrostImageRuleResolver | undefined;
+let catalogImageTokenCounter: PifrostImageRuleCounter | undefined;
+export function installPifrostImageTokenPolicy(
+  resolver: PifrostImageRuleResolver | undefined,
+  counter: PifrostImageRuleCounter | undefined,
+): void {
+  catalogImageRuleResolver = resolver;
+  catalogImageTokenCounter = counter;
+}
 
 /** Install OMP/Bun-owned native text tokenisation without importing native addons in Node-testable modules. */
 export function installPifrostTextTokenCounter(counter: PifrostTextTokenCounter | undefined): void {
@@ -229,6 +243,10 @@ const ANTHROPIC_STANDARD: ImageTokenization = {
 };
 
 const GEMINI_3: ImageTokenization = { regime: "fixed", tokens: 1_120 };
+const DEEPSEEK_41_FLASH: ImageTokenization = {
+  regime: "deepseek-patch", patchSize: 14, downsample: 3,
+  maxTokens: 1024, minPixels: 295_936, verified: true,
+};
 
 function parseRevision(value: string | undefined): [number, number, number] | undefined {
 	if (!value) return undefined;
@@ -280,11 +298,22 @@ function anthropicRule(target: PifrostImageTokenTarget): ImageTokenization {
 }
 
 /**
- * Mirrors OMP 18.8.x's pure image-tokenization policy without importing
- * pi-agent-core/pi-natives. Pifrost historically removed that native dependency
- * because clean GitHub plugin installs cannot rely on OMP's native addon graph.
+ * Uses OMP 18.12.5's public catalog rule from native.ts when installed.
+ * Portable image pricing remains for standalone Node tests and partial hosts,
+ * without pulling OMP's native addons into the runtime's lightweight modules.
  */
 export function resolvePifrostImageTokenization(target: PifrostImageTokenTarget): ImageTokenization {
+  try {
+    const catalog = catalogImageRuleResolver?.(target);
+    if (catalog) return catalog;
+  } catch {
+    // Partial host rules cannot crash model prewalk.
+  }
+  if (target.identity?.class === "deepseek" &&
+      target.identity.family === "flash" &&
+      /^4[.]1(?:[.]|$)/u.test(target.identity.revision ?? "")) {
+    return DEEPSEEK_41_FLASH;
+  }
 	switch (target.identity?.class) {
 		case "openai":
 			return openAiRule(target);
@@ -370,6 +399,31 @@ function anthropicTokens(size: ImageSize, maxEdge: number, maxTokens: number): n
 	return patches(lo, short(lo));
 }
 
+/** Portable DeepSeek V4.1 billing grid; OMP's catalog is authoritative when installed. */
+function deepseekTokens(size: ImageSize, rule: Extract<ImageTokenization, {regime:"deepseek-patch"}>): number {
+  const {patchSize,downsample,maxTokens,minPixels}=rule;
+  const cell=patchSize*downsample;
+  const spanTokens=(height: number,width: number): number => {
+    const rows=Math.ceil(Math.floor(height/patchSize)/downsample);
+    const cols=Math.ceil(Math.floor(width/patchSize)/downsample);
+    return rows*(cols+1)+2;
+  };
+  let {width,height}=size;
+  if(width*height<minPixels) {
+    const scale=Math.sqrt(minPixels/(width*height));
+    width=Math.trunc(width*scale);height=Math.trunc(height*scale);
+  }
+  const tokens=spanTokens(Math.ceil(height/patchSize)*patchSize,Math.ceil(width/patchSize)*patchSize);
+  if(tokens<=maxTokens)return tokens;
+  const aspect=height/width;
+  const maxCols=Math.sqrt((maxTokens-2)/aspect+0.25)-0.5;
+  const maxRows=maxCols*aspect;
+  if(maxCols<1)return spanTokens(Math.floor((maxTokens-2)/2)*cell,cell);
+  if(maxRows<1)return spanTokens(cell,(maxTokens-3)*cell);
+  const beta=Math.min((Math.floor(maxCols)*cell)/width,(Math.floor(maxRows)*cell)/height);
+  return spanTokens(Math.floor((height*beta)/patchSize)*patchSize,Math.floor((width*beta)/patchSize)*patchSize);
+}
+
 function imageTokens(rule: ImageTokenization, size: ImageSize, detail?: PifrostImageDetail): number {
 	switch (rule.regime) {
 		case "fixed":
@@ -380,6 +434,8 @@ function imageTokens(rule: ImageTokenization, size: ImageSize, detail?: PifrostI
 		}
 		case "anthropic-patch":
 			return anthropicTokens(size, rule.maxEdge, rule.maxTokens);
+		case "deepseek-patch":
+			return deepseekTokens(size, rule);
 	}
 }
 
@@ -411,7 +467,16 @@ export function estimatePifrostImageTokens(
 			: undefined;
 	const size = imageBlockSize(block);
 	const rule = resolvePifrostImageTokenization(target);
-	if (size) return imageTokens(rule, size, detail);
+  const count = (value: ImageSize, active: ImageTokenization): number => {
+    if (catalogImageTokenCounter) {
+      try {
+        const priced=catalogImageTokenCounter(active,value,detail);
+        if (Number.isFinite(priced) && priced>=0) return Math.ceil(priced);
+      } catch { /* Portable fallback keeps Node-only consumers functional. */ }
+    }
+    return imageTokens(active,value,detail);
+  };
+	if (size) return count(size,rule);
 
 	// Unknown dimensions can still use candidate-specific bounded rules. Fixed
 	// Gemini and capped Anthropic accounting have a deterministic ceiling, and
@@ -419,9 +484,9 @@ export function estimatePifrostImageTokens(
 	// unbounded OpenAI level (for example GPT-5.6 original), retain OMP's
 	// bounded wire fallback rather than manufacturing a multi-million-token
 	// estimate from the UNKNOWN_IMAGE_SIZE sentinel.
-	if (rule.regime !== "openai-patch") return imageTokens(rule, UNKNOWN_IMAGE_SIZE, detail);
+	if (rule.regime !== "openai-patch") return count(UNKNOWN_IMAGE_SIZE,rule);
 	const level = detail === "low" || detail === "high" || detail === "original" ? detail : rule.auto;
 	return rule[level].patchBudget !== undefined
-		? imageTokens(rule, UNKNOWN_IMAGE_SIZE, detail)
-		: imageTokens(OPENAI_WIRE_FALLBACK, UNKNOWN_IMAGE_SIZE, detail);
+		? count(UNKNOWN_IMAGE_SIZE,rule)
+		: count(UNKNOWN_IMAGE_SIZE,OPENAI_WIRE_FALLBACK);
 }
