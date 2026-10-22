@@ -75,7 +75,7 @@ export function inspectMcpToolResult(result) {
       decoded = JSON.parse(texts[0]);
       // Some gateways return JSON serialized *inside* a JSON string. Only
       // unwrap a second time when the value is an object/array representation.
-      if (typeof decoded === "string" && /^[\\s]*[\\[{]/u.test(decoded) &&
+      if (typeof decoded === "string" && /^\s*(?:\{|\[)/u.test(decoded) &&
           Buffer.byteLength(decoded, "utf8") <= 131072) {
         try {
           const second = JSON.parse(decoded);
@@ -112,9 +112,9 @@ export function summarizeMcpProgress(text, expectedProgressToken, maxEvents = 16
   const bound = Number.isInteger(maxEvents) ? Math.max(0, Math.min(maxEvents, 64)) : 16;
   const events = [];
   let truncated = false;
-  for (const raw of String(text ?? "").split(/\\r?\\n\\r?\\n/u)) {
-    const payload = raw.split(/\\r?\\n/u).filter(line => line.startsWith("data:"))
-      .map(line => line.slice(5).trimStart()).join("\\n");
+  for (const raw of String(text ?? "").split(/\r?\n\r?\n/u)) {
+    const payload = raw.split(/\r?\n/u).filter(line => line.startsWith("data:"))
+      .map(line => line.slice(5).trimStart()).join("\n");
     const item = parseJson(payload);
     if (item?.method !== "notifications/progress" || !item.params ||
         item.params.progressToken !== expectedProgressToken) continue;
