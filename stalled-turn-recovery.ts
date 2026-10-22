@@ -19,6 +19,11 @@ export interface StalledTurnEnd {
 	messages: readonly unknown[];
 	willContinue?: boolean;
 	awaitingAsyncWork?: boolean;
+	/** Host observed cancellation/session rewrite/unknown tool outcome. Never auto-continue. */
+	interrupted?: boolean;
+	cancelled?: boolean;
+	historyRewritePending?: boolean;
+	hasUncertainToolOutcome?: boolean;
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -44,9 +49,48 @@ function includesToolCall(message: Record<string, unknown>): boolean {
 	});
 }
 
+/** A tool call whose id has not received a complete OMP toolResult may already
+ * have committed externally; do not prompt another turn based on a broken log. */
+export function uncertainToolOutcome(messages: readonly unknown[]): boolean {
+  const pending = new Set<string>();
+  for (const raw of messages) {
+    const item=record(raw);
+    if(!item)continue;
+    if(item.role==="assistant" && Array.isArray(item.content)) {
+      for(const part of item.content){
+        const tool=record(part);
+        if(tool && (tool.type==="toolCall"||tool.type==="tool_call"||tool.type==="function_call")){
+          const id=typeof tool.id==="string" ? tool.id : typeof tool.call_id==="string" ? tool.call_id : undefined;
+          if(!id) return true;
+          pending.add(id);
+        }
+      }
+    }
+    if(item.role==="toolResult"||item.role==="tool_result"||item.role==="function_call_output"){
+      const id=typeof item.toolCallId==="string" ? item.toolCallId :
+        typeof item.tool_call_id==="string" ? item.tool_call_id :
+        typeof item.call_id==="string" ? item.call_id : undefined;
+      if(!id || !pending.has(id))return true;
+      pending.delete(id);
+      // A tool error after dispatch does not prove whether a remote mutation
+      // succeeded. Scope this to uncertain transport outcomes, not ordinary
+      // application errors (which may be safely diagnosed interactively).
+      if(item.isError===true){
+        const value=Array.isArray(item.content) ? item.content.map(v=>{
+          const row=record(v);return typeof row?.text==="string" ? row.text : "";
+        }).join(" ") : typeof item.content==="string" ? item.content : "";
+        if(/(?:connection reset|connection closed|broken pipe|socket hang up|timeout|timed out|upstream idle|econnreset|etimedout|response lost|uncertain outcome)/iu.test(value))return true;
+      }
+    }
+  }
+  return pending.size>0;
+}
+
 /** Detect only a high-confidence failure signature, never ordinary task planning. */
 export function detectStalledTurn(event: StalledTurnEnd): "leaked-planning-stop" | undefined {
-	if (event.willContinue || event.awaitingAsyncWork || !event.messages.length) return undefined;
+	if (event.willContinue || event.awaitingAsyncWork || event.interrupted || event.cancelled ||
+    event.historyRewritePending || event.hasUncertainToolOutcome || !event.messages.length ||
+    uncertainToolOutcome(event.messages)) return undefined;
 
 	const last = record(event.messages.at(-1));
 	if (!last || last.role !== "assistant" || last.stopReason !== "stop" || includesToolCall(last)) {
@@ -98,6 +142,10 @@ export interface StalledTurnRecoveryContext {
 	isMain: boolean;
 	hasQueuedMessages: boolean;
 	hasRunningAsyncWork?: boolean;
+	hasUnknownJobState?: boolean;
+	isCancelled?: boolean;
+	historyRewritePending?: boolean;
+	hasUncertainToolOutcome?: boolean;
 	isIdle?: boolean;
 	sendContinuation: (message: string) => void;
 	notify?: (message: string, level: "warning" | "error") => void;
@@ -116,7 +164,9 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "au
 
 	const available = (ctx: StalledTurnRecoveryContext): boolean =>
 		ctx.isMain && Boolean(ctx.sessionId) && !ctx.hasQueuedMessages &&
-		ctx.hasRunningAsyncWork !== true && ctx.isIdle !== false;
+		ctx.hasRunningAsyncWork !== true && ctx.hasUnknownJobState !== true &&
+    ctx.isCancelled !== true && ctx.historyRewritePending !== true &&
+    ctx.hasUncertainToolOutcome !== true && ctx.isIdle !== false;
 
 	const continuePending = (ctx: StalledTurnRecoveryContext): boolean => {
 		if (mode === "off" || !available(ctx) || !pending.has(ctx.sessionId) || attempted.has(ctx.sessionId)) return false;
@@ -143,6 +193,15 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "au
 				pending.delete(sessionId);
 			}
 		},
+		onHistoryChanged(): void {
+      // OMP may change session IDs while switching trees. All pending observations
+      // belong to an old prefix, regardless of which session is now active.
+      pending.clear();
+    },
+    onSessionInterrupt(sessionId: string): void {
+      // Do not reset attempted: a cancelled turn may have committed a write.
+      pending.delete(sessionId);
+    },
 		onSessionEnd(sessionId: string): void {
 			attempted.delete(sessionId);
 			pending.delete(sessionId);
@@ -153,7 +212,9 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "au
 		continuePending,
 		onAgentEnd(event: StalledTurnEnd, ctx: StalledTurnRecoveryContext): boolean {
 			if (mode === "off") return false;
-			if (!ctx.isMain || !ctx.sessionId || ctx.hasQueuedMessages || ctx.hasRunningAsyncWork === true || !detectStalledTurn(event)) return false;
+			if (!ctx.isMain || !ctx.sessionId || ctx.hasQueuedMessages || ctx.hasRunningAsyncWork === true ||
+        ctx.hasUnknownJobState === true || ctx.isCancelled === true ||
+        ctx.historyRewritePending === true || ctx.hasUncertainToolOutcome === true || !detectStalledTurn(event)) return false;
 			if (attempted.has(ctx.sessionId)) {
 				ctx.notify?.("Pifrost: another planning leak after one continuation. Recovery exhausted; inspect /pifrost trace or use a new session.", "error");
 				return false;

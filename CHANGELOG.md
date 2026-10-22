@@ -1,3 +1,10 @@
+## 0.29.17 — 2026-10-22
+
+- Release 5D: prevent Pifrost's one-shot OMP follow-up when tool outcomes are unresolved/ambiguous or a turn was cancelled/interrupted; invalidate pending approvals on session switch, branch, tree or compaction while preserving one-shot budget.
+- Treat direct MCP tools/call lost-response failures and post-dispatch HTTP 5xx as `MCP_OUTCOME_UNCERTAIN`; no Pifrost replays, tool-argument logs or implicit side-effect retries.
+- Add grant-aware diagnostics for Bifrost approval-free MCP tools with non-idempotent or unknown replay-safety annotations. Pifrost does not rewrite grants or Bifrost's gateway-internal retry engine (upstream #8795).
+- Add disposable loopback commit-then-socket-drop and commit-then-503 fixtures, plus lifecycle state-machine regressions, and retain OMP 18.12.5/Bifrost 2.3.2 contracts.
+
 ## 0.29.16 — 2026-10-22
 
 - Release 5C: consume pinned OMP 18.12.5 model-lineage image tokenization through the public pi-catalog API; preserve Node-safe fallback while adding measured DeepSeek V4.1 Flash ViT patch pricing.

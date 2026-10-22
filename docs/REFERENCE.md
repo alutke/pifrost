@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.16
+0.29.17
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -413,3 +413,7 @@ Pifrost records `REQUEST_TOO_LARGE` for Bifrost HTTP 413 and forbids ingress or 
 ## Release 5C — image-tokenization and discovery integrity (v0.29.16)
 
 Prewalk candidate image billing uses the public OMP 18.12.5 `resolveImageTokenization` and `imageTokens` contract. DeepSeek V4.1 Flash uses its vendor grid rather than generic OpenAI/Claude patches, with bounded fallback for incomplete host/metadata. A verified provider usage anchor is retained only for the exact physical serving identity. `fetchBifrostModels()` consumes explicit `next_page_token` pagination and refuses repeated/missing cursors or provider-key failures; a last-known-good cache is not overwritten by an incomplete refresh. [Release 5C](RELEASE_5C_CONTEXT_DISCOVERY.md) describes evidence and constraints.
+
+## Release 5D — OMP recovery and gateway MCP ambiguity (v0.29.17)
+
+Auto stalled-turn recovery remains one-shot and enabled by default, but it refuses unmatched tool IDs, ambiguous tool failures, cancellation, rewrites or pending asynchronous work. Session switch, tree, branch or compaction removes stale manual approvals. `PIFROST_STALLED_TURN_MODE=notice` retains explicit interactive approval and `off` disables detection. Direct MCP `tools/call` failures after dispatch report `MCP_OUTCOME_UNCERTAIN`, never automatically resending side effects. CLI repository MCP listings now warn about approval-free non-idempotent or unverified tools under upstream Bifrost #8795. Annotations are advisory and gateway-internal Bifrost retry behaviour remains outside Pifrost control. See [Release 5D](RELEASE_5D_LIFECYCLE_MCP_SAFETY.md).

@@ -1,5 +1,17 @@
 import { readTextLimited, requestSignal } from "./http-client.mjs";
 
+/**
+ * tools/call can commit a side effect before the network response is lost.
+ * Never retry from Pifrost; the caller must verify external state manually.
+ */
+export class McpAmbiguousToolOutcomeError extends Error {
+  constructor() {
+    super("MCP tools/call outcome is uncertain after dispatch; the operation may have committed. Inspect upstream state before any explicit repeat.");
+    this.name="McpAmbiguousToolOutcomeError";
+    this.code="MCP_OUTCOME_UNCERTAIN";
+  }
+}
+
 function matchingEnvelope(value, expectedId) {
   if (Array.isArray(value)) {
     return value.find((item) => item && typeof item === "object" && item.id === expectedId);
@@ -46,22 +58,37 @@ export function parseMcpJsonRpcResponse(text, expectedId) {
 
 export async function postMcpJsonRpc(endpoint, virtualKey, request, options = {}) {
   const fetchImpl = options.fetch ?? globalThis.fetch;
-  const response = await fetchImpl(endpoint, {
-    method: "POST",
-    headers: {
-      "x-bf-vk": virtualKey,
-      "Content-Type": "application/json",
-      Accept: "application/json, text/event-stream",
-    },
-    body: JSON.stringify(request),
-    // An auth-bearing MCP call must not follow an untrusted Location header.
-    redirect: "error",
-    signal: requestSignal(options.signal, options.timeoutMs ?? 15_000),
-  });
-  // Cap streamed JSON and SSE by actual bytes, not only Content-Length.
-  const text = await readTextLimited(response, options.maxResponseBytes ?? 8 * 1024 * 1024);
+  const mutatingOrUnknownToolCall = request?.method === "tools/call";
+  let response;
+  try {
+    response = await fetchImpl(endpoint, {
+      method: "POST",
+      headers: {
+        "x-bf-vk": virtualKey,
+        "Content-Type": "application/json",
+        Accept: "application/json, text/event-stream",
+      },
+      body: JSON.stringify(request),
+      redirect: "error",
+      signal: requestSignal(options.signal, options.timeoutMs ?? 15_000),
+    });
+  } catch (error) {
+    // No attempt to classify whether the remote tool committed. Never
+    // repeat an uncertain tools/call; report outcome ambiguity without
+    // logging endpoint, arguments, or credentials.
+    if (mutatingOrUnknownToolCall) throw new McpAmbiguousToolOutcomeError();
+    throw error;
+  }
+  let text;
+  try {
+    text = await readTextLimited(response, options.maxResponseBytes ?? 8 * 1024 * 1024);
+  } catch (error) {
+    if (mutatingOrUnknownToolCall) throw new McpAmbiguousToolOutcomeError();
+    throw error;
+  }
   const body = parseMcpJsonRpcResponse(text, request.id);
   if (!body && response.ok) {
+    if (mutatingOrUnknownToolCall) throw new McpAmbiguousToolOutcomeError();
     throw new Error(`MCP response did not contain JSON-RPC id ${String(request.id)}`);
   }
   return { ok: response.ok, status: response.status, body, raw: text };

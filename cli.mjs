@@ -1405,6 +1405,7 @@ async function commandRepoStatus(snapshot, options = {}) {
             );
           }
           for (const warning of execution.warnings) console.log(`    WARN ${warning}`);
+          if(execution.unsafeAutoExecuteCount) console.log(`    MCP retry safety: ${execution.unsafeAutoExecuteCount} approval-free tool(s) require upstream replay-safety review; Pifrost did not alter grants`);
         }
       }
       for (const item of policy.unresolved) {
@@ -1792,7 +1793,7 @@ async function commandRepoMcpList(flags = {}) {
     if (client.endpointSlug) console.log(`  endpoint=/mcp/${client.endpointSlug}`);
     console.log(`  execute allow: ${client.toolsToExecuteKnown === false ? "unknown" : client.toolsToExecute?.length ? client.toolsToExecute.join(", ") : "none"}`);
     console.log(`  auto-execute: ${client.toolsToAutoExecuteKnown === false ? "unknown" : client.toolsToAutoExecute?.length ? client.toolsToAutoExecute.join(", ") : "none"}`);
-    if (client.toolsToAutoExecute?.includes("*")) console.log("  WARN auto-execute wildcard grants every executable tool approval-free execution");
+    for (const warning of mcpClientExecutionDiagnostics(client, ["*"]).warnings) console.log(`  WARN ${warning}`);
     if (client.serverInstructions) console.log(`  upstream instructions: set (${Buffer.byteLength(client.serverInstructions, "utf8")}B)`);
     if (client.tools.length) console.log(`  tools: ${client.tools.join(", ")}`);
   }
