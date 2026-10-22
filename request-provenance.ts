@@ -1,4 +1,5 @@
 import type { BifrostCostCapture } from "./bifrost-cost-bridge.ts";
+import { gatewayCostEvidence, type ResponsesCacheIntent, type GatewayCacheCounters } from "./inference-cache-evidence.ts";
 import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import { gatewayFailureAdvice, type GatewayFailureClass } from "./gateway-reliability.ts";
 import { inferenceFailureAdvice, type InferenceFailureCode } from "./inference-failure.ts";
@@ -32,6 +33,8 @@ export interface PifrostRouteTrace {
 	outputStarted?: boolean;
 	cacheHit?: boolean;
 	cacheHitType?: string;
+	cacheIntent?: ResponsesCacheIntent;
+	usageCounters?: GatewayCacheCounters;
 	requestedModel?: string;
 	requestedProvider?: string;
 	provider?: string;
@@ -106,6 +109,8 @@ export function recordBifrostCaptureTrace(
 		...(capture.outputStarted !== undefined ? { outputStarted: capture.outputStarted } : {}),
 		...(capture.cacheHit !== undefined ? { cacheHit: capture.cacheHit } : {}),
 		...(capture.cacheHitType ? { cacheHitType: capture.cacheHitType } : {}),
+		...(capture.cacheIntent ? { cacheIntent: { ...capture.cacheIntent } } : {}),
+		...(capture.usageCounters ? { usageCounters: { ...capture.usageCounters } } : {}),
 		...(capture.requestedModel ? { requestedModel: capture.requestedModel } : {}),
 		...(capture.requestedProvider ? { requestedProvider: capture.requestedProvider } : {}),
 		...(capture.provider ? { provider: capture.provider } : {}),
@@ -237,6 +242,9 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
         (trace.outputBudget.requestedTokens ? " (requested "+trace.outputBudget.requestedTokens+")" : "")+
         "; limiting="+trace.outputBudget.limitingSource);
       if(trace.droppedOutputLimit) lines.push("    Warning: Bifrost reports dropping a max_* output limit; physical egress cap unverified");
+      if (trace.cacheIntent?.twelveHourRequested) lines.push("    Cache: 12h requested; provider acceptance unverified");
+      if (trace.usageCounters) lines.push("    Usage: cache read=" + (trace.usageCounters.cacheReadTokens ?? "unknown") +
+        " tokens, write=" + (trace.usageCounters.cacheWriteTokens ?? "unknown") + " tokens (gateway reported)");
       lines.push("    Cost: "+(money(trace.totalCost)??"unknown")+
         (trace.upstreamLatencyMs===undefined?"":"; upstream "+Math.round(trace.upstreamLatencyMs)+" ms"));
       if(trace.failureCode && trace.failureCode!=="UNKNOWN")lines.push("    Issue: "+trace.failureCode+" - "+inferenceFailureAdvice(trace.failureCode));
@@ -286,6 +294,9 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			trace.outputStarted !== undefined ? `output-started=${trace.outputStarted ? "yes" : "no"}` : undefined,
 			trace.cacheHit !== undefined ? `cache-hit=${trace.cacheHit ? "yes" : "no"}` : undefined,
 			trace.cacheHitType ? `cache-type=${trace.cacheHitType}` : undefined,
+			trace.cacheIntent ? `cache-intent=${trace.cacheIntent.status} cache-ttl=${trace.cacheIntent.requestedTtl ?? "unknown"} cache-12h=${trace.cacheIntent.twelveHourRequested ? "requested" : "no"} physical-acceptance=unverified` : undefined,
+			trace.usageCounters ? `cache-read-tokens=${trace.usageCounters.cacheReadTokens ?? "unknown"} cache-write-tokens=${trace.usageCounters.cacheWriteTokens ?? "unknown"} cache-write-12h-tokens=${trace.usageCounters.cacheWrite12hTokens ?? "unknown"} cache-write-30m-tokens=${trace.usageCounters.cacheWrite30mTokens ?? "unknown"}` : undefined,
+			`cost-evidence=${gatewayCostEvidence({ total:trace.totalCost, provider:trace.provider, resolvedModel:trace.resolvedModel, usageCounters:trace.usageCounters }).amount} model-attribution=${gatewayCostEvidence({ total:trace.totalCost, provider:trace.provider, resolvedModel:trace.resolvedModel, usageCounters:trace.usageCounters }).attribution}`,
 			trace.upstreamLatencyMs !== undefined ? `upstream=${trace.upstreamLatencyMs.toFixed(1)}ms` : undefined,
 			money(trace.totalCost) ? `cost=${money(trace.totalCost)}` : undefined,
 			trace.reasoningHygiene ? [
@@ -304,8 +315,8 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			`outcome=${trace.outcome}`,
 		].filter((value): value is string => typeof value === "string" && value.length > 0);
 		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=|contract=|policy-fingerprint=|selection=)/u.test(item));
-		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=|gateway-converted=|gateway-dropped-output-cap=)/u.test(item));
-		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
+		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=|cache-intent=|gateway-converted=|gateway-dropped-output-cap=)/u.test(item));
+		const usage = details.filter(item => /^(?:upstream=|cost=|cost-evidence=|cache-read-tokens=)/u.test(item));
 		const reasoning = details.filter(item => /^(?:history-removed=|history-mixed=|history-nested=|history-prose=|history-ambiguous=)/u.test(item));
 		const requestShape = details.filter(item => /^(?:history-items=|output-requested=|reasoning-effort=|output-effective=|replay=)/u.test(item));
 		lines.push(`  ${trace.logicalModel} - ${trace.outcome === "done" ? "completed" : "failed"}`);
