@@ -38,10 +38,15 @@ export interface OutputBudgetInput {
   requestedTokens?: number | null;
   advertisedTokens?: number | null;
   members?: readonly OutputBudgetMember[];
-  /** Physical ceiling scope: all (legacy), primary (locally dispatched target)
-   * or diagnostic (opaque Bifrost logical route; member constraints cannot
-   * safely be attributed to the target selected by Bifrost). */
-  memberPolicy?: "all" | "primary" | "diagnostic";
+  /** Scope: all (legacy), primary (locally dispatched physical target),
+   * gateway (opaque route with Bifrost-owned affinity/fallback; enforce only
+   * exact, independently confirmed endpoint ceilings for potential members),
+   * or diagnostic (observational only).
+   *
+   * Never treat unverified catalogue maxima as physical enforcement limits.
+   * The gateway mode uses the narrowest confirmed ceiling because it cannot
+   * know which target the gateway will ultimately dispatch. */
+  memberPolicy?: "all" | "primary" | "gateway" | "diagnostic";
   contextWindow?: number;
   estimatedInputTokens?: number;
   /** Distinguishes explicit user-specified output limits from OMP defaults. */
@@ -119,6 +124,11 @@ export function resolveOutputBudget(input: OutputBudgetInput): OutputBudgetDecis
     if (confirmed !== undefined || live !== undefined) verifiedMembers++;
     if (!physicalMembers.includes(member)) continue;
     add("confirmed-endpoint", confirmed);
+    // Opaque Bifrost routing can change the physical model through affinity
+    // or fallback after Pifrost submits its request. Apply exact, confirmed
+    // endpoint ceilings across eligible members but NEVER speculative "live"
+    // or catalogue maximum values; those may overstate a provider's limit.
+    if (input.memberPolicy === "gateway") continue;
     add("live-member", live);
     // Preserve member model capabilities from the catalog, but never let an
     // explicitly synthetic fallback default masquerade as a physical limit.
