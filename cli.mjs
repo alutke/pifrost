@@ -160,7 +160,7 @@ Usage:
   pifrost judge status                      Inspect opt-in OMP judge bounds and gateway model availability
   pifrost judge providers                   Read-only Azure/Databricks Decisions model visibility
   pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
-  pifrost judge probe [--image|--decisions] Billed native image or canonical Decisions conformance
+  pifrost judge probe [--image] [--box] [--decisions] Explicitly billed native Decisions conformance
   pifrost routes list
   pifrost routes diff
   pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
@@ -2388,7 +2388,7 @@ async function commandJudgeActivate(flags = {}) {
 }
 
 async function commandJudgeProbe(flags = {}) {
-  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true, image: flags.image === true });
+  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true, image: flags.image === true, box: flags.box === true });
   console.log("Bifrost " + result.kind + " judgment conformance: OK");
   console.log("  model: " + result.model);
   console.log("  typed answers checked: " + result.answered);
