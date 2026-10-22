@@ -183,3 +183,19 @@ test("suffix normalization does not hide excluded, missing, stale, or unknown ta
   assert.equal(unknown.checks.find(c=>c.id==="handoff-target").status,"unknown");
   assert.equal(unknown.status,"unverified");
 });
+
+test("R5A-05 readiness contrasts installed host and the packaged OMP 18.12.5 policy without inferring a live gateway",()=>{
+  const common={settings:baseSettings,catalog,selectedJudge,policySnapshotVersion:"18.12.5"};
+  const current=assessOmpOrchestration({...common,hostVersion:"18.12.5"});
+  assert.equal(current.policySnapshotVersion,"18.12.5");
+  assert.equal(current.checks.find(x=>x.id==="omp-host-policy").status,"ok");
+  assert.match(formatOmpOrchestration(current),/packaged OMP policy: 18\.12\.5/);
+  const historical=assessOmpOrchestration({...common,hostVersion:"18.12.1"});
+  assert.equal(historical.checks.find(x=>x.id==="omp-host-policy").status,"warn");
+  assert.match(historical.checks.find(x=>x.id==="omp-host-policy").message,/historical host installation/);
+  const future=assessOmpOrchestration({...common,hostVersion:"18.13.0"});
+  assert.equal(future.checks.find(x=>x.id==="omp-host-policy").status,"unknown");
+  const unreadable=assessOmpOrchestration({...common,hostVersion:"not-semver"});
+  assert.equal(unreadable.checks.find(x=>x.id==="omp-host-policy").status,"unknown");
+  assert.ok(current.notes.some(x=>x.includes("does not query the live gateway version")));
+});
