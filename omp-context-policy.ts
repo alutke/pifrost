@@ -2,6 +2,7 @@ export type PifrostImageDetail = "auto" | "low" | "high" | "original";
 
 export interface PifrostImageTokenTarget {
 	id?: string;
+	provider?: string;
 	api?: string;
 	tokenizer?: string;
 	identity?: {
@@ -21,7 +22,7 @@ interface PatchSizing {
 	patchBudget?: number;
 }
 
-type ImageTokenization =
+export type ImageTokenization =
 	| {
 		regime: "openai-patch";
 		multiplier: number;
@@ -31,6 +32,7 @@ type ImageTokenization =
 		auto: "high" | "original";
 	  }
 	| { regime: "anthropic-patch"; maxEdge: number; maxTokens: number }
+	| { regime: "deepseek-patch"; patchSize: number; downsample: number; maxTokens: number; minPixels: number; verified?: boolean }
 	| { regime: "fixed"; tokens: number };
 
 const UNKNOWN_IMAGE_SIZE: ImageSize = { width: 65_535, height: 65_535 };
@@ -51,6 +53,18 @@ const WEBP_VP8 = new TextEncoder().encode("VP8 ");
 export type PifrostTextTokenCounter = (value: string | string[], tokenizer: string) => number;
 
 let hostTextTokenCounter: PifrostTextTokenCounter | undefined;
+/** OMP 18.12.5 catalog owns evolving image-lineage policy; inject from native.ts. */
+export type PifrostImageRuleResolver = (target: PifrostImageTokenTarget) => ImageTokenization | undefined;
+export type PifrostImageRuleCounter = (rule: ImageTokenization, size: ImageSize, detail?: PifrostImageDetail) => number;
+let catalogImageRuleResolver: PifrostImageRuleResolver | undefined;
+let catalogImageTokenCounter: PifrostImageRuleCounter | undefined;
+export function installPifrostImageTokenPolicy(
+  resolver: PifrostImageRuleResolver | undefined,
+  counter: PifrostImageRuleCounter | undefined,
+): void {
+  catalogImageRuleResolver = resolver;
+  catalogImageTokenCounter = counter;
+}
 
 /** Install OMP/Bun-owned native text tokenisation without importing native addons in Node-testable modules. */
 export function installPifrostTextTokenCounter(counter: PifrostTextTokenCounter | undefined): void {
@@ -229,6 +243,10 @@ const ANTHROPIC_STANDARD: ImageTokenization = {
 };
 
 const GEMINI_3: ImageTokenization = { regime: "fixed", tokens: 1_120 };
+const DEEPSEEK_41_FLASH: ImageTokenization = {
+  regime: "deepseek-patch", patchSize: 14, downsample: 3,
+  maxTokens: 1024, minPixels: 295_936, verified: true,
+};
 
 function parseRevision(value: string | undefined): [number, number, number] | undefined {
 	if (!value) return undefined;
@@ -285,6 +303,17 @@ function anthropicRule(target: PifrostImageTokenTarget): ImageTokenization {
  * because clean GitHub plugin installs cannot rely on OMP's native addon graph.
  */
 export function resolvePifrostImageTokenization(target: PifrostImageTokenTarget): ImageTokenization {
+  try {
+    const catalog = catalogImageRuleResolver?.(target);
+    if (catalog) return catalog;
+  } catch {
+    // Partial host rules cannot crash model prewalk.
+  }
+  if (target.identity?.class === "deepseek" &&
+      target.identity.family === "flash" &&
+      /^4[.]1(?:[.]|$)/u.test(target.identity.revision ?? "")) {
+    return DEEPSEEK_41_FLASH;
+  }
 	switch (target.identity?.class) {
 		case "openai":
 			return openAiRule(target);
