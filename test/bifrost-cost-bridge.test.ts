@@ -155,6 +155,7 @@ test("captures Bifrost routed identity and request provenance headers", async ()
 		primaryModel: "deepseek-v4.1-flash",
 		requestType: "chat_completion",
 		upstreamLatencyMs: 123.45,
+		usageCounters: { inputTokens: 1, outputTokens: 1, source: "bifrost-response-usage" },
 	});
 });
 
