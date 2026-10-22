@@ -8,7 +8,7 @@ const files=[
   "package.json","package-lock.json","README.md","docs/REFERENCE.md",
   "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
   "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-  "docs/RELEASE_4_BUDGET_GOVERNANCE.md","SECURITY.md",
+  "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","SECURITY.md",
   "CONTRIBUTING.md",".github/CODEOWNERS",
 ];
 function fixture() {
