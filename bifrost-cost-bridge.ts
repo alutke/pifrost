@@ -53,7 +53,7 @@ export interface BifrostCostCapture {
 function recordDroppedParams(capture: BifrostCostCapture, value: unknown): void {
   const params = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string")
     : typeof value === "string" && value.length <= 8192 ? value.split(",") : [];
-  if (params.some(param => /(?:^|[.\\s])max_(?:output_|completion_)?tokens(?:$|[.\\s])/iu.test(param.trim()))) {
+  if (params.some(param => /(?:^|\\.)max_(?:output_|completion_)?tokens$/iu.test(param.trim()))) {
     capture.droppedOutputLimit = true;
   }
 }
