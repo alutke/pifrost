@@ -6,8 +6,20 @@ const BIFROST_2_2_4_COMMIT = "ed8371a9779bfbc8aa689d4d77964cf8ce9308bf";
 const BIFROST_2_2_5_COMMIT = "77d08f241cfa10d09ea37d6b00ef9f2c363a3ede";
 const BIFROST_2_2_6_COMMIT = "8b4fce4f1709d66f9208d02f50552da522535f9e";
 const BIFROST_2_3_0_COMMIT = "9237ec06672406e437b3cb33fc793ffd0403b3ae";
+const BIFROST_2_3_2_COMMIT = "a05ea20e68bf116a35e9f05b1a3d749624b3935e";
 
 const SOURCES = [
+  {
+    name: "Bifrost 2.3.2 security and migration release contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_2_COMMIT}/docs/changelogs/v2.3.2.mdx`,
+    required: ["Go 1.27.3", "CVE-2026-111943", "No new database migrations"],
+  },
+  {
+    name: "Bifrost 2.3.1 optional gateway feature contracts",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_2_COMMIT}/docs/changelogs/v2.3.1.mdx`,
+    required: ["Gateway Tool Search", "OpenAPI MCP Servers", "Extra Fields as Response Headers", "Mistral Thinking Blocks", "Request Body Memory Retention"],
+  },
+
   {
     name: "Bifrost 2.0.0 routing contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_0_0_COMMIT}/ui/lib/types/routingRules.ts`,
