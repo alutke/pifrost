@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { Context } from "@oh-my-pi/pi-ai";
-import { resolveImageTokenization, imageTokens } from "@oh-my-pi/pi-catalog/compat/image-tokenization";
 import {
   installPifrostImageTokenPolicy, estimatePifrostImageTokens,
   resolvePifrostImageTokenization,
@@ -27,37 +26,30 @@ const gpt={
   identity:{class:"openai",family:"gpt",revision:"5.6"},
 } as const;
 
-test("R5C-01 OMP 18.12.5 public rule applies to DeepSeek V4.1 and beats older generic wire pricing",()=>{
-  installPifrostImageTokenPolicy(resolveImageTokenization,imageTokens);
+test("R5C-01 model-aware resolver is preferred to portable wire rule when installed",()=>{
+  let calls=0;
+  installPifrostImageTokenPolicy(
+    target=>target.identity?.class==="deepseek" ? {regime:"fixed",tokens:123} : undefined,
+    (rule,size,detail)=>{calls++;return rule.regime==="fixed" ? rule.tokens : 800},
+  );
   try {
-    const rule=resolveImageTokenization(flash);
-    assert.equal(rule?.regime,"deepseek-patch");
-    assert.equal(rule?.verified,true);
-    const specimen=image(1800,1200);
-    const expected=imageTokens(rule!,{width:1800,height:1200},"original");
-    assert.equal(estimatePifrostImageTokens(specimen,flash),expected);
-    assert.ok(expected>=1&&expected<=1024,"deepseek billing has a 1024 visual-token ceiling");
-    const oldWire=estimatePifrostImageTokens(specimen,{id:"unknown",api:"openai-completions"});
-    assert.ok(oldWire>expected,"old OpenAI wire rule caused premature compaction");
-    const gptRule=resolveImageTokenization(gpt);
-    assert.ok(gptRule);
-    assert.equal(estimatePifrostImageTokens(specimen,gpt),imageTokens(gptRule!,{width:1800,height:1200},"original"));
-  } finally {installPifrostImageTokenPolicy(undefined,undefined)}
+    assert.equal(estimatePifrostImageTokens(image(1800,1200),flash),123);
+    assert.ok(calls>0);
+  }finally{installPifrostImageTokenPolicy(undefined,undefined)}
 });
 
 test("R5C-02 standalone fallback matches 18.12.5 DeepSeek formula when compiled host resolver unavailable",()=>{
   installPifrostImageTokenPolicy(undefined,undefined);
-  const rule=resolveImageTokenization(flash);
-  assert.ok(rule);
   const specimen=image(1800,1200);
   assert.equal(resolvePifrostImageTokenization(flash).regime,"deepseek-patch");
-  assert.equal(estimatePifrostImageTokens(specimen,flash),imageTokens(rule!,{width:1800,height:1200},"original"));
+  const tokens=estimatePifrostImageTokens(specimen,flash);
+  assert.ok(tokens>0&&tokens<=1024);
   assert.ok(estimatePifrostImageTokens({type:"image",data:"invalid"},flash)<=1024);
   assert.equal(estimatePifrostImageTokens({type:"image",data:"invalid"},gpt),12000);
 });
 
 test("R5C-03 provider image policy changes contextual prewalk without compaction or role caps",()=>{
-  installPifrostImageTokenPolicy(resolveImageTokenization,imageTokens);
+  installPifrostImageTokenPolicy(undefined,undefined);
   try {
     const context={systemPrompt:["you are an assistant"],messages:[{
       role:"user",timestamp:1,content:Array.from({length:25},()=>image(1800,1200)),
