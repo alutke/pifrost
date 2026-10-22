@@ -156,6 +156,9 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
     return { tool, granted: true, executable, autoExecutable };
   });
   const warnings = [];
+  if (autoPolicyKnown && Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
+    warnings.push("auto-execute wildcard grants every executable tool approval-free execution");
+  }
   // Bifrost 2.3.2 upstream issue #8795: ordinary gateway retries may
   // duplicate a committed mutation after its response is lost. Tool hints
   // are advisory, not an end-to-end idempotency guarantee. Do not silently
@@ -173,9 +176,6 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
   });
   for (const item of mutationRiskRows.filter(item=>item.requiresReview)) {
     warnings.push(`Bifrost MCP retry-risk (#8795): auto-execute ${item.tool} is ${item.risk}; a committed side effect may be repeated after a lost response. Limit auto-execution until its idempotency is verified upstream`);
-  }
-  if (autoPolicyKnown && Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
-    warnings.push("auto-execute wildcard grants every executable tool approval-free execution");
   }
   if (autoPolicyKnown && executePolicyKnown) {
     for (const name of Array.isArray(client?.toolsToAutoExecute) ? client.toolsToAutoExecute : []) {
