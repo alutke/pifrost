@@ -105,11 +105,11 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		assert.deepEqual(attempts.map(item => item.protocol), ["openai-responses", "openai-completions"]);
 		assert.ok(attempts.every(item => item.mode === "bifrost-direct"));
 
-		// R4: Bifrost owns physical target selection for opaque logical routes.
-		// Pifrost cannot use a fallback's entitlement-specific 393216 limit
-		// to cap a different possible primary. Preserve an explicit 712434
-		// budget in both ingress protocols; actual weaker fallback may reject.
-		// A verified directly dispatched physical target is capped elsewhere.
+		// P0: Bifrost still owns routing and session affinity, but an opaque
+		// logical request must respect an *independently confirmed* physical
+		// ceiling across possible members. Both ingress protocols therefore
+		// receive the verified 393216 cap rather than the rejected 712434.
+		// Speculative weak fallback limits are ignored (see output-budget tests).
 		const oversized = provider!.streamSimple({ ...agentModel, maxTokens: 712434 }, {
 			messages: [{ role: "user", content: [{ type: "text", text: "test oversize envelope" }], timestamp: Date.now() }],
 		}, {
@@ -121,9 +121,9 @@ test("OMP Advisor dispatches Responses then Chat using the same Bifrost alias on
 		for await (const _event of oversized) { /* Mock protocol errors are expected. */ }
 		assert.equal(attempts.length, 4);
 		for (const attempt of attempts.slice(2)) {
-			assert.equal(attempt.maxOutput, 712434);
-			assert.equal(attempt.maxCompletion, 712434);
-			if (attempt.maxTokens !== undefined) assert.equal(attempt.maxTokens, 712434);
+			assert.equal(attempt.maxOutput, 393216);
+			assert.equal(attempt.maxCompletion, 393216);
+			if (attempt.maxTokens !== undefined) assert.equal(attempt.maxTokens, 393216);
 		}
 		assert.deepEqual(attempts.slice(2).map(a=>a.model), ["omp-advisor", "omp-advisor"]);
 
