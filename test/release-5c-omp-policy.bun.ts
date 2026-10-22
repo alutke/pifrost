@@ -1,4 +1,6 @@
-import {test,expect} from "bun:test";
+import assert from "node:assert/strict";
+// @ts-ignore -- Bun test runtime is installed by CI; Node type-only check has no bun:test types.
+import {test} from "bun:test";
 import {resolveImageTokenization,imageTokens} from "@oh-my-pi/pi-catalog/compat/image-tokenization";
 import {
   installPifrostImageTokenPolicy,
@@ -27,15 +29,15 @@ const candidates=[
 test("R5C-B01 pinned OMP 18.12.5 actual exported image rules price portable candidates exactly",()=>{
   for(const target of candidates){
     const official=resolveImageTokenization(target);
-    expect(official).toBeDefined();
+    assert.ok(official);
     installPifrostImageTokenPolicy(resolveImageTokenization,imageTokens);
     try {
       for(const [width,height] of [[1800,1200],[544,544],[1920,1080],[1024,768]]){
         const actual=estimatePifrostImageTokens(png(width,height),target);
         const expected=imageTokens(official!,{width,height},"original");
-        expect(actual).toBe(expected);
+        assert.equal(actual,expected);
       }
-      expect(resolvePifrostImageTokenization(target).regime).toBe(official!.regime);
+      assert.equal(resolvePifrostImageTokenization(target).regime,official!.regime);
     } finally {installPifrostImageTokenPolicy(undefined,undefined)}
   }
 });
@@ -45,11 +47,11 @@ test("R5C-B02 DeepSeek V4.1 price is sourced from measured lineage and avoids ea
   installPifrostImageTokenPolicy(resolveImageTokenization,imageTokens);
   try{
     const rule=resolvePifrostImageTokenization(target);
-    expect(rule.regime).toBe("deepseek-patch");
-    expect(rule.verified).toBe(true);
+    assert.equal(rule.regime,"deepseek-patch");
+    assert.equal(rule.regime==="deepseek-patch" ? rule.verified : false,true);
     const candidate=estimatePifrostImageTokens(png(1800,1200),target);
     const fallback=estimatePifrostImageTokens(png(1800,1200),{id:"unclassified-model",api:"openai-completions"});
-    expect(candidate).toBeLessThan(fallback);
-    expect(candidate).toBeLessThanOrEqual(1024);
+    assert.ok(candidate<fallback);
+    assert.ok(candidate<=1024);
   }finally{installPifrostImageTokenPolicy(undefined,undefined)}
 });
