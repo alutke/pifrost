@@ -6,7 +6,7 @@ import {createStalledTurnRecoveryCoordinator,detectStalledTurn,uncertainToolOutc
 const user={role:"user",content:[{type:"text",text:"Implement changes"}]};
 const call={role:"assistant",content:[{type:"toolCall",id:"call-1",name:"bash",arguments:{command:"build"}}]};
 const result={role:"toolResult",toolCallId:"call-1",toolName:"bash",content:[{type:"text",text:"tests passed"}]};
-const tail={role:"assistant",stopReason:"stop",content:[{type:"text",text:"Let's complete remaining verification. </thinking></thinking>"}]};
+const tail={role:"assistant",stopReason:"stop",content:[{type:"text",text:"Let's run the remaining verification. </thinking></thinking>"}]};
 const observed={messages:[user,call,result,tail]};
 
 test("R5D-06 a confirmed tool result can permit only one OMP follow-up; unresolved tool result blocks it",()=>{
