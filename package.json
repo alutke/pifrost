@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.14",
+  "version": "0.29.15",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -48,6 +48,7 @@
     "docs/RELEASE_3_ARCHITECTURE.md",
     "docs/RELEASE_4_BUDGET_GOVERNANCE.md",
     "docs/RELEASE_5A_CONTRACT_FOUNDATION.md",
+    "docs/RELEASE_5B_INFERENCE_HARDENING.md",
     "stalled-turn-recovery.ts",
     "route-policy-fingerprint.mjs",
     "route-policy-fingerprint.d.mts",

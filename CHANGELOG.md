@@ -1,3 +1,10 @@
+## 0.29.15 — 2026-10-22
+
+- Release 5B: treat Bifrost HTTP 413 request_too_large as terminal and report safe, redacted remediation without retrying the same request or altering OMP history.
+- Capture verified response `extra_fields` and `x-bifrost-*` routing, conversion and dropped max-token metadata; warn when Bifrost strips output limits while leaving all provider routing and compatibility transformations under Bifrost authority.
+- Add mocked Chat and Responses protocol fixtures for signed reasoning, tool-call IDs, empty results, SSE lifecycle preservation, explicit `xhigh` effort, max-token field clamp and header/body modes.
+- Retain OMP 18.12.5 and Bifrost 2.3.2 contracts; no new service, billable probe, gateway deploy, implicit max-token cap or post-output retry.
+
 ## 0.29.14 — 2026-10-22
 
 - Release 5A: pin all five direct OMP packages and the model-policy snapshot to 18.12.5; add compiled 18.12.5 installation and plugin-loader verification while retaining 18.10.4 minimum/18.12.1 historical coverage.

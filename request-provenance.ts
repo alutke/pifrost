@@ -43,6 +43,9 @@ export interface PifrostRouteTrace {
 	primaryModel?: string;
 	requestType?: string;
 	upstreamLatencyMs?: number;
+	/** Egress loss is observed only when gateway reports dropped params. */
+	droppedOutputLimit?: boolean;
+	convertedRequestType?: string;
 	totalCost?: number;
 	reasoningHygiene?: ReasoningHygieneCounters;
 	outcome: "done" | "error" | "thrown";
@@ -114,6 +117,8 @@ export function recordBifrostCaptureTrace(
 		...(capture.primaryModel ? { primaryModel: capture.primaryModel } : {}),
 		...(capture.requestType ? { requestType: capture.requestType } : {}),
 		...(capture.upstreamLatencyMs !== undefined ? { upstreamLatencyMs: capture.upstreamLatencyMs } : {}),
+		...(capture.droppedOutputLimit === true ? { droppedOutputLimit: true } : {}),
+		...(capture.convertedRequestType ? { convertedRequestType: capture.convertedRequestType } : {}),
 		...(capture.total !== undefined ? { totalCost: capture.total } : {}),
 		...(reasoningHygiene ? { reasoningHygiene: { ...reasoningHygiene } } : {}),
 	});
@@ -231,6 +236,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
       if(trace.outputBudget?.reduced) lines.push("    Output: capped to "+trace.outputBudget.effectiveTokens+" tokens"+
         (trace.outputBudget.requestedTokens ? " (requested "+trace.outputBudget.requestedTokens+")" : "")+
         "; limiting="+trace.outputBudget.limitingSource);
+      if(trace.droppedOutputLimit) lines.push("    Warning: Bifrost reports dropping a max_* output limit; physical egress cap unverified");
       lines.push("    Cost: "+(money(trace.totalCost)??"unknown")+
         (trace.upstreamLatencyMs===undefined?"":"; upstream "+Math.round(trace.upstreamLatencyMs)+" ms"));
       if(trace.failureCode && trace.failureCode!=="UNKNOWN")lines.push("    Issue: "+trace.failureCode+" - "+inferenceFailureAdvice(trace.failureCode));
@@ -272,6 +278,8 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			trace.requestDiagnostics ? `history-items=${trace.requestDiagnostics.historyItems} assistant-items=${trace.requestDiagnostics.assistantMessages} reasoning-items=${trace.requestDiagnostics.nativeReasoningItems} chat-reasoning=${trace.requestDiagnostics.chatReasoningMessages} tool-calls=${trace.requestDiagnostics.toolCalls} tool-results=${trace.requestDiagnostics.toolResults} orphan-results=${trace.requestDiagnostics.orphanToolResults} tool-definitions=${trace.requestDiagnostics.toolDefinitions}` : undefined,
 			trace.requestDiagnostics?.requestedOutputTokens !== undefined ? `output-requested=${trace.requestDiagnostics.requestedOutputTokens}` : undefined,
 			trace.requestDiagnostics?.reasoningEffort ? `reasoning-effort=${trace.requestDiagnostics.reasoningEffort}` : undefined,
+			trace.convertedRequestType ? `gateway-converted=${trace.convertedRequestType}` : undefined,
+			trace.droppedOutputLimit ? "gateway-dropped-output-cap=yes egress-limit=unverified" : undefined,
 			trace.replayAudit ? `replay=${trace.replayAudit.reason} replay-contract=${trace.replayAudit.requirement} assistant-runs=${trace.replayAudit.assistantRuns} replay-required=${trace.replayAudit.runsRequiringReasoning} replay-missing=${trace.replayAudit.missingRequiredRuns} native-reasoning-items=${trace.replayAudit.nativeReasoningItems} empty-native=${trace.replayAudit.emptyNativeReasoningItems} check=${trace.replayAudit.validation} gateway=${trace.replayAudit.gatewayOutcome} (gateway completion does not prove physical replay acceptance)` : undefined,
 			trace.outputBudget ? `output-effective=${trace.outputBudget.effectiveTokens} output-reduced=${trace.outputBudget.reduced ? "yes" : "no"} output-explicit=${trace.outputBudget.explicit ? "yes" : "no"} output-source=${trace.outputBudget.limitingSource} budget-members=${trace.outputBudget.memberCount} verified-members=${trace.outputBudget.verifiedMemberCount} unknown-members=${trace.outputBudget.unknownMemberCount}` : undefined,
 			trace.retryAfterSeconds !== undefined ? `retry-after=${trace.retryAfterSeconds}s (gateway advisory only)` : undefined,
@@ -296,7 +304,7 @@ export function formatPifrostRouteTraces(sessionId: string, options: PifrostTrac
 			`outcome=${trace.outcome}`,
 		].filter((value): value is string => typeof value === "string" && value.length > 0);
 		const route = details.filter(item => /^(?:attempt=|route-mode=|exception=|protocol=|requested=|gateway-request=|route-evidence=|wire-boundaries=|fallback=|contract=|policy-fingerprint=|selection=)/u.test(item));
-		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=)/u.test(item));
+		const gateway = details.filter(item => /^(?:request-id=|trace-id=|http=|failure=|failure-code=|retry-after=|output-started=|cache-hit=|cache-type=|gateway-converted=|gateway-dropped-output-cap=)/u.test(item));
 		const usage = details.filter(item => /^(?:upstream=|cost=)/u.test(item));
 		const reasoning = details.filter(item => /^(?:history-removed=|history-mixed=|history-nested=|history-prose=|history-ambiguous=)/u.test(item));
 		const requestShape = details.filter(item => /^(?:history-items=|output-requested=|reasoning-effort=|output-effective=|replay=)/u.test(item));

@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.14
+0.29.15
 ```
 
 Bun also works:
@@ -696,3 +696,7 @@ Output budgets for locally dispatched compatibility attempts now use the selecte
 ### Release 5A — OMP/Bifrost contract refresh (v0.29.14)
 
 Pifrost pins OMP 18.12.5 across its five dependent packages and verifies historical OMP 18.10.4/18.12.1 plus current 18.12.5 installation contracts. Bifrost 2.3.2 is the pinned source/HTTP contract baseline, retaining earlier contracts. The Pifrost update itself neither deploys nor migrates Bifrost: assess the Bifrost 2.3.1 database migrations and Go 1.27.3 plugin rebuild requirements separately. Read [Release 5A](docs/RELEASE_5A_CONTRACT_FOUNDATION.md) and the [integration support matrix](docs/INTEGRATION_SUPPORT.md). Live provider/route/MCP execution still requires independent conformance.
+
+### Release 5B — inference protocol and output-limit hardening (v0.29.15)
+
+Pifrost treats HTTP 413 as terminal, preserves the full supported Chat/Responses wire contract and `xhigh` reasoning choices, and reports Bifrost-confirmed conversion and dropped `max_*` output limits in `/pifrost trace verbose`. The reported gateway egress gap is diagnostic; Pifrost does not compensate for missing Bifrost datasheet parameters or add default output caps. See [Release 5B](docs/RELEASE_5B_INFERENCE_HARDENING.md).

@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.14
+0.29.15
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -405,3 +405,7 @@ Locally dispatched physical attempts apply confirmed/advertised limits of the ac
 Five OMP library pins, the CLI policy snapshot and the current compiled-host contract are upgraded to **18.12.5**. Historical 18.10.4 and 18.12.1 compiled installer checks remain. Pinned Bifrost HTTP contract tests now include **2.3.2** security and **2.3.1** feature evidence without changing physical routing, judgment execution or MCP grants. The Pifrost CLI checks the actual gateway's reported version and explains whether it is within the observed supported/validated envelope; neither a pinned fixture nor a source version claims a live gateway was upgraded.
 
 Before updating an actual gateway from 2.3.0, back up configuration and database and validate 2.3.1 migrations; 2.3.2 additionally requires rebuilding Go plugins with Go 1.27.3. See [Release 5A](RELEASE_5A_CONTRACT_FOUNDATION.md).
+
+## Release 5B — inference protocol and gateway egress (v0.29.15)
+
+Pifrost records `REQUEST_TOO_LARGE` for Bifrost HTTP 413 and forbids ingress or physical retry. The Bifrost 2.3.2 header placement option is reflected in read-only gateway provenance and conversion diagnostics; a gateway-reported dropped `max_*` token field is flagged as unverified physical cap enforcement. `xhigh` is preserved when supported by OMP's real physical policy; no default provider-wide reasoning downgrade is introduced. The [release contract](RELEASE_5B_INFERENCE_HARDENING.md) separates mocked transport tests from optional live physical egress evidence.

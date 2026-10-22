@@ -6,6 +6,7 @@
 export type InferenceFailureCode =
   | "REASONING_REPLAY_INVALID"
   | "OUTPUT_LIMIT_EXCEEDED"
+  | "REQUEST_TOO_LARGE"
   | "MODEL_NOT_PERMITTED"
   | "ROUTE_CONTRACT_UNKNOWN"
   | "PROTOCOL_INCOMPATIBLE"
@@ -21,6 +22,7 @@ export interface InferenceFailureDiagnosis {
 const ADVICE: Readonly<Record<InferenceFailureCode, string>> = {
   REASONING_REPLAY_INVALID: "Verify physical model reasoning replay and Bifrost protocol conversion; do not blindly retry this history",
   OUTPUT_LIMIT_EXCEEDED: "Compare requested output tokens with the selected physical model and fallback limits",
+  REQUEST_TOO_LARGE: "Bifrost rejected the request body (HTTP 413); reduce context or attachments, never retry this same payload",
   MODEL_NOT_PERMITTED: "Check the Bifrost virtual key model allowlist and route fallback members",
   ROUTE_CONTRACT_UNKNOWN: "Verify or synchronize the Bifrost route contract and model metadata",
   PROTOCOL_INCOMPATIBLE: "Check the physical provider Chat/Responses protocol and serialization policy",
@@ -55,7 +57,9 @@ function errorEvidence(value: unknown, depth = 0, budget = { remaining: 12 }): s
 export function classifyInferenceFailure(status: number, errorPayload?: unknown): InferenceFailureDiagnosis {
   const evidence = errorEvidence(errorPayload).toLowerCase();
   let code: InferenceFailureCode = "UNKNOWN";
-  if (status === 400 || status === 422) {
+  if (status === 413) {
+    code = "REQUEST_TOO_LARGE";
+  } else if (status === 400 || status === 422) {
     if (/(reasoning_content|reasoning_text).{0,180}(must be passed back|required|missing|empty)|thinking mode.{0,160}(reasoning_content|reasoning_text)/u.test(evidence)) {
       code = "REASONING_REPLAY_INVALID";
     } else if (/(max_(?:output_|completion_)?tokens|output tokens?).{0,120}(exceeds?|above|maximum|limit|too large)|exceeds? (?:the )?(?:maximum|model limit).{0,100}tokens/u.test(evidence)) {

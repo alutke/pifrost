@@ -1,4 +1,4 @@
-# OMP compatibility — Pifrost v0.29.14
+# OMP compatibility — Pifrost v0.29.15
 
 ## Tested contract and ownership
 
@@ -79,3 +79,7 @@ for the difference between mocked checks and live conformance.
 Pifrost now pins all five OMP packages and runtime policy snapshots to 18.12.5. The new compiled-host installation and plugin-loading gate uses OMP 18.12.5; the 18.10.4 minimum and 18.12.1 historical binaries remain independently tested. OMP manages judgment execution, agent lifecycle, tools, compaction and reasoning serialization. Bifrost 2.3.2 is the pinned HTTP public-contract baseline, with earlier tested contracts retained. A source compatibility check is not a live proof of physical fallback, MCP execution, quota or billed native judgment.
 
 No gateway database upgrade or persistent service is performed by Pifrost. The Bifrost 2.3.1 migration requires an independent backup/rehearsal, and 2.3.2 custom Go plugins require Go 1.27.3. See [Release 5A](RELEASE_5A_CONTRACT_FOUNDATION.md) for operator steps and the separation between code tests and deployment.
+
+## Release 5B — inference wire safety (v0.29.15)
+
+OMP 18.12.5 remains the pinned host/policy snapshot. Pifrost does not rewrite completed chat/Responses content, remove opaque signed reasoning, alter parallel tool-call permissions, or silently lower a supported `xhigh` effort. All compatibility retries are pre-output and evidence-bound. A Bifrost 2.3.2 HTTP 413 request size rejection is terminal. Explicit gateway body/header notices about stripped max-token fields are shown as **unverified physical egress**, not proof of provider enforcement. See [Release 5B](RELEASE_5B_INFERENCE_HARDENING.md).

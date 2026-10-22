@@ -32,7 +32,7 @@ export function gatewayFailureAdvice(reason: GatewayFailureClass | undefined): s
     case "quota-or-rate-limit": return "check Bifrost quota, upstream allowance and rate limits";
     case "timeout": return "check Bifrost TTFT/idle timeout and upstream latency";
     case "upstream": return "check Bifrost request log and provider availability";
-    case "request": return "check request wire protocol and model capabilities";
+    case "request": return "check request size, wire protocol and model capabilities; HTTP 413 must not be retried unchanged";
     default: return undefined;
   }
 }

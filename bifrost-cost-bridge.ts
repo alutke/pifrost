@@ -44,6 +44,44 @@ export interface BifrostCostCapture {
 	primaryModel?: string;
 	requestType?: string;
 	upstreamLatencyMs?: number;
+	/** True only when Bifrost explicitly reports dropping a max_* token field. */
+	droppedOutputLimit?: boolean;
+	/** Diagnostic-only gateway conversion, never used to select another route. */
+	convertedRequestType?: string;
+}
+
+function recordDroppedParams(capture: BifrostCostCapture, value: unknown): void {
+  const params = Array.isArray(value) ? value.filter((v): v is string => typeof v === "string")
+    : typeof value === "string" && value.length <= 8192 ? value.split(",") : [];
+  if (params.some(param => /(?:^|\\.)max_(?:output_|completion_)?tokens$/iu.test(param.trim()))) {
+    capture.droppedOutputLimit = true;
+  }
+}
+function recordBodyExtraFields(value: unknown, capture?: BifrostCostCapture): void {
+  if (!capture || !value || typeof value !== "object" || Array.isArray(value)) return;
+  const body = value as Record<string, unknown>;
+  const wrapped = body.response && typeof body.response === "object" && !Array.isArray(body.response)
+    ? body.response as Record<string, unknown> : undefined;
+  const extra = body.extra_fields ?? wrapped?.extra_fields;
+  if (!extra || typeof extra !== "object" || Array.isArray(extra)) return;
+  const fields = extra as Record<string, unknown>;
+  const route = fields.routing_info && typeof fields.routing_info === "object" && !Array.isArray(fields.routing_info)
+    ? fields.routing_info as Record<string, unknown> : undefined;
+  const string = (v: unknown): string | undefined =>
+    typeof v === "string" ? safeGatewayHeaderToken(v, 128) : undefined;
+  // In streaming, final extra_fields may be more current than early headers
+  // written before Bifrost completed a fallback. Only gateway-owned fields.
+  capture.requestedModel = string(route?.requested_model) ?? capture.requestedModel;
+  capture.requestedProvider = string(route?.requested_provider) ?? capture.requestedProvider;
+  capture.provider = string(route?.provider) ?? string(fields.provider) ?? capture.provider;
+  capture.resolvedModel = string(route?.model) ?? string(fields.resolved_model_used) ?? capture.resolvedModel;
+  capture.originalModel = string(fields.original_model_requested) ?? capture.originalModel;
+  capture.primaryProvider = string(route?.primary_provider) ?? capture.primaryProvider;
+  capture.primaryModel = string(route?.primary_model) ?? capture.primaryModel;
+  capture.requestType = string(fields.request_type) ?? capture.requestType;
+  capture.convertedRequestType = string(fields.converted_request_type) ?? capture.convertedRequestType;
+  if (route?.is_fallback === true) capture.isFallback = true;
+  recordDroppedParams(capture, fields.dropped_compat_plugin_params);
 }
 
 function bridgeUsageObject(
@@ -107,6 +145,7 @@ export function bridgeBifrostUsageCostPayload(
 	value: unknown,
 	capture?: BifrostCostCapture,
 ): unknown {
+	recordBodyExtraFields(value, capture);
 	return bridgeNode(value, capture);
 }
 
@@ -170,6 +209,9 @@ function nonEmptyHeader(headers: Headers, name: string): string | undefined {
 function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture, status?: number): void {
 	if (!capture) return;
 	capture.requestId = safeGatewayHeaderToken(headers.get("x-bifrost-request-id")) ?? capture.requestId;
+	const converted = safeGatewayHeaderToken(headers.get("x-bifrost-converted-request-type"));
+	if (converted) capture.convertedRequestType = converted;
+	recordDroppedParams(capture, headers.get("x-bifrost-dropped-compat-params"));
 	const traceId = safeGatewayHeaderToken(headers.get("x-bifrost-trace-id"));
 	if (traceId) capture.traceId = traceId;
 	const classified = status === undefined ? undefined : classifyGatewayHttpStatus(status);
