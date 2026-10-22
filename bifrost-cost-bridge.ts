@@ -60,7 +60,9 @@ function recordDroppedParams(capture: BifrostCostCapture, value: unknown): void 
 function recordBodyExtraFields(value: unknown, capture?: BifrostCostCapture): void {
   if (!capture || !value || typeof value !== "object" || Array.isArray(value)) return;
   const body = value as Record<string, unknown>;
-  const extra = body.extra_fields;
+  const wrapped = body.response && typeof body.response === "object" && !Array.isArray(body.response)
+    ? body.response as Record<string, unknown> : undefined;
+  const extra = body.extra_fields ?? wrapped?.extra_fields;
   if (!extra || typeof extra !== "object" || Array.isArray(extra)) return;
   const fields = extra as Record<string, unknown>;
   const route = fields.routing_info && typeof fields.routing_info === "object" && !Array.isArray(fields.routing_info)
@@ -207,7 +209,8 @@ function nonEmptyHeader(headers: Headers, name: string): string | undefined {
 function captureBifrostHeaders(headers: Headers, capture?: BifrostCostCapture, status?: number): void {
 	if (!capture) return;
 	capture.requestId = safeGatewayHeaderToken(headers.get("x-bifrost-request-id")) ?? capture.requestId;
-	capture.convertedRequestType = safeGatewayHeaderToken(headers.get("x-bifrost-converted-request-type")) ?? capture.convertedRequestType;
+	const converted = safeGatewayHeaderToken(headers.get("x-bifrost-converted-request-type"));
+	if (converted) capture.convertedRequestType = converted;
 	recordDroppedParams(capture, headers.get("x-bifrost-dropped-compat-params"));
 	const traceId = safeGatewayHeaderToken(headers.get("x-bifrost-trace-id"));
 	if (traceId) capture.traceId = traceId;
