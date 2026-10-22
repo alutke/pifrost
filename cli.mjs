@@ -2296,6 +2296,7 @@ function commandOmpReadiness(flags = {}) {
   const result = assessOmpOrchestration({
     settings, catalog: cache, stale: stale === true,
     hostVersion: getOmpVersion(), selectedJudge,
+    policySnapshotVersion: PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
   });
   if (flags.json) console.log(JSON.stringify(result));
   else console.log(formatOmpOrchestration(result, flags.verbose === true));
