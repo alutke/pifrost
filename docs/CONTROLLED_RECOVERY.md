@@ -66,7 +66,8 @@ jobs, cancellation, history rewrite or uncertain tool outcomes remain. The
 continuation checks existing workspace state before external actions; it never
 blindly replays tools or the HTTP inference request.
 
-Set `PIFROST_STALLED_TURN_MODE=notice` to require manual approval or
-`PIFROST_STALLED_TURN_MODE=off` to disable. Upstream token-range HTTP errors
+Use `PIFROST_STALLED_TURN_MODE=auto` (or `true`, `1`, `yes`, `on`) to
+explicitly enable the default; `notice` requires manual approval and `off`
+disables automatic continuation. Upstream token-range HTTP errors
 and virtual-key permission failures are not successful stalled turns, so they
 receive diagnosis rather than unsafe automatic re-execution.
