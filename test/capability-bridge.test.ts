@@ -49,3 +49,41 @@ test("bridges between-tools thinking without retaining incompatible reasoning_ef
 	assert.deepEqual(bridged.reasoning, { effort: "low", type: "between_tools" });
 	assert.equal("reasoning_effort" in bridged, false);
 });
+
+test("Release 5E preserves gateway-mediated discovery without adding native tool_search", () => {
+  const body = {
+    tools: [
+      { type: "function", name: "listToolFiles", parameters: { type: "object" } },
+      { type: "function", name: "web_search", parameters: { type: "object" } },
+    ],
+  };
+  const response = bridgePifrostPayload(body, {
+    deferredTools: new Set(["web_search"]),
+    enableToolSearch: true,
+    deferredToolExecution: "gateway",
+  });
+  assert.equal(response, body, "Bifrost is the authority for gateway-mediated search and Code Mode");
+});
+
+test("Release 5E does not synthesize duplicate tool-search definitions", () => {
+  const native = {
+    tools: [
+      { type: "function", name: "web_search", parameters: { type: "object" } },
+      { type: "tool_search", execution: "client", parameters: { type: "object" } },
+    ],
+  };
+  const bridged = bridgePifrostPayload(native, {
+    deferredTools: new Set(["web_search"]), enableToolSearch: true,
+  }) as { tools: Array<Record<string, unknown>> };
+  assert.equal(bridged.tools.filter(tool => tool.type === "tool_search").length, 1);
+  assert.equal(bridged.tools[1]!.execution, "client", "preserve caller-managed discovery semantics");
+  const ambiguous = {
+    tools: [
+      { type: "function", name: "web_search" },
+      { type: "function", name: "web_search" },
+    ],
+  };
+  assert.equal(bridgePifrostPayload(ambiguous, {
+    deferredTools: new Set(["web_search"]), enableToolSearch: true,
+  }), ambiguous, "duplicated function identities must not silently receive deferred flags");
+});
