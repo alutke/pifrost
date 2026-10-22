@@ -115,6 +115,7 @@ test("OMP cold startup registers discoverable models before returning, then reus
             type: "agent_end",
             messages: [
                 { role: "user", content: [{ type: "text", text: "Implement fix" }] },
+                { role: "assistant", content: [{ type: "toolCall", id: "tool-1", name: "bash", arguments: {} }] },
                 { role: "toolResult", toolCallId: "tool-1", content: [{ type: "text", text: "done" }] },
                 { role: "assistant", stopReason: "stop", content: [{ type: "text", text: "Let's patch the remaining files. </thinking></thinking>" }] },
             ],
