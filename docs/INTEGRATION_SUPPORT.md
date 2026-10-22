@@ -1,4 +1,4 @@
-# Pifrost integration support — v0.29.15
+# Pifrost integration support — v0.29.16
 
 This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.5**. Supported historical host installation: **OMP 18.10.4**; prior compiled host **18.12.1**; current host contract: **OMP 18.12.5**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **Bifrost 2.3.2** (including 2.3.0 historical fixtures).
 
@@ -76,3 +76,10 @@ For optional **read-only** live gateway image-budget inventory inspection, set `
 - Bifrost 2.3.1/2.3.2 supports placing `extra_fields` in either the JSON body or `x-bifrost-*` headers. Pifrost records only bounded, sanitized gateway-provided model/protocol provenance and specifically reported dropped `max_*` fields; it never infers the physical provider from the configured primary.
 - `/pifrost trace` warns when Bifrost reports removing an output-token limit. This is **not** an upstream parameter forwarding fix: Bifrost issue #8765 requires gateway/provider verification, including incomplete datasheet rows.
 - No Bifrost production egress, actual provider fallback, billable session, MCP mutation, or 413 request-body boundary was live-executed by these CI fixtures. A separately opted-in Bifrost smoke and provider-level egress evidence remain required.
+
+## Release 5C image and model inventory validation (v0.29.16)
+
+- Packaged OMP **18.12.5** public model image rules now drive candidate-aware prewalk. DeepSeek V4.1 Flash patch billing is used instead of generic OpenAI/Claude estimates; use actual physical model identity where available.
+- Standalone Node tests compare the portable fallback to OMP 18.12.5, cover image-heavy conversations, provider usage anchors and unrecognised image dimensions.
+- Bifrost `/v1/models` discovery follows explicit `next_page_token` pages; invalid, cyclic or missing continuation cursors and reported failed provider-key inventories are **incomplete**, not an authoritative list. Failed refresh leaves prior cache unchanged. Upstream Bifrost issue #8759 may also omit models without a completeness flag; this cannot be proven from one response and still needs provider-scoped live comparison.
+- No physical gateway egress, provider context billing, production image request, independent supplier quota or pricing was live verified by these deterministic fixtures.
