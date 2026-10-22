@@ -1395,7 +1395,9 @@ async function commandRepoStatus(snapshot, options = {}) {
           const executableCount = execution.executePolicyKnown ? execution.executableCount : "unknown";
           const autoCount = execution.autoPolicyKnown ? execution.autoExecutableCount : "unknown";
           console.log(
-            `  ${client.name}: granted=${execution.grantedCount} executable=${executableCount} auto=${autoCount}`,
+            `  ${client.name}: granted=${execution.grantedCount} executable=${executableCount} auto=${autoCount}` +
+              (client.openApiSource ? " source=OpenAPI-MCP (Bifrost-admin)" : "") +
+              (client.isCodeModeClient ? " discovery=Code Mode (gateway-owned)" : ""),
           );
           for (const row of execution.rows) {
             const executable = row.executable === undefined ? "unknown" : row.executable ? "yes" : "no";
@@ -1782,7 +1784,8 @@ async function commandRepoMcpList(flags = {}) {
   console.log("Showing "+shown.items.length+" of "+shown.total+" matching MCP clients");
   for (const client of shown.items) {
     const modes = [
-      client.isCodeModeClient ? "code-mode" : undefined,
+      client.isCodeModeClient ? "code-mode (gateway discovery)" : undefined,
+      client.openApiSource ? "openapi-mcp (gateway registered)" : undefined,
       client.toolsToAutoExecute?.length ? "agent-mode" : undefined,
       client.authType ? `auth=${client.authType}` : undefined,
       client.connectionType ? `transport=${client.connectionType}` : undefined,

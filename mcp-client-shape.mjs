@@ -97,6 +97,11 @@ export function normalizeMcpClientShape(client) {
     ),
     endpointSlug: nonEmpty(config?.endpoint_slug) ?? nonEmpty(client?.endpoint_slug),
     connectionType: nonEmpty(config?.connection_type) ?? nonEmpty(client?.connection_type),
+    // OpenAPI-to-MCP registration is a Bifrost administrative operation. Never
+    // infer origin from a tool's name or auto-register an external spec.
+    openApiSource: (config?.is_openapi_client ?? client?.is_openapi_client) === true ||
+      ["openapi", "openapi_mcp", "openapi-to-mcp"].includes(String(config?.connection_type ?? client?.connection_type ?? "").toLowerCase()) ||
+      Boolean(config?.openapi_spec ?? config?.openapi_spec_url ?? config?.openapi_config ?? client?.openapi_spec_url),
     authType: nonEmpty(config?.auth_type) ?? nonEmpty(client?.auth_type),
     isCodeModeClient: Boolean(config?.is_code_mode_client ?? client?.is_code_mode_client),
     toolsToExecute: rawToolsToExecute?.map(String) ?? [],
@@ -156,6 +161,15 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
     return { tool, granted: true, executable, autoExecutable };
   });
   const warnings = [];
+  if (client?.openApiSource === true) {
+    warnings.push("OpenAPI-derived MCP operations are registered and executed by Bifrost; validate operation mutability, authentication and per-VK grants with its administrator (Pifrost makes no changes)");
+    if (rows.some(row => row.autoExecutable === true)) {
+      warnings.push("OpenAPI-derived operations have approval-free gateway execution; do not assume GET/read-only semantics from tool names or HTTP verbs");
+    }
+  }
+  if (client?.isCodeModeClient === true) {
+    warnings.push("Code Mode exposes on-demand gateway meta-tools, not every underlying operation to OMP; nested calls remain Bifrost-owned and OMP approval is not a substitute for gateway grant checks");
+  }
   if (autoPolicyKnown && Array.isArray(client?.toolsToAutoExecute) && client.toolsToAutoExecute.includes("*")) {
     warnings.push("auto-execute wildcard grants every executable tool approval-free execution");
   }

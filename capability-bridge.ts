@@ -18,6 +18,8 @@ export interface PifrostCapabilityBridgeOptions {
 	deferredTools?: ReadonlySet<string>;
 	betweenToolsThinking?: boolean;
 	enableToolSearch?: boolean;
+	/** Gateway-mediated discovery is owned by Bifrost: never inject native tool_search. */
+	deferredToolExecution?: "native" | "gateway";
 }
 
 /**
@@ -44,7 +46,20 @@ export function bridgePifrostPayload(
 		changed = true;
 	}
 
-	if (options.enableToolSearch && options.deferredTools?.size && Array.isArray(result.tools)) {
+	// Bifrost Code Mode and provider-injected search expose their own discovery
+	// surfaces. Never duplicate them with Responses-native deferred definitions.
+	if (options.enableToolSearch && options.deferredToolExecution !== "gateway" && options.deferredTools?.size && Array.isArray(result.tools)) {
+		const counts = new Map<string, number>();
+		for (const tool of result.tools) {
+			const record = asRecord(tool);
+			if (!record) continue;
+			const name = typeof record.name === "string" ? record.name :
+				typeof asRecord(record.function)?.name === "string" ? String(asRecord(record.function)!.name) : undefined;
+			if (name && options.deferredTools.has(name)) counts.set(name, (counts.get(name) ?? 0) + 1);
+		}
+		// Duplicate deferred tool definitions are ambiguous. Retain the original
+		// wire request rather than silently creating a second discovery contract.
+		if ([...counts.values()].some((count) => count !== 1)) return changed ? result : payload;
 		let matched = 0;
 		const rewritten = result.tools.map((tool) => {
 			const record = asRecord(tool);

@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.17
+0.29.18
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -417,3 +417,7 @@ Prewalk candidate image billing uses the public OMP 18.12.5 `resolveImageTokeniz
 ## Release 5D — OMP recovery and gateway MCP ambiguity (v0.29.17)
 
 Auto stalled-turn recovery remains one-shot and enabled by default, but it refuses unmatched tool IDs, ambiguous tool failures, cancellation, rewrites or pending asynchronous work. Session switch, tree, branch or compaction removes stale manual approvals. `PIFROST_STALLED_TURN_MODE=notice` retains explicit interactive approval and `off` disables detection. Direct MCP `tools/call` failures after dispatch report `MCP_OUTCOME_UNCERTAIN`, never automatically resending side effects. CLI repository MCP listings now warn about approval-free non-idempotent or unverified tools under upstream Bifrost #8795. Annotations are advisory and gateway-internal Bifrost retry behaviour remains outside Pifrost control. See [Release 5D](RELEASE_5D_LIFECYCLE_MCP_SAFETY.md).
+
+## Release 5E — gateway MCP integration and inspection (v0.29.18)
+
+The Responses bridge distinguishes native deferred-tool search from explicitly gateway-owned discovery. The MCP CLI reports explicit OpenAPI-source registration and distinguishes underlying Code Mode operations from OMP-visible meta-tools. Provider-injected aliases and gateway-side approvals are diagnostic-only. Pure MCP result inspection preserves `structuredContent`, JSON-in-text and nested-error ambiguity; optional progress extraction only reads an existing bounded SSE response for the requesting host. See [Release 5E](RELEASE_5E_GATEWAY_MCP_INTEGRATION.md) for evidence and the no-daemon/no-grant-change contract.

@@ -10,7 +10,7 @@ const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 const reference = readFileSync(new URL("docs/REFERENCE.md", root), "utf8");
 const integrationSupport = readFileSync(new URL("docs/INTEGRATION_SUPPORT.md", root), "utf8");
-if (!integrationSupport.includes("Release 5B") || !integrationSupport.includes("Release 5C")) throw new Error("Release 5B and 5C evidence boundaries must appear in support matrix");
+if (!integrationSupport.includes("Release 5B") || !integrationSupport.includes("Release 5C") || !integrationSupport.includes("Release 5E")) throw new Error("Release 5B and 5C evidence boundaries must appear in support matrix");
 if (!integrationSupport.includes("Bifrost 2.3.2")) throw new Error("Current Bifrost 2.3.2 contract must appear in the support matrix");
 if (!integrationSupport.includes(`OMP ${pkg.dependencies["@oh-my-pi/pi-ai"]}`) || !integrationSupport.includes("18.10.4") ||
     !integrationSupport.includes("billable")) throw new Error("Integration support matrix must document host and live-test limits");
@@ -131,6 +131,7 @@ for (const path of [
   "docs/RELEASE_5B_INFERENCE_HARDENING.md",
   "docs/RELEASE_5C_CONTEXT_DISCOVERY.md",
   "docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md",
+  "docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md",
   "SECURITY.md",
   "CONTRIBUTING.md",
   "scripts/validate-documentation.mjs",
@@ -230,6 +231,7 @@ try {
   "docs/RELEASE_5B_INFERENCE_HARDENING.md",
   "docs/RELEASE_5C_CONTEXT_DISCOVERY.md",
   "docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md",
+  "docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md",
     "SECURITY.md",
     "CONTRIBUTING.md",
     "scripts/validate-documentation.mjs",

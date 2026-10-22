@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.17
+0.29.18
 ```
 
 Bun also works:
@@ -708,3 +708,7 @@ Pifrost now delegates image-token pricing to the pinned OMP 18.12.5 public model
 ### Release 5D — lifecycle recovery and MCP replay-risk evidence (v0.29.17)
 
 OMP planning-stall recovery now refuses unresolved or uncertain tool outcomes and invalidates pending approvals when compaction or session history changes. Pifrost's own MCP tools/call calls never retry after ambiguous failure; `MCP_OUTCOME_UNCERTAIN` means a mutation may have committed. Repository MCP diagnostics flag approval-free non-idempotent or unknown tools affected by [Bifrost #8795](https://github.com/maximhq/bifrost/issues/8795). **Bifrost internal retries are not fixed by this release.** See [Release 5D](docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md).
+
+### Release 5E — gateway MCP integration safeguards (v0.29.18)
+
+Pifrost distinguishes native Responses tool search from Bifrost-owned Code Mode and injected discovery, warns about OpenAPI-derived operation permissions and provider injection collisions, and offers bounded read-only Code Mode result-shape and opt-in MCP progress diagnostics. No grants, Bifrost execution engine or OMP history are changed. See [Release 5E](docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md); live gateway conformance remains separately gated.
