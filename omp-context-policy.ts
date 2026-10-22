@@ -399,6 +399,31 @@ function anthropicTokens(size: ImageSize, maxEdge: number, maxTokens: number): n
 	return patches(lo, short(lo));
 }
 
+/** Portable DeepSeek V4.1 billing grid; OMP's catalog is authoritative when installed. */
+function deepseekTokens(size: ImageSize, rule: Extract<ImageTokenization, {regime:"deepseek-patch"}>): number {
+  const {patchSize,downsample,maxTokens,minPixels}=rule;
+  const cell=patchSize*downsample;
+  const spanTokens=(height: number,width: number): number => {
+    const rows=Math.ceil(Math.floor(height/patchSize)/downsample);
+    const cols=Math.ceil(Math.floor(width/patchSize)/downsample);
+    return rows*(cols+1)+2;
+  };
+  let {width,height}=size;
+  if(width*height<minPixels) {
+    const scale=Math.sqrt(minPixels/(width*height));
+    width=Math.trunc(width*scale);height=Math.trunc(height*scale);
+  }
+  const tokens=spanTokens(Math.ceil(height/patchSize)*patchSize,Math.ceil(width/patchSize)*patchSize);
+  if(tokens<=maxTokens)return tokens;
+  const aspect=height/width;
+  const maxCols=Math.sqrt((maxTokens-2)/aspect+0.25)-0.5;
+  const maxRows=maxCols*aspect;
+  if(maxCols<1)return spanTokens(Math.floor((maxTokens-2)/2)*cell,cell);
+  if(maxRows<1)return spanTokens(cell,(maxTokens-3)*cell);
+  const beta=Math.min((Math.floor(maxCols)*cell)/width,(Math.floor(maxRows)*cell)/height);
+  return spanTokens(Math.floor((height*beta)/patchSize)*patchSize,Math.floor((width*beta)/patchSize)*patchSize);
+}
+
 function imageTokens(rule: ImageTokenization, size: ImageSize, detail?: PifrostImageDetail): number {
 	switch (rule.regime) {
 		case "fixed":
@@ -409,6 +434,8 @@ function imageTokens(rule: ImageTokenization, size: ImageSize, detail?: PifrostI
 		}
 		case "anthropic-patch":
 			return anthropicTokens(size, rule.maxEdge, rule.maxTokens);
+		case "deepseek-patch":
+			return deepseekTokens(size, rule);
 	}
 }
 
@@ -440,7 +467,16 @@ export function estimatePifrostImageTokens(
 			: undefined;
 	const size = imageBlockSize(block);
 	const rule = resolvePifrostImageTokenization(target);
-	if (size) return imageTokens(rule, size, detail);
+  const count = (value: ImageSize, active: ImageTokenization): number => {
+    if (catalogImageTokenCounter) {
+      try {
+        const priced=catalogImageTokenCounter(active,value,detail);
+        if (Number.isFinite(priced) && priced>=0) return Math.ceil(priced);
+      } catch { /* Portable fallback keeps Node-only consumers functional. */ }
+    }
+    return imageTokens(active,value,detail);
+  };
+	if (size) return count(size,rule);
 
 	// Unknown dimensions can still use candidate-specific bounded rules. Fixed
 	// Gemini and capped Anthropic accounting have a deterministic ceiling, and
@@ -448,9 +484,9 @@ export function estimatePifrostImageTokens(
 	// unbounded OpenAI level (for example GPT-5.6 original), retain OMP's
 	// bounded wire fallback rather than manufacturing a multi-million-token
 	// estimate from the UNKNOWN_IMAGE_SIZE sentinel.
-	if (rule.regime !== "openai-patch") return imageTokens(rule, UNKNOWN_IMAGE_SIZE, detail);
+	if (rule.regime !== "openai-patch") return count(UNKNOWN_IMAGE_SIZE,rule);
 	const level = detail === "low" || detail === "high" || detail === "original" ? detail : rule.auto;
 	return rule[level].patchBudget !== undefined
-		? imageTokens(rule, UNKNOWN_IMAGE_SIZE, detail)
-		: imageTokens(OPENAI_WIRE_FALLBACK, UNKNOWN_IMAGE_SIZE, detail);
+		? count(UNKNOWN_IMAGE_SIZE,rule)
+		: count(UNKNOWN_IMAGE_SIZE,OPENAI_WIRE_FALLBACK);
 }
