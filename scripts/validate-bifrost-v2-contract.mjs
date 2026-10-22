@@ -10,6 +10,16 @@ const BIFROST_2_3_2_COMMIT = "a05ea20e68bf116a35e9f05b1a3d749624b3935e";
 
 const SOURCES = [
   {
+    name: "Bifrost 2.3.2 extra-fields body/header conversion and egress disclosure contract",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_2_COMMIT}/transports/bifrost-http/lib/responseheaders.go`,
+    required: ["HeaderBifrostDroppedCompatParams", "HeaderBifrostConvertedRequestType", "StripExtraFieldsIfInHeaders", "HeaderBifrostRoutingInfoRequestedModel", "HeaderBifrostRoutingInfoModel"],
+  },
+  {
+    name: "Bifrost 2.3.1 request-size and reasoning downgrade fixes",
+    url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_2_COMMIT}/docs/changelogs/v2.3.1.mdx`,
+    required: ["request_too_large", "OpenAI-Compatible xhigh Reasoning Effort", "Responses Streaming Wire Format", "Tool Search Round-Trips"],
+  },
+  {
     name: "Bifrost 2.3.2 security and migration release contract",
     url: `https://raw.githubusercontent.com/maximhq/bifrost/${BIFROST_2_3_2_COMMIT}/docs/changelogs/v2.3.2.mdx`,
     required: ["Go 1.27.3", "CVE-2026-111943", "No new database migrations"],
