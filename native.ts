@@ -1210,13 +1210,13 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
     stalledTurnRecovery.onSessionInterrupt(ctx.sessionManager.getSessionId());
   });
   pi.on("session_tree", (_event, ctx) => {
-    stalledTurnRecovery.onSessionInterrupt(ctx.sessionManager.getSessionId());
+    stalledTurnRecovery.onHistoryChanged();
   });
   pi.on("session_branch", (_event, ctx) => {
-    stalledTurnRecovery.onSessionInterrupt(ctx.sessionManager.getSessionId());
+    stalledTurnRecovery.onHistoryChanged();
   });
   pi.on("session_switch", (_event, ctx) => {
-    stalledTurnRecovery.onSessionInterrupt(ctx.sessionManager.getSessionId());
+    stalledTurnRecovery.onHistoryChanged();
   });
 	pi.on("session_shutdown", (_event, ctx) => {
 		const sessionId = ctx.sessionManager.getSessionId();
