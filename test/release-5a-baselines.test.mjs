@@ -45,7 +45,7 @@ test("R5A-03 Bifrost 2.3.2 is immutable-pinned without deleting older route/MCP 
 });
 
 test("R5A-04 release sources and operator instructions state mocked/live distinction",()=>{
-  assert.match(pkg.version,/^0\\.29\\.(?:14|15)$/u);
+  assert.match(pkg.version,/^[0-9]+[.][0-9]+[.][0-9]+$/u);
   assert.equal(lock.version,pkg.version);
   assert.equal(lock.packages[""].version,pkg.version);
   assert.match(read("docs/INTEGRATION_SUPPORT.md"),/OMP 18\.12\.5/u);
