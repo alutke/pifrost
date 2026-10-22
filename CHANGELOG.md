@@ -1,3 +1,9 @@
+## 0.29.14 — 2026-10-22
+
+- Release 5A: pin all five direct OMP packages and the model-policy snapshot to 18.12.5; add compiled 18.12.5 installation and plugin-loader verification while retaining 18.10.4 minimum/18.12.1 historical coverage.
+- Advance pinned Bifrost HTTP public/source contract tests to 2.3.2, retaining 2.3.0 and older contracts; validate 2.3.1 gateway feature availability and 2.3.2 Go 1.27.3 TLS security baseline without silently upgrading a running Bifrost instance.
+- Refresh CLI compatibility version diagnostics, documentation consistency and release packaging gates. Document gateway migration rehearsal and Go plugin rebuild needs; no new service, physical router, mutation tool grants or live billed requests.
+
 ## 0.29.13 — 2026-10-21
 
 - Release 4: preserve the selected physical primary's output capacity instead of clamping to the weakest configured Bifrost fallback; opaque logical aliases no longer claim a physical member's ceiling applies to an unknown gateway target.
