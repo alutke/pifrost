@@ -2348,7 +2348,7 @@ async function commandJudgeStatus() {
 async function commandJudgeProviders() {
   const config = judgeRuntimeConfig();
   if (!config.url || !config.virtualKey) throw new Error("Bifrost inference URL and Virtual Key required");
-  const body = await requestJson(config.url.replace(/\\/+$/u, "") + "/models", {
+  const body = await requestJson(config.url.replace(/\/+$/u, "") + "/models", {
     method: "GET", timeoutMs: 8000, maxResponseBytes: 512000,
     headers: { "x-bf-vk": config.virtualKey },
   });
