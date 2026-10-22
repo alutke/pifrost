@@ -88,12 +88,12 @@ const liveModels: BifrostProviderModel[] = refs.map((id) => ({
 let sheets: Awaited<ReturnType<typeof fetchBifrostDatasheets>> | undefined;
 for (let attempt = 1; attempt <= 3; attempt++) {
   try {
-    sheets = await fetchBifrostDatasheets({ cacheTtlMs: 0 });
+    sheets = await fetchBifrostDatasheets({ cacheTtlMs: 0, signal: AbortSignal.timeout(12_000) });
     break;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const transient = /Bifrost datasheet fetch failed \((?:429|500|502|503|504)\)/u.test(message) ||
-      /(?:fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN)/iu.test(message);
+      /(?:fetch failed|ECONNRESET|ETIMEDOUT|EAI_AGAIN|timeout|timed out|aborted)/iu.test(message);
     if (attempt === 3 || !transient) throw error;
     console.warn(`Bifrost public datasheet transient failure (attempt ${attempt}/3); retrying read-only fetch`);
     await new Promise<void>(resolve => setTimeout(resolve, 1_000 * attempt));
