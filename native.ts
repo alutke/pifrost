@@ -19,10 +19,11 @@ import { getBundledModels, getBundledProviders } from "@oh-my-pi/pi-catalog";
 import { createOnDemandRouteCheck } from "./route-reconcile.mjs";
 import { apiRouteFor } from "@oh-my-pi/pi-catalog/compat/behavior";
 import { resolveModelPolicy } from "@oh-my-pi/pi-catalog/compat/resolve";
+import { resolveImageTokenization, imageTokens } from "@oh-my-pi/pi-catalog/compat/image-tokenization";
 import { resolveModelTokenizer } from "@oh-my-pi/pi-catalog/model-tokenizer";
 import { registerBifrostRichContentBridge } from "./bifrost-rich-content.ts";
 import { nativeJudgeGateway } from "./judge-bridge.mjs";
-import { installPifrostTextTokenCounter } from "./omp-context-policy.ts";
+import { installPifrostTextTokenCounter, installPifrostImageTokenPolicy } from "./omp-context-policy.ts";
 import {
 	applyBifrostAuthoritativeCost,
 	applyBifrostResolvedModel,
@@ -378,6 +379,7 @@ function streamDynamicPifrostRoute(
 				context,
 				createModelAwareContextTokenizer({
 					id: candidate.id,
+					provider: candidate.provider,
 					api: candidate.api,
 					tokenizer: candidate.tokenizer,
 					identity: candidate.identity,
@@ -398,7 +400,7 @@ function streamDynamicPifrostRoute(
 	}
 	const estimatedInputTokens = estimateOmpContextInputTokens(
 		context,
-		createModelAwareContextTokenizer({ api: model.api, identity: model.identity, id: model.id, tokenizer: model.tokenizer }),
+		createModelAwareContextTokenizer({ api: model.api, provider: model.provider, identity: model.identity, id: model.id, tokenizer: model.tokenizer }),
 	);
 	const plan = planDynamicRouteAttempts(profile, planningBody, {
 		estimatedInputTokens,
@@ -947,6 +949,8 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	);
 	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 	await installOmpNativeTextTokenCounter();
+  // Use OMP 18.12.5's exported lineage image-tokenization contract.
+  installPifrostImageTokenPolicy(resolveImageTokenization, imageTokens);
 	registerBifrostRichContentBridge(pi);
 	pi.registerFlag("bifrost-url", {
 		description: "Bifrost OpenAI-compatible base URL (env: BIFROST_URL; fallback: Pifrost config)",
