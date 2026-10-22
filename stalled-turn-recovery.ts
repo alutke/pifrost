@@ -193,7 +193,12 @@ export function createStalledTurnRecoveryCoordinator(mode: StalledTurnMode = "au
 				pending.delete(sessionId);
 			}
 		},
-		onSessionInterrupt(sessionId: string): void {
+		onHistoryChanged(): void {
+      // OMP may change session IDs while switching trees. All pending observations
+      // belong to an old prefix, regardless of which session is now active.
+      pending.clear();
+    },
+    onSessionInterrupt(sessionId: string): void {
       // Do not reset attempted: a cancelled turn may have committed a write.
       pending.delete(sessionId);
     },
