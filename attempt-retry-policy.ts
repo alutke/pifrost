@@ -48,8 +48,9 @@ export function evaluateAttemptTransition(
   if (!Number.isInteger(status) || status! < 400 || status! > 599) return reject("missing-http-evidence");
   const code = evidence?.failureCode;
   if (status === 401 || status === 403 || status === 402 || status === 429 ||
-      status === 408 || status === 504 ||
+      status === 408 || status === 413 || status === 504 ||
       code === "REASONING_REPLAY_INVALID" || code === "OUTPUT_LIMIT_EXCEEDED" ||
+      code === "REQUEST_TOO_LARGE" ||
       code === "MODEL_NOT_PERMITTED" || code === "ROUTE_CONTRACT_UNKNOWN") {
     return reject("terminal-error");
   }
