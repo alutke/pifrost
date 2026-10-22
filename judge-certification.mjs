@@ -41,7 +41,7 @@ export function decisionProviderInventory(payload) {
       .filter(item => item && typeof item.id === "string" &&
         item.id.toLowerCase().startsWith(provider + "/"))
       .map(item => item.id)
-      .filter(id => /^[a-z0-9@._:/-]{1,128}$/iu.test(id))
+      .filter(id => /^[a-z0-9@._:/-]{1,128}$/iu.test(id) && !id.includes("..") && !id.includes("//"))
       .slice(0, 30);
     rows.push({ provider, listedModels: [...new Set(models)], status: models.length ? "listed-not-decision-verified" : "not-listed", verifiedExecution: false });
   }
