@@ -83,3 +83,10 @@ For optional **read-only** live gateway image-budget inventory inspection, set `
 - Standalone Node tests compare the portable fallback to OMP 18.12.5, cover image-heavy conversations, provider usage anchors and unrecognised image dimensions.
 - Bifrost `/v1/models` discovery follows explicit `next_page_token` pages; invalid, cyclic or missing continuation cursors and reported failed provider-key inventories are **incomplete**, not an authoritative list. Failed refresh leaves prior cache unchanged. Upstream Bifrost issue #8759 may also omit models without a completeness flag; this cannot be proven from one response and still needs provider-scoped live comparison.
 - No physical gateway egress, provider context billing, production image request, independent supplier quota or pricing was live verified by these deterministic fixtures.
+
+## Release 5D lifecycle/MCP regression evidence (v0.29.17)
+
+- OMP 18.12.5 remains the pinned policy. Simulated lifecycle checks verify cancelled turns, incomplete/uncertain tool outcomes, stale approvals, one-shot continuation, and history changes; compiled historical OMP installation compatibility is retained.
+- A disposable local HTTP server commits a fixture record then drops the response or returns HTTP 503: Pifrost sends exactly one `tools/call`, reports `MCP_OUTCOME_UNCERTAIN`, and does not retry. This does not exercise Bifrost itself.
+- Bifrost [#8795](https://github.com/maximhq/bifrost/issues/8795) remains an upstream gateway retry bug. Read-only diagnostics identify auto-executable unknown or non-idempotent grants, without changing grants. Tool hints are advisory and cannot certify at-most-once execution.
+- Live physical gateway MCP retry behaviour and OMP historical host lifecycle semantics are **not verified** by these fixtures; explicit opt-in conformance remains necessary. No production mutations or billable provider requests were made.
