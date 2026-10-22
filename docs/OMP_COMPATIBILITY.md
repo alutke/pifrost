@@ -1,4 +1,4 @@
-# OMP compatibility — Pifrost v0.29.15
+# OMP compatibility — Pifrost v0.29.16
 
 ## Tested contract and ownership
 
@@ -83,3 +83,7 @@ No gateway database upgrade or persistent service is performed by Pifrost. The B
 ## Release 5B — inference wire safety (v0.29.15)
 
 OMP 18.12.5 remains the pinned host/policy snapshot. Pifrost does not rewrite completed chat/Responses content, remove opaque signed reasoning, alter parallel tool-call permissions, or silently lower a supported `xhigh` effort. All compatibility retries are pre-output and evidence-bound. A Bifrost 2.3.2 HTTP 413 request size rejection is terminal. Explicit gateway body/header notices about stripped max-token fields are shown as **unverified physical egress**, not proof of provider enforcement. See [Release 5B](RELEASE_5B_INFERENCE_HARDENING.md).
+
+## Release 5C image policy parity (v0.29.16)
+
+Image pricing resolves through public OMP 18.12.5 catalog lineage rules installed in `native.ts`, not a duplicated Pifrost provider policy. A portable DeepSeek V4.1 parity formula covers Node-only tests and partial compiled hosts. Unknown image dimensions charge the verified per-image rule's bounded maximum where available; other unknown physical policies keep the existing conservative fallback. This change does not automatically relax actual provider or gateway limits, and historical compiled OMP 18.10.4/18.12.1 installation support remains separate from feature conformance. See [Release 5C](RELEASE_5C_CONTEXT_DISCOVERY.md).
