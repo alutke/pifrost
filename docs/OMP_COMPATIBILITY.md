@@ -87,3 +87,7 @@ OMP 18.12.5 remains the pinned host/policy snapshot. Pifrost does not rewrite co
 ## Release 5C image policy parity (v0.29.16)
 
 Image pricing resolves through public OMP 18.12.5 catalog lineage rules installed in `native.ts`, not a duplicated Pifrost provider policy. A portable DeepSeek V4.1 parity formula covers Node-only tests and partial compiled hosts. Unknown image dimensions charge the verified per-image rule's bounded maximum where available; other unknown physical policies keep the existing conservative fallback. This change does not automatically relax actual provider or gateway limits, and historical compiled OMP 18.10.4/18.12.1 installation support remains separate from feature conformance. See [Release 5C](RELEASE_5C_CONTEXT_DISCOVERY.md).
+
+## Release 5D OMP 18.12.5 lifecycle boundaries (v0.29.17)
+
+A successful top-level `agent_end` does not by itself prove replay is safe. Pifrost checks unresolved tool IDs, ambiguous results and pending work before emitting its one-shot follow-up. OMP session switch, tree, branch, and compact events invalidate pending approvals. These guards cover Pifrost-originated continuation, **not** Bifrost's independent MCP retry engine. Compiled OMP 18.10.4/18.12.1 compatibility checks verify plugin installation, not live recovery-event parity. See [Release 5D](RELEASE_5D_LIFECYCLE_MCP_SAFETY.md).
