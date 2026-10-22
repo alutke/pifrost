@@ -1,9 +1,9 @@
-# OMP compatibility — Pifrost v0.29.13
+# OMP compatibility — Pifrost v0.29.14
 
 ## Tested contract and ownership
 
-- Packaged OpenMyPi libraries and policy snapshot: **18.12.1**. Keep pi-ai, pi-catalog, pi-natives, pi-utils and pi-coding-agent on exactly the same version. Never mix catalogue versions.
-- Compiled-host installation checks: historical minimum **18.10.4** and newer **18.12.1**, both checked by a downloaded binary with pinned SHA-256 digest.
+- Packaged OpenMyPi libraries and policy snapshot: **18.12.5**. Keep pi-ai, pi-catalog, pi-natives, pi-utils and pi-coding-agent on exactly the same version. Never mix catalogue versions.
+- Compiled-host installation checks: historical minimum **18.10.4**, previous **18.12.1**, and current **18.12.5**, both checked by a downloaded binary with pinned SHA-256 digest.
 - Release CI validates static public APIs, cold/warm provider registration, model and routing contracts, multi-protocol recovery, reasoning replay, configuration preservation, and plugin installation. Local mocked tests do **not** prove live provider throughput or Bifrost rule hits.
 - The OMP **main** canary is separate from release validation. Never use untagged main as the release's runtime policy snapshot.
 - OMP retains agent sessions, history, prewalk, compaction, advisor, native judgment and retry orchestration. Bifrost retains physical routing, CEL, credentials, quotas and fallback policy; `retry.modelFallback` stays false in OMP. Pifrost translates interface contracts, exposes conservative metadata and records evidence.
@@ -64,7 +64,7 @@ See [Integration support matrix](INTEGRATION_SUPPORT.md) for exact claims and li
 
 ## Release 4 integration boundaries (v0.29.13)
 
-The packaged OMP policy snapshot remains pinned to 18.12.1, with
+The Release 4 packaged OMP policy snapshot was pinned to 18.12.1, with
 historical minimum install compatibility checked against 18.10.4.
 Release 4 changes output-token budgeting, not transport replay or
 the host's native execution semantics. A physical exception enforces
@@ -73,3 +73,9 @@ physical member capacities diagnostic-only. Read
 [the updated output budget policy](OUTPUT_BUDGET.md) for fallback
 trade-offs and [the current support matrix](INTEGRATION_SUPPORT.md)
 for the difference between mocked checks and live conformance.
+
+## Release 5A package and compatibility baseline (v0.29.14)
+
+Pifrost now pins all five OMP packages and runtime policy snapshots to 18.12.5. The new compiled-host installation and plugin-loading gate uses OMP 18.12.5; the 18.10.4 minimum and 18.12.1 historical binaries remain independently tested. OMP manages judgment execution, agent lifecycle, tools, compaction and reasoning serialization. Bifrost 2.3.2 is the pinned HTTP public-contract baseline, with earlier tested contracts retained. A source compatibility check is not a live proof of physical fallback, MCP execution, quota or billed native judgment.
+
+No gateway database upgrade or persistent service is performed by Pifrost. The Bifrost 2.3.1 migration requires an independent backup/rehearsal, and 2.3.2 custom Go plugins require Go 1.27.3. See [Release 5A](RELEASE_5A_CONTRACT_FOUNDATION.md) for operator steps and the separation between code tests and deployment.

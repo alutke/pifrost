@@ -8,8 +8,8 @@ const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8")
 const cli = readFileSync(new URL("cli-lib.mjs", root), "utf8");
 const ci = readFileSync(new URL(".github/workflows/ci.yml", root), "utf8");
 
-test("OMP release A dependency and policy snapshots are aligned", () => {
-  const version = "18.12.1";
+test("OMP release 5A dependency and policy snapshots are aligned", () => {
+  const version = "18.12.5";
   assert.deepEqual(pkg.omp?.extensions, ["./native.ts"]);
   assert.equal(pkg.pi, undefined);
   for (const name of ["pi-ai", "pi-catalog", "pi-natives", "pi-utils"]) {
@@ -21,12 +21,14 @@ test("OMP release A dependency and policy snapshots are aligned", () => {
   assert.equal(pkg.devDependencies["@oh-my-pi/pi-coding-agent"], version);
   assert.equal(lock.packages[""].devDependencies["@oh-my-pi/pi-coding-agent"], version);
   assert.equal(lock.packages["node_modules/@oh-my-pi/pi-coding-agent"].version, version);
-  assert.match(cli, /PIFROST_OMP_POLICY_SNAPSHOT_VERSION\s*=\s*"18\.12\.1"/);
+  assert.match(cli, new RegExp(`PIFROST_OMP_POLICY_SNAPSHOT_VERSION\\s*=\\s*"${version.replaceAll(".", "\\.")}"`, "u"));
 });
 
 test("CI validates both supported legacy and current released OMP binaries", () => {
   assert.match(ci, /omp-18\.10\.4/);
   assert.match(ci, /omp-18\.12\.1/);
+  assert.match(ci, /omp-18\.12\.5/);
+  assert.match(ci, /fdbc8136084c9a10439569157b2af62312e2b0d801cab54c73e89476da798e7e/u);
   assert.match(ci, /sha256sum -c -/);
   assert.match(ci, /Validate minimum and current OMP contracts/);
 });

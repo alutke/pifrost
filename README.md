@@ -93,10 +93,10 @@ Read the [tested integration support matrix](docs/INTEGRATION_SUPPORT.md) and [j
 | Component | Requirement |
 | --- | --- |
 | Node.js | **22.19+** |
-| OhMyPi | **18.10.4+** minimum; validated with **18.12.1** |
-| Pifrost OMP policy snapshot | **18.12.1**, with versioned model-policy contracts; host integration validated separately |
+| OhMyPi | **18.10.4+** minimum; validated with **18.12.5** |
+| Pifrost OMP policy snapshot | **18.12.5**, with versioned model-policy contracts; host integration validated separately |
 | Maxim Bifrost | **2.2.4+** |
-| Recommended Bifrost | **2.3.0+** for requested-route provenance, per-target first-token deadlines, reasoning conversion and injected-tool list schema |
+| Recommended Bifrost | **2.3.2** for requested-route provenance, per-target first-token deadlines, reasoning conversion and injected-tool list schema |
 
 You also need:
 
@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.13
+0.29.14
 ```
 
 Bun also works:
@@ -692,3 +692,7 @@ Every OMP extension installation now owns an independently refreshed, atomic rou
 ### Release 4 — output capacity and documentation governance (v0.29.13)
 
 Output budgets for locally dispatched compatibility attempts now use the selected physical target's actual ceiling instead of the weakest fallback member. Native and opaque logical Bifrost aliases keep physical members diagnostic-only rather than imposing arbitrary gateway-wide caps. Exact physical endpoint limits and explicit user/operator caps still apply; a weaker fallback may reject a larger request and remains Bifrost's responsibility. Release-aware documentation checks keep support-matrix headings, package versions and pinned OMP dependencies consistent. New [security policy](SECURITY.md), [contributing guidance](CONTRIBUTING.md) and [.github/CODEOWNERS](.github/CODEOWNERS) accompany this release. [Release 4 details](docs/RELEASE_4_BUDGET_GOVERNANCE.md).
+
+### Release 5A — OMP/Bifrost contract refresh (v0.29.14)
+
+Pifrost pins OMP 18.12.5 across its five dependent packages and verifies historical OMP 18.10.4/18.12.1 plus current 18.12.5 installation contracts. Bifrost 2.3.2 is the pinned source/HTTP contract baseline, retaining earlier contracts. The Pifrost update itself neither deploys nor migrates Bifrost: assess the Bifrost 2.3.1 database migrations and Go 1.27.3 plugin rebuild requirements separately. Read [Release 5A](docs/RELEASE_5A_CONTRACT_FOUNDATION.md) and the [integration support matrix](docs/INTEGRATION_SUPPORT.md). Live provider/route/MCP execution still requires independent conformance.

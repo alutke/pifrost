@@ -10,7 +10,7 @@ export function validateDocumentation(contents) {
     "package.json","package-lock.json","README.md","docs/REFERENCE.md",
     "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
     "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","SECURITY.md",
+    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","SECURITY.md",
     "CONTRIBUTING.md",".github/CODEOWNERS",
   ];
   for (const file of required) if (typeof contents[file] !== "string") errors.push("Missing documentation contract: " + file);
@@ -36,8 +36,9 @@ export function validateDocumentation(contents) {
   const heading = {
     "docs/INTEGRATION_SUPPORT.md": "# Pifrost integration support — v" + version,
     "docs/OMP_COMPATIBILITY.md": "# OMP compatibility — Pifrost v" + version,
-    "docs/OUTPUT_BUDGET.md": "# Output-budget policy — Release 4 (v" + version + ")",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md": "# Release 4 — target-scoped budgets and living documentation (v" + version + ")",
+    "docs/OUTPUT_BUDGET.md": "# Output-budget policy — Release 4 behaviour, current v" + version,
+    "docs/RELEASE_4_BUDGET_GOVERNANCE.md": "# Release 4 — target-scoped budgets and living documentation (v0.29.13)",
+    "docs/RELEASE_5A_CONTRACT_FOUNDATION.md": "# Release 5A — OMP and Bifrost contract foundation (v" + version + ")",
   };
   for (const [file, prefix] of Object.entries(heading)) {
     if (!contents[file].startsWith(prefix + "\n")) errors.push(file + " has stale current-release heading");
@@ -50,7 +51,7 @@ export function validateDocumentation(contents) {
     if (!snapshot || versionPin !== snapshot) errors.push("OMP policy snapshot dependency mismatch: " + name);
   }
   const support = contents["docs/INTEGRATION_SUPPORT.md"];
-  for (const evidence of ["OMP " + snapshot,"18.10.4","18.12.1","Live physical provider","billable","mock"]) {
+  for (const evidence of ["OMP " + snapshot,"18.10.4","18.12.1","Live physical provider","billable","mock","Bifrost 2.3.2"]) {
     if (!support.includes(evidence)) errors.push("Support matrix omits evidence boundary: " + evidence);
   }
   if (!contents["SECURITY.md"].includes("privately") || !contents["SECURITY.md"].includes("Virtual Key")) {
@@ -71,7 +72,7 @@ export function checkDocumentation(directory = root) {
     "package.json","package-lock.json","README.md","docs/REFERENCE.md",
     "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
     "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","SECURITY.md",
+    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","SECURITY.md",
     "CONTRIBUTING.md",".github/CODEOWNERS",
   ];
   const files = Object.fromEntries(paths.map(path => [
