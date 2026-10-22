@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.18
+0.29.19
 ```
 
 Bun also works:
@@ -712,3 +712,7 @@ OMP planning-stall recovery now refuses unresolved or uncertain tool outcomes an
 ### Release 5E — gateway MCP integration safeguards (v0.29.18)
 
 Pifrost distinguishes native Responses tool search from Bifrost-owned Code Mode and injected discovery, warns about OpenAPI-derived operation permissions and provider injection collisions, and offers bounded read-only Code Mode result-shape and opt-in MCP progress diagnostics. No grants, Bifrost execution engine or OMP history are changed. See [Release 5E](docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md); live gateway conformance remains separately gated.
+
+### Release 5F — judgment, caching and cost certification (v0.29.19)
+
+`pifrost judge status` reports pinned OMP image bounds and verified Jev 1.14 box eligibility. `pifrost judge providers` checks Azure/Databricks catalog visibility without inference. The Responses bridge records 12-hour cache intent and Bifrost-reported 30m/12h counters without changing global cache policy. `/pifrost trace` identifies reported cost and physical-model evidence rather than guessing. Optional billed `pifrost judge probe --image --box` and `npm run smoke:cache` are separately gated. See [Release 5F](docs/RELEASE_5F_CERTIFICATION.md).
