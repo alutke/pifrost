@@ -108,7 +108,7 @@ jobs:
             "https://github.com/can1357/oh-my-pi/releases/download/v18.12.5/omp-linux-x64" \
             --output "$OMP_BIN"
           test -s "$OMP_BIN"
-          echo "OMP-18.12.5 SHA256 $(sha256sum "$OMP_BIN")"
+          echo "fdbc8136084c9a10439569157b2af62312e2b0d801cab54c73e89476da798e7e  $OMP_BIN" | sha256sum -c -
           chmod +x "$OMP_BIN"
           export HOME="$RUNNER_TEMP/omp-home-18125-binary"
           mkdir -p "$HOME"
