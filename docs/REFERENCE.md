@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.18
+0.29.19
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -421,3 +421,7 @@ Auto stalled-turn recovery remains one-shot and enabled by default, but it refus
 ## Release 5E — gateway MCP integration and inspection (v0.29.18)
 
 The Responses bridge distinguishes native deferred-tool search from explicitly gateway-owned discovery. The MCP CLI reports explicit OpenAPI-source registration and distinguishes underlying Code Mode operations from OMP-visible meta-tools. Provider-injected aliases and gateway-side approvals are diagnostic-only. Pure MCP result inspection preserves `structuredContent`, JSON-in-text and nested-error ambiguity; optional progress extraction only reads an existing bounded SSE response for the requesting host. See [Release 5E](RELEASE_5E_GATEWAY_MCP_INTEGRATION.md) for evidence and the no-daemon/no-grant-change contract.
+
+## Release 5F — judgment, Responses caching, cost and certification (v0.29.19)
+
+The read-only `pifrost judge status` invokes pinned OMP image bounds when available and identifies explicit Jev-1.14-only box eligibility; `pifrost judge providers` reports Azure/Databricks model visibility, not endpoint success. `pifrost judge probe --image --box` and `npm run smoke:cache` remain billed, explicit opt-ins. Pifrost traces only actual Responses 12h cache requests and reported Bifrost cache token usage, with unknown provider forwarding and spend never treated as verified. See [Release 5F](RELEASE_5F_CERTIFICATION.md).
