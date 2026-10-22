@@ -1,3 +1,10 @@
+## 0.29.18 — 2026-10-22
+
+- Release 5E: distinguish native Responses deferred tool search from Bifrost-managed Code Mode and injected-tool discovery; avoid duplicate tool-search definitions and ambiguous deferred names.
+- Recognize explicit OpenAPI-to-MCP client metadata and surface operation/grant/auto-execute risks without registration, permission changes or credential exposure.
+- Diagnose Code Mode structuredContent, JSON-in-text, double-encoded JSON, nested error markers and approval boundaries; report provider-injected alias collisions and keep Bifrost as execution authority.
+- Support strictly opt-in, token-filtered, bounded MCP progress inspection without polling, an MCP daemon, tool replay or asynchronous UI injection. Add deterministic integration tests and evidence boundaries.
+
 ## 0.29.17 — 2026-10-22
 
 - Release 5D: prevent Pifrost's one-shot OMP follow-up when tool outcomes are unresolved/ambiguous or a turn was cancelled/interrupted; invalidate pending approvals on session switch, branch, tree or compaction while preserving one-shot budget.
