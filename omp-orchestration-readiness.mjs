@@ -56,8 +56,21 @@ export function ompVersionAtLeast(version,min) {
   for(let i=0;i<3;i++){if(a[i]>b[i])return true;if(a[i]<b[i])return false;}
   return true;
 }
-export function assessOmpOrchestration({settings={},catalog,stale=false,hostVersion,selectedJudge}={}) {
+export function assessOmpOrchestration({settings={},catalog,stale=false,hostVersion,selectedJudge,policySnapshotVersion}={}) {
   const checks=[];
+  if (typeof policySnapshotVersion === "string" && policySnapshotVersion.trim()) {
+    const host = versionTuple(hostVersion);
+    const policy = versionTuple(policySnapshotVersion);
+    const comparable = host && policy;
+    const same = comparable && host.every((n,i) => n === policy[i]);
+    const newer = comparable && ompVersionAtLeast(hostVersion,policySnapshotVersion) === true && !same;
+    checks.push(check("omp-host-policy",same ? "ok" : newer ? "unknown" : comparable ? "warn" : "unknown",
+      "Host "+(hostVersion || "unavailable")+"; packaged OMP policy "+policySnapshotVersion+
+      (same ? " matches validated snapshot." : newer ? " is older than this host; newer host needs separate compatibility validation." :
+       comparable ? " is newer than this host; historical host installation is not complete feature conformance." :
+       " cannot be compared until a valid host version is available."),
+      same ? undefined : "pifrost doctor --verbose"));
+  }
   const roles=asRecord(value(settings,"modelRoles"));
   const enabled=value(settings,"enabledModels");
   const auto=value(settings,"prewalk.auto");
@@ -121,6 +134,7 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
     schemaVersion:1,
     status: checks.some(c=>c.status==="warn")?"attention":checks.some(c=>c.status==="unknown")?"unverified":"locally-compatible",
     hostVersion:typeof hostVersion==="string"?hostVersion:null,
+    policySnapshotVersion:typeof policySnapshotVersion==="string"?policySnapshotVersion:null,
     auto:typeof auto==="string"?auto:null,target:target??null,
     judgeSelector:typeof judgeRole==="string"?judgeRole:null,
     checks,
@@ -128,13 +142,14 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
       "Read-only local assessment. No settings, route, session or MCP permissions changed.",
       "OMP owns auto-prewalk classification, session isolation, model switching and advisor continuation.",
       "Bifrost owns physical routing and cost attribution; local aliases do not prove a gateway rule matched.",
-      "Locally compatible does not mean successful live judgment, handoff, or historical consultation."
+      "Locally compatible does not mean successful live judgment, handoff, or historical consultation.",
+      "Readiness does not query the live gateway version; use pifrost doctor --verbose to inspect Bifrost version evidence."
     ]
   };
 }
 export function formatOmpOrchestration(result,verbose=false) {
   const lines=["OMP orchestration readiness (local, read-only)",
-    "  Host: "+(result.hostVersion??"unavailable")+"; summary: "+result.status];
+    "  Host: "+(result.hostVersion??"unavailable")+"; packaged OMP policy: "+(result.policySnapshotVersion??"not supplied")+"; summary: "+result.status];
   for(const item of result.checks){
     lines.push("  ["+item.status.toUpperCase()+"] "+item.id+": "+item.message);
     if(item.action&&(verbose||item.status==="warn"))lines.push("    Check: "+item.action);
