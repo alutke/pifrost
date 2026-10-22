@@ -47,3 +47,29 @@ export function decisionProviderInventory(payload) {
   }
   return { source: "bifrost-read-only-models", providers: rows, decisionEndpoint: "unverified" };
 }
+
+/** Use pinned OMP exports as the sole native wire/model-bounds authority. */
+export async function resolvePinnedOmpJudgeCapabilities(judge, dependencies = {}) {
+  if (!judge || judge.imageEnabled !== true) return nativeJudgeCapabilityEvidence(judge);
+  try {
+    const api = dependencies.api ?? await import("@oh-my-pi/pi-ai");
+    const catalog = dependencies.catalog ?? await import("@oh-my-pi/pi-catalog");
+    const source = judge.api === "typesafe" ? "typesafe" : "openai";
+    const reference = catalog.getBundledModels(source).find(model =>
+      model.id === judge.model || model.id === (source === "openai" ? "gpt-6-luna-decisions" : "jev-latest"));
+    if (!reference || typeof api.nativeJudgmentImageBounds !== "function") {
+      return nativeJudgeCapabilityEvidence(judge);
+    }
+    const model = { ...reference, id: judge.model, api: judge.api, input: ["text", "image"] };
+    const bounds = api.nativeJudgmentImageBounds(model);
+    const result = nativeJudgeCapabilityEvidence(judge, bounds);
+    return {
+      ...result,
+      ompBoxWire: typeof api.nativeJudgmentSupportsBoxes === "function"
+        ? api.nativeJudgmentSupportsBoxes(model) === true ? "forwarded-by-wire" : "unavailable"
+        : "unverified",
+    };
+  } catch {
+    return nativeJudgeCapabilityEvidence(judge);
+  }
+}
