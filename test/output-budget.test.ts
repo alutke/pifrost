@@ -147,3 +147,43 @@ test("R4-04 confirmed fallback limit may be known but must not be copied to prim
   assert.equal(result.memberCount,2);
   assert.ok(!result.constraints.some(c=>c.tokens===393216));
 });
+
+test("P0: opaque Bifrost route enforces verified endpoint ceilings across affinity and fallbacks", () => {
+  const members = [
+    {reference:"OpenCode Go/deepseek-v4.1-flash",maxTokens:670395,source:"live"},
+    {reference:"CommandCode GOAT/deepseek/deepseek-v4.1-flash",maxTokens:670395,source:"bifrost-datasheet"},
+    {reference:"deepseek/deepseek-v4-flash",maxTokens:670395,source:"fallback"},
+  ];
+  const decision=resolveOutputBudget({
+    logicalModel:"omp-default",requestedTokens:670395,advertisedTokens:670395,
+    members,memberPolicy:"gateway",environment:{},
+  });
+  assert.equal(decision.effectiveTokens,393216);
+  assert.equal(decision.limitingSource,"confirmed-endpoint");
+  assert.equal(decision.verifiedMemberCount,2);
+  assert.deepEqual(clampOutputTokenFields({model:"omp-default",max_output_tokens:670395},decision),
+    {model:"omp-default",max_output_tokens:393216});
+});
+
+test("P0: gateway mode ignores speculative low fallbacks and leaves unrelated models capable", () => {
+  const decision=resolveOutputBudget({
+    logicalModel:"omp-default",requestedTokens:131072,advertisedTokens:131072,
+    members:[
+      {reference:"provider/primary",maxTokens:131072,source:"live"},
+      {reference:"provider/fallback",maxTokens:8192,source:"bifrost-datasheet"},
+    ],memberPolicy:"gateway",environment:{},
+  });
+  assert.equal(decision.effectiveTokens,131072);
+  assert.ok(!decision.constraints.some(c=>c.source==="live-member"||c.source==="catalog-member"));
+});
+
+test("P0: operator caps and explicit overrides never bypass the gateway's confirmed maximum", () => {
+  const decision=resolveOutputBudget({
+    logicalModel:"omp-default",requestedTokens:670395,explicit:true,
+    members:[{reference:"CommandCode GOAT/deepseek/deepseek-v4.1-flash",maxTokens:670395,source:"live"}],
+    memberPolicy:"gateway",environment:{PIFROST_OUTPUT_CAP_DEFAULT:"999999"},
+  });
+  assert.equal(decision.effectiveTokens,393216);
+  assert.equal(decision.reduced,true);
+  assert.equal(decision.explicit,true);
+});
