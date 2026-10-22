@@ -25,7 +25,7 @@ import {
   targetReference,
 } from "./dist/routing-core.js";
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
-import { postMcpJsonRpc } from "./mcp-rpc.mjs";
+import { postMcpJsonRpc, McpAmbiguousToolOutcomeError } from "./mcp-rpc.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import {
   mcpClientExecutionDiagnostics,
@@ -2122,6 +2122,7 @@ export async function listMcpGatewayTools(url, virtualKey, options = {}) {
       return {
         name,
         ...(nonEmpty(tool?.description) ? { description: nonEmpty(tool.description) } : {}),
+        ...(tool?.annotations && typeof tool.annotations === "object" ? { annotations: { ...tool.annotations } } : {}),
         ...(tool?.inputSchema && typeof tool.inputSchema === "object" ? { inputSchema: tool.inputSchema } : {}),
       };
     })
@@ -2142,7 +2143,10 @@ export async function callMcpGatewayTool(url, virtualKey, toolName, args = {}, o
     },
   };
   const response = await postMcpJsonRpc(bifrostMcpUrl(url), virtualKey, request, rpcOptions);
-  if (!response.ok) throw new Error(`Bifrost MCP tools/call failed for ${name} (HTTP ${response.status})`);
+  if (!response.ok) {
+    if (response.status >= 500) throw new McpAmbiguousToolOutcomeError();
+    throw new Error(`Bifrost MCP tools/call failed for ${name} (HTTP ${response.status})`);
+  }
   const body = response.body;
   if (body?.error) {
     throw new Error(`Bifrost MCP tools/call failed for ${name}: ${body.error.message ?? JSON.stringify(body.error)}`);
