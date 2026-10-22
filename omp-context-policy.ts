@@ -298,9 +298,9 @@ function anthropicRule(target: PifrostImageTokenTarget): ImageTokenization {
 }
 
 /**
- * Mirrors OMP 18.8.x's pure image-tokenization policy without importing
- * pi-agent-core/pi-natives. Pifrost historically removed that native dependency
- * because clean GitHub plugin installs cannot rely on OMP's native addon graph.
+ * Uses OMP 18.12.5's public catalog rule from native.ts when installed.
+ * Portable image pricing remains for standalone Node tests and partial hosts,
+ * without pulling OMP's native addons into the runtime's lightweight modules.
  */
 export function resolvePifrostImageTokenization(target: PifrostImageTokenTarget): ImageTokenization {
   try {
