@@ -36,7 +36,7 @@ export function validateDocumentation(contents) {
   const heading = {
     "docs/INTEGRATION_SUPPORT.md": "# Pifrost integration support — v" + version,
     "docs/OMP_COMPATIBILITY.md": "# OMP compatibility — Pifrost v" + version,
-    "docs/OUTPUT_BUDGET.md": "# Output-budget policy — Release 4 behaviour, current v" + version
+    "docs/OUTPUT_BUDGET.md": "# Output-budget policy — Release 4 behaviour, current v" + version,
     "docs/RELEASE_4_BUDGET_GOVERNANCE.md": "# Release 4 — target-scoped budgets and living documentation (v0.29.13)",
     "docs/RELEASE_5A_CONTRACT_FOUNDATION.md": "# Release 5A — OMP and Bifrost contract foundation (v" + version + ")",
   };
