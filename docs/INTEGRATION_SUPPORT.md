@@ -1,4 +1,4 @@
-# Pifrost integration support — v0.29.17
+# Pifrost integration support — v0.29.18
 
 This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.5**. Supported historical host installation: **OMP 18.10.4**; prior compiled host **18.12.1**; current host contract: **OMP 18.12.5**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **Bifrost 2.3.2** (including 2.3.0 historical fixtures).
 
@@ -90,3 +90,10 @@ For optional **read-only** live gateway image-budget inventory inspection, set `
 - A disposable local HTTP server commits a fixture record then drops the response or returns HTTP 503: Pifrost sends exactly one `tools/call`, reports `MCP_OUTCOME_UNCERTAIN`, and does not retry. This does not exercise Bifrost itself.
 - Bifrost [#8795](https://github.com/maximhq/bifrost/issues/8795) remains an upstream gateway retry bug. Read-only diagnostics identify auto-executable unknown or non-idempotent grants, without changing grants. Tool hints are advisory and cannot certify at-most-once execution.
 - Live physical gateway MCP retry behaviour and OMP historical host lifecycle semantics are **not verified** by these fixtures; explicit opt-in conformance remains necessary. No production mutations or billable provider requests were made.
+
+## Release 5E gateway MCP diagnostics (v0.29.18)
+
+- Native Responses deferred search remains capability gated, with no duplicate tool-search insertion or ambiguous definition rewrites. Explicit gateway-managed discovery stays under Bifrost rather than pretending to be Responses-native support.
+- OpenAPI MCP client-source hints and Code Mode underlying grants are derived only from management metadata. They do not prove live authentication, tool execution, operation safety, OMP approval visibility or provider-side retry behaviour.
+- Bounded Code Mode result-shape diagnostics, duplicate injected tool-name warnings and optional token-scoped progress parsing are deterministic unit-tested. Progress is post-response inspection, not a background stream.
+- Upstream Bifrost #8795 may still replay committed tools internally; this phase does not fix it. A separately approved disposable 2.3.2 deployment and actual OMP host are required for live conformance; no billable or mutating tests ran in CI.
