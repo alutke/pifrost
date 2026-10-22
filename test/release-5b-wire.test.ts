@@ -138,7 +138,7 @@ test("R5B-06 deferred tool and between-tools bridge retains identifiers and pres
   const body={model:"opaque",input:[{type:"reasoning",encrypted_content:"SIGNED"},{type:"function_call_output",call_id:"call-1",output:""}],
     tools:[{type:"function",name:"search",parameters:{type:"object"}},{type:"function",name:"read",defer_loading:true}],
     reasoning:{effort:"xhigh"},max_output_tokens:4096};
-  const result=bridgePifrostPayload(body,{deferredTools:new Set(["read"]),enableToolSearch:true}) as typeof body;
+  const result=bridgePifrostPayload(body,{deferredTools:new Set(["read"]),enableToolSearch:true}) as {input:unknown;reasoning:{effort:string};tools:{type:string;defer_loading?:boolean}[]};
   assert.deepEqual(result.input,body.input);
   assert.equal(result.reasoning.effort,"xhigh");
   assert.equal(result.tools.filter(x=>x.type==="tool_search").length,1);
