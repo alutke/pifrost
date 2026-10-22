@@ -72,7 +72,18 @@ export interface BifrostConfig {
 }
 
 export interface BifrostModelResponse {
-	data?: BifrostModel[];
+  data?: BifrostModel[];
+  next_page_token?: string;
+  has_more?: boolean;
+  key_statuses?: {status?: string; provider?: string}[];
+}
+
+/** Incomplete inventories must never be silently cached as a complete route universe. */
+export class BifrostModelInventoryIncompleteError extends Error {
+  constructor(reason: string) {
+    super("Bifrost model discovery incomplete: "+reason+"; retain the last known complete catalog and inspect provider inventory");
+    this.name="BifrostModelInventoryIncompleteError";
+  }
 }
 
 export interface BifrostModel {
@@ -562,34 +573,66 @@ function errorMessage(body: unknown): string | undefined {
 }
 
 export async function fetchBifrostModels(
-	config: BifrostConfig,
-	options: { fetch?: Fetch; signal?: AbortSignal } = {},
+  config: BifrostConfig,
+  options: { fetch?: Fetch; signal?: AbortSignal } = {},
 ): Promise<BifrostProviderModel[]> {
-	if (!config.virtualKey) throw new Error("BIFROST_VIRTUAL_KEY is required for model discovery");
+  if (!config.virtualKey) throw new Error("BIFROST_VIRTUAL_KEY is required for model discovery");
 
-	const fetchImpl = options.fetch ?? globalThis.fetch;
-	const requestHeaders = Object.fromEntries(
-		Object.entries(bifrostHeaders(config)).filter((entry): entry is [string, string] => entry[1] !== null),
-	);
-	const response = await fetchImpl(`${config.url}/models`, { headers: requestHeaders, signal: options.signal });
-
-	let body: unknown;
-	try {
-		body = await response.json();
-	} catch {
-		body = undefined;
-	}
-	if (!response.ok) {
-		const detail = errorMessage(body);
-		throw new Error(`Bifrost model discovery failed (${response.status})${detail ? `: ${detail}` : ""}`);
-	}
-
-	const data = (body as BifrostModelResponse | undefined)?.data;
-	if (!Array.isArray(data)) throw new Error("Bifrost model discovery returned an invalid response (expected data[])");
-	const models = data.map(toProviderModel).filter((entry): entry is BifrostProviderModel => entry !== undefined);
-	const uniqueModels = [...new Map(models.map((entry) => [entry.id, entry])).values()];
-	if (uniqueModels.length === 0) throw new Error("Bifrost did not return any chat-completion models");
-	return uniqueModels;
+  const fetchImpl=options.fetch ?? globalThis.fetch;
+  const headers=Object.fromEntries(
+    Object.entries(bifrostHeaders(config)).filter((entry): entry is [string,string] => entry[1] !== null),
+  );
+  // Bifrost exposes opaque next_page_token; do not assume the first
+  // successful /models response is exhaustive (upstream issue #8759).
+  // Bound the number of pages, not the number of models returned per page.
+  const models=new Map<string,BifrostProviderModel>();
+  const seenTokens=new Set<string>();
+  let token: string | undefined;
+  for(let page=0;page<100;page++){
+    const url=new URL(config.url.replace(/\\/$/u,"")+"/models");
+    if(token)url.searchParams.set("page_token",token);
+    const response=await fetchImpl(url.toString(),{headers,signal:options.signal});
+    let body: unknown;
+    try { body=await response.json(); } catch { body=undefined; }
+    if(!response.ok){
+      const detail=errorMessage(body);
+      throw new Error(`Bifrost model discovery failed (${response.status})${detail ? ": "+detail : ""}`);
+    }
+    if(!body || typeof body!=="object" || Array.isArray(body) ||
+      !Array.isArray((body as BifrostModelResponse).data)){
+      throw new BifrostModelInventoryIncompleteError("invalid data[] response");
+    }
+    const payload=body as BifrostModelResponse;
+    // Key failures may omit models without setting a pagination cursor.
+    // Fail visibly rather than silently deleting route members from cache.
+    if(payload.key_statuses?.some(item=>item.status==="failed")){
+      throw new BifrostModelInventoryIncompleteError("one or more provider keys failed inventory discovery");
+    }
+    for(const item of payload.data ?? []){
+      const model=toProviderModel(item);
+      if(model)models.set(model.id,model);
+    }
+    const next=payload.next_page_token;
+    if(next!==undefined && typeof next!=="string"){
+      throw new BifrostModelInventoryIncompleteError("invalid pagination cursor");
+    }
+    if(next && (next.length>2048 || seenTokens.has(next))){
+      throw new BifrostModelInventoryIncompleteError("repeated or invalid pagination cursor");
+    }
+    if(!next){
+      if(payload.has_more===true){
+        throw new BifrostModelInventoryIncompleteError("has_more reported without a next_page_token");
+      }
+      if(models.size===0)throw new Error("Bifrost did not return any chat-completion models");
+      return [...models.values()];
+    }
+    if(!(payload.data?.length)){
+      throw new BifrostModelInventoryIncompleteError("empty page with a continuation cursor");
+    }
+    seenTokens.add(next);
+    token=next;
+  }
+  throw new BifrostModelInventoryIncompleteError("pagination exceeded the bounded 100-page integrity check");
 }
 
 export function resolveAliasReferenceDetailed(
