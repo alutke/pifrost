@@ -135,7 +135,11 @@ test("R2-01 explicit notice mode never queues without manual approval", () => {
 	assert.equal(stalledTurnMode(""), "auto");
 	assert.equal(stalledTurnMode("AUTO"), "auto");
 	assert.equal(stalledTurnMode("notice"), "notice");
-	assert.equal(stalledTurnMode("1"), "notice");
+	for (const setting of ["1", "yes", "true", "on", "enabled", "enable"]) {
+		assert.equal(stalledTurnMode(setting), "auto", setting);
+	}
+	assert.equal(stalledTurnMode("manual"), "notice");
+	assert.equal(stalledTurnMode("invalid-value"), "notice");
 	for (const setting of ["off", "OFF", "disable", "disabled", "false", "no", "0"]) {
 		assert.equal(stalledTurnMode(setting), "off", setting);
 	}
