@@ -1,4 +1,4 @@
-# Output-budget policy — Release 4 behaviour, current v0.29.14
+# Output-budget policy — Release 4 behaviour, current v0.29.15
 
 Bifrost still owns physical provider selection, fallback order, virtual-key
 permissions, and accounting. Pifrost enforces request/output-token ceilings
@@ -72,3 +72,7 @@ These are deterministic tests of Pifrost's request policy. Real upstream
 acceptance depends on the gateway's live provider, model, entitlement and
 selected fallback; opt-in billable provider tests are still required to
 establish full live conformance.
+
+## Release 5B — gateway egress evidence
+
+An accepted Pifrost request and Pifrost's final-wire token cap do not prove Bifrost forwarded the cap to the physical provider. If Bifrost reports `max_tokens`, `max_completion_tokens` or `max_output_tokens` in `extra_fields.dropped_compat_plugin_params` or the `x-bifrost-dropped-compat-params` response header, `/pifrost trace` displays `gateway-dropped-output-cap=yes egress-limit=unverified`. Unknown egress remains unknown. The compatibility plugin and datasheet fixes belong in Bifrost (upstream issue #8765). HTTP 413 is terminal and must not trigger a second inference attempt.
