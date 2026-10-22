@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.15
+0.29.16
 ```
 
 ## Release 1 — execution safety (v0.29.9)
@@ -409,3 +409,7 @@ Before updating an actual gateway from 2.3.0, back up configuration and database
 ## Release 5B — inference protocol and gateway egress (v0.29.15)
 
 Pifrost records `REQUEST_TOO_LARGE` for Bifrost HTTP 413 and forbids ingress or physical retry. The Bifrost 2.3.2 header placement option is reflected in read-only gateway provenance and conversion diagnostics; a gateway-reported dropped `max_*` token field is flagged as unverified physical cap enforcement. `xhigh` is preserved when supported by OMP's real physical policy; no default provider-wide reasoning downgrade is introduced. The [release contract](RELEASE_5B_INFERENCE_HARDENING.md) separates mocked transport tests from optional live physical egress evidence.
+
+## Release 5C — image-tokenization and discovery integrity (v0.29.16)
+
+Prewalk candidate image billing uses the public OMP 18.12.5 `resolveImageTokenization` and `imageTokens` contract. DeepSeek V4.1 Flash uses its vendor grid rather than generic OpenAI/Claude patches, with bounded fallback for incomplete host/metadata. A verified provider usage anchor is retained only for the exact physical serving identity. `fetchBifrostModels()` consumes explicit `next_page_token` pagination and refuses repeated/missing cursors or provider-key failures; a last-known-good cache is not overwritten by an incomplete refresh. [Release 5C](RELEASE_5C_CONTEXT_DISCOVERY.md) describes evidence and constraints.
