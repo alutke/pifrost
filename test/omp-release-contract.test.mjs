@@ -8,8 +8,8 @@ const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8")
 const cli = readFileSync(new URL("cli-lib.mjs", root), "utf8");
 const ci = readFileSync(new URL(".github/workflows/ci.yml", root), "utf8");
 
-test("OMP release A dependency and policy snapshots are aligned", () => {
-  const version = "18.12.1";
+test("OMP release 5A dependency and policy snapshots are aligned", () => {
+  const version = "18.12.5";
   assert.deepEqual(pkg.omp?.extensions, ["./native.ts"]);
   assert.equal(pkg.pi, undefined);
   for (const name of ["pi-ai", "pi-catalog", "pi-natives", "pi-utils"]) {
@@ -27,6 +27,7 @@ test("OMP release A dependency and policy snapshots are aligned", () => {
 test("CI validates both supported legacy and current released OMP binaries", () => {
   assert.match(ci, /omp-18\.10\.4/);
   assert.match(ci, /omp-18\.12\.1/);
+  assert.match(ci, /omp-18\.12\.5/);
   assert.match(ci, /sha256sum -c -/);
   assert.match(ci, /Validate minimum and current OMP contracts/);
 });
