@@ -169,8 +169,8 @@ export function mcpClientExecutionDiagnostics(client, grantedTools = ["*"]) {
     const annotatedReadOnly = annotations?.readOnlyHint === true && annotations?.destructiveHint !== true;
     const annotatedIdempotent = annotations?.idempotentHint === true;
     const explicitlyNonIdempotent = annotations?.idempotentHint === false;
-    const risk = annotatedReadOnly ? "annotated-read-only" :
-      explicitlyNonIdempotent ? "non-idempotent" :
+    const risk = explicitlyNonIdempotent ? "non-idempotent" :
+      annotatedReadOnly ? "annotated-read-only" :
       annotatedIdempotent ? "annotated-idempotent" : "unverified";
     return { tool: row.tool, risk, requiresReview: risk === "non-idempotent" || risk === "unverified" };
   });
