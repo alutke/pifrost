@@ -589,7 +589,7 @@ export async function fetchBifrostModels(
   const seenTokens=new Set<string>();
   let token: string | undefined;
   for(let page=0;page<100;page++){
-    const url=new URL(config.url.replace(/\\/$/u,"")+"/models");
+    const url=new URL(config.url.replace(/[/]$/u,"")+"/models");
     if(token)url.searchParams.set("page_token",token);
     const response=await fetchImpl(url.toString(),{headers,signal:options.signal});
     let body: unknown;
