@@ -10,7 +10,7 @@ export function validateDocumentation(contents) {
     "package.json","package-lock.json","README.md","docs/REFERENCE.md",
     "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
     "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","SECURITY.md",
+    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","SECURITY.md",
     "CONTRIBUTING.md",".github/CODEOWNERS",
   ];
   for (const file of required) if (typeof contents[file] !== "string") errors.push("Missing documentation contract: " + file);
@@ -40,7 +40,8 @@ export function validateDocumentation(contents) {
     "docs/RELEASE_4_BUDGET_GOVERNANCE.md": "# Release 4 — target-scoped budgets and living documentation (v0.29.13)",
     "docs/RELEASE_5A_CONTRACT_FOUNDATION.md": "# Release 5A — OMP and Bifrost contract foundation (v0.29.14)",
     "docs/RELEASE_5B_INFERENCE_HARDENING.md": "# Release 5B — inference wire and output-budget hardening (v0.29.15)",
-    "docs/RELEASE_5C_CONTEXT_DISCOVERY.md": "# Release 5C — OMP image accounting and Bifrost catalogue completeness (v" + version + ")",
+    "docs/RELEASE_5C_CONTEXT_DISCOVERY.md": "# Release 5C — OMP image accounting and Bifrost catalogue completeness (v0.29.16)",
+    "docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md": "# Release 5D — OMP lifecycle recovery and MCP replay safety (v" + version + ")",
   };
   for (const [file, prefix] of Object.entries(heading)) {
     if (!contents[file].startsWith(prefix + "\n")) errors.push(file + " has stale current-release heading");
@@ -74,7 +75,7 @@ export function checkDocumentation(directory = root) {
     "package.json","package-lock.json","README.md","docs/REFERENCE.md",
     "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
     "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","SECURITY.md",
+    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","SECURITY.md",
     "CONTRIBUTING.md",".github/CODEOWNERS",
   ];
   const files = Object.fromEntries(paths.map(path => [
