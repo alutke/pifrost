@@ -10,6 +10,7 @@ const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
 const readme = readFileSync(new URL("README.md", root), "utf8");
 const reference = readFileSync(new URL("docs/REFERENCE.md", root), "utf8");
 const integrationSupport = readFileSync(new URL("docs/INTEGRATION_SUPPORT.md", root), "utf8");
+if (!integrationSupport.includes("Bifrost 2.3.2")) throw new Error("Current Bifrost 2.3.2 contract must appear in the support matrix");
 if (!integrationSupport.includes(`OMP ${pkg.dependencies["@oh-my-pi/pi-ai"]}`) || !integrationSupport.includes("18.10.4") ||
     !integrationSupport.includes("billable")) throw new Error("Integration support matrix must document host and live-test limits");
 const cliLib = readFileSync(new URL("cli-lib.mjs", root), "utf8");
