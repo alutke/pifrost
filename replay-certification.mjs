@@ -5,12 +5,11 @@
  * reasoning compatibility checks; never invent/strip tool calls or opaque state.
  */
 const rec = x => x !== null && typeof x === "object" && !Array.isArray(x) ? x : null;
-const generated = x => typeof x === "string" && /^(?:msg_|item_)[A-Za-z0-9_-]+_reasoning$/u.test(x);
 const signed = item => {
   const x=rec(item);
   if(!x)return false;
   if (["encrypted_content","textSignature","thinkingSignature","signature","signature_delta"].some(k=>
-      Object.hasOwn(x,k) && x[k] != null && !generated(x[k]))) return true;
+      Object.hasOwn(x,k) && x[k] != null)) return true;
   return false;
 };
 function unsafeMessage(item){
