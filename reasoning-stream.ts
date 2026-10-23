@@ -27,6 +27,7 @@ function isUnsignedOrSyntheticId(event: Extract<AssistantMessageEvent, { type: "
 
 export interface ReasoningHygieneCounters {
   replayRemoved: number;
+  replayUncertifiedPreserved: number;
   replayMixedRewritten: number;
   replayNestedRewritten: number;
   replayProseRewritten: number;
@@ -43,7 +44,7 @@ export interface ReasoningHygieneCounters {
 }
 export function newReasoningHygieneCounters(): ReasoningHygieneCounters {
   return {
-    replayRemoved: 0, replayMixedRewritten: 0,
+    replayRemoved: 0, replayUncertifiedPreserved: 0, replayMixedRewritten: 0,
     replayNestedRewritten: 0, replayProseRewritten: 0, replayAmbiguousRetained: 0,
     replayStructuredRetained: 0, rawReasoningSseFrames: 0,
     rawReasoningMarkerFrames: 0, outputThinkingDeltas: 0,
