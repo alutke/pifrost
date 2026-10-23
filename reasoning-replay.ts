@@ -15,6 +15,14 @@ function record(value: unknown): JsonRecord | undefined {
     ? value as JsonRecord : undefined;
 }
 
+/** Unknown native/opaque assistant fields must not be projected into a
+ * different replay representation. Synthetic marker hygiene is optional. */
+function hasOpaqueSignature(item: JsonRecord): boolean {
+  return typeof item.id === "string" ||
+    ["encrypted_content","signature","thinkingSignature","textSignature","signature_delta"].some(key =>
+      Object.hasOwn(item,key) && item[key] != null);
+}
+
 // OMP sometimes serialises a nested opening <think> around its fallback.
 // The entire message is still synthetic; retain a safe ambiguous turn below.
 const PURE_SYNTHETIC_THINKING = /^\s*(?:<think>\s*)+reasoning unavailable\s*<\/think>\s*$/u;
@@ -28,9 +36,9 @@ const MIXED_SYNTHETIC_PREFIX = /^(\s*<think>\s*)(?:(?:<think>\s*)*reasoning unav
 function mixedSyntheticReplacement(value: unknown): JsonRecord | undefined {
   const item = record(value);
   if (item?.type !== "message" || item.role !== "assistant" ||
-      !Array.isArray(item.content) || item.content.length !== 1) return undefined;
+      hasOpaqueSignature(item) || !Array.isArray(item.content) || item.content.length !== 1) return undefined;
   const block = record(item.content[0]);
-  if (block?.type !== "output_text" || typeof block.text !== "string" ||
+  if (block?.type !== "output_text" || hasOpaqueSignature(block) || typeof block.text !== "string" ||
       (Array.isArray(block.annotations) && block.annotations.length > 0)) return undefined;
   const cleaned = block.text.replace(MIXED_SYNTHETIC_PREFIX, "$1");
   return cleaned !== block.text && cleaned.trim().length > 0
@@ -42,9 +50,9 @@ function mixedSyntheticReplacement(value: unknown): JsonRecord | undefined {
 function isRedundantAssistantPlaceholder(value: unknown): boolean {
   const item = record(value);
   if (item?.type !== "message" || item.role !== "assistant" ||
-      !Array.isArray(item.content) || item.content.length !== 1) return false;
+      hasOpaqueSignature(item) || !Array.isArray(item.content) || item.content.length !== 1) return false;
   const block = record(item.content[0]);
-  if (block?.type !== "output_text" || typeof block.text !== "string") return false;
+  if (block?.type !== "output_text" || hasOpaqueSignature(block) || typeof block.text !== "string") return false;
   if (Array.isArray(block.annotations) && block.annotations.length > 0) return false;
   return PURE_SYNTHETIC_THINKING.test(block.text);
 }
@@ -205,7 +213,7 @@ export function normalizeCompletionsReplay(payload: unknown): ResponsesReplayHyg
   let rewrittenProseMessages = 0;
   const messages = body.messages.map((raw: unknown) => {
     const item = record(raw);
-    if (item?.role !== "assistant" || typeof item.content !== "string") return raw;
+    if (item?.role !== "assistant" || hasOpaqueSignature(item) || typeof item.content !== "string") return raw;
     const synthetic = item.reasoning_content === "reasoning unavailable" ||
       item.reasoning_text === "reasoning unavailable" ||
       item.reasoning === "reasoning unavailable";
