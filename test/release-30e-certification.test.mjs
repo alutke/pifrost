@@ -35,6 +35,8 @@ test("30E: preserves unknown native signatures, opaque content, tool IDs and too
  }
  const native={input:[{...reasoning(),encrypted_content:"opaque"},call("a")]};
  assert.equal(certifyReplayHygiene(native,{input:[call("a")]},"openai-responses").accepted,false);
+ const signedLikeGenerated={input:[{...synthetic(),signature:"msg_123_reasoning"},call("a")]};
+ assert.equal(certifyReplayHygiene(signedLikeGenerated,{input:[call("a")]},"openai-responses").accepted,false);
  const signed={input:[{...synthetic(),id:"msg-signed"},call("a")]};
  assert.equal(certifyReplayHygiene(signed,{input:[call("a")]},"openai-responses").accepted,false);
 });
