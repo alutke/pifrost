@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.23",
+  "version": "0.29.24",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -93,6 +93,11 @@
     "execution-checkpoint.d.mts",
     "checkpoint-mirror.mjs",
     "checkpoint-mirror.d.mts",
+    "intelligent-stall-recovery.mjs",
+    "intelligent-stall-recovery.d.mts",
+    "recovery-fallback.mjs",
+    "recovery-fallback.d.mts",
+    "docs/RELEASE_30D_INTELLIGENT_RECOVERY.md",
     "checkpoint-lifecycle.mjs",
     "checkpoint-lifecycle.d.mts",
     "docs/RELEASE_30C_DURABLE_CHECKPOINTS.md",
