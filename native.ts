@@ -1335,7 +1335,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 					ctx.ui.notify("Checkpoints are managed only in an interactive top-level OMP session.", "warning");
 					return;
 				}
-				const parts = raw.split(/\\s+/u).slice(1);
+				const parts = raw.split(/\s+/u).slice(1);
 				const action = parts[0]?.toLowerCase() ?? "status";
 				try {
 					if (action === "status") {
