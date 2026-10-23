@@ -84,6 +84,7 @@ import { intelligentRecoveryMode, planIntelligentRecovery, formatIntelligentReco
 import { configuredRecoveryFallbackRole, recoveryFamilyCandidate } from "./recovery-fallback.mjs";
 import { inspectAgentEnd, inspectContextUsage } from "./execution-observation.mjs";
 import { createCheckpointLifecycle } from "./checkpoint-lifecycle.mjs";
+import { diagnoseExecutionBranch, formatExecutionDiagnosis } from "./execution-certification.mjs";
 import { createRuntimeRouteState, type RuntimeRouteSnapshot } from "./runtime-route-state.ts";
 import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
 import { handleRecoveryCommand } from "./recovery-command.ts";
@@ -1431,8 +1432,21 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				if(ctx.agent.kind!=="main"){
 					ctx.ui.notify("Recovery status belongs to the main OMP session.", "warning"); return;
 				}
+				if (/^recovery\\s+diagnose$/iu.test(raw)) {
+					try {
+						const usage=ctx.getContextUsage?.();
+						ctx.ui.notify(formatExecutionDiagnosis(diagnoseExecutionBranch({
+							branch:ctx.sessionManager.getBranch(),sessionId:ctx.sessionManager.getSessionId(),
+							cwd:ctx.cwd,contextTokens:usage?.tokens,contextWindow:usage?.contextWindow,
+							mode:intelligentMode,
+						})), "info");
+					} catch {
+						ctx.ui.notify("Pifrost: execution diagnosis unavailable; no branch data exposed.","warning");
+					}
+					return;
+				}
 				if(!/^(?:recovery|recovery\\s+status)$/iu.test(raw)){
-					ctx.ui.notify("Usage: /pifrost recovery status", "warning");return;
+					ctx.ui.notify("Usage: /pifrost recovery [status|diagnose]", "warning");return;
 				}
 				try {
 					ctx.ui.notify(formatIntelligentRecoveryStatus({
