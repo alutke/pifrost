@@ -2541,7 +2541,7 @@ const COMMANDS = new Map([
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
   ["global configure-omp", (_args, flags) => {
     if(flags["dry-run"]){console.log(operationSummary("Read-only preview",["Would apply Pifrost-owned OMP configuration with backup"]));return;}
-    const result = configureOmp();
+    const result = configureOmp(readCatalog().cache?.models ?? []);
     console.log(`Configured ${result.settings} OMP settings.`);
     if (result.backup) console.log(`Backup: ${result.backup}`);
   }],
