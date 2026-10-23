@@ -127,6 +127,7 @@ import {
 	formatPifrostOmpWrites,
 	normalizePifrostOmpSetting,
 	readPifrostOmpProfile,
+	readPifrostOmpSetting,
 	writePifrostOmpSetting,
 } from "./omp-cfg.ts";
 import {
