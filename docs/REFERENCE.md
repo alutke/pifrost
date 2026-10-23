@@ -5,7 +5,7 @@ Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start
 Expected for this release:
 
 ```text
-0.29.21
+0.29.22
 ```
 
 ## Release 1 — execution safety (v0.29.9)
