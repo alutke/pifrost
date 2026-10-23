@@ -1,3 +1,12 @@
+## 0.29.23 — 2026-10-23
+
+- Release 30C: branch-specific durable execution checkpoints using OMP's custom session journal and a secondary atomic private 0600 disk mirror.
+- Auto-record long-plan SHA-256 references and unverified tool-result activity, without copying model prompts/tool payloads or treating HTTP/tool success as task verification.
+- Restore the active branch's latest valid checkpoint on OMP session start, compaction, branch/tree change and session switch; no stale cross-branch or cross-session state.
+- Add explicit /pifrost checkpoint begin/attempt/verify/fail/complete/supersede/status/resume controls. Verification requires a bounded operator-supplied evidence reference, and resume only prepares an editor draft after idle-safety checks.
+- Include deterministic tests for 118K-character plans, branch rewinds, interrupted tool activity, restart, atomic mirror writes and no automatic replay; document semantics, limitations and rollback.
+- No background service, automatic work replay, new model routing, cloud storage or silently inferred milestone completion. Agent recovery and auto-continuance remain Release 30D.
+
 ## 0.29.22 — 2026-10-23
 
 - Release 30B: add an OMP-native, additive context-threshold planner for Bifrost roles, with fixed 120K main / 64K advisor triggers when alias window hints provide sufficient headroom, otherwise window-relative 65% thresholds.
