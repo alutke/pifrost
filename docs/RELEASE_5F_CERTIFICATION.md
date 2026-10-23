@@ -1,4 +1,4 @@
-# Release 5F — judgment, cache, cost and compatibility certification (v0.29.20)
+# Release 5F — judgment, cache, cost and compatibility certification (v0.29.21)
 
 Release 5F retains the pinned OMP 18.12.5 and Bifrost 2.3.2 source-level contract. It does not install a daemon, change the provider/fallback order, start paid probes by default, rewrite reasoning history, enable global caching, add arbitrary output caps or expand MCP grants.
 

@@ -80,6 +80,7 @@ import {
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
 import { createStalledTurnRecoveryCoordinator, stalledTurnMode } from "./stalled-turn-recovery.ts";
+import { inspectAgentEnd, inspectContextUsage } from "./execution-observation.mjs";
 import { createRuntimeRouteState, type RuntimeRouteSnapshot } from "./runtime-route-state.ts";
 import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
 import { handleRecoveryCommand } from "./recovery-command.ts";
@@ -956,6 +957,8 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		logicalModel => runtimeRouteState.capture().dynamicRoutes.get(logicalModel.toLowerCase()),
 	);
 	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
+	// Release 30A: one read-only observation per session, not a second retry actor.
+	const warnedExecutionSessions = new Set<string>();
 	await installOmpNativeTextTokenCounter();
   // Use OMP 18.12.5's exported lineage image-tokenization contract.
   installPifrostImageTokenPolicy(resolveImageTokenization, imageTokens);
@@ -1197,6 +1200,22 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				if (ctx.hasUI) ctx.ui.notify(message, level);
 			},
 		});
+		// Diagnose successful but nonproductive agent settlements. This is not
+		// an assertion that a plan remains incomplete, nor permission to retry.
+		if (ctx.agent.kind === "main" && ctx.hasUI && !event.willContinue &&
+			!event.awaitingAsyncWork && !ctx.hasPendingMessages() &&
+			!warnedExecutionSessions.has(sessionId)) {
+			const observed = inspectAgentEnd(event);
+			const usage = typeof ctx.getContextUsage === "function" ? ctx.getContextUsage() : undefined;
+			const context = inspectContextUsage(usage?.tokens, usage?.contextWindow);
+			if (observed.diagnostic === "SUSPECT_NONPRODUCTIVE_SETTLEMENT") {
+				warnedExecutionSessions.add(sessionId);
+				ctx.ui.notify("Pifrost 30A: model stopped after tool activity with no actionable output (" +
+					observed.output.reason + "). Task completion is unverified; inspect the TODOs and /pifrost stalled status. " +
+					(context.inputTokens !== null ? "OMP estimated context: " + context.inputTokens + " tokens." :
+					"OMP context estimate unavailable."), "warning");
+			}
+		}
 		// Terminal failures get one advisory notice only; Pifrost does not
 		// enqueue a retry, re-run tools or alter OMP's pending message queue.
 		if (ctx.agent.kind === "main" && ctx.hasUI && !event.willContinue &&
@@ -1231,6 +1250,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		releaseAgentSession(sessionId);
 		releasePifrostRouteTraces(sessionId);
 		stalledTurnRecovery.onSessionEnd(sessionId);
+		warnedExecutionSessions.delete(sessionId);
 		recoveryNotices.release(sessionId);
 	});
 

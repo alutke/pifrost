@@ -2303,6 +2303,7 @@ function commandOmpReadiness(flags = {}) {
     settings, catalog: cache, stale: stale === true,
     hostVersion: getOmpVersion(), selectedJudge,
     policySnapshotVersion: PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
+    stalledMode: process.env.PIFROST_STALLED_TURN_MODE,
   });
   if (flags.json) console.log(JSON.stringify(result));
   else console.log(formatOmpOrchestration(result, flags.verbose === true));
