@@ -1299,8 +1299,14 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		// ONE OMP-owned follow-up. Never retry the provider response or replay tools.
 		// Previous one-shot recovery remains a compatibility path ONLY when no
 		// active 30C checkpoint owns this task. It must never compete with 30D.
-		let checkpointOwnsRecovery = true; // unreadable OMP history: fail closed
-		try { checkpointOwnsRecovery = checkpointLedger.read(ctx)?.status === "active"; } catch {}
+		// Older host surfaces without getBranch cannot run 30D. Retain the
+		// existing one-shot compatibility path, with its independent safety
+		// gates. If the journal exists but cannot be read, fail closed.
+		let checkpointOwnsRecovery = typeof ctx.sessionManager.getBranch === "function";
+		if(checkpointOwnsRecovery) {
+			try { checkpointOwnsRecovery = checkpointLedger.read(ctx)?.status === "active"; }
+			catch { checkpointOwnsRecovery = true; }
+		}
 		if(intelligentMode === "auto" && !checkpointOwnsRecovery) stalledTurnRecovery.onAgentEnd(event, {
 			sessionId,
 			isMain: ctx.agent.kind === "main",
