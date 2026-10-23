@@ -79,7 +79,9 @@ import {
 	estimateOmpContextInputTokens,
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
-import { createStalledTurnRecoveryCoordinator, stalledTurnMode } from "./stalled-turn-recovery.ts";
+import { createStalledTurnRecoveryCoordinator, stalledTurnMode, uncertainToolOutcome } from "./stalled-turn-recovery.ts";
+import { intelligentRecoveryMode, planIntelligentRecovery, formatIntelligentRecoveryStatus, PIFROST_RECOVERY_ATTEMPT_TYPE } from "./intelligent-stall-recovery.mjs";
+import { configuredRecoveryFallbackRole, recoveryFamilyCandidate } from "./recovery-fallback.mjs";
 import { inspectAgentEnd, inspectContextUsage } from "./execution-observation.mjs";
 import { createCheckpointLifecycle } from "./checkpoint-lifecycle.mjs";
 import { createRuntimeRouteState, type RuntimeRouteSnapshot } from "./runtime-route-state.ts";
@@ -961,6 +963,9 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 	// Release 30A: one read-only observation per session, not a second retry actor.
 	const warnedExecutionSessions = new Set<string>();
+	const intelligentMode = intelligentRecoveryMode(process.env.PIFROST_RECOVERY_MODE, process.env.PIFROST_STALLED_TURN_MODE);
+	const alternateRecoveryRole = configuredRecoveryFallbackRole(process.env.PIFROST_RECOVERY_FALLBACK_ROLE);
+	const exhaustedRecoveryNotices = new Set<string>();
 	// 30C: OMP appendEntry persists branch-specific non-model checkpoint metadata.
 	// The atomic file mirror is secondary evidence, never authoritative after rewinds.
 	const checkpointLedger = createCheckpointLifecycle({
@@ -1200,6 +1205,80 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		);
 	}
 
+	// 30D: OMP session_stop is the only automatic checkpoint-aware continuation
+	// boundary. Its own native retries, advisor/async work and compaction have
+	// already been handled; never enqueue a competing agent_end follow-up.
+	pi.on("session_stop", async (event, ctx) => {
+		if (ctx.agent.kind !== "main") return;
+		const sessionId = ctx.sessionManager.getSessionId();
+		let decision;
+		try {
+			decision = planIntelligentRecovery({
+				event,branch:ctx.sessionManager.getBranch(),sessionId,cwd:ctx.cwd,
+				mode:intelligentMode,
+				queued:ctx.hasPendingMessages(),
+				running:(ctx.getAsyncJobSnapshot()?.running.length ?? 0)>0,
+				uncertainTools:uncertainToolOutcome(event.messages),
+				contextTokens:ctx.getContextUsage()?.tokens,
+				contextWindow:ctx.getContextUsage()?.contextWindow,
+				allowModelFallback:Boolean(alternateRecoveryRole),
+			});
+		} catch {
+			if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: recovery assessment unavailable; OMP settles normally.", "warning");
+			return;
+		}
+		if(decision.action==="none")return;
+		if(decision.action==="notice") {
+			if(ctx.hasUI && !exhaustedRecoveryNotices.has(sessionId)){
+				exhaustedRecoveryNotices.add(sessionId);
+				ctx.ui.notify("Pifrost 30D: nonproductive stop with unfinished checkpoint; notice mode leaves continuation to the operator. /pifrost recovery status", "warning");
+			}
+			return;
+		}
+		if(decision.action==="exhausted"){
+			if(ctx.hasUI && !exhaustedRecoveryNotices.has(sessionId)){
+				exhaustedRecoveryNotices.add(sessionId);
+				ctx.ui.notify("Pifrost 30D: bounded continuation ended ("+decision.reason+
+				"). Inspect /pifrost checkpoint status, git status and /pifrost recovery status. No tool replay or model switch was attempted.", "error");
+			}
+			return;
+		}
+		if(event.signal.aborted || !decision.record || !decision.additionalContext)return;
+		let alternate: Model | undefined;
+		if(decision.stage==="model"){
+			if(!alternateRecoveryRole) return;
+			const current=ctx.models.current();
+			const resolved=ctx.models.resolve(alternateRecoveryRole);
+			if(!current || !resolved ||
+				!recoveryFamilyCandidate(current,resolved,model=>ctx.models.family(model))){
+				if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: third-stage fallback unavailable or model family unverified; stopping safely.", "warning");
+				return;
+			}
+			alternate=resolved;
+		}
+		try {
+			// Journal the consumed budget BEFORE any continuation or model switch.
+			// Branch rewinds remove this record; mere process restarts do not.
+			pi.appendEntry(PIFROST_RECOVERY_ATTEMPT_TYPE,decision.record);
+		} catch {
+			if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: attempt journal unavailable; no continuation.", "error");
+			return;
+		}
+		if(alternate) {
+			if(event.signal.aborted)return;
+			let changed=false;
+			try { changed=await pi.setModel(alternate); } catch { /* fail closed */ }
+			if(!changed) {
+				if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: authorized fallback model could not be selected; no further automatic retry.", "warning");
+				return;
+			}
+		}
+		if(event.signal.aborted)return;
+		if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: OMP-owned continuation "+decision.attempts+"/3 ("+decision.stage+
+			"). Inspect workspace state before repeating any side effect.", "warning");
+		return { continue:true, additionalContext:decision.additionalContext };
+	});
+
 	// OMP exposes manual compaction to extension contexts. Schedule the check
 	// after a turn (and when a session is opened) instead of awaiting compaction
 	// inside an extension event handler: LLM-backed compaction can legitimately
@@ -1218,7 +1297,18 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		bindAgentSession(sessionId, ctx.agent);
 		// Only a high-confidence, successful terminal planning leak can request
 		// ONE OMP-owned follow-up. Never retry the provider response or replay tools.
-		stalledTurnRecovery.onAgentEnd(event, {
+		// Previous one-shot recovery remains a compatibility path ONLY when no
+		// active 30C checkpoint owns this task. It must never compete with 30D.
+		// Older host surfaces without getBranch cannot run 30D. Retain the
+		// existing one-shot compatibility path, with its independent safety
+		// gates. If the journal exists but cannot be read, fail closed.
+		let checkpointOwnsRecovery = typeof ctx.sessionManager.getBranch === "function";
+		if(checkpointOwnsRecovery) {
+			try { checkpointOwnsRecovery = checkpointLedger.read(ctx)?.status === "active"; }
+			catch { checkpointOwnsRecovery = true; }
+		}
+		if(!checkpointOwnsRecovery && intelligentMode !== "off" &&
+			(intelligentMode === "auto" || stalledTurnRecovery.mode === "notice")) stalledTurnRecovery.onAgentEnd(event, {
 			sessionId,
 			isMain: ctx.agent.kind === "main",
 			hasQueuedMessages: (typeof ctx.hasPendingMessages === "function" && ctx.hasPendingMessages()) || (
@@ -1308,6 +1398,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		releasePifrostRouteTraces(sessionId);
 		stalledTurnRecovery.onSessionEnd(sessionId);
 		warnedExecutionSessions.delete(sessionId);
+		exhaustedRecoveryNotices.delete(sessionId);
 		recoveryNotices.release(sessionId);
 	});
 
@@ -1330,6 +1421,23 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				});
 			};
 
+			if (command === "recovery") {
+				if(ctx.agent.kind!=="main"){
+					ctx.ui.notify("Recovery status belongs to the main OMP session.", "warning"); return;
+				}
+				if(!/^(?:recovery|recovery\\s+status)$/iu.test(raw)){
+					ctx.ui.notify("Usage: /pifrost recovery status", "warning");return;
+				}
+				try {
+					ctx.ui.notify(formatIntelligentRecoveryStatus({
+						branch:ctx.sessionManager.getBranch(),sessionId:ctx.sessionManager.getSessionId(),
+						cwd:ctx.cwd,mode:intelligentMode,
+					}),"info");
+				} catch {
+					ctx.ui.notify("Recovery journal unavailable; automatic continuation is blocked.", "warning");
+				}
+				return;
+			}
 			if (command === "checkpoint") {
 				if (ctx.agent.kind !== "main" || ctx.mode !== "tui" || !ctx.hasUI) {
 					ctx.ui.notify("Checkpoints are managed only in an interactive top-level OMP session.", "warning");
@@ -1527,7 +1635,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost checkpoint [status|begin|attempt|verify|fail|complete|supersede|resume] | /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost stalled [status|continue] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost recovery status | /pifrost checkpoint [status|begin|attempt|verify|fail|complete|supersede|resume] | /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost stalled [status|continue] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;

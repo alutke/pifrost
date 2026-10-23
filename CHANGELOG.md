@@ -1,3 +1,11 @@
+## 0.29.24 — 2026-10-23
+
+- Release 30D: OMP-native `session_stop` recovery for active, unfinished 30C checkpoints with terminal reasoning-only/empty responses following paired, known tool results.
+- Persist branch-scoped, one-time continuation attempts before resuming, with a maximum of three stages and duplicate/rewind/restart safety. User interruptions, queued work, unknown tool outcomes, ordinary final answers and other active stop hooks prevent recovery.
+- Prioritize OMP-owned continuation, 30B native context policy and optional explicit alternate OMP model family; never perform implicit cross-family switching, overwrite Bifrost routing, or replay tools.
+- Avoid competing agent_end automatic continuation whenever an active checkpoint owns the task; add `/pifrost recovery status` and full incident regression coverage.
+- No daemon, arbitrary prompt truncation, provider request replay or physical model guessing.
+
 ## 0.29.23 — 2026-10-23
 
 - Release 30C: branch-specific durable execution checkpoints using OMP's custom session journal and a secondary atomic private 0600 disk mirror.
