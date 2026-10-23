@@ -57,7 +57,7 @@ export interface CompactBeforeSkipRuntimeContext {
 	compact(): Promise<void>;
 	setTimeout(callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): unknown;
 	hasPendingMessages?(): boolean;
-	getAsyncJobSnapshot?(): { running: unknown[] } | undefined;
+	getAsyncJobSnapshot?(): { running: unknown[] } | null | undefined;
 }
 
 export interface CompactBeforeSkipCoordinatorOptions extends CompactBeforeSkipPlanOptions {
