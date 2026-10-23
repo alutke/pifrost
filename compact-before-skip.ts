@@ -215,7 +215,7 @@ export function createCompactBeforeSkipCoordinator(
 
 	return (ctx: CompactBeforeSkipRuntimeContext): void => {
 		const mode = adaptiveContextMode(env);
-		if (mode !== "adaptive" && !compactBeforeContextSkipEnabled(env)) return;
+		if (mode === "off" || (mode === "native" && !compactBeforeContextSkipEnabled(env))) return;
 		let state = states.get(ctx.sessionManager);
 		if (!state) {
 			state = { scheduled: false, inFlight: false };
