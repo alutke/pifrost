@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.21",
+  "version": "0.29.22",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -88,6 +88,10 @@
     "judge-control.mjs",
     "execution-observation.mjs",
     "execution-observation.d.mts",
+    "adaptive-context-settings.mjs",
+    "adaptive-context-policy.mjs",
+    "adaptive-context-policy.d.mts",
+    "docs/RELEASE_30B_ADAPTIVE_CONTEXT.md",
     "execution-readiness.mjs",
     "docs/RELEASE_30A_EXECUTION_DIAGNOSTICS.md",
     "omp-orchestration-readiness.mjs",

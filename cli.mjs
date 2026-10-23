@@ -42,6 +42,7 @@ import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-
 import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
 import { decisionProviderInventory, resolvePinnedOmpJudgeCapabilities } from "./judge-certification.mjs";
 import { OMP_ORCHESTRATION_SETTING_IDS, assessOmpOrchestration, formatOmpOrchestration } from "./omp-orchestration-readiness.mjs";
+import { formatAdaptiveContextPlan } from "./adaptive-context-settings.mjs";
 import { inspectPifrostWorkarounds, formatPifrostWorkarounds } from "./workaround-register.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
 import { planJudgeRoleActivation, applyJudgeRoleActivation } from "./judge-activation.mjs";
@@ -89,6 +90,8 @@ import {
   buildRepoMcpConfig,
   commandExists,
   configureOmp,
+  configureOmpAdaptiveContext,
+  planOmpAdaptiveContext,
   backupOmpConfig,
   currentRepoState,
   detachVirtualMcpFromVirtualKey,
@@ -156,6 +159,8 @@ Usage:
   pifrost global observability [--vk-id ID]  Optional gateway intelligence, research, privacy (read-only)
   pifrost global configure-omp
   pifrost omp readiness [--json|--verbose] Read-only prewalk, seance and advisor readiness
+  pifrost omp context [--json|--verbose] Read-only adaptive context policy preview
+  pifrost omp context apply [--dry-run]  Backed-up additive OMP context thresholds
   pifrost omp workarounds [--json|--verbose] Read-only compatibility retirement register
   pifrost judge status                      Inspect opt-in OMP judge bounds and gateway model availability
   pifrost judge providers                   Read-only Azure/Databricks Decisions model visibility
@@ -601,7 +606,7 @@ async function commandGlobalSetup(flags) {
 
   if (!flags["skip-omp"]) {
     process.stdout.write("Configuring OMP roles/settings... ");
-    const result = configureOmp();
+    const result = configureOmp(readCatalog().cache?.models ?? []);
     console.log(`OK (${result.settings} settings)`);
     if (result.backup) console.log(`OMP config backup: ${result.backup}`);
   }
@@ -2292,6 +2297,21 @@ function commandOmpWorkarounds(flags = {}) {
   else console.log(formatPifrostWorkarounds(result, flags.verbose === true));
 }
 
+function commandOmpContext(flags = {}, apply = false) {
+  const models = readCatalog().cache?.models ?? [];
+  if (apply && !flags["dry-run"]) {
+    const result = configureOmpAdaptiveContext(models);
+    console.log(formatAdaptiveContextPlan(result.plan));
+    console.log(result.changed ? "OMP context thresholds updated; restart OMP for new sessions." :
+      "No changes made.");
+    if (result.backup) console.log("OMP config backup: " + result.backup);
+    return;
+  }
+  const plan = planOmpAdaptiveContext(models);
+  if (flags.json) console.log(JSON.stringify(plan));
+  else console.log(formatAdaptiveContextPlan(plan) + (apply ? "\nDry-run: no changes made." : ""));
+}
+
 function commandOmpReadiness(flags = {}) {
   const settings = Object.fromEntries(
     OMP_ORCHESTRATION_SETTING_IDS.map(id => [id, readOmpConfigValueResult(id)])
@@ -2512,6 +2532,8 @@ const COMMANDS = new Map([
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["omp readiness", (_args, flags) => commandOmpReadiness(flags)],
+  ["omp context", (_args, flags) => commandOmpContext(flags)],
+  ["omp context apply", (_args, flags) => commandOmpContext(flags, true)],
   ["omp workarounds", (_args, flags) => commandOmpWorkarounds(flags)],
   ["judge status", () => commandJudgeStatus()],
   ["judge providers", () => commandJudgeProviders()],
@@ -2519,7 +2541,7 @@ const COMMANDS = new Map([
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
   ["global configure-omp", (_args, flags) => {
     if(flags["dry-run"]){console.log(operationSummary("Read-only preview",["Would apply Pifrost-owned OMP configuration with backup"]));return;}
-    const result = configureOmp();
+    const result = configureOmp(readCatalog().cache?.models ?? []);
     console.log(`Configured ${result.settings} OMP settings.`);
     if (result.backup) console.log(`Backup: ${result.backup}`);
   }],

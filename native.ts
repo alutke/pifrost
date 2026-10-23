@@ -127,6 +127,7 @@ import {
 	formatPifrostOmpWrites,
 	normalizePifrostOmpSetting,
 	readPifrostOmpProfile,
+	readPifrostOmpSetting,
 	writePifrostOmpSetting,
 } from "./omp-cfg.ts";
 import {
@@ -959,6 +960,34 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 	// Release 30A: one read-only observation per session, not a second retry actor.
 	const warnedExecutionSessions = new Set<string>();
+	const contextCompactionAllowed = new WeakMap<object, boolean>();
+	// Read the ACTIVE host's effective cfg:// setting; an explicit OMP opt-out
+	// must never be bypassed by Pifrost's optional idle compact() call.
+	const checkContextCompactionAllowed = async (ctx: {
+		cwd: string; hasUI: boolean;
+		sessionManager: { getSessionId(): string };
+		agent: { kind: "main" | "sub"; depth: number };
+	}): Promise<boolean> => {
+		if (ctx.agent.kind !== "main") return false;
+		try {
+			const session = await activePifrostCfgSession({
+				cwd: ctx.cwd, sessionId: ctx.sessionManager.getSessionId(),
+				hasUI: ctx.hasUI, settingsApproval: false,
+				taskDepth: ctx.agent.depth, agentKind: "main",
+			});
+			const value = await readPifrostOmpSetting(session, {
+				id: "compaction.enabled", url: "cfg://compaction/enabled",
+				value: true, serialized: "true", description: "OMP compaction toggle",
+			});
+			contextCompactionAllowed.set(ctx.sessionManager, value.value === true);
+			return value.value === true;
+		} catch {
+			// Unknown is not permission to force compaction. OMP's own native
+			// threshold, overflow and mid-turn behaviour remains available.
+			contextCompactionAllowed.set(ctx.sessionManager, false);
+			return false;
+		}
+	};
 	await installOmpNativeTextTokenCounter();
   // Use OMP 18.12.5's exported lineage image-tokenization contract.
   installPifrostImageTokenPolicy(resolveImageTokenization, imageTokens);
@@ -1168,9 +1197,10 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	// inside an extension event handler: LLM-backed compaction can legitimately
 	// exceed OMP's generic 30-second handler budget. The coordinator only runs
 	// while the session is idle and fails open to the final-wire skip guard.
-	pi.on("before_agent_start", (event, ctx) => {
+	pi.on("before_agent_start", async (event, ctx) => {
 		if (ctx.agent.kind === "main") {
 			stalledTurnRecovery.onPrompt(ctx.sessionManager.getSessionId(), event.prompt);
+			await checkContextCompactionAllowed(ctx);
 		}
 	});
 	pi.on("agent_end", (event, ctx) => {
@@ -1224,11 +1254,12 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				ctx.ui.notify(message, "warning");
 			});
 		}
-		scheduleCompactBeforeContextSkip(ctx);
+		if (ctx.agent.kind === "main" && contextCompactionAllowed.get(ctx.sessionManager) === true)
+			scheduleCompactBeforeContextSkip(ctx);
 	});
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
-		scheduleCompactBeforeContextSkip(ctx);
+		if (await checkContextCompactionAllowed(ctx)) scheduleCompactBeforeContextSkip(ctx);
 	});
 	// OMP 18.12.5 can rewrite the visible message prefix during compaction,
   // branching or tree navigation. A pending one-shot follow-up belongs to

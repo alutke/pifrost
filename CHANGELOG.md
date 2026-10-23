@@ -1,3 +1,11 @@
+## 0.29.22 — 2026-10-23
+
+- Release 30B: add an OMP-native, additive context-threshold planner for Bifrost roles, with fixed 120K main / 64K advisor triggers when alias window hints provide sufficient headroom, otherwise window-relative 65% thresholds.
+- Make OMP setup provision safe route thresholds without replacing user-defined exact or wildcard entries, and add read-only `pifrost omp context` preview and explicitly backed-up `pifrost omp context apply`.
+- Extend the existing session-owned idle compaction scheduler with an adaptive min(65% of OMP window, 120K) budget and a 32K ineffective-attempt cooldown. Preserve OMP compaction methods, mid-turn continuation, plan protection and Bifrost route selection.
+- Add deterministic tests for 615K main/526K advisor context, host settings opt-outs, user threshold precedence, queue safety and cooldown, plus the Release 30B implementation/rollback guide.
+- No daemon, provider switch, arbitrary history truncation, reasoning stripping or tool replay. Checkpointing and expanded stalled-turn recovery remain 30C/30D.
+
 ## 0.29.21 — 2026-10-23
 
 - Release 30A: add diagnostic-only classification for successful requests producing reasoning-only, empty and leaked-thinking agent stops, separating transport success from task completion.

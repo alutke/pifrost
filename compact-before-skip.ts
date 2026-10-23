@@ -3,6 +3,7 @@ import {
 	DEFAULT_CONTEXT_SAFETY_MARGIN,
 	type DynamicRouteProfile,
 } from "./dynamic-routing.ts";
+import { adaptiveContextMode, planAdaptiveContextMaintenance } from "./adaptive-context-policy.mjs";
 
 export const DEFAULT_COMPACT_BEFORE_CONTEXT_SKIP = true;
 export const DEFAULT_COMPACT_RETRY_GROWTH_TOKENS = 32_768;
@@ -55,6 +56,8 @@ export interface CompactBeforeSkipRuntimeContext {
 	isIdle(): boolean;
 	compact(): Promise<void>;
 	setTimeout(callback: (...args: unknown[]) => void, ms?: number, ...args: unknown[]): unknown;
+	hasPendingMessages?(): boolean;
+	getAsyncJobSnapshot?(): { running: unknown[] } | null | undefined;
 }
 
 export interface CompactBeforeSkipCoordinatorOptions extends CompactBeforeSkipPlanOptions {
@@ -69,6 +72,7 @@ interface CompactBeforeSkipRuntimeState {
 	scheduled: boolean;
 	inFlight: boolean;
 	lastAttempt?: CompactBeforeSkipAttempt;
+	lastAdaptiveAttempt?: { window: number; afterTokens: number };
 }
 
 function finiteNonNegative(value: unknown, fallback: number): number {
@@ -172,7 +176,7 @@ function currentPifrostRoute(
 	ctx: CompactBeforeSkipRuntimeContext,
 	getProfile: (logicalModel: string) => DynamicRouteProfile | undefined,
 	providerId: string,
-): { profile: DynamicRouteProfile; usage: CompactBeforeSkipContextUsage } | undefined {
+): { profile: DynamicRouteProfile | undefined; usage: CompactBeforeSkipContextUsage } | undefined {
 	const model = ctx.models.current() ?? ctx.model;
 	if (!model || model.provider.toLowerCase() !== providerId.toLowerCase()) return undefined;
 	const profile = getProfile(model.id.toLowerCase());
@@ -181,7 +185,7 @@ function currentPifrostRoute(
 	// extended-context eligibility and model-specific threshold resolution
 	// belong upstream. If the host has no valid window, or is already at
 	// overflow, defer to OMP recovery instead of inventing an independent one.
-	if (!profile || !usage || !Number.isFinite(usage.tokens) || usage.tokens < 0 ||
+	if (!usage || !Number.isFinite(usage.tokens) || usage.tokens < 0 ||
 		!Number.isFinite(usage.contextWindow) || usage.contextWindow <= 0 ||
 		usage.tokens >= usage.contextWindow) return undefined;
 	return { profile, usage };
@@ -210,7 +214,8 @@ export function createCompactBeforeSkipCoordinator(
 	);
 
 	return (ctx: CompactBeforeSkipRuntimeContext): void => {
-		if (!compactBeforeContextSkipEnabled(env)) return;
+		const mode = adaptiveContextMode(env);
+		if (mode === "off" || (mode === "native" && !compactBeforeContextSkipEnabled(env))) return;
 		let state = states.get(ctx.sessionManager);
 		if (!state) {
 			state = { scheduled: false, inFlight: false };
@@ -220,7 +225,8 @@ export function createCompactBeforeSkipCoordinator(
 		state.scheduled = true;
 
 		const run = async (idleAttempt: number): Promise<void> => {
-			if (!ctx.isIdle()) {
+			if (!ctx.isIdle() || ctx.hasPendingMessages?.() === true ||
+				(ctx.getAsyncJobSnapshot?.()?.running.length ?? 0) > 0) {
 				if (idleAttempt < idleRetries) {
 					ctx.setTimeout(() => {
 						void run(idleAttempt + 1).catch(options.onError ?? (() => undefined));
@@ -236,13 +242,21 @@ export function createCompactBeforeSkipCoordinator(
 				state!.scheduled = false;
 				return;
 			}
-			const plan = planCompactBeforeContextSkip(current.profile, current.usage.tokens, state!.lastAttempt, {
-				safetyMargin: options.safetyMargin,
-				fixedHeadroom: options.fixedHeadroom,
-				outputReserveTokens: options.outputReserveTokens,
-				retryGrowthTokens,
-			});
-			if (!plan.shouldCompact || !plan.targetReference || !plan.targetContextWindow) {
+			// One coordinator owns idle compaction; no competing timers.
+			const routePlan = compactBeforeContextSkipEnabled(env) && current.profile
+				? planCompactBeforeContextSkip(current.profile, current.usage.tokens, state!.lastAttempt, {
+					safetyMargin: options.safetyMargin, fixedHeadroom: options.fixedHeadroom,
+					outputReserveTokens: options.outputReserveTokens, retryGrowthTokens,
+				}) : undefined;
+			const adaptivePlan = mode === "adaptive" ? planAdaptiveContextMaintenance(
+				current.usage.tokens, current.usage.contextWindow, state!.lastAdaptiveAttempt,
+			) : undefined;
+			if (!routePlan?.shouldCompact && !adaptivePlan?.shouldCompact) {
+				state!.scheduled = false;
+				return;
+			}
+			if (!ctx.isIdle() || ctx.hasPendingMessages?.() === true ||
+				(ctx.getAsyncJobSnapshot?.()?.running.length ?? 0) > 0) {
 				state!.scheduled = false;
 				return;
 			}
@@ -257,13 +271,16 @@ export function createCompactBeforeSkipCoordinator(
 				options.onError?.(error);
 			} finally {
 				const after = ctx.getContextUsage();
-				state!.lastAttempt = {
-					logicalModel: plan.logicalModel,
-					targetReference: plan.targetReference,
-					targetContextWindow: plan.targetContextWindow,
-					afterContextTokens: after && Number.isFinite(after.tokens)
-						? Math.max(0, Math.ceil(after.tokens))
-						: plan.contextTokens,
+				const afterTokens = after && Number.isFinite(after.tokens)
+					? Math.max(0, Math.ceil(after.tokens)) : Math.ceil(current.usage.tokens);
+				if (routePlan?.shouldCompact && routePlan.targetReference && routePlan.targetContextWindow) {
+					state!.lastAttempt = {
+						logicalModel: routePlan.logicalModel, targetReference: routePlan.targetReference,
+						targetContextWindow: routePlan.targetContextWindow, afterContextTokens: afterTokens,
+					};
+				}
+				if (adaptivePlan?.shouldCompact) state!.lastAdaptiveAttempt = {
+					window: current.usage.contextWindow, afterTokens,
 				};
 				state!.inFlight = false;
 			}
