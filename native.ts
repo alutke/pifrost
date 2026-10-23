@@ -81,6 +81,7 @@ import {
 import { isCommittedModelOutput } from "./output-commitment.ts";
 import { createStalledTurnRecoveryCoordinator, stalledTurnMode } from "./stalled-turn-recovery.ts";
 import { inspectAgentEnd, inspectContextUsage } from "./execution-observation.mjs";
+import { createCheckpointLifecycle } from "./checkpoint-lifecycle.mjs";
 import { createRuntimeRouteState, type RuntimeRouteSnapshot } from "./runtime-route-state.ts";
 import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
 import { handleRecoveryCommand } from "./recovery-command.ts";
@@ -960,6 +961,13 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	const stalledTurnRecovery = createStalledTurnRecoveryCoordinator(stalledTurnMode(process.env.PIFROST_STALLED_TURN_MODE));
 	// Release 30A: one read-only observation per session, not a second retry actor.
 	const warnedExecutionSessions = new Set<string>();
+	// 30C: OMP appendEntry persists branch-specific non-model checkpoint metadata.
+	// The atomic file mirror is secondary evidence, never authoritative after rewinds.
+	const checkpointLedger = createCheckpointLifecycle({
+		appendEntry: (type, data) => pi.appendEntry(type, data),
+		onMirrorError: () => process.stderr.write("pifrost: checkpoint disk mirror unavailable; OMP journal remains authoritative\n"),
+	});
+
 	const contextCompactionAllowed = new WeakMap<object, boolean>();
 	// Read the ACTIVE host's effective cfg:// setting; an explicit OMP opt-out
 	// must never be bypassed by Pifrost's optional idle compact() call.
@@ -1200,6 +1208,8 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 	pi.on("before_agent_start", async (event, ctx) => {
 		if (ctx.agent.kind === "main") {
 			stalledTurnRecovery.onPrompt(ctx.sessionManager.getSessionId(), event.prompt);
+			try { checkpointLedger.autoBegin(ctx, event.prompt); }
+			catch { if (ctx.hasUI) ctx.ui.notify("Pifrost checkpoint auto-start unavailable; original OMP session unchanged.", "warning"); }
 			await checkContextCompactionAllowed(ctx);
 		}
 	});
@@ -1254,27 +1264,43 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				ctx.ui.notify(message, "warning");
 			});
 		}
+		if (ctx.agent.kind === "main") {
+			try { checkpointLedger.afterTurn(ctx); }
+			catch { if (ctx.hasUI) ctx.ui.notify("Pifrost checkpoint observation unavailable; no verification claimed.", "warning"); }
+		}
 		if (ctx.agent.kind === "main" && contextCompactionAllowed.get(ctx.sessionManager) === true)
 			scheduleCompactBeforeContextSkip(ctx);
 	});
 	pi.on("session_start", async (_event, ctx) => {
 		bindAgentSession(ctx.sessionManager.getSessionId(), ctx.agent);
+		try { checkpointLedger.restore(ctx); } catch { /* OMP history remains authoritative; no state inferred */ }
 		if (await checkContextCompactionAllowed(ctx)) scheduleCompactBeforeContextSkip(ctx);
 	});
 	// OMP 18.12.5 can rewrite the visible message prefix during compaction,
   // branching or tree navigation. A pending one-shot follow-up belongs to
   // the old history; discard it rather than sending it against new state.
+  pi.on("session.compacting", (_event, ctx) => {
+    if (ctx.agent.kind !== "main") return;
+    try {
+      const context = checkpointLedger.compactionContext(ctx);
+      if (context) return { context: [context] };
+    } catch { /* Do not obstruct OMP's native compaction. */ }
+  });
   pi.on("session_compact", (_event, ctx) => {
     stalledTurnRecovery.onSessionInterrupt(ctx.sessionManager.getSessionId());
+    try { checkpointLedger.restore(ctx); } catch { /* Branch state not presumed */ }
   });
   pi.on("session_tree", (_event, ctx) => {
     stalledTurnRecovery.onHistoryChanged();
+    try { checkpointLedger.restore(ctx); } catch { /* No cross-branch fallback */ }
   });
   pi.on("session_branch", (_event, ctx) => {
     stalledTurnRecovery.onHistoryChanged();
+    try { checkpointLedger.restore(ctx); } catch { /* No cross-branch fallback */ }
   });
   pi.on("session_switch", (_event, ctx) => {
     stalledTurnRecovery.onHistoryChanged();
+    try { checkpointLedger.restore(ctx); } catch { /* No cross-session fallback */ }
   });
 	pi.on("session_shutdown", (_event, ctx) => {
 		const sessionId = ctx.sessionManager.getSessionId();
@@ -1304,6 +1330,40 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				});
 			};
 
+			if (command === "checkpoint") {
+				if (ctx.agent.kind !== "main" || ctx.mode !== "tui" || !ctx.hasUI) {
+					ctx.ui.notify("Checkpoints are managed only in an interactive top-level OMP session.", "warning");
+					return;
+				}
+				const parts = raw.split(/\\s+/u).slice(1);
+				const action = parts[0]?.toLowerCase() ?? "status";
+				try {
+					if (action === "status") {
+						ctx.ui.notify(checkpointLedger.status(ctx), "info"); return;
+					}
+					if (action === "resume") {
+						if (!ctx.isIdle() || ctx.hasPendingMessages() ||
+							(ctx.getAsyncJobSnapshot()?.running.length ?? 0) !== 0) {
+							throw new Error("OMP has active or queued work; resume draft not prepared");
+						}
+						ctx.ui.setEditorText(checkpointLedger.resumeText(ctx));
+						ctx.ui.notify("Checkpoint review prompt placed in the editor. Nothing was executed.", "info");
+						return;
+					}
+					let next;
+					if (action === "begin" && parts.length === 2) next = checkpointLedger.begin(ctx, parts[1]);
+					else if (action === "attempt" && parts.length === 2) next = checkpointLedger.transition(ctx,{type:"attempt",step:parts[1]});
+					else if (action === "verify" && parts.length === 3) next = checkpointLedger.transition(ctx,{type:"verify",step:parts[1],evidence:parts[2]});
+					else if (action === "fail" && parts.length === 2) next = checkpointLedger.transition(ctx,{type:"fail",step:parts[1]});
+					else if (action === "complete" && parts.length === 1) next = checkpointLedger.transition(ctx,{type:"complete"});
+					else if (action === "supersede" && parts.length === 1) next = checkpointLedger.transition(ctx,{type:"supersede"});
+					else throw new Error("Usage: /pifrost checkpoint [status|begin <plan-ref>|attempt <step>|verify <step> <evidence-ref>|fail <step>|complete|supersede|resume]");
+					ctx.ui.notify(checkpointLedger.status(ctx), next.status === "complete" ? "info" : "warning");
+				} catch(error) {
+					ctx.ui.notify("Pifrost checkpoint: " + (error instanceof Error ? error.message : "operation unavailable"),"warning");
+				}
+				return;
+			}
 
 			if (command === "stalled") {
 				const sessionId = ctx.sessionManager.getSessionId();
@@ -1467,7 +1527,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 
 			if (command !== "doctor" && command !== "refresh") {
 				ctx.ui.notify(
-					"Usage: /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost stalled [status|continue] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
+					"Usage: /pifrost checkpoint [status|begin|attempt|verify|fail|complete|supersede|resume] | /pifrost doctor [verbose] | /pifrost trace [last N] [errors] [role alias] [verbose] | /pifrost stalled [status|continue] | /pifrost recover [status|fork] | /pifrost costs | /pifrost refresh | /pifrost config [status|apply|set|save]",
 					"warning",
 				);
 				return;
