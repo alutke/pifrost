@@ -146,3 +146,22 @@ test("30C-10: unavailable/corrupt OMP branch journal fails closed",()=>{
  assert.throws(()=>f.ledger.begin(broken,"docs/plan.md"),/journal unavailable/);
  assert.throws(()=>f.ledger.status(broken),/journal unavailable/);
 });
+
+test("30D: a new named release starts a distinct checkpoint without resetting generic follow-ups",()=>{
+ const f=fixture();
+ const first=f.ledger.autoBegin(f.ctx,"Implement Release C");
+ assert.equal(first.revision,1);
+ assert.equal(f.ledger.autoBegin(f.ctx,"Implement Release C"),null);
+ assert.equal(f.ledger.autoBegin(f.ctx,"Continue fixing tests"),null);
+ const next=f.ledger.autoBegin(f.ctx,"Implement 30D");
+ assert.equal(next.revision,1);
+ assert.notEqual(next.plan.sha256,first.plan.sha256);
+ assert.equal(f.ledger.restore(f.ctx).plan.sha256,next.plan.sha256);
+ assert.equal(f.ledger.autoBegin(f.ctx,"Implement 30D"),null);
+});
+test("30D: explicit operator plan cannot be silently replaced by a new prompt",()=>{
+ const f=fixture();
+ f.ledger.begin(f.ctx,"docs/approved-release.md");
+ assert.equal(f.ledger.autoBegin(f.ctx,"Implement 30E"),null);
+ assert.equal(f.ledger.restore(f.ctx).plan.reference,"docs/approved-release.md");
+});
