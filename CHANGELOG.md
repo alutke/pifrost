@@ -1,3 +1,11 @@
+## 0.29.25 — 2026-10-23
+
+- Release 30E: fail-closed structural certification of Responses and Chat synthetic-reasoning replay cleanup before each provider request. Protect opaque signatures, user content, tool pairing, provider metadata and original session history.
+- Tighten 30D recovery against stale OMP assistant settlements, malformed branch checkpoints and recovery attempts, and repeated tool-call IDs.
+- Support OMP's genuinely opaque model-family comparison token without treating a family value as a string or guessing Bifrost physical routes.
+- Add redacted /pifrost recovery diagnose, end-to-end structural failure fixtures, certification matrix and explicit live-gateway testing limitations.
+- No new service, automatic provider retry, credential logging, tool replay or unverified claim of task completion.
+
 ## 0.29.24 — 2026-10-23
 
 - Release 30D: OMP-native `session_stop` recovery for active, unfinished 30C checkpoints with terminal reasoning-only/empty responses following paired, known tool results.

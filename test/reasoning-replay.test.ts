@@ -329,3 +329,17 @@ test("resolved physical policy is mandatory and DeepSeek/Kimi/MiMo always fail c
   const chat={messages:[{role:"assistant",reasoning_content:"reasoning unavailable",content:"answer"}]};
   assert.equal(normalizeCompletionsReplay(chat).payload,chat);
 });
+
+test("30E: signed/identity-bearing assistant replay blocks remain byte-for-byte unchanged",()=>{
+ const r=reason();
+ for(const key of ["id","signature","encrypted_content","textSignature"]){
+   const assistant={...placeholder(),[key]:"opaque-assistant-id-or-signature"};
+   const input={input:[r,assistant,call("a"),output("a")]};
+   assert.equal(normalizeResponsesReplay(input).payload,input,key);
+ }
+ const contentSigned={...placeholder(),content:[{...placeholder().content[0],textSignature:"signed-opaque"}]};
+ const body={input:[r,contentSigned,call("x"),output("x")]};
+ assert.equal(normalizeResponsesReplay(body).payload,body);
+ const chat={messages:[{role:"assistant",content:"<think>reasoning unavailable\n<dy>Real",reasoning_content:"reasoning unavailable",signature:"opaque"}]};
+ assert.equal(normalizeCompletionsReplay(chat).payload,chat);
+});

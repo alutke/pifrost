@@ -84,6 +84,7 @@ import { intelligentRecoveryMode, planIntelligentRecovery, formatIntelligentReco
 import { configuredRecoveryFallbackRole, recoveryFamilyCandidate } from "./recovery-fallback.mjs";
 import { inspectAgentEnd, inspectContextUsage } from "./execution-observation.mjs";
 import { createCheckpointLifecycle } from "./checkpoint-lifecycle.mjs";
+import { diagnoseExecutionBranch, formatExecutionDiagnosis } from "./execution-certification.mjs";
 import { createRuntimeRouteState, type RuntimeRouteSnapshot } from "./runtime-route-state.ts";
 import { createRecoveryNoticeCoordinator } from "./controlled-recovery.ts";
 import { handleRecoveryCommand } from "./recovery-command.ts";
@@ -121,6 +122,7 @@ import { evaluateAttemptTransition } from "./attempt-retry-policy.ts";
 import { resolveOutputBudget, clampOutputTokenFields, type OutputBudgetMember } from "./output-budget.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
+import { certifyReplayHygiene } from "./replay-certification.mjs";
 import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
 import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import {
@@ -499,18 +501,21 @@ function streamDynamicPifrostRoute(
 					// Provider-neutral and inert unless OMP replayed both a synthetic
 					// reasoning item and redundant visible text in an assistant run.
 					// Never strip the structured content required by DeepSeek.
-					const hygiene = normalizeResponsesReplay(bridged, {
-						allowSyntheticReasoningRemoval: mayOmitSyntheticReasoning(transportModel.compat, attempt.primary),
+					const allowSyntheticReasoningRemoval = mayOmitSyntheticReasoning(transportModel.compat, attempt.primary);
+					const hygiene = normalizeResponsesReplay(bridged, { allowSyntheticReasoningRemoval });
+					const certified = certifyReplayHygiene(bridged, hygiene.payload, "openai-responses", {
+						allowSyntheticReasoningRemoval,
 					});
-					hygieneCounters.replayRemoved = hygiene.removedVisiblePlaceholders;
-					hygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
-					hygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
-					hygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
+					if (!certified.accepted) hygieneCounters.replayUncertifiedPreserved++;
+					hygieneCounters.replayRemoved = certified.accepted ? hygiene.removedVisiblePlaceholders : 0;
+					hygieneCounters.replayMixedRewritten = certified.accepted ? hygiene.rewrittenMixedMessages : 0;
+					hygieneCounters.replayNestedRewritten = certified.accepted ? hygiene.rewrittenNestedMessages : 0;
+					hygieneCounters.replayProseRewritten = certified.accepted ? hygiene.rewrittenProseMessages : 0;
 					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
 					// Counters are available in /pifrost trace; do not log routine
 					// cleanup to stderr on every streamed model request.
-					const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+					const capped = clampOutputTokenFields(certified.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
 
 				costCapture.cacheIntent = inspectResponsesCacheRequest(capped, "openai-responses");
@@ -570,10 +575,12 @@ function streamDynamicPifrostRoute(
 					? bridgePifrostPayload(upstream, { betweenToolsThinking: true })
 					: upstream;
 				const hygiene = normalizeCompletionsReplay(bridged);
-				chatHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
-				chatHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
-				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
-				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+				const certified = certifyReplayHygiene(bridged, hygiene.payload, "openai-completions");
+				if (!certified.accepted) chatHygieneCounters.replayUncertifiedPreserved++;
+				chatHygieneCounters.replayMixedRewritten = certified.accepted ? hygiene.rewrittenMixedMessages : 0;
+				chatHygieneCounters.replayNestedRewritten = certified.accepted ? hygiene.rewrittenNestedMessages : 0;
+				chatHygieneCounters.replayProseRewritten = certified.accepted ? hygiene.rewrittenProseMessages : 0;
+				const capped = clampOutputTokenFields(certified.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
 				guardPifrostReasoningReplay(capped, transportModel, "openai-completions", options, costCapture);
 				return capped;
@@ -1425,8 +1432,21 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				if(ctx.agent.kind!=="main"){
 					ctx.ui.notify("Recovery status belongs to the main OMP session.", "warning"); return;
 				}
+				if (/^recovery\\s+diagnose$/iu.test(raw)) {
+					try {
+						const usage=ctx.getContextUsage?.();
+						ctx.ui.notify(formatExecutionDiagnosis(diagnoseExecutionBranch({
+							branch:ctx.sessionManager.getBranch(),sessionId:ctx.sessionManager.getSessionId(),
+							cwd:ctx.cwd,contextTokens:usage?.tokens,contextWindow:usage?.contextWindow,
+							mode:intelligentMode,
+						})), "info");
+					} catch {
+						ctx.ui.notify("Pifrost: execution diagnosis unavailable; no branch data exposed.","warning");
+					}
+					return;
+				}
 				if(!/^(?:recovery|recovery\\s+status)$/iu.test(raw)){
-					ctx.ui.notify("Usage: /pifrost recovery status", "warning");return;
+					ctx.ui.notify("Usage: /pifrost recovery [status|diagnose]", "warning");return;
 				}
 				try {
 					ctx.ui.notify(formatIntelligentRecoveryStatus({
