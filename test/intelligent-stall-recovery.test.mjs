@@ -128,5 +128,5 @@ test("30D: repeated attempts are session-and-anchor bound, not merely adjacent i
  assert.equal(evaluate(f).stage,"native");
  const invalid={...first.record,ordinal:2,sessionKey:"0".repeat(64)};
  f.entries.push({id:"cccc0013",type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:invalid});
- assert.equal(readRecoveryAttempts(f.entries,locateRecoveryScope(f.entries,sessionId,cwd),sessionId).length,0);
+ assert.equal(readRecoveryAttempts(f.entries,locateRecoveryScope(f.entries,sessionId,cwd),sessionId),null);
 });
