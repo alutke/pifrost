@@ -11,6 +11,6 @@ export function recoveryFamilyCandidate(current,target,family) {
   if(current.provider===target.provider && current.id===target.id)return false;
   try {
     const a=family(current),b=family(target);
-    return typeof a==="string"&&a.length>0&&typeof b==="string"&&b.length>0&&a!==b;
+    return a !== null && a !== undefined && b !== null && b !== undefined && a !== b;
   } catch {return false;}
 }
