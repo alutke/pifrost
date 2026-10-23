@@ -1,4 +1,4 @@
-# Output-budget policy — Release 4 behaviour, current v0.29.23
+# Output-budget policy — Release 4 behaviour, current v0.29.24
 
 Bifrost still owns physical provider selection, fallback order, virtual-key
 permissions, and accounting. Pifrost enforces request/output-token ceilings
