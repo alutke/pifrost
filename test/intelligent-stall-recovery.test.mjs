@@ -43,7 +43,7 @@ test("30D: 614K-token reasoning-only stop with pending C1a receives ONE native O
   assert.equal(decision.additionalContext.includes("npm test"),false);
   assert.equal(decision.contextPressure,true);
   assert.equal(decision.record.sessionKey.length,64);
-  assert.doesNotMatch(JSON.stringify(decision),//ignored|Build failed/);
+  assert.doesNotMatch(JSON.stringify(decision),/ignored|Build failed/);
 });
 test("30D: after repeat stalls, stage two uses OMP compaction and stage three requires opt-in distinct family",()=>{
   const f=fixture(); const a=evaluate(f);f.after(a.record);
