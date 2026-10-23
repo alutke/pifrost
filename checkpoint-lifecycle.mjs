@@ -43,10 +43,17 @@ export function createCheckpointLifecycle({appendEntry,mirror,onMirrorError=()=>
         ...(reference?{planReference:reference}:{}),...(promptText?{promptText}:{})}));
     },
     autoBegin(ctx,prompt) {
-      if (!main(ctx) || typeof prompt!=="string" || !(
-        prompt.length>=1500 || /\bimplement\s+(?:release|phase)\s+[\w-]+/iu.test(prompt)
-      )) return null;
-      if (read(ctx)?.status==="active") return null;
+      if (!main(ctx) || typeof prompt!=="string") return null;
+      const namedRelease=/\bimplement\s+(?:(?:release|phase)\s+)?(?:[0-9]+[a-z]|[a-z][0-9]+[a-z]?|[a-z])\b/iu.test(prompt);
+      if (!(prompt.length>=1500 || namedRelease)) return null;
+      const existing=read(ctx);
+      if (existing?.status==="active") {
+        // Only an explicitly named NEW release can supersede a previous
+        // auto-checkpoint. Generic follow-ups and operator plans retain state.
+        if (!namedRelease || existing.plan.origin==="operator") return null;
+        const next=createExecutionCheckpoint({...identity(ctx),promptText:prompt});
+        if (next.plan.sha256===existing.plan.sha256) return null;
+      }
       return this.begin(ctx,undefined,prompt);
     },
     transition(ctx,action) {
