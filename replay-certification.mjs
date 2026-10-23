@@ -19,7 +19,7 @@ function unsafeMessage(item){
     signed(x) || !p || p.type!=="output_text" || typeof p.text!=="string" ||
     typeof p.id==="string" || signed(p) || (Array.isArray(p.annotations)&&p.annotations.length>0);
 }
-const pureText=x=>/^\\s*(?:<think>\\s*)+reasoning unavailable\\s*<\\/think>\\s*$/u.test(x);
+const pureText=x=>/^\s*(?:<think>\s*)+reasoning unavailable\s*<\/think>\s*$/u.test(x);
 function syntheticReason(x) {
   const e=rec(x), part=Array.isArray(e?.content)&&e.content.length===1?rec(e.content[0]):null;
   return e?.type==="reasoning" && !signed(e) && !signed(part) &&
@@ -35,7 +35,7 @@ function allowedChange(a,b){
   if(!keys(x,y,"content")||!keys(bp,ap,"text"))return false;
   const original=bp.text,replacement=ap.text;
   if(typeof replacement!=="string"||replacement.trim().length===0)return false;
-  const m=original.match(/^(\\s*<think>\\s*)(?:(?:<think>\\s*)*reasoning unavailable(?:[ \\t]*(?:\\r?\\n[ \\t]*)+|(?=<(?:dy\\b|think\\b|parameter\\b|\\/think\\b))))+(?=\\S)/u);
+  const m=original.match(/^(\s*<think>\s*)(?:(?:<think>\s*)*reasoning unavailable(?:[ \t]*(?:\r?\n[ \t]*)+|(?=<(?:dy\b|think\b|parameter\b|\/think\b))))+(?=\S)/u);
   return !!m && replacement===original.slice(0,m[1].length)+original.slice(m[0].length);
 }
 function verifyResponses(original, revised, allowSyntheticReasoningRemoval){
@@ -70,7 +70,7 @@ function verifyChat(original,revised){
         typeof x.content!=="string"||typeof y.content!=="string")return false;
     if(Object.keys(x).length!==Object.keys(y).length ||
       Object.keys(x).some(k=>k!=="content"&&x[k]!==y[k]))return false;
-    const regex=/^(\\s*<think>\\s*)(?:(?:<think>\\s*)*reasoning unavailable(?:[ \\t]*(?:\\r?\\n[ \\t]*)+|(?=<(?:dy\\b|think\\b|parameter\\b|\\/think\\b))))+(?=\\S)/u;
+    const regex=/^(\s*<think>\s*)(?:(?:<think>\s*)*reasoning unavailable(?:[ \t]*(?:\r?\n[ \t]*)+|(?=<(?:dy\b|think\b|parameter\b|\/think\b))))+(?=\S)/u;
     const match=x.content.match(regex);
     if(!match||y.content!==x.content.slice(0,match[1].length)+x.content.slice(match[0].length))return false;
   }
