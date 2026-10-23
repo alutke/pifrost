@@ -50,7 +50,7 @@ test("30D: after repeat stalls, stage two uses OMP compaction and stage three re
   const identical=evaluate(f);
   assert.equal(identical.reason,"duplicate-settle");
   f.entries.push({id:"bb000005",type:"message",message:assistant()});
-  const b=evaluate(f,{event:{...f.event,stop_hook_active:true}});
+  const b=evaluate(f,{event:{...f.event,stop_hook_active:true},contextTokens:614978,contextWindow:1000000});
   assert.equal(b.stage,"context");
   assert.match(b.additionalContext,/OMP-native compaction policy/);
   f.after(b.record,"bb000006");
@@ -76,7 +76,7 @@ test("30D: no restart or branch rewind can revive a consumed attempt on the same
   const prior=f.entries.slice(0,2);
   assert.equal(readRecoveryAttempts(prior,locateRecoveryScope(prior,sessionId,cwd),sessionId).length,0);
   assert.equal(evaluate({...f,entries:prior}).reason,"assistant-journal-unverified");
-  assert.equal(evaluate(f,{sessionId:"a-different-session"}).reason,"no-branch-checkpoint");
+  assert.equal(evaluate(f,{sessionId:"a-different-session"}).reason,"session-mismatch");
   assert.equal(evaluate(f,{cwd:"/other/project"}).reason,"no-branch-checkpoint");
 });
 test("30D: never auto-resume productive final answer or ordinary no-tools inquiry",()=>{
