@@ -1307,7 +1307,8 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			try { checkpointOwnsRecovery = checkpointLedger.read(ctx)?.status === "active"; }
 			catch { checkpointOwnsRecovery = true; }
 		}
-		if(intelligentMode === "auto" && !checkpointOwnsRecovery) stalledTurnRecovery.onAgentEnd(event, {
+		if(!checkpointOwnsRecovery && intelligentMode !== "off" &&
+			(intelligentMode === "auto" || stalledTurnRecovery.mode === "notice")) stalledTurnRecovery.onAgentEnd(event, {
 			sessionId,
 			isMain: ctx.agent.kind === "main",
 			hasQueuedMessages: (typeof ctx.hasPendingMessages === "function" && ctx.hasPendingMessages()) || (
