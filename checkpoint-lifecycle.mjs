@@ -44,7 +44,7 @@ export function createCheckpointLifecycle({appendEntry,mirror,onMirrorError=()=>
     },
     autoBegin(ctx,prompt) {
       if (!main(ctx) || typeof prompt!=="string") return null;
-      const namedRelease=/\bimplement\s+(?:(?:release|phase)\s+)?(?:[0-9]+[a-z]|[a-z][0-9]+[a-z]?|[a-z])\b/iu.test(prompt);
+      const namedRelease=/\bimplement\s+(?:(?:release|phase)\s+[\w-]+|\d+[a-z]|[a-z]\d+[a-z]?)\b/iu.test(prompt);
       if (!(prompt.length>=1500 || namedRelease)) return null;
       const existing=read(ctx);
       if (existing?.status==="active") {
