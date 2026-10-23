@@ -44,10 +44,12 @@ export function readRecoveryAttempts(branch, scope, sessionId) {
   const matches=[];
   for (const v of branch) {
     const e=row(v), d=row(e?.data);
-    if (e?.type!=="custom" || e.customType!==PIFROST_RECOVERY_ATTEMPT_TYPE || !d) continue;
-    if (d.schemaVersion!==1 || d.sessionKey!==key || d.anchor!==scope.anchor ||
+    if (e?.type!=="custom" || e.customType!==PIFROST_RECOVERY_ATTEMPT_TYPE) continue;
+    // An invalid attempt on this anchor is a blocker, never permission to restart.
+    if (d?.anchor!==scope.anchor) continue;
+    if (d.schemaVersion!==1 || d.sessionKey!==key ||
         !Number.isSafeInteger(d.ordinal) || d.ordinal<1 || d.ordinal>MAX_RECOVERY_CONTINUATIONS ||
-        !small(d.assistantEntryId,160) || !["native","context","model"].includes(d.stage)) continue;
+        !small(d.assistantEntryId,160) || !["native","context","model"].includes(d.stage)) return null;
     matches.push(d);
   }
   // Only a contiguous, ordered sequence is trusted; a corrupt ledger blocks extra retries.
