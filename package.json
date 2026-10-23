@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.22",
+  "version": "0.29.23",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -89,6 +89,13 @@
     "execution-observation.mjs",
     "execution-observation.d.mts",
     "adaptive-context-settings.mjs",
+    "execution-checkpoint.mjs",
+    "execution-checkpoint.d.mts",
+    "checkpoint-mirror.mjs",
+    "checkpoint-mirror.d.mts",
+    "checkpoint-lifecycle.mjs",
+    "checkpoint-lifecycle.d.mts",
+    "docs/RELEASE_30C_DURABLE_CHECKPOINTS.md",
     "adaptive-context-policy.mjs",
     "adaptive-context-policy.d.mts",
     "docs/RELEASE_30B_ADAPTIVE_CONTEXT.md",
