@@ -53,5 +53,5 @@ test("30A-09 missing settings and absent metadata remain unknown, never invented
   assert.equal(r.checks.find(x => x.id === "context-maintenance").status, "unknown");
   assert.equal(r.checks.find(x => x.id === "fallback-ownership").status, "unknown");
   assert.equal(r.checks.find(x => x.id === "context-thresholds").status, "unknown");
-  assert.match(formatExecutionReadiness(r, true), /effective physical context window cannot be verified/i);
+  assert.match(formatExecutionReadiness(r, true), /active context window and served physical model cannot be verified/i);
 });
