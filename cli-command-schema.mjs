@@ -38,6 +38,8 @@ const rows = [
   ["global observability",0,0,["vk-id",...read],"read-only"],
   ["global configure-omp",0,0,["dry-run"],"local-change"],
   ["omp readiness",0,0,["json","verbose"],"read-only"],
+  ["omp context",0,0,["json","verbose"],"read-only"],
+  ["omp context apply",0,0,["dry-run"],"local-change"],
   ["omp workarounds",0,0,["json","verbose"],"read-only"],
   ["judge status",0,0,read,"read-only"],
   ["judge providers",0,0,read,"read-only"],
