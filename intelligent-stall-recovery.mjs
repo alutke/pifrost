@@ -140,6 +140,8 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const messages=Array.isArray(event.messages)?event.messages:[];
   const last=row(event.last_assistant_message) ?? row(messages.at(-1));
   if(last?.role!=="assistant" || last.stopReason!=="stop")return reject("not-successful-terminal-stop",attempts);
+  const output=inspectOutput([{type:"message",role:"assistant",content:last.content}],last.stopReason);
+  if(!["REASONING_ONLY_STOP","EMPTY_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",attempts);
   const assistantEntryId=latestAssistantEntry(branch,last);
   if(!assistantEntryId)return reject("assistant-journal-unverified",attempts);
   if(previous.at(-1)?.assistantEntryId===assistantEntryId)return reject("duplicate-settle",attempts);
@@ -147,8 +149,6 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const activity=actionActivity(messages);
   if(activity.uncertain)return reject("unpaired-or-uncertain-tools",attempts);
   if(!activity.recentTools)return reject("no-recent-tool-activity",attempts);
-  const output=inspectOutput([{type:"message",role:"assistant",content:last.content}],last.stopReason);
-  if(!["REASONING_ONLY_STOP","EMPTY_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",attempts);
   const work=scope.checkpoint.pendingVerification ||
     scope.checkpoint.steps.some(s=>s.status!=="verified") || activity.recentTools;
   if(!work)return reject("no-outstanding-work-evidence",attempts);
