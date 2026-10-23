@@ -170,3 +170,54 @@ test("scheduler yields invalid and already-overflowed session windows to OMP rec
     assert.equal(calls, 0, "invalid or overflowing OMP session cannot trigger proactive compaction");
   }
 });
+
+test("30B: idle 615K request schedules OMP compaction without route-member skip", async () => {
+  let tokens = 614_978, calls = 0, busy = false, queued = false;
+  const timers: Array<() => void> = [];
+  const ctx: CompactBeforeSkipRuntimeContext = {
+    sessionManager: {}, model: { provider: "bifrost", id: "omp-default" },
+    models: { current: () => ({ provider: "bifrost", id: "omp-default" }) },
+    getContextUsage: () => ({tokens, contextWindow:1_000_000, percent: tokens/10_000 }),
+    isIdle: () => !busy,
+    hasPendingMessages: () => queued,
+    compact: async () => { calls++; tokens=70_000; },
+    setTimeout: callback => {timers.push(()=>callback()); return 0;},
+  };
+  // No Bifrost dynamic route profile: absolute context policy must work on its own.
+  const schedule = createCompactBeforeSkipCoordinator(() => undefined, {
+    env: {PIFROST_CONTEXT_MODE:"adaptive",PIFROST_COMPACT_BEFORE_CONTEXT_SKIP:"0"}, idleRetryMs:1,
+  });
+  schedule(ctx);
+  queued=true;
+  timers.shift()!();
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal(calls,0,"no compaction when another user action is queued");
+  queued=false;
+  schedule(ctx);
+  timers.shift()!();
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal(calls,1);
+  assert.equal(tokens,70_000);
+  schedule(ctx);
+  timers.shift()!();
+  await new Promise<void>(resolve=>setImmediate(resolve));
+  assert.equal(calls,1,"after-compaction history stays below soft target");
+});
+test("30B: native/off disables adaptive idle compaction without enabling another recovery loop", async () => {
+  for (const mode of ["native","off"]) {
+    let calls=0;const timers:Array<()=>void>=[];
+    const ctx:CompactBeforeSkipRuntimeContext={
+      sessionManager:{},model:{provider:"bifrost",id:"omp-advisor"},
+      models:{current:()=>({provider:"bifrost",id:"omp-advisor"})},
+      getContextUsage:()=>({tokens:526_832,contextWindow:1_000_000,percent:53}),
+      isIdle:()=>true,compact:async()=>{calls++;},
+      setTimeout:callback=>{timers.push(()=>callback());return 0;},
+    };
+    const run=createCompactBeforeSkipCoordinator(()=>undefined,{
+      env:{PIFROST_CONTEXT_MODE:mode,PIFROST_COMPACT_BEFORE_CONTEXT_SKIP:"0"}, idleRetryMs:1,
+    });
+    run(ctx);
+    assert.equal(timers.length,0);
+    assert.equal(calls,0);
+  }
+});
