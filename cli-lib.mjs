@@ -27,6 +27,7 @@ import {
 import { PifrostHttpError, requestJson } from "./http-client.mjs";
 import { postMcpJsonRpc, McpAmbiguousToolOutcomeError } from "./mcp-rpc.mjs";
 import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
+import { proposeAdaptiveContextSettings } from "./adaptive-context-settings.mjs";
 import {
   mcpClientExecutionDiagnostics,
   normalizeMcpClientShape,
@@ -1378,7 +1379,26 @@ export function backupOmpConfig(env = process.env) {
   return backupFile(configPath, state.paths.backups);
 }
 
-export function configureOmp() {
+export function planOmpAdaptiveContext(catalogueModels = []) {
+  const ids = ["compaction.enabled", "compaction.midTurnEnabled", "compaction.autoContinue",
+    "compaction.modelThresholds", "compaction.modelThresholdsEnabled"];
+  const settings = Object.fromEntries(ids.map(id => [id, readOmpConfigValueResult(id)]));
+  return proposeAdaptiveContextSettings(settings, catalogueModels,
+    process.env.PIFROST_CONTEXT_MODE === "off" || process.env.PIFROST_CONTEXT_MODE === "native"
+      ? "native" : "adaptive");
+}
+
+/** Explicit persisted OMP policy write; never replace user threshold keys. */
+export function configureOmpAdaptiveContext(catalogueModels = [], backedUp = false) {
+  if (!commandExists("omp")) throw new Error("OMP is required");
+  const plan = planOmpAdaptiveContext(catalogueModels);
+  if (!plan.changes.length || !plan.merged) return { plan, changed: false, backup: undefined };
+  const backup = backedUp ? undefined : backupOmpConfig();
+  runCommand("omp", ["config", "set", "compaction.modelThresholds", JSON.stringify(plan.merged)]);
+  return { plan, changed: true, backup };
+}
+
+export function configureOmp(catalogueModels = []) {
   if (!commandExists("omp")) throw new Error("`omp` is not installed or not on PATH");
   // OMP config set replaces the entire record/array. Fail before any write
   // if existing user-defined model settings cannot be read.
@@ -1405,7 +1425,9 @@ export function configureOmp() {
     ["modelRoles", merged.get("modelRoles")],
   ];
   for (const [key, value] of settings) runCommand("omp", ["config", "set", key, value]);
-  return { backup, settings: settings.length };
+  const context = configureOmpAdaptiveContext(catalogueModels, true);
+  return { backup, settings: settings.length + (context.changed ? 1 : 0), context: context.plan };
+
 }
 
 export function getRepoRoot(cwd = process.cwd()) {
