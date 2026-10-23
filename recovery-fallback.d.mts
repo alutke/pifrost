@@ -1,3 +1,4 @@
 export function configuredRecoveryFallbackRole(value:unknown):string|null;
-export function recoveryFamilyCandidate(current:{provider:string;id:string}|undefined,
- target:{provider:string;id:string}|undefined, family:(model:{provider:string;id:string})=>unknown):boolean;
+export function recoveryFamilyCandidate<T extends {provider:string;id:string}>(
+ current:T|undefined, target:T|undefined, family:(model:T)=>unknown
+):boolean;
