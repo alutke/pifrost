@@ -121,6 +121,7 @@ import { evaluateAttemptTransition } from "./attempt-retry-policy.ts";
 import { resolveOutputBudget, clampOutputTokenFields, type OutputBudgetMember } from "./output-budget.ts";
 import { bridgePifrostPayload, deferredToolNames } from "./capability-bridge.ts";
 import { mayOmitSyntheticReasoning, normalizeCompletionsReplay, normalizeResponsesReplay } from "./reasoning-replay.ts";
+import { certifyReplayHygiene } from "./replay-certification.mjs";
 import { newReasoningHygieneCounters, observeReasoningSse, ResponsesReasoningPrefixFilter } from "./reasoning-stream.ts";
 import type { ReasoningHygieneCounters } from "./reasoning-stream.ts";
 import {
@@ -499,18 +500,21 @@ function streamDynamicPifrostRoute(
 					// Provider-neutral and inert unless OMP replayed both a synthetic
 					// reasoning item and redundant visible text in an assistant run.
 					// Never strip the structured content required by DeepSeek.
-					const hygiene = normalizeResponsesReplay(bridged, {
-						allowSyntheticReasoningRemoval: mayOmitSyntheticReasoning(transportModel.compat, attempt.primary),
+					const allowSyntheticReasoningRemoval = mayOmitSyntheticReasoning(transportModel.compat, attempt.primary);
+					const hygiene = normalizeResponsesReplay(bridged, { allowSyntheticReasoningRemoval });
+					const certified = certifyReplayHygiene(bridged, hygiene.payload, "openai-responses", {
+						allowSyntheticReasoningRemoval,
 					});
-					hygieneCounters.replayRemoved = hygiene.removedVisiblePlaceholders;
-					hygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
-					hygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
-					hygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
+					if (!certified.accepted) hygieneCounters.replayUncertifiedPreserved++;
+					hygieneCounters.replayRemoved = certified.accepted ? hygiene.removedVisiblePlaceholders : 0;
+					hygieneCounters.replayMixedRewritten = certified.accepted ? hygiene.rewrittenMixedMessages : 0;
+					hygieneCounters.replayNestedRewritten = certified.accepted ? hygiene.rewrittenNestedMessages : 0;
+					hygieneCounters.replayProseRewritten = certified.accepted ? hygiene.rewrittenProseMessages : 0;
 					hygieneCounters.replayAmbiguousRetained = hygiene.retainedAmbiguousPlaceholders;
 					hygieneCounters.replayStructuredRetained = hygiene.retainedReasoningItems;
 					// Counters are available in /pifrost trace; do not log routine
 					// cleanup to stderr on every streamed model request.
-					const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+					const capped = clampOutputTokenFields(certified.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
 
 				costCapture.cacheIntent = inspectResponsesCacheRequest(capped, "openai-responses");
@@ -570,10 +574,12 @@ function streamDynamicPifrostRoute(
 					? bridgePifrostPayload(upstream, { betweenToolsThinking: true })
 					: upstream;
 				const hygiene = normalizeCompletionsReplay(bridged);
-				chatHygieneCounters.replayMixedRewritten = hygiene.rewrittenMixedMessages;
-				chatHygieneCounters.replayNestedRewritten = hygiene.rewrittenNestedMessages;
-				chatHygieneCounters.replayProseRewritten = hygiene.rewrittenProseMessages;
-				const capped = clampOutputTokenFields(hygiene.payload, outputBudget);
+				const certified = certifyReplayHygiene(bridged, hygiene.payload, "openai-completions");
+				if (!certified.accepted) chatHygieneCounters.replayUncertifiedPreserved++;
+				chatHygieneCounters.replayMixedRewritten = certified.accepted ? hygiene.rewrittenMixedMessages : 0;
+				chatHygieneCounters.replayNestedRewritten = certified.accepted ? hygiene.rewrittenNestedMessages : 0;
+				chatHygieneCounters.replayProseRewritten = certified.accepted ? hygiene.rewrittenProseMessages : 0;
+				const capped = clampOutputTokenFields(certified.payload, outputBudget);
 				costCapture.requestDiagnostics = inspectInferenceRequest(capped);
 				guardPifrostReasoningReplay(capped, transportModel, "openai-completions", options, costCapture);
 				return capped;
