@@ -1,4 +1,4 @@
-# OMP compatibility — Pifrost v0.29.23
+# OMP compatibility — Pifrost v0.29.24
 
 ## Tested contract and ownership
 
