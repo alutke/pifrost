@@ -1301,7 +1301,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		// active 30C checkpoint owns this task. It must never compete with 30D.
 		let checkpointOwnsRecovery = true; // unreadable OMP history: fail closed
 		try { checkpointOwnsRecovery = checkpointLedger.read(ctx)?.status === "active"; } catch {}
-		if(intelligentMode !== "off" && !checkpointOwnsRecovery) stalledTurnRecovery.onAgentEnd(event, {
+		if(intelligentMode === "auto" && !checkpointOwnsRecovery) stalledTurnRecovery.onAgentEnd(event, {
 			sessionId,
 			isMain: ctx.agent.kind === "main",
 			hasQueuedMessages: (typeof ctx.hasPendingMessages === "function" && ctx.hasPendingMessages()) || (
