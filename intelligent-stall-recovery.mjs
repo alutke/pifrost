@@ -31,7 +31,9 @@ export function locateRecoveryScope(branch, sessionId, cwd) {
   for (let i=0;i<branch.length;i++) {
     const entry=row(branch[i]);
     if (entry?.type !== "custom" || entry.customType !== PIFROST_CHECKPOINT_TYPE) continue;
-    if (!validExecutionCheckpoint(entry.data,{sessionId,cwd})) continue;
+    // A corrupt latest checkpoint cannot silently resurrect an older,
+    // otherwise valid state from this very branch.
+    if (!validExecutionCheckpoint(entry.data,{sessionId,cwd})) return null;
     if (entry.data.revision===1 && small(entry.id,160)) anchor=entry.id;
     checkpoint=entry.data; index=i;
   }
@@ -42,11 +44,15 @@ export function readRecoveryAttempts(branch, scope, sessionId) {
   if (!Array.isArray(branch) || !scope || !small(sessionId,1024)) return [];
   const key=digest(sessionId);
   const matches=[];
-  for (const v of branch) {
+  const anchorIndex=branch.findIndex(e=>e?.type==="custom" &&
+    e.customType===PIFROST_CHECKPOINT_TYPE && e.id===scope.anchor);
+  if(anchorIndex<0)return null;
+  for (const v of branch.slice(anchorIndex+1)) {
     const e=row(v), d=row(e?.data);
     if (e?.type!=="custom" || e.customType!==PIFROST_RECOVERY_ATTEMPT_TYPE) continue;
-    // An invalid attempt on this anchor is a blocker, never permission to restart.
-    if (d?.anchor!==scope.anchor) continue;
+    // Any unreadable or mismatched attempt after this plan's anchor is
+    // suspect. Never treat it as evidence that the budget is still unused.
+    if(!d || d.anchor!==scope.anchor)return null;
     if (d.schemaVersion!==1 || d.sessionKey!==key ||
         !Number.isSafeInteger(d.ordinal) || d.ordinal<1 || d.ordinal>MAX_RECOVERY_CONTINUATIONS ||
         !small(d.assistantEntryId,160) || !["native","context","model"].includes(d.stage)) return null;
@@ -56,11 +62,19 @@ export function readRecoveryAttempts(branch, scope, sessionId) {
   for(let i=0;i<matches.length;i++) if(matches[i].ordinal!==i+1) return null;
   return matches;
 }
-function latestAssistantEntry(branch) {
+function latestAssistantEntry(branch, last) {
   if (!Array.isArray(branch)) return null;
   for(let i=branch.length-1;i>=0;i--){
     const e=row(branch[i]);
-    if(e?.type==="message" && e.message?.role==="assistant" && small(e.id,160)) return e.id;
+    if(e?.type==="message" && e.message?.role==="assistant" && small(e.id,160)){
+      // The stop-hook response must be the actual latest journal assistant.
+      // Otherwise stale or concurrently changed history cannot authorize work.
+      if(e.message.stopReason!==last?.stopReason)return null;
+      try {
+        if(JSON.stringify(e.message.content)!==JSON.stringify(last.content))return null;
+      } catch {return null;}
+      return e.id;
+    }
   }
   return null;
 }
@@ -79,6 +93,7 @@ function actionActivity(messages) {
         if(part && toolKind(part.type)){
           const id=part.id ?? part.call_id;
           if(!small(id,200)) uncertain=true;
+          else if(calls.has(id))uncertain=true;
           else calls.add(id);
         }
       }
@@ -87,6 +102,7 @@ function actionActivity(messages) {
       hasTool=true;
       const id=msg.toolCallId ?? msg.tool_call_id ?? msg.call_id;
       if(!small(id,200)) uncertain=true;
+      else if(results.has(id))uncertain=true;
       else results.add(id);
       if(msg.isError && Array.isArray(msg.content) &&
           msg.content.some(c=>/timeout|connection reset|broken pipe|socket hang up|econnreset|outcome unknown/iu.test(String(c?.text??""))))
@@ -124,7 +140,7 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const messages=Array.isArray(event.messages)?event.messages:[];
   const last=row(event.last_assistant_message) ?? row(messages.at(-1));
   if(last?.role!=="assistant" || last.stopReason!=="stop")return reject("not-successful-terminal-stop",attempts);
-  const assistantEntryId=latestAssistantEntry(branch);
+  const assistantEntryId=latestAssistantEntry(branch,last);
   if(!assistantEntryId)return reject("assistant-journal-unverified",attempts);
   if(previous.at(-1)?.assistantEntryId===assistantEntryId)return reject("duplicate-settle",attempts);
   if(uncertainTools)return reject("uncertain-tool-outcome",attempts);
