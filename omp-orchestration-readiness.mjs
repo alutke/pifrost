@@ -1,3 +1,4 @@
+import { OMP_EXECUTION_SETTING_IDS, assessExecutionReadiness, formatExecutionReadiness } from "./execution-readiness.mjs";
 /**
  * Release C read-only diagnostics. OMP owns classification, /seance,
  * advisor lifecycle and model handoffs. Pifrost never accesses session files.
@@ -5,6 +6,7 @@
 export const OMP_ORCHESTRATION_SETTING_IDS = Object.freeze([
   "prewalk.enabled", "prewalk.auto", "prewalk.autoTarget", "modelRoles",
   "enabledModels", "advisor.continueSeverity", "advisor.reviewMode",
+  ...OMP_EXECUTION_SETTING_IDS,
 ]);
 function value(settings, id) {
   return settings?.[id]?.status === "ok" ? settings[id].value : undefined;
@@ -56,7 +58,7 @@ export function ompVersionAtLeast(version,min) {
   for(let i=0;i<3;i++){if(a[i]>b[i])return true;if(a[i]<b[i])return false;}
   return true;
 }
-export function assessOmpOrchestration({settings={},catalog,stale=false,hostVersion,selectedJudge,policySnapshotVersion}={}) {
+export function assessOmpOrchestration({settings={},catalog,stale=false,hostVersion,selectedJudge,policySnapshotVersion,stalledMode}={}) {
   const checks=[];
   if (typeof policySnapshotVersion === "string" && policySnapshotVersion.trim()) {
     const host = versionTuple(hostVersion);
@@ -130,8 +132,10 @@ export function assessOmpOrchestration({settings={},catalog,stale=false,hostVers
       (["turn","agent-end"].includes(review)?review:"unverified")+
       ". Extra turns may add model requests and Bifrost cost."));
   }else checks.push(check("advisor","unknown","Cannot read advisor.continueSeverity; do not infer a default.","omp config get advisor.continueSeverity --json"));
+  const execution = assessExecutionReadiness({settings,hostVersion,policySnapshotVersion,stalledMode});
   return {
     schemaVersion:1,
+    execution,
     status: checks.some(c=>c.status==="warn")?"attention":checks.some(c=>c.status==="unknown")?"unverified":"locally-compatible",
     hostVersion:typeof hostVersion==="string"?hostVersion:null,
     policySnapshotVersion:typeof policySnapshotVersion==="string"?policySnapshotVersion:null,
@@ -156,5 +160,6 @@ export function formatOmpOrchestration(result,verbose=false) {
   }
   if(verbose)lines.push("",...result.notes);
   else lines.push("  Details: pifrost omp readiness --verbose");
+  lines.push("",formatExecutionReadiness(result.execution,verbose));
   return lines.join("\n");
 }
