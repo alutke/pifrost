@@ -1,3 +1,11 @@
+## 0.29.21 — 2026-10-23
+
+- Release 30A: add diagnostic-only classification for successful requests producing reasoning-only, empty and leaked-thinking agent stops, separating transport success from task completion.
+- Include sanitized 615K-token DeepSeek / 526K-token advisor incident regressions, absolute token-size observations and gateway model attribution without implying effective context exhaustion or verified physical model.
+- Extend read-only OMP readiness with host lifecycle evidence, compaction and continuation settings, threshold visibility and fallback ownership checks.
+- Notify once per OMP main session when a tool-using execution stops without useful output and no pending continuation; leave existing one-shot recovery and compaction policies unchanged.
+- No background service, raw-prompt logging, automatic tool replay, provider switching or settings writes. Phases 30B–30E remain deferred.
+
 ## 0.29.20 — 2026-10-22
 
 - Correct output-token budget enforcement for opaque and native Bifrost logical routes: retain Bifrost ownership of routing, session affinity and fallback, while applying only independently verified exact endpoint ceilings across candidate members. Keep speculative catalogue and low fallback metadata from artificially restricting capable models.
