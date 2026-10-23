@@ -70,3 +70,23 @@ test("30B: no ungrounded proof of compaction for giant advisor requests with sha
  assert.equal(r.merged["bifrost/omp-advisor"],"f64000");
  assert.equal(r.changes.find(x=>x.selector==="bifrost/omp-advisor").evidence,"catalogue-window-hint");
 });
+
+test("30B: pinned OMP CLI accepts the f-token and percentage model thresholds", async () => {
+  const { spawnSync } = await import("node:child_process");
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { resolve } = await import("node:path");
+  const dir = mkdtempSync(resolve(tmpdir(),"pifrost-30b-omp-"));
+  const exe = resolve(import.meta.dirname,"../node_modules/.bin/omp");
+  const env = {...process.env,HOME:dir};
+  try {
+    const payload = JSON.stringify({"bifrost/omp-default":"f120000","bifrost/omp-advisor":"f64000","bifrost/omp-plan":"65%"});
+    const set = spawnSync(exe,["config","set","compaction.modelThresholds",payload],{env,encoding:"utf8",timeout:15000});
+    assert.equal(set.status,0,set.stdout+" "+set.stderr);
+    const get = spawnSync(exe,["config","get","compaction.modelThresholds","--json"],{env,encoding:"utf8",timeout:15000});
+    assert.equal(get.status,0,get.stdout+" "+get.stderr);
+    assert.match(get.stdout,/f120000/);
+    assert.match(get.stdout,/f64000/);
+    assert.match(get.stdout,/65%/);
+  } finally { rmSync(dir,{recursive:true,force:true}); }
+});
