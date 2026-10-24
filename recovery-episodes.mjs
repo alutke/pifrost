@@ -92,7 +92,11 @@ function evidenceSince(branch,anchorIndex,attemptIndex,end,scope,sessionId,cwd) 
       }
     }
   }
-  const chosen=candidates.sort((a,b)=>b.resultIndex-a.resultIndex)[0];
+  // An explicit new user request is a stronger boundary than incidental tools
+  // subsequently run in that request. It is not an automatic retry grant.
+  const manual=candidates.filter(p=>p.kind==="user-resume")
+    .sort((a,b)=>b.resultIndex-a.resultIndex)[0];
+  const chosen=manual??candidates.sort((a,b)=>b.resultIndex-a.resultIndex)[0];
   return chosen?{kind:chosen.kind,entryId:chosen.entryId,fingerprint:chosen.fingerprint}:null;
 }
 function equalProof(a,b) {
@@ -114,7 +118,12 @@ export function recoveryEpisodeState(branch,{anchor},sessionId,cwd,limit=3) {
   let lastAttemptIndex=anchorIndex,hasV2=false;
   for(let i=anchorIndex+1;i<branch.length;i++) {
     const e=obj(branch[i]),d=obj(e?.data);
-    if(e?.type!=="custom" || ![LEGACY_RECOVERY_ATTEMPT_TYPE,PIFROST_RECOVERY_EPISODE_TYPE].includes(e.customType))continue;
+    if(e?.type!=="custom")continue;
+    // Unknown future or corrupt recovery journal types must not silently
+    // replenish capacity by being skipped.
+    if(typeof e.customType==="string" && e.customType.startsWith("dev.pifrost.recovery-") &&
+       ![LEGACY_RECOVERY_ATTEMPT_TYPE,PIFROST_RECOVERY_EPISODE_TYPE].includes(e.customType))return null;
+    if(![LEGACY_RECOVERY_ATTEMPT_TYPE,PIFROST_RECOVERY_EPISODE_TYPE].includes(e.customType))continue;
     if(!d || d.anchor!==anchor || d.sessionKey!==hash(sessionId) ||
        !Number.isSafeInteger(d.ordinal) || d.ordinal<1 || d.ordinal>limit ||
        !safeId(d.assistantEntryId) || !stages.includes(d.stage) ||
@@ -139,6 +148,12 @@ export function recoveryEpisodeState(branch,{anchor},sessionId,cwd,limit=3) {
     records.push({data:d,index:i,type:e.customType});
     ordinal=d.ordinal;
     lastAttemptIndex=i;
+  }
+  // A missing journal call/result pair or uncertain side effect after the last
+  // consumed attempt blocks recovery; it cannot be treated as "no progress".
+  if(records.length) {
+    const tail=pairs(branch,lastAttemptIndex+1,branch.length);
+    if(!tail || tail.some(p=>p.uncertain))return null;
   }
   // Initial legacy/v2 episodes share the same budget until genuine progress.
   return {records:records.map(r=>r.data),episodeAttempts:ordinal,
