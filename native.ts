@@ -1236,16 +1236,19 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			return;
 		}
 		if(decision.action==="none")return;
-		if(decision.action==="notice") {
-			if(ctx.hasUI && !exhaustedRecoveryNotices.has(sessionId)){
-				exhaustedRecoveryNotices.add(sessionId);
+		// Notices are per proven episode, not permanently suppressed after the
+    // first warning in a multi-hour task.
+    const noticeKey=sessionId+":"+(decision.episodeKey??"initial");
+    if(decision.action==="notice") {
+			if(ctx.hasUI && !exhaustedRecoveryNotices.has(noticeKey)){
+				exhaustedRecoveryNotices.add(noticeKey);
 				ctx.ui.notify("Pifrost 30D: nonproductive stop with unfinished checkpoint; notice mode leaves continuation to the operator. /pifrost recovery status", "warning");
 			}
 			return;
 		}
 		if(decision.action==="exhausted"){
-			if(ctx.hasUI && !exhaustedRecoveryNotices.has(sessionId)){
-				exhaustedRecoveryNotices.add(sessionId);
+			if(ctx.hasUI && !exhaustedRecoveryNotices.has(noticeKey)){
+				exhaustedRecoveryNotices.add(noticeKey);
 				ctx.ui.notify("Pifrost 30F: automatic recovery paused ("+decision.reason+
         "). Current session, work and checkpoint are preserved. No tools were replayed and no unapproved model switch was made. Review /pifrost recovery diagnose, then /pifrost checkpoint resume to reconcile and continue.", "warning");
 			}
@@ -1272,6 +1275,24 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: attempt journal unavailable; no continuation.", "error");
 			return;
 		}
+    // Re-evaluate after the journal write and after any awaited OMP model
+    // selection: a concurrent branch switch, new user message, or queued
+    // continuation invalidates ownership of this settled assistant response.
+    const ownsSettlement=()=>{
+      if(event.signal.aborted || ctx.sessionManager.getSessionId()!==sessionId ||
+         ctx.hasPendingMessages() ||
+         (ctx.getAsyncJobSnapshot()?.running.length??0)>0)return false;
+      try {
+        const observed=planIntelligentRecovery({
+          event,branch:ctx.sessionManager.getBranch(),sessionId,cwd:ctx.cwd,
+          mode:intelligentMode,queued:false,running:false,
+          uncertainTools:uncertainToolOutcome(event.messages),
+          allowModelFallback:Boolean(alternateRecoveryRole),
+        });
+        return observed.reason==="duplicate-settle";
+      } catch {return false;}
+    };
+    if(!ownsSettlement())return;
 		if(alternate) {
 			if(event.signal.aborted)return;
 			let changed=false;
@@ -1281,7 +1302,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 				return;
 			}
 		}
-		if(event.signal.aborted)return;
+    if(!ownsSettlement())return;
 		if(ctx.hasUI)ctx.ui.notify("Pifrost 30F: OMP-owned recovery episode attempt "+decision.attempts+"/3 ("+decision.stage+
 			"). Inspect workspace state before repeating any side effect.", "warning");
 		return { continue:true, additionalContext:decision.additionalContext };
@@ -1406,7 +1427,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		releasePifrostRouteTraces(sessionId);
 		stalledTurnRecovery.onSessionEnd(sessionId);
 		warnedExecutionSessions.delete(sessionId);
-		exhaustedRecoveryNotices.delete(sessionId);
+		for(const key of exhaustedRecoveryNotices) if(key.startsWith(sessionId+":")) exhaustedRecoveryNotices.delete(key);
 		recoveryNotices.release(sessionId);
 	});
 
