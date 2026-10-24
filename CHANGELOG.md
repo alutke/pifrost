@@ -1,3 +1,9 @@
+## 0.29.26 — 2026-10-24
+
+- Release 30F: progress-aware, branch-journal-validated recovery episodes; retain legacy 30D attempt records and bounded consecutive retries.
+- Require evidence of distinct paired tool progress, operator-verifiable checkpoints or a fresh user continuation before renewing capacity. Preserve default same-model OMP-native continuation and opt-in cross-family fallback.
+- Improve terminal recovery diagnosis, actionable manual resume, audit history and comprehensive legacy/corruption/stall regressions. No tool replay, raw reasoning change, compaction daemon or physical model routing.
+
 ## 0.29.25 — 2026-10-23
 
 - Release 30E: fail-closed structural certification of Responses and Chat synthetic-reasoning replay cleanup before each provider request. Protect opaque signatures, user content, tool pairing, provider metadata and original session history.
