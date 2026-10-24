@@ -80,7 +80,8 @@ import {
 } from "./context-estimator.ts";
 import { isCommittedModelOutput } from "./output-commitment.ts";
 import { createStalledTurnRecoveryCoordinator, stalledTurnMode, uncertainToolOutcome } from "./stalled-turn-recovery.ts";
-import { intelligentRecoveryMode, planIntelligentRecovery, formatIntelligentRecoveryStatus, PIFROST_RECOVERY_ATTEMPT_TYPE } from "./intelligent-stall-recovery.mjs";
+import { intelligentRecoveryMode, planIntelligentRecovery, formatIntelligentRecoveryStatus } from "./intelligent-stall-recovery.mjs";
+import { PIFROST_RECOVERY_EPISODE_TYPE } from "./recovery-episodes.mjs";
 import { configuredRecoveryFallbackRole, recoveryFamilyCandidate } from "./recovery-fallback.mjs";
 import { inspectAgentEnd, inspectContextUsage } from "./execution-observation.mjs";
 import { createCheckpointLifecycle } from "./checkpoint-lifecycle.mjs";
@@ -1245,8 +1246,8 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		if(decision.action==="exhausted"){
 			if(ctx.hasUI && !exhaustedRecoveryNotices.has(sessionId)){
 				exhaustedRecoveryNotices.add(sessionId);
-				ctx.ui.notify("Pifrost 30D: bounded continuation ended ("+decision.reason+
-				"). Inspect /pifrost checkpoint status, git status and /pifrost recovery status. No tool replay or model switch was attempted.", "error");
+				ctx.ui.notify("Pifrost 30F: automatic recovery paused ("+decision.reason+
+        "). Current session, work and checkpoint are preserved. No tools were replayed and no unapproved model switch was made. Review /pifrost recovery diagnose, then /pifrost checkpoint resume to reconcile and continue.", "warning");
 			}
 			return;
 		}
@@ -1266,7 +1267,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 		try {
 			// Journal the consumed budget BEFORE any continuation or model switch.
 			// Branch rewinds remove this record; mere process restarts do not.
-			pi.appendEntry(PIFROST_RECOVERY_ATTEMPT_TYPE,decision.record);
+			pi.appendEntry(PIFROST_RECOVERY_EPISODE_TYPE,decision.record);
 		} catch {
 			if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: attempt journal unavailable; no continuation.", "error");
 			return;
@@ -1281,7 +1282,7 @@ export default async function pifrostProvider(pi: ExtensionAPI): Promise<void> {
 			}
 		}
 		if(event.signal.aborted)return;
-		if(ctx.hasUI)ctx.ui.notify("Pifrost 30D: OMP-owned continuation "+decision.attempts+"/3 ("+decision.stage+
+		if(ctx.hasUI)ctx.ui.notify("Pifrost 30F: OMP-owned recovery episode attempt "+decision.attempts+"/3 ("+decision.stage+
 			"). Inspect workspace state before repeating any side effect.", "warning");
 		return { continue:true, additionalContext:decision.additionalContext };
 	});
