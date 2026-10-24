@@ -18,6 +18,7 @@ export interface RecoveryResult {
   additionalContext?:string;
   record?:RecoveryAttemptRecord;
   contextPressure?:boolean;
+  episodeKey?:string;
 }
 export const PIFROST_RECOVERY_ATTEMPT_TYPE:"dev.pifrost.recovery-attempt.v1";
 export const DEFAULT_RECOVERY_CONTINUATIONS:2;
