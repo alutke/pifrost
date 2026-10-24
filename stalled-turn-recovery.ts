@@ -6,6 +6,8 @@
  * classifier. It runs only after a successful agent settlement and asks OMP
  * to continue through its own normal prompt flow, at most once per user prompt.
  */
+import { isLeakedPlanningStop } from "./completion-integrity.mjs";
+
 export const STALLED_TURN_RECOVERY_MARKER = "[PIFROST_STALLED_TURN_RECOVERY_V1]";
 
 export const STALLED_TURN_CONTINUATION = [
@@ -106,26 +108,7 @@ export function detectStalledTurn(event: StalledTurnEnd): "leaked-planning-stop"
 
 	const tail = assistantText(last).trim().slice(-3500);
 	if (!tail || tail.includes(STALLED_TURN_RECOVERY_MARKER)) return undefined;
-	const closingThinkingCount = (tail.match(/<\/thinking>/giu) ?? []).length;
-	const leakedReasoning =
-		closingThinkingCount >= 2 ||
-		/<think>[\s\S]*<\/think>/iu.test(tail) ||
-		/(?:^|\n)\s*¶think:/iu.test(tail);
-	if (!leakedReasoning) return undefined;
-
-	// Planning must occur near the END of the response (before extraneous
-	// thinking-end tags), not solely inside an archived transcript or quote.
-	const withoutClosers = tail.replace(/(?:\s*<\/thinking>\s*)+$/giu, "").trim();
-	const ending = withoutClosers.slice(-650);
-	const planning = /\b(?:let(?:'s| us)|i(?:'ll| will| should| need to)|we(?:'ll| will| should| need to)|next(?: i| we)?|now(?: i| we)?)\s+(?:start|write|patch|add|implement|run|check|fix|inspect|test|verify|update|review|build|commit|push|do|proceed|finish|measure|retest|remove|read)\b/giu;
-	const matches = [...ending.matchAll(planning)];
-	const lastPlan = matches.at(-1);
-	if (!lastPlan || lastPlan.index === undefined) return undefined;
-	const afterPlan = ending.slice(lastPlan.index + lastPlan[0].length);
-	// Reject genuine final reports that merely quote earlier planning output.
-	if (/(?:^|\n)\s*(?:#{1,5}\s*(?:final|summary|report|results|outcome)\b|all work is complete\b)/iu.test(afterPlan)) return undefined;
-	if (afterPlan.length > 180) return undefined;
-	return "leaked-planning-stop";
+	return isLeakedPlanningStop(tail) ? "leaked-planning-stop" : undefined;
 }
 
 /** A stall is only an observation, never proof that another turn is safe. */

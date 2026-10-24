@@ -1,3 +1,9 @@
+## 0.29.27 — 2026-10-24
+
+- Release 30G: share conservative leaked-planning completion detection between the OMP compatibility safeguard and checkpoint-aware 30F recovery; recognise the five-closing-tag DeepSeek incident after successful paired tool work.
+- Accept `LEAKED_THINKING_STOP` through 30F bounded, branch-journal-verified continuation and immutable v2 recovery episode validation; maintain original OMP ownership, no tool replay, default automatic continuation and optional model-family fallback.
+- Add positive/negative completion-classifier cases and full recovery-episode safety regressions. An unfinished plan alone never authorises continuation; normal reports, cancellations, unpaired or uncertain tools, queued work and exhausted budgets continue to fail closed.
+
 ## 0.29.26 — 2026-10-24
 
 - Release 30F: progress-aware, branch-journal-validated recovery episodes; retain legacy 30D attempt records and bounded consecutive retries.

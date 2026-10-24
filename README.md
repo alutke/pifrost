@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.26
+0.29.27
 ```
 
 Bun also works:
@@ -720,3 +720,7 @@ Pifrost distinguishes native Responses tool search from Bifrost-owned Code Mode 
 ### Release 30F — Progress-aware OMP recovery
 
 Automatic continuation budgets are scoped to a verified nonproductive episode, not the lifetime of a coding task. Separate episodes require current-branch evidence of genuine progression; repeated stalls remain bounded. Original sessions, OMP plans and tool results are never replayed or rewritten. Use `/pifrost recovery diagnose` and `/pifrost checkpoint resume` after a safety stop. See [Release 30F](docs/RELEASE_30F_PROGRESS_AWARE_RECOVERY.md).
+
+### Release 30G — Completion-integrity recovery
+
+High-confidence leaked-planning assistant stops (including repeated `</thinking>` markers and explicit unexecuted next actions) now receive the same conservative OMP-native checkpoint recovery as empty/reasoning-only completions. This shares one classifier with the older one-shot safeguard and preserves 30F's journal integrity, episode limits, no-replay contract and interruption gates. `PIFROST_RECOVERY_MODE=auto` remains the default; `off` disables automatic continuation. [Release 30G design and verification](docs/RELEASE_30G_COMPLETION_INTEGRITY.md).

@@ -3,6 +3,7 @@
  * Never retries a request, modifies history, selects a model, or compacts.
  * All identifiers and payloads are intentionally excluded from results.
  */
+import { isLeakedPlanningStop } from "./completion-integrity.mjs";
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value) ? value : null;
 const nonnegative = value => Number.isSafeInteger(value) && value >= 0 ? value : null;
 const textPart = part => {
@@ -35,7 +36,7 @@ export function inspectOutput(items, stopReason = null) {
   const terminal = stopReason === "stop" || stopReason === "end_turn";
   const reason = terminal && toolCalls === 0 && noUsefulText
     ? reasoning > 0 ? "REASONING_ONLY_STOP" : "EMPTY_STOP"
-    : terminal && toolCalls === 0 && /<\/?thinking>/iu.test(visible) && /\b(?:i need to|we should|let's)\b/iu.test(visible.slice(-300))
+    : terminal && toolCalls === 0 && isLeakedPlanningStop(visible)
     ? "LEAKED_THINKING_STOP" : "NONE";
   return Object.freeze({
     reason,

@@ -127,7 +127,7 @@ export function recoveryEpisodeState(branch,{anchor},sessionId,cwd,limit=3) {
     if(!d || d.anchor!==anchor || d.sessionKey!==hash(sessionId) ||
        !Number.isSafeInteger(d.ordinal) || d.ordinal<1 || d.ordinal>limit ||
        !safeId(d.assistantEntryId) || !stages.includes(d.stage) ||
-       d.stage!==stages[d.ordinal-1] || !["REASONING_ONLY_STOP","EMPTY_STOP"].includes(d.reason))return null;
+       d.stage!==stages[d.ordinal-1] || !["REASONING_ONLY_STOP","EMPTY_STOP","LEAKED_THINKING_STOP"].includes(d.reason))return null;
     if(e.customType===LEGACY_RECOVERY_ATTEMPT_TYPE) {
       if(hasV2 || d.schemaVersion!==1 || d.ordinal!==ordinal+1)return null;
     } else {
