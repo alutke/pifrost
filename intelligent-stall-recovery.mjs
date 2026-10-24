@@ -98,6 +98,45 @@ function actionActivity(messages) {
      [...results].some(id=>!calls.has(id))) uncertain=true;
   return {recentTools:hasTool,uncertain};
 }
+/**
+ * OMP's current journal must corroborate the tool work reported by the stop
+ * event. A forged/stale event, lost tool result or duplicate OMP call ID is
+ * not authority to issue another continuation.
+ */
+function journalToolsMatchSettlement(branch,scope,messages) {
+  const anchorIndex=branch.findIndex(e=>e?.type==="custom" &&
+    e.customType===PIFROST_CHECKPOINT_TYPE && e.id===scope.anchor);
+  if(anchorIndex<0 || !Array.isArray(messages))return false;
+  const latestUser=messages.findLastIndex(m=>row(m)?.role==="user");
+  if(latestUser<0)return false;
+  const calls=new Set(),results=new Set();
+  const seenCalls=new Set(),seenResults=new Set();
+  for(const m of messages.slice(latestUser)) {
+    if(m?.role==="assistant" && Array.isArray(m.content))
+      for(const c of m.content)if(toolKind(c?.type))calls.add(c.id??c.call_id);
+    if(isToolResult(m))results.add(m.toolCallId??m.tool_call_id??m.call_id);
+  }
+  if(!calls.size || !results.size)return false;
+  for(const e of branch.slice(anchorIndex+1)){
+    if(e?.type!=="message")continue;
+    const m=row(e.message);if(!m)return false;
+    if(m.role==="assistant" && Array.isArray(m.content)) {
+      for(const c of m.content)if(toolKind(c?.type)) {
+        const id=c.id??c.call_id;
+        if(!small(id,200) || seenCalls.has(id))return false;
+        seenCalls.add(id);
+      }
+    }
+    if(isToolResult(m)){
+      const id=m.toolCallId??m.tool_call_id??m.call_id;
+      if(!small(id,200) || seenResults.has(id))return false;
+      seenResults.add(id);
+    }
+  }
+  return [...calls].every(id=>seenCalls.has(id) && seenResults.has(id)) &&
+    [...results].every(id=>seenCalls.has(id) && seenResults.has(id));
+}
+
 function lastModelText(msg) {
   if(!Array.isArray(msg?.content))return "";
   return msg.content.filter(c=>c?.type==="text"||c?.type==="output_text")
@@ -135,6 +174,8 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const activity=actionActivity(messages);
   if(activity.uncertain)return reject("unpaired-or-uncertain-tools",ledger.episodeAttempts);
   if(!activity.recentTools)return reject("no-recent-tool-activity",ledger.episodeAttempts);
+  if(!journalToolsMatchSettlement(branch,scope,messages))
+    return reject("assistant-journal-tools-unverified",ledger.episodeAttempts);
   const work=scope.checkpoint.pendingVerification ||
     scope.checkpoint.steps.some(s=>s.status!=="verified") || activity.recentTools;
   if(!work)return reject("no-outstanding-work-evidence",ledger.episodeAttempts);
