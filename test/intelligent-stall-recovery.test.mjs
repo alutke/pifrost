@@ -125,10 +125,14 @@ test("30D: repeated attempts are session-and-anchor bound, not merely adjacent i
  const f=fixture();const first=evaluate(f);f.after(first.record);
  const newPlan=createExecutionCheckpoint({sessionId,cwd,planReference:"docs/another-plan.md"});
  f.entries.push({id:"cccc0011",type:"custom",customType:PIFROST_CHECKPOINT_TYPE,data:newPlan});
- f.entries.push({id:"cccc0012",type:"message",message:assistant()});
+ // The second checkpoint must have its own OMP-persisted tool/result pairing;
+ // an event's earlier tool work cannot authorise a different checkpoint.
+ f.entries.push({id:"cccc0012",type:"message",message:tool});
+ f.entries.push({id:"cccc0013",type:"message",message:result});
+ f.entries.push({id:"cccc0014",type:"message",message:assistant()});
  assert.equal(readRecoveryAttempts(f.entries,locateRecoveryScope(f.entries,sessionId,cwd),sessionId).length,0);
  assert.equal(evaluate(f).stage,"native");
  const invalid={...first.record,ordinal:2,sessionKey:"0".repeat(64)};
- f.entries.push({id:"cccc0013",type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:invalid});
+ f.entries.push({id:"cccc0015",type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:invalid});
  assert.equal(readRecoveryAttempts(f.entries,locateRecoveryScope(f.entries,sessionId,cwd),sessionId),null);
 });
