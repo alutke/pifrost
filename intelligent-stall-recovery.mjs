@@ -51,6 +51,9 @@ function latestAssistantEntry(branch, last) {
     if(e?.type==="message" && e.message?.role==="assistant" && small(e.id,160)){
       // The stop-hook response must be the actual latest journal assistant.
       // Otherwise stale or concurrently changed history cannot authorize work.
+      // Any later journal message (especially a user resume or tool outcome)
+      // invalidates a settlement snapshot; checkpoint metadata may follow.
+      if(branch.slice(i+1).some(v=>v?.type==="message"))return null;
       if(e.message.stopReason!==last?.stopReason)return null;
       try {
         if(JSON.stringify(e.message.content)!==JSON.stringify(last.content))return null;
