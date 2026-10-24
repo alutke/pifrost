@@ -1,12 +1,14 @@
 export type RecoveryStage = "native"|"context"|"model";
 export interface RecoveryAttemptRecord {
-  schemaVersion:1;
+  schemaVersion:1|2;
   sessionKey:string;
   anchor:string;
   ordinal:number;
   stage:RecoveryStage;
   assistantEntryId:string;
   reason:string;
+  episodeKey?:string;
+  proof?:{kind:"initial"|"paired-tool"|"verified-step"|"user-resume";entryId:string;fingerprint:string};
 }
 export interface RecoveryResult {
   action:"none"|"notice"|"continue"|"exhausted";
@@ -23,7 +25,7 @@ export const MAX_RECOVERY_CONTINUATIONS:3;
 export function intelligentRecoveryMode(explicit?:string,previous?:string):"auto"|"notice"|"off";
 export function locateRecoveryScope(branch:readonly unknown[],sessionId:string,cwd:string):
   {anchor:string;checkpoint:import("./execution-checkpoint.mjs").ExecutionCheckpoint}|null;
-export function readRecoveryAttempts(branch:readonly unknown[],scope:{anchor:string},sessionId:string):
+export function readRecoveryAttempts(branch:readonly unknown[],scope:{anchor:string},sessionId:string,cwd?:string):
   RecoveryAttemptRecord[]|null;
 export function planIntelligentRecovery(options:{
   event:{
