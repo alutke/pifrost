@@ -6,6 +6,7 @@
 import { createHash } from "node:crypto";
 import { inspectOutput } from "./execution-observation.mjs";
 import { PIFROST_CHECKPOINT_TYPE, validExecutionCheckpoint } from "./execution-checkpoint.mjs";
+import { recoveryEpisodeState, nextRecoveryEpisode, PIFROST_RECOVERY_EPISODE_TYPE } from "./recovery-episodes.mjs";
 
 export const PIFROST_RECOVERY_ATTEMPT_TYPE = "dev.pifrost.recovery-attempt.v1";
 export const DEFAULT_RECOVERY_CONTINUATIONS = 2;
@@ -40,27 +41,8 @@ export function locateRecoveryScope(branch, sessionId, cwd) {
   if (!anchor || !checkpoint || index<0) return null;
   return {anchor,checkpoint};
 }
-export function readRecoveryAttempts(branch, scope, sessionId) {
-  if (!Array.isArray(branch) || !scope || !small(sessionId,1024)) return [];
-  const key=digest(sessionId);
-  const matches=[];
-  const anchorIndex=branch.findIndex(e=>e?.type==="custom" &&
-    e.customType===PIFROST_CHECKPOINT_TYPE && e.id===scope.anchor);
-  if(anchorIndex<0)return null;
-  for (const v of branch.slice(anchorIndex+1)) {
-    const e=row(v), d=row(e?.data);
-    if (e?.type!=="custom" || e.customType!==PIFROST_RECOVERY_ATTEMPT_TYPE) continue;
-    // Any unreadable or mismatched attempt after this plan's anchor is
-    // suspect. Never treat it as evidence that the budget is still unused.
-    if(!d || d.anchor!==scope.anchor)return null;
-    if (d.schemaVersion!==1 || d.sessionKey!==key ||
-        !Number.isSafeInteger(d.ordinal) || d.ordinal<1 || d.ordinal>MAX_RECOVERY_CONTINUATIONS ||
-        !small(d.assistantEntryId,160) || !["native","context","model"].includes(d.stage)) return null;
-    matches.push(d);
-  }
-  // Only a contiguous, ordered sequence is trusted; a corrupt ledger blocks extra retries.
-  for(let i=0;i<matches.length;i++) if(matches[i].ordinal!==i+1) return null;
-  return matches;
+export function readRecoveryAttempts(branch,scope,sessionId,cwd) {
+  return recoveryEpisodeState(branch,scope,sessionId,cwd)?.records ?? null;
 }
 function latestAssistantEntry(branch, last) {
   if (!Array.isArray(branch)) return null;
@@ -133,10 +115,10 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const scope=locateRecoveryScope(branch,sessionId,cwd);
   if(!scope)return reject("no-branch-checkpoint");
   if(scope.checkpoint.status!=="active")return reject("checkpoint-closed");
-  const previous=readRecoveryAttempts(branch,scope,sessionId);
-  if(!previous)return reject("corrupt-recovery-journal");
-  const attempts=previous.length;
-  if(event.stop_hook_active && attempts===0)return reject("other-stop-hook-active");
+  const ledger=recoveryEpisodeState(branch,scope,sessionId,cwd,MAX_RECOVERY_CONTINUATIONS);
+  if(!ledger)return reject("corrupt-recovery-journal");
+  if(event.stop_hook_active && ledger.records.length===0)return reject("other-stop-hook-active");
+  const previous=ledger.records;
   const messages=Array.isArray(event.messages)?event.messages:[];
   const last=row(event.last_assistant_message) ?? row(messages.at(-1));
   if(last?.role!=="assistant" || last.stopReason!=="stop")return reject("not-successful-terminal-stop",attempts);
@@ -144,14 +126,17 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   if(!["REASONING_ONLY_STOP","EMPTY_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",attempts);
   const assistantEntryId=latestAssistantEntry(branch,last);
   if(!assistantEntryId)return reject("assistant-journal-unverified",attempts);
-  if(previous.at(-1)?.assistantEntryId===assistantEntryId)return reject("duplicate-settle",attempts);
-  if(uncertainTools)return reject("uncertain-tool-outcome",attempts);
+  // A hook firing twice must never create two episodes for the same settlement.
+  if(previous.at(-1)?.assistantEntryId===assistantEntryId)return reject("duplicate-settle",ledger.episodeAttempts);
+  if(uncertainTools)return reject("uncertain-tool-outcome",ledger.episodeAttempts);
   const activity=actionActivity(messages);
-  if(activity.uncertain)return reject("unpaired-or-uncertain-tools",attempts);
-  if(!activity.recentTools)return reject("no-recent-tool-activity",attempts);
+  if(activity.uncertain)return reject("unpaired-or-uncertain-tools",ledger.episodeAttempts);
+  if(!activity.recentTools)return reject("no-recent-tool-activity",ledger.episodeAttempts);
   const work=scope.checkpoint.pendingVerification ||
     scope.checkpoint.steps.some(s=>s.status!=="verified") || activity.recentTools;
-  if(!work)return reject("no-outstanding-work-evidence",attempts);
+  if(!work)return reject("no-outstanding-work-evidence",ledger.episodeAttempts);
+  const episode=nextRecoveryEpisode(ledger,scope.anchor);
+  const attempts=episode.attempts;
   if(mode!=="auto")return {action:"notice",reason:output.reason,attempts};
   if(attempts>=MAX_RECOVERY_CONTINUATIONS)return {action:"exhausted",reason:"budget-exhausted",attempts};
   const stage=attempts===0?"native":attempts===1?"context":"model";
@@ -160,11 +145,12 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const ordinal=attempts+1;
   const usage=Number.isFinite(contextTokens)&&contextTokens>=0?contextTokens:null;
   const window=Number.isFinite(contextWindow)&&contextWindow>0?contextWindow:null;
-  const contextPressure=usage!==null&&(usage>=120_000 || (window!==null && usage/window>=0.65));
+  const contextPressure=usage!==null && window!==null && usage/window>=0.65;
   const focus=[
-    "Pifrost 30D recovery "+ordinal+"/"+MAX_RECOVERY_CONTINUATIONS+": the model ended with "+
+    "Pifrost 30F recovery "+ordinal+"/"+MAX_RECOVERY_CONTINUATIONS+
+      (episode.newEpisode?" (separate progress-verified episode)":"")+": the model ended with "+
       output.reason+" after paired tool results. This is not proof of task completion.",
-    "Continue the EXISTING user request. Re-read the original OMP plan and inspect the CURRENT git tree, tests and TODOs.",
+    "Continue the EXISTING user request in this OMP session. Consult the original user instruction and OMP plan; reconcile the CURRENT workspace, git state and tests before making changes.",
     "Do not repeat tool writes, commits, publishes or other side effects without checking whether they already happened.",
     "30C checkpoint reference: "+scope.checkpoint.plan.reference+"; "+
       scope.checkpoint.steps.filter(s=>s.status==="verified").length+"/"+scope.checkpoint.steps.length+
@@ -175,7 +161,10 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
     ?"OMP context pressure observed; rely on OMP-native compaction policy before the next model request. Preserve active plan and tool-result pairing."
     :"Use a concise reconstruction from the active 30C checkpoint; no bulk history replay.");
   if(stage==="model")focus.push("One explicitly authorized different-family OMP model selection was made; Bifrost remains responsible for its physical routing.");
-  const record={schemaVersion:1,sessionKey:digest(sessionId),anchor:scope.anchor,
+  // V1 journal entries remain immutable. New V2 entries encode their episode
+  // and proof without storing any raw prompt, tool output or reasoning.
+  const record={schemaVersion:2,sessionKey:digest(sessionId),anchor:scope.anchor,
+    episodeKey:episode.episodeKey,proof:episode.proof,
     ordinal,stage,assistantEntryId,reason:output.reason};
   return {action:"continue",reason:output.reason,stage,attempts:ordinal,
     additionalContext:focus.join("\n"),record,contextPressure};
@@ -183,9 +172,12 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
 export function formatIntelligentRecoveryStatus({branch,sessionId,cwd,mode}={}){
   const scope=locateRecoveryScope(branch,sessionId,cwd);
   if(!scope)return "Pifrost 30D: no active branch checkpoint; no automatic continuation will occur.";
-  const attempts=readRecoveryAttempts(branch,scope,sessionId);
-  if(!attempts)return "Pifrost 30D: recovery journal invalid; automatic continuation blocked.";
-  return "Pifrost 30D mode "+mode+"; attempt budget "+attempts.length+"/"+MAX_RECOVERY_CONTINUATIONS+
-    "; plan "+scope.checkpoint.plan.reference+"; checkpoint "+scope.checkpoint.status+
-    ". OMP retains compaction and Bifrost retains physical routing.";
+  const state=recoveryEpisodeState(branch,scope,sessionId,cwd,MAX_RECOVERY_CONTINUATIONS);
+  if(!state)return "Pifrost 30F: recovery journal invalid; automatic continuation blocked. Inspect /pifrost recovery diagnose.";
+  const episode=nextRecoveryEpisode(state,scope.anchor);
+  return "Pifrost 30F mode "+mode+"; current episode "+episode.attempts+"/"+MAX_RECOVERY_CONTINUATIONS+
+    "; historical attempts "+state.records.length+
+    "; checkpoint "+scope.checkpoint.status+"; plan "+scope.checkpoint.plan.reference+
+    ". Existing session and checkpoint are preserved. After a safety stop, use /pifrost checkpoint resume "+
+    "to insert a reconcile-first prompt without auto-submitting it. OMP owns execution; Bifrost owns provider routing.";
 }
