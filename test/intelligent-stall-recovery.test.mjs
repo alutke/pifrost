@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createExecutionCheckpoint, transitionExecutionCheckpoint, PIFROST_CHECKPOINT_TYPE } from "../execution-checkpoint.mjs";
+import { PIFROST_RECOVERY_EPISODE_TYPE } from "../recovery-episodes.mjs";
 import { intelligentRecoveryMode, locateRecoveryScope, readRecoveryAttempts,
   planIntelligentRecovery, formatIntelligentRecoveryStatus, PIFROST_RECOVERY_ATTEMPT_TYPE,
 } from "../intelligent-stall-recovery.mjs";
@@ -27,7 +28,8 @@ function fixture(){
     stop_hook_active:false,signal:new AbortController().signal,messages,
     last_assistant_message:messages.at(-1)};
   return {cp,entries,event,after:(record,id="bb000004")=>{
-    entries.push({id,type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:record});
+    entries.push({id,type:"custom",customType:record.schemaVersion===2?
+      PIFROST_RECOVERY_EPISODE_TYPE:PIFROST_RECOVERY_ATTEMPT_TYPE,data:record});
   }};
 }
 const evaluate=(f,overrides={})=>planIntelligentRecovery({
