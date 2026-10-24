@@ -124,11 +124,11 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const previous=ledger.records;
   const messages=Array.isArray(event.messages)?event.messages:[];
   const last=row(event.last_assistant_message) ?? row(messages.at(-1));
-  if(last?.role!=="assistant" || last.stopReason!=="stop")return reject("not-successful-terminal-stop",attempts);
+  if(last?.role!=="assistant" || last.stopReason!=="stop")return reject("not-successful-terminal-stop",ledger.episodeAttempts);
   const output=inspectOutput([{type:"message",role:"assistant",content:last.content}],last.stopReason);
-  if(!["REASONING_ONLY_STOP","EMPTY_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",attempts);
+  if(!["REASONING_ONLY_STOP","EMPTY_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",ledger.episodeAttempts);
   const assistantEntryId=latestAssistantEntry(branch,last);
-  if(!assistantEntryId)return reject("assistant-journal-unverified",attempts);
+  if(!assistantEntryId)return reject("assistant-journal-unverified",ledger.episodeAttempts);
   // A hook firing twice must never create two episodes for the same settlement.
   if(previous.at(-1)?.assistantEntryId===assistantEntryId)return reject("duplicate-settle",ledger.episodeAttempts);
   if(uncertainTools)return reject("uncertain-tool-outcome",ledger.episodeAttempts);
@@ -140,15 +140,16 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   if(!work)return reject("no-outstanding-work-evidence",ledger.episodeAttempts);
   const episode=nextRecoveryEpisode(ledger,scope.anchor);
   const attempts=episode.attempts;
-  if(mode!=="auto")return {action:"notice",reason:output.reason,attempts};
-  if(attempts>=MAX_RECOVERY_CONTINUATIONS)return {action:"exhausted",reason:"budget-exhausted",attempts};
+  if(mode!=="auto")return {action:"notice",reason:output.reason,attempts,episodeKey:episode.episodeKey};
+  if(attempts>=MAX_RECOVERY_CONTINUATIONS)return {action:"exhausted",reason:"budget-exhausted",attempts,episodeKey:episode.episodeKey};
   const stage=attempts===0?"native":attempts===1?"context":"model";
   if(stage==="model" && !allowModelFallback)
-    return {action:"exhausted",reason:"model-fallback-not-authorized",attempts};
+    return {action:"exhausted",reason:"model-fallback-not-authorized",attempts,episodeKey:episode.episodeKey};
   const ordinal=attempts+1;
   const usage=Number.isFinite(contextTokens)&&contextTokens>=0?contextTokens:null;
   const window=Number.isFinite(contextWindow)&&contextWindow>0?contextWindow:null;
-  const contextPressure=usage!==null && window!==null && usage/window>=0.65;
+  // Existing 30D pressure hint, not an input/output limit or forced compaction.
+  const contextPressure=usage!==null&&(usage>=120_000 || (window!==null && usage/window>=0.65));
   const focus=[
     "Pifrost 30F recovery "+ordinal+"/"+MAX_RECOVERY_CONTINUATIONS+
       (episode.newEpisode?" (separate progress-verified episode)":"")+": the model ended with "+
@@ -170,11 +171,11 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
     episodeKey:episode.episodeKey,proof:episode.proof,
     ordinal,stage,assistantEntryId,reason:output.reason};
   return {action:"continue",reason:output.reason,stage,attempts:ordinal,
-    additionalContext:focus.join("\n"),record,contextPressure};
+    additionalContext:focus.join("\n"),record,contextPressure,episodeKey:episode.episodeKey};
 }
 export function formatIntelligentRecoveryStatus({branch,sessionId,cwd,mode}={}){
   const scope=locateRecoveryScope(branch,sessionId,cwd);
-  if(!scope)return "Pifrost 30D: no active branch checkpoint; no automatic continuation will occur.";
+  if(!scope)return "Pifrost 30F: no active branch checkpoint; no automatic continuation will occur.";
   const state=recoveryEpisodeState(branch,scope,sessionId,cwd,MAX_RECOVERY_CONTINUATIONS);
   if(!state)return "Pifrost 30F: recovery journal invalid; automatic continuation blocked. Inspect /pifrost recovery diagnose.";
   const episode=nextRecoveryEpisode(state,scope.anchor);
