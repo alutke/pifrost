@@ -260,7 +260,7 @@ for(const [name,source] of [["intelligent-stall-recovery.mjs",recoveryEngine],["
     errors.push("30F: "+name+" must not execute tools, rewrite messages, route providers or own transport");
   }
 }
-if ((native.match(/pi\\.on\("session_stop"/gu)??[]).length!==1 ||
+if ((native.match(/pi\.on\("session_stop"/gu)??[]).length!==1 ||
     !native.includes('pi.appendEntry(PIFROST_RECOVERY_EPISODE_TYPE,decision.record)') ||
     !native.includes('recoveryFamilyCandidate(current,resolved,model=>ctx.models.family(model))') ||
     !native.includes('checkpointLedger.read(ctx)?.status === "active"') ||
