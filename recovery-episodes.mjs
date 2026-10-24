@@ -73,7 +73,7 @@ function evidenceSince(branch,anchorIndex,attemptIndex,end,scope,sessionId,cwd) 
   for(let i=anchorIndex;i<=attemptIndex;i++){
     const e=obj(branch[i]);
     if(e?.type==="custom" && e.customType===PIFROST_CHECKPOINT_TYPE &&
-       validExecutionCheckpoint(e.data,{sessionId,cwd}))
+       validExecutionCheckpoint(e.data,cwd===undefined?undefined:{sessionId,cwd}))
       for(const step of e.data.steps)if(step.status==="verified")
         baselineCheckpoints.add(hash(JSON.stringify([step.id,step.evidence])));
   }
@@ -83,7 +83,7 @@ function evidenceSince(branch,anchorIndex,attemptIndex,end,scope,sessionId,cwd) 
       candidates.push({kind:"user-resume",entryId:e.id,
         fingerprint:hash("user:"+e.id),resultIndex:i});
     if(e.type==="custom" && e.customType===PIFROST_CHECKPOINT_TYPE) {
-      if(!validExecutionCheckpoint(e.data,{sessionId,cwd}))return null;
+      if(!validExecutionCheckpoint(e.data,cwd===undefined?undefined:{sessionId,cwd}))return null;
       for(const step of e.data.steps) {
         if(step.status!=="verified")continue;
         const fp=hash(JSON.stringify([step.id,step.evidence]));
@@ -104,7 +104,8 @@ function equalProof(a,b) {
  * fails closed. Compacting/rewinding cannot import proof from another branch.
  */
 export function recoveryEpisodeState(branch,{anchor},sessionId,cwd,limit=3) {
-  if(!Array.isArray(branch)||!safeId(anchor)||!safeId(sessionId)||typeof cwd!=="string")return null;
+  if(!Array.isArray(branch)||!safeId(anchor)||!safeId(sessionId)||
+     (cwd!==undefined && typeof cwd!=="string"))return null;
   const anchorIndex=branch.findIndex(e=>e?.type==="custom" &&
     e.customType===PIFROST_CHECKPOINT_TYPE && e.id===anchor);
   if(anchorIndex<0)return null;
