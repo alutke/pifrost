@@ -165,7 +165,7 @@ export function planIntelligentRecovery({event,branch,sessionId,cwd,mode="auto",
   const last=row(event.last_assistant_message) ?? row(messages.at(-1));
   if(last?.role!=="assistant" || last.stopReason!=="stop")return reject("not-successful-terminal-stop",ledger.episodeAttempts);
   const output=inspectOutput([{type:"message",role:"assistant",content:last.content}],last.stopReason);
-  if(!["REASONING_ONLY_STOP","EMPTY_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",ledger.episodeAttempts);
+  if(!["REASONING_ONLY_STOP","EMPTY_STOP","LEAKED_THINKING_STOP"].includes(output.reason))return reject("productive-or-ambiguous-answer",ledger.episodeAttempts);
   const assistantEntryId=latestAssistantEntry(branch,last);
   if(!assistantEntryId)return reject("assistant-journal-unverified",ledger.episodeAttempts);
   // A hook firing twice must never create two episodes for the same settlement.
