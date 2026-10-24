@@ -1,6 +1,6 @@
 {
   "name": "pifrost",
-  "version": "0.29.26",
+  "version": "0.29.27",
   "description": "Native OhMyPi provider and terminal control plane for Maxim Bifrost",
   "type": "module",
   "bin": {
@@ -87,6 +87,8 @@
     "judge-bridge.d.mts",
     "judge-control.mjs",
     "execution-observation.mjs",
+    "completion-integrity.mjs",
+    "completion-integrity.d.mts",
     "execution-observation.d.mts",
     "adaptive-context-settings.mjs",
     "execution-checkpoint.mjs",
@@ -101,6 +103,7 @@
     "recovery-episodes.mjs",
     "recovery-episodes.d.mts",
     "docs/RELEASE_30F_PROGRESS_AWARE_RECOVERY.md",
+    "docs/RELEASE_30G_COMPLETION_INTEGRITY.md",
     "intelligent-stall-recovery.mjs",
     "intelligent-stall-recovery.d.mts",
     "recovery-fallback.mjs",
