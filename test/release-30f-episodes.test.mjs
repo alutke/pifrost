@@ -154,3 +154,13 @@ test("30F: many independent stalls retain bounded consecutive retries and measur
     " p95StopHookMs="+p95.toFixed(3)+" auditBytes="+bytes+
     " heapDeltaBytes="+heapDelta);
 });
+
+test("30F: tool activity in the stop event without journal pairing fails closed",()=>{
+  const f=fixture();
+  const withoutToolJournal=f.branch.filter(e=>e.id!=="entry-1" && e.id!=="entry-2");
+  assert.equal(f.evaluate({branch:withoutToolJournal}).reason,"assistant-journal-tools-unverified");
+  const duplicate=[...f.branch,{id:"duplicate-result",type:"message",message:result("first")}];
+  assert.equal(f.evaluate({branch:duplicate}).reason,"assistant-journal-unverified");
+  const missingResult=f.branch.filter(e=>e.id!=="entry-2");
+  assert.equal(f.evaluate({branch:missingResult}).reason,"assistant-journal-tools-unverified");
+});
