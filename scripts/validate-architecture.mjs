@@ -255,12 +255,12 @@ if (!readFileSync(resolve(root, "cli.mjs"), "utf8").includes("routePolicyDrift(l
 const recoveryEngine=readFileSync(resolve(root,"intelligent-stall-recovery.mjs"),"utf8");
 const episodeLedger=readFileSync(resolve(root,"recovery-episodes.mjs"),"utf8");
 for(const [name,source] of [["intelligent-stall-recovery.mjs",recoveryEngine],["recovery-episodes.mjs",episodeLedger]]) {
-  if(/\\b(?:fetch|setInterval|setTimeout|spawn|execFile|execSync|sendMessage|appendMessage|replaceMessages|setModel|compact|runTool)\\s*\\(/u.test(source) ||
-     /from\\s+["'][^"']*(?:multi-protocol-routing|dynamic-routing|transport-model|http-client|routing-core|mcp-rpc)/u.test(source)) {
+  if(/\b(?:fetch|setInterval|setTimeout|spawn|execFile|execSync|sendMessage|appendMessage|replaceMessages|setModel|compact|runTool)\s*\(/u.test(source) ||
+     /from\s+["'][^"']*(?:multi-protocol-routing|dynamic-routing|transport-model|http-client|routing-core|mcp-rpc)/u.test(source)) {
     errors.push("30F: "+name+" must not execute tools, rewrite messages, route providers or own transport");
   }
 }
-if ((native.match(/pi\\.on\\("session_stop"/gu)??[]).length!==1 ||
+if ((native.match(/pi\\.on\("session_stop"/gu)??[]).length!==1 ||
     !native.includes('pi.appendEntry(PIFROST_RECOVERY_EPISODE_TYPE,decision.record)') ||
     !native.includes('recoveryFamilyCandidate(current,resolved,model=>ctx.models.family(model))') ||
     !native.includes('checkpointLedger.read(ctx)?.status === "active"') ||
