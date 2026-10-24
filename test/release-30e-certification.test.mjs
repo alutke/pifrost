@@ -87,6 +87,8 @@ test("30E: recovery refuses corrupt checkpoint and latest-branch stale response"
  const branch=[
   {type:"custom",id:"anchor",customType:PIFROST_CHECKPOINT_TYPE,data:cp},
   {type:"custom",id:"step",customType:PIFROST_CHECKPOINT_TYPE,data:started},
+  {type:"message",id:"persisted-call",message:messages[1]},
+  {type:"message",id:"persisted-result",message:messages[2]},
   {type:"message",id:"last",message:reasoningStop},
  ];
  const event={session_id:sessionId,signal:new AbortController().signal,stop_hook_active:false,

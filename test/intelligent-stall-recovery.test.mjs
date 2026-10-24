@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createExecutionCheckpoint, transitionExecutionCheckpoint, PIFROST_CHECKPOINT_TYPE } from "../execution-checkpoint.mjs";
+import { PIFROST_RECOVERY_EPISODE_TYPE } from "../recovery-episodes.mjs";
 import { intelligentRecoveryMode, locateRecoveryScope, readRecoveryAttempts,
   planIntelligentRecovery, formatIntelligentRecoveryStatus, PIFROST_RECOVERY_ATTEMPT_TYPE,
 } from "../intelligent-stall-recovery.mjs";
@@ -27,7 +28,8 @@ function fixture(){
     stop_hook_active:false,signal:new AbortController().signal,messages,
     last_assistant_message:messages.at(-1)};
   return {cp,entries,event,after:(record,id="bb000004")=>{
-    entries.push({id,type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:record});
+    entries.push({id,type:"custom",customType:record.schemaVersion===2?
+      PIFROST_RECOVERY_EPISODE_TYPE:PIFROST_RECOVERY_ATTEMPT_TYPE,data:record});
   }};
 }
 const evaluate=(f,overrides={})=>planIntelligentRecovery({
@@ -123,10 +125,14 @@ test("30D: repeated attempts are session-and-anchor bound, not merely adjacent i
  const f=fixture();const first=evaluate(f);f.after(first.record);
  const newPlan=createExecutionCheckpoint({sessionId,cwd,planReference:"docs/another-plan.md"});
  f.entries.push({id:"cccc0011",type:"custom",customType:PIFROST_CHECKPOINT_TYPE,data:newPlan});
- f.entries.push({id:"cccc0012",type:"message",message:assistant()});
+ // The second checkpoint must have its own OMP-persisted tool/result pairing;
+ // an event's earlier tool work cannot authorise a different checkpoint.
+ f.entries.push({id:"cccc0012",type:"message",message:tool});
+ f.entries.push({id:"cccc0013",type:"message",message:result});
+ f.entries.push({id:"cccc0014",type:"message",message:assistant()});
  assert.equal(readRecoveryAttempts(f.entries,locateRecoveryScope(f.entries,sessionId,cwd),sessionId).length,0);
  assert.equal(evaluate(f).stage,"native");
  const invalid={...first.record,ordinal:2,sessionKey:"0".repeat(64)};
- f.entries.push({id:"cccc0013",type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:invalid});
+ f.entries.push({id:"cccc0015",type:"custom",customType:PIFROST_RECOVERY_ATTEMPT_TYPE,data:invalid});
  assert.equal(readRecoveryAttempts(f.entries,locateRecoveryScope(f.entries,sessionId,cwd),sessionId),null);
 });

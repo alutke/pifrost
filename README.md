@@ -130,7 +130,7 @@ pifrost --version
 Expected for this release:
 
 ```text
-0.29.25
+0.29.26
 ```
 
 Bun also works:
@@ -716,3 +716,7 @@ Pifrost distinguishes native Responses tool search from Bifrost-owned Code Mode 
 ### Release 5F — judgment, caching and cost certification (v0.29.19)
 
 `pifrost judge status` reports pinned OMP image bounds and verified Jev 1.14 box eligibility. `pifrost judge providers` checks Azure/Databricks catalog visibility without inference. The Responses bridge records 12-hour cache intent and Bifrost-reported 30m/12h counters without changing global cache policy. `/pifrost trace` identifies reported cost and physical-model evidence rather than guessing. Optional billed `pifrost judge probe --image --box` and `npm run smoke:cache` are separately gated. See [Release 5F](docs/RELEASE_5F_CERTIFICATION.md).
+
+### Release 30F — Progress-aware OMP recovery
+
+Automatic continuation budgets are scoped to a verified nonproductive episode, not the lifetime of a coding task. Separate episodes require current-branch evidence of genuine progression; repeated stalls remain bounded. Original sessions, OMP plans and tool results are never replayed or rewritten. Use `/pifrost recovery diagnose` and `/pifrost checkpoint resume` after a safety stop. See [Release 30F](docs/RELEASE_30F_PROGRESS_AWARE_RECOVERY.md).
