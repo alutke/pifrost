@@ -1,4 +1,4 @@
-# Pifrost integration support — v0.29.26
+# Pifrost integration support — v0.29.27
 
 This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.5**. Supported historical host installation: **OMP 18.10.4**; prior compiled host **18.12.1**; current host contract: **OMP 18.12.5**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **Bifrost 2.3.2** (including 2.3.0 historical fixtures).
 
