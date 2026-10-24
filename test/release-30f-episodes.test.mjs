@@ -130,3 +130,27 @@ test("30F: journal proof is branch-derived, never copied from a disk mirror",()=
   f.branch.push({id:"bad-proof",type:"custom",customType:PIFROST_RECOVERY_EPISODE_TYPE,data:fake});
   assert.equal(f.evaluate().reason,"corrupt-recovery-journal");
 });
+
+test("30F: many independent stalls retain bounded consecutive retries and measured hook overhead",()=>{
+  const f=fixture(),n=40,latencies=[];
+  const initialHeap=process.memoryUsage().heapUsed;
+  for(let i=0;i<n;i++){
+    if(i>0){f.work("progress-"+i,"node --check file-"+i+".js");f.settle();}
+    const start=performance.now();
+    const decision=f.evaluate();
+    latencies.push(performance.now()-start);
+    assert.equal(decision.stage,"native","episode "+i);
+    assert.equal(decision.attempts,1,"episode "+i);
+    f.consume(decision);
+  }
+  const state=recoveryEpisodeState(f.branch,locateRecoveryScope(f.branch,sessionId,cwd),sessionId,cwd);
+  assert.equal(state.records.length,n);
+  const sorted=[...latencies].sort((a,b)=>a-b);
+  const p95=sorted[Math.ceil(n*0.95)-1];
+  const bytes=Buffer.byteLength(JSON.stringify(state.records));
+  const heapDelta=process.memoryUsage().heapUsed-initialHeap;
+  console.log("# 30F benchmark (CI runner, no provider): episodes="+n+
+    " medianStopHookMs="+sorted[Math.floor(n/2)].toFixed(3)+
+    " p95StopHookMs="+p95.toFixed(3)+" auditBytes="+bytes+
+    " heapDeltaBytes="+heapDelta);
+});
