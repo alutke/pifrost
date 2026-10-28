@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { existsSync, readFileSync, rmSync } from "node:fs";
+import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -157,7 +158,7 @@ Usage:
   pifrost global status
   pifrost global mcp-policy               Read-only gateway-injected provider tools
   pifrost global observability [--vk-id ID]  Optional gateway intelligence, research, privacy (read-only)
-  pifrost global configure-omp
+  pifrost global configure-omp           REMOVED: OMP owns modelRoles
   pifrost omp readiness [--json|--verbose] Read-only prewalk, seance and advisor readiness
   pifrost omp context [--json|--verbose] Read-only adaptive context policy preview
   pifrost omp context apply [--dry-run]  Backed-up additive OMP context thresholds
@@ -175,6 +176,10 @@ Usage:
   pifrost routes diagnose
   pifrost routes effective
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
+  pifrost models list                      Read-only Bifrost /models roster
+  pifrost models status                    Current native discovery configuration
+  pifrost models enable [--api completions|responses] [--dry-run]
+  pifrost models disable [--dry-run]
   pifrost models refresh [--force]
   pifrost models doctor
   pifrost models kinds                     Read-only Bifrost model-kind inventory, not model runner registration
@@ -204,6 +209,8 @@ Usage:
   pifrost repo skills undismiss <client>
   pifrost repo reset [--delete-remote] [--recover-by-name] [--yes]
   pifrost secret repo-mcp --id <repo-id>
+  pifrost secret inference                 Machine-only credential resolver
+  pifrost secret inference-vk              Machine-only VK header resolver
   pifrost doctor
   pifrost --version
 
@@ -563,7 +570,7 @@ async function commandGlobalSetup(flags) {
     console.log(operationSummary("Read-only preview",[
       "Would save Bifrost connection configuration and protected credentials",
       "Would test inference/management access unless --skip-test",
-      flags["skip-omp"]?"Would leave OMP settings unchanged":"Would configure Pifrost-owned OMP settings with backup",
+      "Would leave all OMP model roles, defaults and settings unchanged",
       "Secret values will not be printed"
     ]));return;
   }
@@ -604,13 +611,8 @@ async function commandGlobalSetup(flags) {
   console.log(`Saved config:  ${paths.config}`);
   console.log(`Saved secrets: ${paths.secrets} (0600)`);
 
-  if (!flags["skip-omp"]) {
-    process.stdout.write("Configuring OMP roles/settings... ");
-    const result = configureOmp(readCatalog().cache?.models ?? []);
-    console.log(`OK (${result.settings} settings)`);
-    if (result.backup) console.log(`OMP config backup: ${result.backup}`);
-  }
-  console.log("Setup completed. Verify with pifrost doctor; synchronise routes using pifrost routes sync, then restart OMP.");
+  console.log("Setup completed. OMP model roles are unchanged.");
+  console.log("Use pifrost models enable for optional native Bifrost model discovery; repo init for MCPs.");
 }
 
 function snapshotCheck(id, label, snapshot, action, required = false) {
@@ -800,29 +802,12 @@ async function commandGlobalStatus(snapshot, options = {}) {
 }
 
 async function commandInit(flags) {
-  printHeader("Pifrost first-time setup");
-  if(flags["dry-run"]){
-    console.log(operationSummary("Read-only preview",[
-      "Would install/update the Pifrost OMP extension",
-      "Would configure Bifrost connection and management credentials",
-      "Would sync routes and refresh model catalogue where available",
-      "Would configure Pifrost-owned OMP settings; no changes made"
-    ]));return;
-  }
-  if (!commandExists("omp")) throw new Error("OMP is required but `omp` is not on PATH");
-  console.log("Installing/updating Pifrost OMP extension...");
-  installOmpPlugin();
-  await commandGlobalSetup(flags);
-  const state = loadState();
-  if (managementAuthFromState(state)) {
-    console.log("Synchronizing Bifrost omp-* routes...");
-    await commandRoutesSync({ "no-refresh": true });
-  } else {
-    console.log("Skipping route sync because no management authentication is configured.");
-  }
-  console.log("Refreshing Pifrost model catalog...");
-  await commandModelsRefresh({ force: true });
-  await commandGlobalStatus();
+  printHeader("Pifrost 0.30 — Bifrost connections and repo tools only");
+  // The default must NEVER install a provider, remap OMP roles or refresh
+  // Pifrost aliases. Existing native OMP settings remain authoritative.
+  await commandGlobalSetup({ ...flags, "skip-omp": true });
+  console.log("OMP model selection is unchanged. To opt in: pifrost models enable");
+  console.log("For a repository: pifrost repo init; pifrost repo skills list");
 }
 
 async function routingSnapshot() {
@@ -2265,6 +2250,55 @@ function judgeRuntimeConfig() {
   return runtime;
 }
 
+async function commandModelsList() {
+  const runtime = judgeRuntimeConfig();
+  const headers = { "x-bf-vk": runtime.virtualKey };
+  if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
+  const listing = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
+  if (!Array.isArray(listing?.data)) throw new Error("Bifrost /models returned no model list");
+  for (const item of listing.data) if (item && typeof item.id === "string") {
+    console.log(item.id);
+  }
+}
+function commandModelsStatus() {
+  const result = nativeModelsStatus();
+  console.log(result.enabled ? "Native Bifrost model discovery: enabled ("+result.protocol+")" :
+    "Native Bifrost model discovery: disabled; OMP defaults unchanged");
+  console.log("OMP models.yml: " + result.path);
+}
+async function commandModelsEnable(flags = {}) {
+  const runtime = judgeRuntimeConfig();
+  const protocol = flagString(flags, "api") ?? "completions";
+  if (!["completions","responses"].includes(protocol))
+    throw new Error("--api must be completions or responses");
+  const api = "openai-" + protocol;
+  if (flags["dry-run"]) {
+    console.log("Would add/update only Pifrost's marked bifrost provider under OMP models.yml");
+    console.log("Gateway: " + runtime.url + " | Native API: " + api);
+    console.log("All modelRoles and enabledModels stay unchanged; other providers are preserved.");
+    return;
+  }
+  const outcome = writeNativeModels(api,runtime.url);
+  console.log(outcome.changed?"Enabled native Bifrost discovery.":"Bifrost discovery already enabled.");
+  console.log("OMP config: " + outcome.path);
+  if(outcome.backup)console.log("Backup: " + outcome.backup);
+  console.log("No OMP model role changed. Restart OMP, then use /model to select bifrost/<model-id>.");
+  console.log("Models requiring a different Chat/Responses protocol need explicit native OMP overrides.");
+}
+function commandModelsDisable(flags = {}) {
+  if(flags["dry-run"]){console.log("Would remove only the marked Pifrost Bifrost provider; OMP roles stay untouched.");return;}
+  const outcome=writeNativeModels(null,null);
+  console.log(outcome.changed?"Disabled Pifrost-managed Bifrost provider.":"No Pifrost-managed provider to remove.");
+  if(outcome.backup)console.log("Backup: " + outcome.backup);
+}
+function commandInferenceSecret(kind) {
+  const state=loadState();
+  const value=kind==="virtual-key" ? state.secrets.inferenceVirtualKey
+    : state.secrets.inferenceApiKey ?? state.secrets.inferenceVirtualKey;
+  if(!value)throw new Error("Required inference secret is not configured; run pifrost global setup");
+  process.stdout.write(value);
+}
+
 async function commandModelsKinds() {
   const runtime = judgeRuntimeConfig();
   const headers = { "x-bf-vk": runtime.virtualKey };
@@ -2533,18 +2567,13 @@ const COMMANDS = new Map([
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
   ["omp readiness", (_args, flags) => commandOmpReadiness(flags)],
   ["omp context", (_args, flags) => commandOmpContext(flags)],
-  ["omp context apply", (_args, flags) => commandOmpContext(flags, true)],
+  ["omp context apply", () => { throw new Error("Removed in 0.30: OMP manages its own compaction thresholds."); }],
   ["omp workarounds", (_args, flags) => commandOmpWorkarounds(flags)],
   ["judge status", () => commandJudgeStatus()],
   ["judge providers", () => commandJudgeProviders()],
-  ["judge activate", (_args, flags) => commandJudgeActivate(flags)],
+  ["judge activate", () => { throw new Error("Removed in 0.30: choose native OMP judge models in OMP."); }],
   ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
-  ["global configure-omp", (_args, flags) => {
-    if(flags["dry-run"]){console.log(operationSummary("Read-only preview",["Would apply Pifrost-owned OMP configuration with backup"]));return;}
-    const result = configureOmp(readCatalog().cache?.models ?? []);
-    console.log(`Configured ${result.settings} OMP settings.`);
-    if (result.backup) console.log(`Backup: ${result.backup}`);
-  }],
+  ["global configure-omp", () => { throw new Error("Removed in 0.30: OMP model mapping is native and must be managed in OMP."); }],
   ["routes list", (_args,flags) => commandRoutesList(flags)],
   ["routes diff", () => commandRoutesDiff()],
   ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
@@ -2554,6 +2583,10 @@ const COMMANDS = new Map([
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
+  ["models list", () => commandModelsList()],
+  ["models status", () => commandModelsStatus()],
+  ["models enable", (_args,flags) => commandModelsEnable(flags)],
+  ["models disable", (_args,flags) => commandModelsDisable(flags)],
   ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
   ["models doctor", (_args, flags) => commandModelsDoctor(flags)],
   ["models kinds", () => commandModelsKinds()],
@@ -2583,6 +2616,8 @@ const COMMANDS = new Map([
   ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
   ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
+  ["secret inference", () => commandInferenceSecret("auth")],
+  ["secret inference-vk", () => commandInferenceSecret("virtual-key")],
   ["doctor", (_args, flags) => commandDoctor(flags)],
 ]);
 
