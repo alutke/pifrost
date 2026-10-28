@@ -16,7 +16,7 @@ const values = {
   "screenshot-tool":"Screenshot tool name", "vk-id":"Virtual Key management ID",
   "id":"Internal repository identifier", "filter":"Case-insensitive name filter",
   "limit":"Maximum displayed entries", "role":"OMP logical role",
-  "last":"Recent request count",
+  "last":"Recent request count", "api":"Native gateway protocol (completions|responses)",
 };
 const bools = new Set([
   "help","all","version","verbose","strict","json","dry-run","yes","skip-test",
@@ -54,6 +54,10 @@ const rows = [
   ["routes diagnose",0,0,read,"read-only"],
   ["routes effective",0,0,read,"read-only"],
   ["routes explain",1,1,routeOptions,"read-only"],
+  ["models list",0,0,[],"read-only"],
+  ["models status",0,0,[],"read-only"],
+  ["models enable",0,0,["api","dry-run"],"local-change"],
+  ["models disable",0,0,["dry-run"],"local-change"],
   ["models refresh",0,0,["force"],"local-change"],
   ["models doctor",0,0,healthRead,"read-only"],
   ["models kinds",0,0,read,"read-only"],
@@ -83,6 +87,8 @@ const rows = [
   ["repo skills remove",1,1,["force","dry-run"],"local-change"],
   ["repo skills sync",0,1,["force","dry-run"],"local-change"],
   ["secret repo-mcp",0,0,["id"],"machine-secret"],
+  ["secret inference",0,0,[],"machine-secret"],
+  ["secret inference-vk",0,0,[],"machine-secret"],
   ["doctor",0,0,healthRead,"read-only"],
 ];
 export const commandCatalog = new Map(rows.map(([name,min,max,options,operation]) => [name,{
@@ -123,6 +129,8 @@ export function validateCliInvocation(name,args,flags) {
     if(flags[key]!==undefined && (!/^\d{1,8}$/u.test(flags[key]) || Number(flags[key])<1))
       throw cliUsageError("--"+key+" must be a positive integer.");
   }
+  if(name==="models enable" && flags.api!==undefined && !["completions","responses"].includes(flags.api))
+    throw cliUsageError("--api must be completions or responses.");
   if(name==="routes explain"&&flags["tool-choice"]!==undefined&&
     !/^(?:auto|required|any|name:[a-z0-9_.-]+)$/iu.test(flags["tool-choice"]))
     throw cliUsageError("--tool-choice must be auto, required, any or name:tool.");
