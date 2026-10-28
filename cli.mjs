@@ -2237,6 +2237,13 @@ function commandOmpCommands(action,flags={}) {
     console.log("This integration only registers a slash command; it has no event hooks or model interceptors.");
     return;
   }
+  if(action==="enable" && commandExists("omp")){
+    let installed;
+    try { installed=JSON.parse(runCommand("omp",["plugin","list","--json"]).stdout); }
+    catch { throw new Error("Could not verify installed OMP plugins. Use 'omp plugin list' and disable the legacy Pifrost runtime extension first."); }
+    if(Array.isArray(installed?.npm) && installed.npm.some(x=>x?.name==="pifrost" && x.enabled!==false))
+      throw new Error("Legacy Pifrost runtime plugin is active. First run 'pifrost migrate disable-extension', then restart OMP.");
+  }
   const result=action==="enable" ? enableCommands() : disableCommands();
   console.log(result.changed?("OMP /pifrost commands "+(action==="enable"?"installed":"disabled")+"."):
     "Already "+(action==="enable"?"enabled":"disabled")+".");
