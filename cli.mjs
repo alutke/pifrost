@@ -4,6 +4,7 @@ import { existsSync, readFileSync, rmSync, copyFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
 import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
+import { enableCommands, disableCommands, commandStatus } from "./omp-commands-install.mjs";
 import { runLiteDoctor } from "./lite-doctor.mjs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -153,115 +154,66 @@ import {
   writeRepoMcpConfig,
 } from "./cli-lib.mjs";
 
-const HELP = `Pifrost ${VERSION} — OMP ↔ Maxim Bifrost configuration and control plane
+const HELP = `Pifrost ${VERSION} — optional Bifrost models, MCPs and Skills for OMP
 
-Usage:
-  pifrost init
-  pifrost global setup [options]
-  pifrost global status
-  pifrost global mcp-policy               Read-only gateway-injected provider tools
-  pifrost global observability [--vk-id ID]  Optional gateway intelligence, research, privacy (read-only)
-  pifrost global configure-omp           REMOVED: OMP owns modelRoles
-  pifrost omp readiness [--json|--verbose] Read-only prewalk, seance and advisor readiness
-  pifrost omp context [--json|--verbose] Read-only adaptive context policy preview
-  pifrost omp context apply [--dry-run]  Backed-up additive OMP context thresholds
-  pifrost omp workarounds [--json|--verbose] Read-only compatibility retirement register
-  pifrost judge status                      Inspect opt-in OMP judge bounds and gateway model availability
-  pifrost judge providers                   Read-only Azure/Databricks Decisions model visibility
-  pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
-  pifrost judge probe [--image] [--box] [--decisions] Explicitly billed native Decisions conformance
-  pifrost routes list
-  pifrost routes diff
-  pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
-  pifrost routes attest <alias> --json    Read-only live policy/member attestation for OMP
-  pifrost routes sync [--no-refresh]
-  pifrost routes reconcile --json         Safe user-triggered comparison and sync (OMP integration)
-  pifrost routes diagnose
-  pifrost routes effective
-  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
-  pifrost migrate status                   Preview exact legacy role cleanup
-  pifrost migrate disable-extension [--dry-run] Disable legacy OMP runtime plugin
-  pifrost migrate apply                    Backup then restore OMP-owned roles
-  pifrost migrate rollback                 Restore if config hasn't changed
-  pifrost models list                      Read-only Bifrost /models roster
-  pifrost models status                    Current native discovery configuration
-  pifrost models enable [--api completions|responses] [--dry-run]
-  pifrost models disable [--dry-run]
-  pifrost models refresh [--force]
-  pifrost models doctor
-  pifrost models kinds                     Read-only Bifrost model-kind inventory, not model runner registration
-  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
-  pifrost repo status
-  pifrost repo research status
-  pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name] [--fetch-tool name] [--crawl-tool name] [--screenshot-tool name]
-  pifrost repo research unbind <id>
-  pifrost repo research prefer <id|none>
-  pifrost repo research probe [<id>]       Explicit, read-only live search test via Bifrost (Classic MCP only)
-  pifrost repo rotate-key
+Usage: pifrost <command> [options]
+
+Everyday:
+  pifrost status                Quick health check (alias: doctor)
+  pifrost init                  Configure gateway and credentials; OMP is unchanged
+  pifrost models                Native OMP/Bifrost integration status
+  pifrost models list           Bifrost model inventory
+  pifrost models enable [--api completions|responses]    Optional model discovery
+  pifrost models disable        Remove managed model discovery
+  pifrost mcp                   MCP clients available to current repository
+  pifrost skills                Skills available from Bifrost
+  pifrost repo status           Check current repository setup
+  pifrost omp commands enable   Enable the optional /pifrost command palette
+  pifrost omp commands disable  Disable the command palette
+  pifrost omp commands status   Check slash-command installation
+
+Repo MCP:
+  pifrost repo init [--clients name] [--tools tool1,tool2] [--virtual-mcps name]
   pifrost repo mcp list
-  pifrost repo mcp add <client> [--tools '*|tool1,tool2'] [--install-matching-skills]
+  pifrost repo mcp add <client> --tools <tool1,tool2|*>
   pifrost repo mcp remove <client>
   pifrost repo mcp instructions <on|off|default>
   pifrost repo vmcp list
-  pifrost repo vmcp add <name> [--install-matching-skills]
-  pifrost repo vmcp remove <name>
+  pifrost repo vmcp add <bundle>
+  pifrost repo vmcp remove <bundle>
+  pifrost repo rotate-key [--dry-run]
+  pifrost repo reset [--dry-run] [--delete-remote] [--yes]
+
+Repo Skills:
   pifrost repo skills list
   pifrost repo skills add <name> [--force]
-  pifrost repo skills remove <name> [--force]
   pifrost repo skills sync [name] [--force]
-  pifrost repo skills suggestions [--install-matching-skills]
+  pifrost repo skills remove <name> [--force]
+  pifrost repo skills suggestions
   pifrost repo skills bind <client> <skill>
   pifrost repo skills unbind <client>
   pifrost repo skills dismiss <client>
   pifrost repo skills undismiss <client>
-  pifrost repo reset [--delete-remote] [--recover-by-name] [--yes]
-  pifrost secret repo-mcp --id <repo-id>
-  pifrost secret inference                 Machine-only credential resolver
-  pifrost secret inference-vk              Machine-only VK header resolver
-  pifrost doctor
-  pifrost --version
 
-Global setup options:
-  --url <url>                    Bifrost URL, e.g. http://192.168.1.221:8180/v1
-  --api-key <key>                Optional separate inference Bearer/API key (Bifrost 2.x can use VK-only auth)
-  --virtual-key <key>            Global inference Virtual Key
-  --management-auth <mode>       basic (Bifrost OSS) or bearer (Enterprise)
-  --management-username <user>   OSS admin/dashboard username
-  --management-password <pass>   OSS admin/dashboard password
-  --management-key <key>         Enterprise scoped management API key
-  --skip-omp                     Do not change OMP settings
-  --skip-test                    Save without connectivity tests
-  --yes                          Accept existing/default values non-interactively
+Migration (explicit):
+  pifrost migrate status
+  pifrost migrate disable-extension [--dry-run]
+  pifrost migrate apply
+  pifrost migrate rollback
 
-Repo init options:
-  --clients <a,b>                 Direct MCP clients to grant
-  --tools <*|tool1,tool2>         Tool allow-list for selected direct MCP clients
-  --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
-  --rotate-existing               Explicitly rotate an adopted existing repo Virtual Key when its raw value is unavailable
-  --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
-  --install-matching-skills       Explicitly install safe matching Skills; never implied by --yes
-  --no-skill-discovery            Skip optional MCP-to-Skill discovery
+Advanced / internal:
+  pifrost global setup [--url URL] [--virtual-key KEY]
+  pifrost global status [--json|--verbose]
+  pifrost global mcp-policy
+  pifrost global observability
+  pifrost models kinds
+  pifrost secret repo-mcp --id <repo-id>   Internal command: prints secret
+  pifrost secret inference                Internal command: prints secret
+  pifrost secret inference-vk             Internal command: prints secret
 
-Repo reset options:
-  --delete-remote                 Delete the repo Bifrost Virtual Key before local cleanup
-  --recover-by-name               With --delete-remote, recover only the exact canonical VK name
-  --yes                           Skip the destructive DELETE confirmation
-
-Environment overrides:
-  BIFROST_URL
-  BIFROST_API_KEY
-  BIFROST_VIRTUAL_KEY
-  BIFROST_MANAGEMENT_AUTH_MODE
-  BIFROST_ADMIN_USERNAME
-  BIFROST_ADMIN_PASSWORD
-  BIFROST_MANAGEMENT_API_KEY
-  PIFROST_CONFIG_DIR
-
-Bifrost OSS management APIs use HTTP Basic auth with the dashboard/admin
-username and password. Scoped management API keys are a Bifrost Enterprise
-feature. Secrets are stored in ~/.config/pifrost/secrets.json with mode 0600.
-Repo .omp/mcp.json files contain no secret; they resolve the repo VK through
-'!pifrost secret repo-mcp --id ...' at connection time.
+Tip: use pifrost <command> --help for accepted flags and side effects.
+Secret flags may be visible in shell history; prefer interactive or environment configuration.
+OMP model roles, retries, compaction and execution are always OMP-owned.
 `;
 
 function parseArgs(argv) {
@@ -2272,6 +2224,26 @@ function configFileForMigration() {
   throw new Error("No existing OMP global YAML found. No changes made.");
 }
 function sha256File(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function commandOmpCommands(action,flags={}) {
+  if(action==="status"){
+    const result=commandStatus();
+    console.log("OMP /pifrost commands: "+result.status);
+    console.log("Extension: "+result.file);
+    if(result.status!=="enabled")console.log("Enable explicitly: pifrost omp commands enable");
+    return;
+  }
+  if(flags["dry-run"]){
+    console.log("Would "+action+" the optional /pifrost command palette; no changes made.");
+    console.log("This integration only registers a slash command; it has no event hooks or model interceptors.");
+    return;
+  }
+  const result=action==="enable" ? enableCommands() : disableCommands();
+  console.log(result.changed?("OMP /pifrost commands "+(action==="enable"?"installed":"disabled")+"."):
+    "Already "+(action==="enable"?"enabled":"disabled")+".");
+  if(result.backup)console.log("Backup: "+result.backup);
+  console.log("Extension file: "+result.file);
+  console.log("Restart OMP to "+(action==="enable"?"use":"stop using")+" /pifrost.");
+}
 function commandDisableLegacyExtension(flags={}) {
   if(!commandExists("omp"))throw new Error("OMP CLI is required.");
   let list;
@@ -2674,6 +2646,13 @@ const COMMANDS = new Map([
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
+  ["status", (_args,flags) => runLiteDoctor(flags)],
+  ["models", () => commandModelsStatus()],
+  ["mcp", (_args,flags) => commandRepoMcpList(flags)],
+  ["skills", (_args,flags) => commandRepoSkillsList(flags)],
+  ["omp commands status", () => commandOmpCommands("status")],
+  ["omp commands enable", (_args,flags) => commandOmpCommands("enable",flags)],
+  ["omp commands disable", (_args,flags) => commandOmpCommands("disable",flags)],
   ["migrate status", () => commandMigrate("status")],
   ["migrate disable-extension", (_args,flags) => commandDisableLegacyExtension(flags)],
   ["migrate apply", () => commandMigrate("apply")],
