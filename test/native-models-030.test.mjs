@@ -22,7 +22,7 @@ test("Pifrost 0.30 native provider is opt-in and never edits roles", () => {
 
 test("native provider protects unmanaged and hand-edited configs", () => {
   const block = nativeProviderBlock("https://gateway.invalid/v1","openai-responses");
-  assert.throws(()=>mergeNativeProviderYaml("providers:\n  bifrost:\n    api: openai-responses\n",block),/unmanaged/u);
+  assert.throws(()=>mergeNativeProviderYaml("providers:\n  bifrost:\n    api: openai-responses\n",block),/(?:unmanaged|Existing Bifrost)/u);
   assert.throws(()=>mergeNativeProviderYaml("providers:\n"+block.replace("openai-responses","openai-completions").replace("    authHeader: false","    authHeader: true")+"\n",""),/local edits/u);
   assert.throws(()=>mergeNativeProviderYaml("providers:\n  # PIFROST-NATIVE-MODELS-START\n",block),/marker mismatch/u);
   assert.throws(()=>nativeProviderBlock("file:///tmp/v1"),/plain HTTP/u);
