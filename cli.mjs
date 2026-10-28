@@ -548,13 +548,13 @@ async function commandGlobalSetup(flags) {
     });
   }
 
-  if (!url || !virtualKey) {
-    throw new Error("Bifrost URL and global inference Virtual Key are required");
+  if (!url && !flags["dry-run"]) {
+    throw new Error("Bifrost URL is required");
   }
-  url = normalizeBifrostUrl(url);
+  if (url) url = normalizeBifrostUrl(url);
   let setupState;
   try {
-    setupState = await getBifrostSetupState(url);
+    setupState = url ? await getBifrostSetupState(url) : undefined;
   } catch {
     setupState = undefined;
   }
@@ -581,8 +581,12 @@ async function commandGlobalSetup(flags) {
   }
   if (!flags["skip-test"]) {
     process.stdout.write("Testing inference connection... ");
-    const inference = await testInference({ url, apiKey, virtualKey });
-    console.log(`OK (${inference.models} models visible)`);
+    if (virtualKey) {
+      const inference = await testInference({ url, apiKey, virtualKey });
+      console.log(`OK (${inference.models} models visible)`);
+    } else {
+      console.log("SKIPPED (no inference Virtual Key; repo MCP/Skills setup remains available)");
+    }
     if (managementAuth) {
       process.stdout.write(`Testing management API via ${managementAuthLabel(managementAuth)}... `);
       await testManagement(url, managementAuth);
@@ -593,7 +597,8 @@ async function commandGlobalSetup(flags) {
   state.config.bifrost = { ...(state.config.bifrost ?? {}), url };
   if (apiKey) state.secrets.inferenceApiKey = apiKey;
   else delete state.secrets.inferenceApiKey;
-  state.secrets.inferenceVirtualKey = virtualKey;
+  if (virtualKey) state.secrets.inferenceVirtualKey = virtualKey;
+  else delete state.secrets.inferenceVirtualKey;
 
   delete state.secrets.managementApiKey;
   delete state.secrets.managementAdminUsername;
