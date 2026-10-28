@@ -25,18 +25,13 @@ export function planLegacyOmpCleanup(current) {
   if(removed) {
     changes.push({key:"modelRoles",method:Object.keys(roles).length?"set":"reset",
       before:current.modelRoles,after:roles});
-    // Only remove the historical Pifrost-installed wildcard/provider order
-    // when we have corroborating evidence that Pifrost owned modelRoles.
-    const models=current.enabledModels.filter(x=>x!=="bifrost/*");
-    if(models.length!==current.enabledModels.length)changes.push({
-      key:"enabledModels",method:models.length?"set":"reset",before:current.enabledModels,after:models});
-    const order=current.modelProviderOrder.filter(x=>x!=="bifrost");
-    if(order.length!==current.modelProviderOrder.length)changes.push({
-      key:"modelProviderOrder",method:order.length?"set":"reset",
-      before:current.modelProviderOrder,after:order});
+    // Historical Pifrost role ownership does not prove ownership of
+    // enabledModels or modelProviderOrder; never remove user-selected values.
+
   }
   return {removedRoles:removed,changes,warnings:[
-    "The old Pifrost OMP plugin/extension may still be installed. Disable or uninstall it through OMP's plugin manager.",
+    "Disable the previous Pifrost runtime plugin separately, before restarting OMP.",
+    "enabledModels and modelProviderOrder remain untouched even when they include bifrost/*.",
     "Pifrost does not infer ownership of task, retry, fallback, or compaction settings; review those in OMP separately.",
     ...(removed===0?["No exact historical Pifrost role assignments detected; ambiguous settings were left unchanged."]:[]),
   ]};
