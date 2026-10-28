@@ -23,7 +23,7 @@ test("migration CLI preserves custom config and supports guarded rollback",()=>{
       'const p=process.env.PI_CODING_AGENT_DIR+"/config.yml";',
       "const a=process.argv.slice(2);",
       'if(a[0]==="--version"){process.stdout.write("18.12.5\\n");process.exit(0);}',
-      'if(a[0]==="plugin"&&a[1]==="list"){process.stdout.write(JSON.stringify({npm:[{name:"pifrost",enabled:true}]}));process.exit(0);}',
+      'if(a[0]==="plugin"&&a[1]==="list"){process.stdout.write(JSON.stringify({npm:[{name:"pifrost",enabled:true}],marketplace:[]}));process.exit(0);}',
       'if(a[0]==="plugin"&&a[1]==="disable"&&a[2]==="pifrost"){fs.writeFileSync(process.env.PI_CODING_AGENT_DIR+"/plugin-disabled","yes");process.exit(0);}',
       'if(a[0]!=="config"){process.exit(2);}',
       'if(a[1]==="path"){process.stdout.write(process.env.PI_CODING_AGENT_DIR+"\\n");process.exit(0);}',
