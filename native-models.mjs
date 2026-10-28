@@ -56,7 +56,7 @@ export function mergeNativeProviderYaml(original, block) {
     if (!/^  # PIFROST-NATIVE-MODELS-START\n  bifrost:\n[\s\S]*\n  # PIFROST-NATIVE-MODELS-END$/u.test(managed)) {
       throw new Error("Managed provider block changed structurally; refusing to edit.");
     }
-    const urlLine=/^    baseUrl: ("[^"\\n]+")$/mu.exec(managed);
+    const urlLine=/^    baseUrl: (".*")$/mu.exec(managed);
     const apiLine=/^    api: (openai-(?:completions|responses))$/mu.exec(managed);
     let expected;
     try { expected = urlLine && apiLine ? nativeProviderBlock(JSON.parse(urlLine[1]),apiLine[1]) : undefined; }
