@@ -210,6 +210,7 @@ Advanced / internal:
   pifrost secret repo-mcp --id <repo-id>   Internal command: prints secret
   pifrost secret inference                Internal command: prints secret
   pifrost secret inference-vk             Internal command: prints secret
+  pifrost secret inference-bearer         Internal command: prints bearer secret
 
 Tip: use pifrost <command> --help for accepted flags and side effects.
 Secret flags may be visible in shell history; prefer interactive or environment configuration.
@@ -466,7 +467,7 @@ async function commandGlobalSetup(flags) {
       virtualKey = await askSecret(rl, "Global inference Virtual Key", virtualKey);
       const wantManagement = await confirm(
         rl,
-        "Configure management auth for route sync and repo MCP automation?",
+        "Configure management auth for repo MCP and Skills operations?",
         true,
       );
       if (wantManagement) {
@@ -2209,8 +2210,8 @@ async function commandGlobalMcpPolicy(snapshot) {
 function judgeRuntimeConfig() {
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
-  if (!runtime.url || !runtime.virtualKey) {
-    throw new Error("Bifrost URL and inference Virtual Key are required; run pifrost global setup");
+  if (!runtime.url || (!runtime.virtualKey && !runtime.apiKey)) {
+    throw new Error("Bifrost URL and an inference credential are required; run pifrost init");
   }
   return runtime;
 }
@@ -2322,7 +2323,7 @@ function commandMigrate(mode) {
 
 async function commandModelsList() {
   const runtime = judgeRuntimeConfig();
-  const headers = { "x-bf-vk": runtime.virtualKey };
+  const headers = runtime.virtualKey ? { "x-bf-vk": runtime.virtualKey } : {};
   if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
   const listing = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
   if (!Array.isArray(listing?.data)) throw new Error("Bifrost /models returned no model list");
@@ -2342,13 +2343,14 @@ async function commandModelsEnable(flags = {}) {
   if (!["completions","responses"].includes(protocol))
     throw new Error("--api must be completions or responses");
   const api = "openai-" + protocol;
+  const authMode = runtime.apiKey ? (runtime.virtualKey ? "bearer+vk" : "bearer") : "vk";
   if (flags["dry-run"]) {
     console.log("Would add/update only Pifrost's marked bifrost provider under OMP models.yml");
     console.log("Gateway: " + runtime.url + " | Native API: " + api);
     console.log("All modelRoles and enabledModels stay unchanged; other providers are preserved.");
     return;
   }
-  const outcome = writeNativeModels(api,runtime.url);
+  const outcome = writeNativeModels(api,runtime.url,process.env,authMode);
   console.log(outcome.changed?"Enabled native Bifrost discovery.":"Bifrost discovery already enabled.");
   console.log("OMP config: " + outcome.path);
   if(outcome.backup)console.log("Backup: " + outcome.backup);
@@ -2362,16 +2364,17 @@ function commandModelsDisable(flags = {}) {
   if(outcome.backup)console.log("Backup: " + outcome.backup);
 }
 function commandInferenceSecret(kind) {
-  const state=loadState();
-  const value=kind==="virtual-key" ? state.secrets.inferenceVirtualKey
-    : state.secrets.inferenceApiKey ?? state.secrets.inferenceVirtualKey;
-  if(!value)throw new Error("Required inference secret is not configured; run pifrost global setup");
+  // Use the same environment-first resolution as all other CLI commands.
+  const runtime = runtimeConfigFromState(loadState());
+  const value = kind === "virtual-key" ? runtime.virtualKey
+    : kind === "bearer" ? runtime.apiKey : runtime.apiKey ?? runtime.virtualKey;
+  if (!value) throw new Error("Required inference credential is not configured; run pifrost init");
   process.stdout.write(value);
 }
 
 async function commandModelsKinds() {
   const runtime = judgeRuntimeConfig();
-  const headers = { "x-bf-vk": runtime.virtualKey };
+  const headers = runtime.virtualKey ? { "x-bf-vk": runtime.virtualKey } : {};
   if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
   const catalog = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
   if (!Array.isArray(catalog?.data)) throw new Error("Bifrost model-kinds inventory returned no data array");
@@ -2674,6 +2677,7 @@ const COMMANDS = new Map([
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
   ["secret inference", () => commandInferenceSecret("auth")],
   ["secret inference-vk", () => commandInferenceSecret("virtual-key")],
+  ["secret inference-bearer", () => commandInferenceSecret("bearer")],
   ["doctor", (_args, flags) => runLiteDoctor(flags)],
 ]);
 
