@@ -115,3 +115,18 @@ test("managed palette can be safely disabled with backup",()=>{
     assert.equal(commandStatus(env).status,"disabled");
   }finally{rmSync(root,{recursive:true,force:true});}
 });
+
+test("gateway errors are not reflected into persistent OMP UI output",async()=>{
+  const h=harness();
+  const secret="Bearer unusually-sensitive-value";
+  await runPifrostSlash("status",h.ctx,async()=>({code:2,stdout:"",stderr:"Error: "+secret}));
+  assert.equal(h.notifications.at(-1).type,"error");
+  assert.doesNotMatch(h.notifications.at(-1).msg,/unusually-sensitive-value/u);
+});
+test("OMP command palette redacts VKs, authorization headers and URL tokens",async()=>{
+  const h=harness();
+  await runPifrostSlash("models list",h.ctx,async()=>({code:0,stderr:"",
+    stdout:"Authorization: Bearer super-secret\nx-bf-vk: vk-testing-long-and-secret\nhttps://api.local/v1?token=sensitive"}));
+  const message=h.notifications.at(-1).msg;
+  assert.doesNotMatch(message,/super-secret|vk-testing-long-and-secret|token=sensitive/u);
+});
