@@ -68,6 +68,7 @@ const rows = [
   ["secret repo-mcp",0,0,["id"],"machine-secret"],
   ["secret inference",0,0,[],"machine-secret"],
   ["secret inference-vk",0,0,[],"machine-secret"],
+  ["secret inference-bearer",0,0,[],"machine-secret"],
   ["doctor",0,0,healthRead,"read-only"],
 ];
 export const commandCatalog = new Map(rows.map(([name,min,max,options,operation]) => [name,{
