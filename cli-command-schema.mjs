@@ -4,31 +4,24 @@
  * Machine-secret endpoints are excluded from any JSON or diagnostic renderer.
  */
 const values = {
-  "url":"Gateway URL", "api-key":"Inference API key", "virtual-key":"Inference Virtual Key",
-  "management-auth":"Management auth mode", "management-username":"Management username",
-  "management-password":"Management password", "management-key":"Management API key",
-  "setup-token":"Bifrost setup token", "clients":"Comma-separated MCP clients",
-  "tools":"Tool allow-list or explicit *", "virtual-mcps":"Comma-separated Virtual MCP bundles",
-  "input-tokens":"Input token count", "output-tokens":"Output token count",
-  "tool-choice":"auto|required|any|name:tool", "service-tier":"Service tier",
-  "profile":"donsetch|hound|generic", "search-tool":"Search tool name",
-  "fetch-tool":"Fetch tool name", "crawl-tool":"Crawl tool name",
-  "screenshot-tool":"Screenshot tool name", "vk-id":"Virtual Key management ID",
+  "url":"Bifrost gateway URL", "api-key":"Optional inference API key",
+  "virtual-key":"Inference Virtual Key", "management-auth":"Bifrost management auth mode",
+  "management-username":"Management username", "management-password":"Management password",
+  "management-key":"Management API key", "setup-token":"Initial setup token",
+  "clients":"Comma-separated MCP clients", "tools":"Explicit comma-separated MCP tool allow-list or *",
+  "virtual-mcps":"Comma-separated Virtual MCP bundles", "vk-id":"Virtual Key management ID",
   "id":"Internal repository identifier", "filter":"Case-insensitive name filter",
-  "limit":"Maximum displayed entries", "role":"OMP logical role",
-  "last":"Recent request count", "api":"Native gateway protocol (completions|responses)",
+  "limit":"Maximum displayed entries", "api":"completions|responses",
 };
 const bools = new Set([
   "help","all","version","verbose","strict","json","dry-run","yes","skip-test",
-  "skip-omp","no-refresh","force","image","tools","reasoning","tool-search",
-  "between-tools","delete-remote","recover-by-name","decisions","box","rotate-existing",
-  "no-mcp-instructions","install-matching-skills","no-skill-discovery",
+  "force","delete-remote","recover-by-name","rotate-existing","no-mcp-instructions",
+  "install-matching-skills","no-skill-discovery",
 ]);
 const general = ["help"];
 const read = ["verbose"];
 const healthRead = ["verbose","strict","json"];
 const filters = ["filter","limit"];
-const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
 // Registered commands. Source-of-truth for validation/help side effects.
 const rows = [
   ["status",0,0,healthRead,"read-only"],
@@ -38,8 +31,8 @@ const rows = [
   ["omp commands status",0,0,[],"read-only"],
   ["omp commands enable",0,0,["dry-run"],"local-change"],
   ["omp commands disable",0,0,["dry-run"],"local-change"],
-  ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
-  ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
+  ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-test","yes","dry-run"],"local-change"],
+  ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-test","yes","dry-run"],"local-change"],
   ["global status",0,0,healthRead,"read-only"],
   ["global mcp-policy",0,0,read,"read-only"],
   ["global observability",0,0,["vk-id",...read],"read-only"],
@@ -111,15 +104,8 @@ export function validateCliInvocation(name,args,flags) {
     throw cliUsageError("--clients requires an explicit --tools allow-list; use --tools '*' only if intentional.");
   if(flags.limit!==undefined && (!/^[1-9]\d{0,3}$/u.test(flags.limit)||Number(flags.limit)>1000))
     throw cliUsageError("--limit must be an integer from 1 to 1000.");
-  for(const key of ["input-tokens","output-tokens","last"]){
-    if(flags[key]!==undefined && (!/^\d{1,8}$/u.test(flags[key]) || Number(flags[key])<1))
-      throw cliUsageError("--"+key+" must be a positive integer.");
-  }
   if(name==="models enable" && flags.api!==undefined && !["completions","responses"].includes(flags.api))
     throw cliUsageError("--api must be completions or responses.");
-  if(name==="routes explain"&&flags["tool-choice"]!==undefined&&
-    !/^(?:auto|required|any|name:[a-z0-9_.-]+)$/iu.test(flags["tool-choice"]))
-    throw cliUsageError("--tool-choice must be auto, required, any or name:tool.");
   return def;
 }
 export function commandUsage(name) {
