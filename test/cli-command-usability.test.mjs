@@ -117,7 +117,7 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
       [["repo","mcp","add","DonSeTch","--tools","--force"],"requires a value"],
       [["repo","init","--clients","DonSeTch"],"explicit --tools"],
       [["doctor","--unrecognised"],"Unknown option"],
-      [["routes","explain","default","--output-tokens","bad"],"positive integer"],
+      [["models","enable","--api","unknown"],"completions or responses"],
       [["repo","reset","extra"],"Expected 0 argument"],
     ]){
       const r=run(...args);
@@ -129,9 +129,9 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
     assert.equal(help.status,0,help.stderr);
     assert.match(help.stdout,/Operation: Changes gateway permissions or credentials/u);
     assert.match(help.stdout,/--tools <value>/u);
-    const shortcut=run("routes","explain","default","--tools","--help");
-    assert.equal(shortcut.status,0,shortcut.stderr);
-    assert.match(shortcut.stdout,/--tools(?:\s|$)/u);
+    const native=run("models","enable","--help");
+    assert.equal(native.status,0,native.stderr);
+    assert.match(native.stdout,/--api <value>/u);
   } finally {rmSync(home,{recursive:true,force:true});}
 });
 
