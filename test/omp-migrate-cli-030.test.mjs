@@ -52,7 +52,7 @@ test("migration CLI preserves custom config and supports guarded rollback",()=>{
     assert.equal(applied.status,0,applied.stderr+"\n"+applied.stdout);
     const changed=JSON.parse(readFileSync(config,"utf8"));
     assert.deepEqual(changed.modelRoles,{advisor:"user/my-advisor",judge:"decision/jev"});
-    assert.deepEqual(changed.enabledModels,["openai-codex/*"]);
+    assert.deepEqual(changed.enabledModels,["bifrost/*","openai-codex/*"]);
     assert.equal(changed["user.unrelated"],true);
     const rollback=cmd(["migrate","rollback"]);
     assert.equal(rollback.status,0,rollback.stderr+"\n"+rollback.stdout);
