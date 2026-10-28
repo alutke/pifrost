@@ -22,18 +22,26 @@ function safeModelUrl(url) {
   return parsed.toString().replace(/\/$/u, "");
 }
 
-export function nativeProviderBlock(url, api = "openai-completions") {
+export function nativeProviderBlock(url, api = "openai-completions", authMode = "vk") {
   if (!["openai-completions", "openai-responses"].includes(api)) throw new Error("Unsupported OMP native API");
+  if (!["vk","bearer","bearer+vk"].includes(authMode)) throw new Error("Invalid Bifrost authentication mode");
   const safeUrl = safeModelUrl(url);
   return [
     NATIVE_START,
     "  bifrost:",
     "    baseUrl: " + yaml(safeUrl),
     "    api: " + api,
-    '    apiKey: "!pifrost secret inference"',
-    "    authHeader: true",
-    "    headers:",
-    '      x-bf-vk: "!pifrost secret inference-vk"',
+    ...(authMode.includes("bearer") ? [
+      '    apiKey: "!pifrost secret inference-bearer"',
+      "    authHeader: true",
+    ] : [
+      "    auth: none",
+      "    authHeader: false",
+    ]),
+    ...(authMode.includes("vk") ? [
+      "    headers:",
+      '      x-bf-vk: "!pifrost secret inference-vk"',
+    ] : []),
     "    discovery:",
     "      type: openai-models-list",
     "      injectV1: false",
@@ -58,8 +66,10 @@ export function mergeNativeProviderYaml(original, block) {
     }
     const urlLine=/^    baseUrl: (".*")$/mu.exec(managed);
     const apiLine=/^    api: (openai-(?:completions|responses))$/mu.exec(managed);
+    const mode=managed.includes('    apiKey: "!pifrost secret inference-bearer"')
+      ? (managed.includes("      x-bf-vk:")?"bearer+vk":"bearer") : "vk";
     let expected;
-    try { expected = urlLine && apiLine ? nativeProviderBlock(JSON.parse(urlLine[1]),apiLine[1]) : undefined; }
+    try { expected = urlLine && apiLine ? nativeProviderBlock(JSON.parse(urlLine[1]),apiLine[1],mode) : undefined; }
     catch { expected = undefined; }
     if (managed !== expected) throw new Error("Managed provider has local edits; refusing to overwrite them.");
     const prefix = original.slice(0,start), suffix = original.slice(end);
@@ -90,7 +100,7 @@ export function nativeModelsStatus(env = process.env) {
 }
 
 /** Atomic, backed-up opt-in edits. Do not overwrite symlinks or auto-modify user providers. */
-export function writeNativeModels(api, url, env = process.env) {
+export function writeNativeModels(api, url, env = process.env, authMode = "vk") {
   const path = nativeModelsPath(env);
   const parent = dirname(path);
   // OMP accepts both filenames. Never introduce a second competing file that
@@ -100,7 +110,7 @@ export function writeNativeModels(api, url, env = process.env) {
   mkdirSync(parent,{recursive:true,mode:0o700});
   if (existsSync(path) && !lstatSync(path).isFile()) throw new Error("Refusing to modify non-regular OMP models.yml");
   const existing = existsSync(path) ? readFileSync(path,"utf8") : "";
-  const updated = mergeNativeProviderYaml(existing, api ? nativeProviderBlock(url,api) : "");
+  const updated = mergeNativeProviderYaml(existing, api ? nativeProviderBlock(url,api,authMode) : "");
   if(updated===existing)return {changed:false,path};
   const backup = existsSync(path) ? path+".pifrost-backup-"+Date.now()+"-"+randomUUID() : undefined;
   if(backup)copyFileSync(path,backup,constants.COPYFILE_EXCL);
