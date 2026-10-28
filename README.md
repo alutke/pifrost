@@ -4,7 +4,7 @@
 
 Pifrost provides a small CLI for Bifrost models, repository MCP access and Skills. **OMP owns model selection, role mapping, inference, tool execution, retries, reasoning and compaction.** Pifrost does not load an inference or execution extension by default.
 
-> **Development status:** The 0.30 simplification is on `release/0.30-simplification` ([PR #101](https://github.com/alutke/pifrost/pull/101)), not yet merged or released. The package remains at the previous version number until final release preparation. This document describes the branch's new command interface, not production 0.29.x behaviour.
+> **Development status:** The 0.30 simplification is on `release/0.30-simplification` ([PR #101](https://github.com/alutke/pifrost/pull/101)), not yet merged or released. The package is versioned 0.30.0 on this draft branch; it has not been published. This document describes the branch's new command interface, not production 0.29.x behaviour.
 
 ## Start here
 
@@ -30,6 +30,12 @@ pifrost models disable          # Remove only the Pifrost-owned provider
 ```
 
 When enabled, OMP discovers Bifrost models through its native `models.yml` provider and allows manual selection through **`/model`**. No automatic changes to OMP's default model, role mapping or fallback policy. One transport protocol applies to the configured provider; model-specific incompatibilities must be diagnosed rather than hidden by automatic conversion. Provider keys are resolved via local commands rather than embedded in YAML.
+
+### Authentication and profiles
+
+Native OMP Bifrost models use an explicit mode: **Virtual Key only** sends `x-bf-vk` without an Authorization header; **Bearer only** uses Authorization; **Bearer + Virtual Key** sends both when separately configured. The same environment-first secret resolution applies in the CLI and native OMP provider. Management credentials are separate, and repository MCP/Skills management **does not require** an inference Virtual Key.
+
+Set `OMP_PROFILE=work` (or `PI_PROFILE=work`) before running Pifrost when you use a named OMP profile. `PI_CONFIG_DIR` is also respected, and `PI_CODING_AGENT_DIR` applies only to the default profile. Models and the /pifrost palette are installed into the selected profile, never silently copied between profiles.
 
 ## Optional /pifrost menu inside OMP
 
@@ -115,7 +121,7 @@ pifrost migrate disable-extension
 pifrost migrate apply
 ```
 
-These actions are separate. Disabling the legacy Pifrost OMP plugin does not uninstall Pifrost or remove repository MCP/Skills configuration. Role cleanup backs up existing OMP settings and removes **only exact old Pifrost roles**; ambiguous or user-created mappings are not assumed to belong to Pifrost. `pifrost migrate rollback` restores the original configuration only if it has not changed since migration.
+These actions are separate. Disabling the legacy Pifrost OMP plugin does not uninstall Pifrost or remove repository MCP/Skills configuration. Role cleanup backs up existing OMP settings and removes **only exact old Pifrost roles**. It explicitly preserves `enabledModels` and `modelProviderOrder` even when they include Bifrost models or providers. `pifrost migrate rollback` restores the original configuration only if it has not changed since migration.
 
 **Do not run migration blindly on a production OMP installation.** Review the preview and backups first. The 0.30 branch is still undergoing integration certification.
 
@@ -152,7 +158,7 @@ CI tests CLI contracts, model integration configuration, migration safety, optio
 Expected for this release:
 
 ```text
-0.29.27
+0.30.0
 ```
 
-The expected-version field intentionally tracks the current package version while the 0.30 branch is unreleased.
+This is the draft candidate version, not a published release.
