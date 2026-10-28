@@ -10,7 +10,7 @@ const ci = readFileSync(new URL(".github/workflows/ci.yml", root), "utf8");
 
 test("OMP release 5A dependency and policy snapshots are aligned", () => {
   const version = "18.12.5";
-  assert.deepEqual(pkg.omp?.extensions, ["./native.ts"]);
+  assert.equal(pkg.omp?.extensions, undefined, "0.30 must not auto-install runtime extensions");
   assert.equal(pkg.pi, undefined);
   for (const name of ["pi-ai", "pi-catalog", "pi-natives", "pi-utils"]) {
     const dependency = "@oh-my-pi/" + name;
