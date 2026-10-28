@@ -180,6 +180,7 @@ Usage:
   pifrost routes effective
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
   pifrost migrate status                   Preview exact legacy role cleanup
+  pifrost migrate disable-extension [--dry-run] Disable legacy OMP runtime plugin
   pifrost migrate apply                    Backup then restore OMP-owned roles
   pifrost migrate rollback                 Restore if config hasn't changed
   pifrost models list                      Read-only Bifrost /models roster
@@ -2271,6 +2272,21 @@ function configFileForMigration() {
   throw new Error("No existing OMP global YAML found. No changes made.");
 }
 function sha256File(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function commandDisableLegacyExtension(flags={}) {
+  if(!commandExists("omp"))throw new Error("OMP CLI is required.");
+  let list;
+  try { list=JSON.parse(runCommand("omp",["plugin","list","--json"]).stdout); }
+  catch { throw new Error("Cannot verify installed OMP plugins; no plugin modified."); }
+  const installed=Array.isArray(list?.npm) ? list.npm.filter(x=>x?.name==="pifrost") : [];
+  if(installed.length>1)throw new Error("Multiple Pifrost plugins reported; inspect OMP plugin list manually.");
+  if(!installed.length){console.log("No exact Pifrost npm plugin found; no changes made.");return;}
+  if(installed[0].enabled===false){console.log("Pifrost runtime plugin already disabled.");return;}
+  if(flags["dry-run"]){console.log("Would disable only OMP npm plugin 'pifrost' (not uninstall it).");return;}
+  runCommand("omp",["plugin","disable","pifrost"]);
+  console.log("Disabled legacy Pifrost runtime plugin. Restart OMP.");
+  console.log("Repository MCP config and installed Skills are unaffected.");
+}
+
 function commandMigrate(mode) {
   if(!commandExists("omp"))throw new Error("OMP is required for migration.");
   if(mode==="rollback"){
@@ -2659,6 +2675,7 @@ const COMMANDS = new Map([
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
   ["migrate status", () => commandMigrate("status")],
+  ["migrate disable-extension", (_args,flags) => commandDisableLegacyExtension(flags)],
   ["migrate apply", () => commandMigrate("apply")],
   ["migrate rollback", () => commandMigrate("rollback")],
   ["models list", () => commandModelsList()],
