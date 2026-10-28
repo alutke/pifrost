@@ -4,6 +4,7 @@ import { existsSync, readFileSync, rmSync, copyFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
 import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
+import { runLiteDoctor } from "./lite-doctor.mjs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -2688,7 +2689,7 @@ const COMMANDS = new Map([
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
   ["secret inference", () => commandInferenceSecret("auth")],
   ["secret inference-vk", () => commandInferenceSecret("virtual-key")],
-  ["doctor", (_args, flags) => commandDoctor(flags)],
+  ["doctor", (_args, flags) => runLiteDoctor(flags)],
 ]);
 
 function resolveCommand(positional) {
