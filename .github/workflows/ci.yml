@@ -1,4 +1,4 @@
-name: CI
+name: CI — Pifrost 0.30
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -20,108 +20,29 @@ jobs:
         with:
           node-version: 22
           cache: npm
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.0
       - run: npm ci
-      - name: Audit production dependencies for high severity advisories
+      - name: Audit production dependencies
         run: npm audit --omit=dev --audit-level=high
-      - run: npm run check
-      - name: Validate compatibility evidence registry
-        run: node scripts/validate-workarounds.mjs
-      - run: npm test
-      - name: Validate release package
+      - name: Enforce CLI-only architecture and current documentation
+        run: npm run check
+      - name: Test Bifrost management, repo MCP/Skills, model and optional slash UI
+        run: npm test
+      - name: Verify release candidate pack and dependency closure
         run: npm run release:check
-      - name: Validate Bifrost public datasheets
-        run: node scripts/validate-public-datasheets.mjs
-      - name: Validate current OMP route envelopes
-        run: npx tsx scripts/validate-current-routing.ts
-      - name: Validate pinned Bifrost release contracts
-        run: node scripts/validate-bifrost-v2-contract.mjs
-      - name: Validate pinned DonSeTch MCP contract
-        run: node scripts/validate-donsetch-contract.mjs
-      - name: Validate legacy Hound MCP contract
-        run: node scripts/validate-hound-contract.mjs
-      - name: Validate minimum and current OMP contracts
-        run: node scripts/validate-omp-contract.mjs
-      - name: Validate with packaged OMP 18.12.5 CLI/plugin loader
+      - name: Verify clean CLI and named OMP profile on Node 22
         run: |
-          export HOME="$RUNNER_TEMP/omp-home-local"
-          mkdir -p "$HOME"
+          export PI_CONFIG_DIR="$RUNNER_TEMP/pifrost-omp-root"
+          export PIFROST_CONFIG_DIR="$RUNNER_TEMP/pifrost-config"
+          export OMP_PROFILE="audit"
+          node cli.mjs --version
+          node cli.mjs models status
+          node cli.mjs omp commands enable --dry-run
+          test ! -e "$PI_CONFIG_DIR/profiles/audit/agent/extensions/pifrost-commands.js"
+          node cli.mjs omp commands enable
+          test -f "$PI_CONFIG_DIR/profiles/audit/agent/extensions/pifrost-commands.js"
+          node cli.mjs omp commands disable
+          test ! -e "$PI_CONFIG_DIR/profiles/audit/agent/extensions/pifrost-commands.js"
+      - name: Verify OMP native CLI (no provider calls)
+        run: |
           ./node_modules/.bin/omp --version
-          ./node_modules/.bin/omp install . --force
-          ./node_modules/.bin/omp plugin list
-      - name: Validate with minimum supported OMP 18.10.4 release binary
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.10.4"
-          curl --fail --location --silent --show-error \
-            "https://github.com/can1357/oh-my-pi/releases/download/v18.10.4/omp-linux-x64" \
-            --output "$OMP_BIN"
-          echo "ff59fc1b484c1308a7247ad208305005627b3fac62b440737c2b1835ac32074e  $OMP_BIN" | sha256sum -c -
-          chmod +x "$OMP_BIN"
-          export HOME="$RUNNER_TEMP/omp-home-current"
-          mkdir -p "$HOME"
-          "$OMP_BIN" --version
-          "$OMP_BIN" install . --force
-          "$OMP_BIN" plugin list
-      - name: Validate clean GitHub plugin install
-        if: github.event_name == 'push'
-        run: |
-          export HOME="$RUNNER_TEMP/omp-home-github"
-          mkdir -p "$HOME"
-          ./node_modules/.bin/omp install "github:${GITHUB_REPOSITORY}#${GITHUB_SHA}" --force
-          ./node_modules/.bin/omp plugin list
-      - name: Validate clean GitHub plugin install with minimum compiled OMP 18.10.4
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.10.4"
-          REF="${{ github.event.pull_request.head.sha || github.sha }}"
-          export HOME="$RUNNER_TEMP/omp-home-compiled-github"
-          mkdir -p "$HOME"
-          "$OMP_BIN" --version
-          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${REF}" --force
-          "$OMP_BIN" plugin list
-
-      - name: Validate with released OMP 18.12.1 binary
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.12.1"
-          curl --fail --location --silent --show-error \
-            "https://github.com/can1357/oh-my-pi/releases/download/v18.12.1/omp-linux-x64" \
-            --output "$OMP_BIN"
-          echo "16181401e616d7d895bae31fa97476f1513d4080807d60d3a1a04006191a1bb3  $OMP_BIN" | sha256sum -c -
-          chmod +x "$OMP_BIN"
-          export HOME="$RUNNER_TEMP/omp-home-latest"
-          mkdir -p "$HOME"
-          "$OMP_BIN" --version
-          "$OMP_BIN" install . --force
-          "$OMP_BIN" plugin list
-      - name: Validate GitHub plugin install with compiled OMP 18.12.1
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.12.1"
-          REF="${{ github.event.pull_request.head.sha || github.sha }}"
-          export HOME="$RUNNER_TEMP/omp-home-current-compiled"
-          mkdir -p "$HOME"
-          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${REF}" --force
-          "$OMP_BIN" plugin list
-
-      - name: Validate with current OMP 18.12.5 binary
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.12.5"
-          curl --fail --location --silent --show-error \
-            "https://github.com/can1357/oh-my-pi/releases/download/v18.12.5/omp-linux-x64" \
-            --output "$OMP_BIN"
-          test -s "$OMP_BIN"
-          echo "fdbc8136084c9a10439569157b2af62312e2b0d801cab54c73e89476da798e7e  $OMP_BIN" | sha256sum -c -
-          chmod +x "$OMP_BIN"
-          export HOME="$RUNNER_TEMP/omp-home-18125-binary"
-          mkdir -p "$HOME"
-          "$OMP_BIN" --version
-          "$OMP_BIN" install . --force
-          "$OMP_BIN" plugin list
-      - name: Validate GitHub plugin install with current compiled OMP 18.12.5
-        run: |
-          OMP_BIN="$RUNNER_TEMP/omp-18.12.5"
-          REF="${{ github.event.pull_request.head.sha || github.sha }}"
-          export HOME="$RUNNER_TEMP/omp-home-18125-github"
-          mkdir -p "$HOME"
-          "$OMP_BIN" install "github:${GITHUB_REPOSITORY}#${REF}" --force
-          "$OMP_BIN" plugin list
+          ./node_modules/.bin/omp plugin list --json
