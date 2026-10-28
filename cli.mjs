@@ -2700,6 +2700,12 @@ async function main() {
     return;
   }
   if (!one || one === "help") {
+    if(one === "help" && positional.length>1){
+      const name=positional.slice(1).join(" ");
+      if(!commandCatalog.has(name))throw cliUsageError("Unknown command. Use pifrost help --all for supported commands.");
+      process.stdout.write(commandUsage(name)+"\n");
+      return;
+    }
     process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }
