@@ -12,18 +12,54 @@ import {
 } from "../cli-health.mjs";
 
 const commands=[
-"init","global setup","global status","global mcp-policy","global observability","global configure-omp",
-"omp readiness","omp context","omp context apply","omp workarounds","judge status","judge providers","judge activate","judge probe","routes list","routes diff","routes verify","routes attest","routes sync","routes reconcile",
-"routes diagnose","routes effective","routes explain","migrate status","migrate disable-extension","migrate apply","migrate rollback",
-"models list","models status","models enable","models disable","models refresh","models doctor","models kinds",
-"repo init","repo status","repo research status","repo research bind","repo research unbind",
-"repo research prefer","repo research probe","repo rotate-key","repo reset","repo mcp list",
-"repo mcp add","repo mcp remove","repo mcp instructions","repo vmcp list","repo vmcp add",
-"repo vmcp remove","repo skills list","repo skills suggestions","repo skills bind","repo skills unbind",
-"repo skills dismiss","repo skills undismiss","repo skills add","repo skills remove","repo skills sync",
-"secret repo-mcp","secret inference","secret inference-vk","doctor",
+  "status",
+  "models",
+  "mcp",
+  "skills",
+  "omp commands status",
+  "omp commands enable",
+  "omp commands disable",
+  "init",
+  "global setup",
+  "global status",
+  "global mcp-policy",
+  "global observability",
+  "migrate status",
+  "migrate disable-extension",
+  "migrate apply",
+  "migrate rollback",
+  "models list",
+  "models status",
+  "models enable",
+  "models disable",
+  "models kinds",
+  "repo init",
+  "repo status",
+  "repo rotate-key",
+  "repo reset",
+  "repo mcp list",
+  "repo mcp add",
+  "repo mcp remove",
+  "repo mcp instructions",
+  "repo vmcp list",
+  "repo vmcp add",
+  "repo vmcp remove",
+  "repo skills list",
+  "repo skills suggestions",
+  "repo skills bind",
+  "repo skills unbind",
+  "repo skills dismiss",
+  "repo skills undismiss",
+  "repo skills add",
+  "repo skills remove",
+  "repo skills sync",
+  "secret repo-mcp",
+  "secret inference",
+  "secret inference-vk",
+  "doctor"
 ];
-test("all 63 CLI command contracts are present, documented and readable",()=>{
+
+test("all 45 supported CLI command contracts are present, documented and readable",()=>{
   assert.deepEqual([...commandCatalog.keys()],commands);
   for(const [name,def] of commandCatalog){
     const h=commandUsage(name);
@@ -41,7 +77,7 @@ test("grant allow-lists must be explicit and never silently expand",()=>{
   assert.throws(()=>validateCliInvocation("repo init",[],{clients:"DonSeTch"}),/explicit --tools/u);
   assert.equal(validateCliInvocation("repo mcp add",["DonSeTch"],{tools:"web_search"}).operation,"gateway-change");
   assert.equal(validateCliInvocation("repo mcp add",["DonSeTch"],{tools:"*"}).operation,"gateway-change");
-  assert.equal(flagRequiresValue("tools","routes explain"),false);
+  assert.equal(flagRequiresValue("tools","repo init"),true);
   assert.equal(flagRequiresValue("tools","repo mcp add"),true);
 });
 test("health results distinguish required failure, warning and strict unknown",()=>{
