@@ -93,6 +93,10 @@ export function nativeModelsStatus(env = process.env) {
 export function writeNativeModels(api, url, env = process.env) {
   const path = nativeModelsPath(env);
   const parent = dirname(path);
+  // OMP accepts both filenames. Never introduce a second competing file that
+  // could shadow an existing user-owned configuration.
+  if (!existsSync(path) && existsSync(join(parent,"models.yaml")))
+    throw new Error("OMP already has models.yaml; refusing to create competing models.yml. Migrate it explicitly.");
   mkdirSync(parent,{recursive:true,mode:0o700});
   if (existsSync(path) && !lstatSync(path).isFile()) throw new Error("Refusing to modify non-regular OMP models.yml");
   const existing = existsSync(path) ? readFileSync(path,"utf8") : "";
