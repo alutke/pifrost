@@ -2369,7 +2369,8 @@ async function commandModelsList() {
 }
 function commandModelsStatus() {
   const result = nativeModelsStatus();
-  console.log(result.enabled ? "Native Bifrost model discovery: enabled ("+result.protocol+")" :
+  console.log(result.enabled ? "Native Bifrost model discovery: configured ("+result.protocol+"); live OMP discovery unverified" :
+    result.status==="invalid" ? "Native Bifrost model configuration: INVALID ("+result.detail+")" :
     "Native Bifrost model discovery: disabled; OMP defaults unchanged");
   console.log("OMP models.yml: " + result.path);
 }
