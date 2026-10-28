@@ -28,7 +28,7 @@ import { bifrostSkillCompatibility, findOmpSkillCollisions, fetchBifrostSkillBun
 
 import { clientsForVirtualMcps, discoverMcpSkillMatches, mcpSkillDrift, normalizeMcpSkillDiscovery, recordMcpSkillLink, setMcpSkillAlias, setMcpSkillDismissal, withoutMcpSkillLinks } from "./mcp-skill-discovery.mjs";
 
-import { VERSION, PIFROST_OMP_MIN_VERSION, PIFROST_OMP_POLICY_SNAPSHOT_VERSION, PIFROST_OMP_VALIDATED_VERSION, PIFROST_BIFROST_MIN_VERSION, PIFROST_BIFROST_VALIDATED_VERSION, PifrostHttpError, aliasManifestPath, attachVirtualMcpToVirtualKey, buildCompatibilityMatrix, commandExists, backupOmpConfig, currentRepoState, detachVirtualMcpFromVirtualKey, effectiveRepoMcpPolicy, getBifrostSetupState, getOmpVersion, getBifrostConfig, listBifrostProviderInventory, getComplexityAnalyzerConfig, formatQuotaGovernanceSource, getVirtualKey, listMcpClients, callMcpGatewayTool, listMcpGatewayTools, mcpToolSurfaceDiagnostics, mcpClientExecutionDiagnostics, listVirtualMcps, loadState, managementAuthFromState, managementAuthLabel, normalizeBifrostUrl, quotaGovernanceSources, removeRepoState, repoIdentity, repoMcpInstructions, requestJson, resolveVirtualMcpNames, rotateVirtualKey, routingFeatureSummary, runCommand, runtimeConfigFromState, saveState, ompWebSearchDiagnostics, readOmpConfigValueResult, testInference, testManagement, syncVirtualMcpAssignments, testMcp, updateRepoState, updateVirtualKey, upsertRepoVirtualKey, virtualKeyMcpConfigs, virtualMcpsForVirtualKey, writeRepoMcpConfig } from "./cli-lib.mjs";
+import { VERSION, PIFROST_OMP_MIN_VERSION, PIFROST_OMP_POLICY_SNAPSHOT_VERSION, PIFROST_OMP_VALIDATED_VERSION, PIFROST_BIFROST_MIN_VERSION, PIFROST_BIFROST_VALIDATED_VERSION, PifrostHttpError, aliasManifestPath, attachVirtualMcpToVirtualKey, commandExists, backupOmpConfig, currentRepoState, detachVirtualMcpFromVirtualKey, effectiveRepoMcpPolicy, getBifrostSetupState, getOmpVersion, getBifrostConfig, listBifrostProviderInventory, getComplexityAnalyzerConfig, formatQuotaGovernanceSource, getVirtualKey, listMcpClients, callMcpGatewayTool, listMcpGatewayTools, mcpToolSurfaceDiagnostics, mcpClientExecutionDiagnostics, listVirtualMcps, loadState, managementAuthFromState, managementAuthLabel, normalizeBifrostUrl, quotaGovernanceSources, removeRepoState, repoIdentity, repoMcpInstructions, requestJson, resolveVirtualMcpNames, rotateVirtualKey, routingFeatureSummary, runCommand, runtimeConfigFromState, saveState, ompWebSearchDiagnostics, readOmpConfigValueResult, testInference, testManagement, syncVirtualMcpAssignments, testMcp, updateRepoState, updateVirtualKey, upsertRepoVirtualKey, virtualKeyMcpConfigs, virtualMcpsForVirtualKey, writeRepoMcpConfig } from "./cli-lib.mjs";
 
 const HELP = `Pifrost ${VERSION} — optional Bifrost models, MCPs and Skills for OMP
 
@@ -127,67 +127,6 @@ function splitCsv(value) {
     .filter(Boolean);
 }
 
-
-function compatibilityMark(status) {
-  if (status === "supported") return "OK";
-  if (status === "unavailable") return "UNAVAILABLE";
-  if (status === "inaccessible") return "INACCESSIBLE";
-  if (status === "drifted") return "DRIFT";
-  return String(status ?? "UNKNOWN").toUpperCase();
-}
-
-function validationMark(status) {
-  if (status === "tested-current") return "TESTED CURRENT";
-  if (status === "supported") return "SUPPORTED";
-  if (status === "newer") return "NEWER THAN VALIDATED";
-  if (status === "unsupported") return "UNSUPPORTED";
-  return "UNKNOWN";
-}
-
-function compatibilityNeedsAttention(item) {
-  return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
-}
-
-async function commandCompatibilityDoctor(snapshot) {
-  const state = loadState();
-  const runtime = runtimeConfigFromState(state);
-  const managementAuth = managementAuthFromState(state);
-  const matrix = await buildCompatibilityMatrix({
-    url: runtime.url,
-    managementAuth,
-    virtualKey: runtime.virtualKey,
-    apiKey: runtime.apiKey,
-    ompVersion: getOmpVersion(),
-    bifrostVersion: snapshot?.version?.ok ? snapshot.version.value : undefined,
-    probes: snapshot,
-  });
-
-  printHeader("Upstream compatibility");
-  console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (minimum ${PIFROST_OMP_MIN_VERSION}; validated through ${PIFROST_OMP_VALIDATED_VERSION})`);
-  console.log(`OMP policy snapshot:     ${PIFROST_OMP_POLICY_SNAPSHOT_VERSION} + Pifrost compatibility patches`);
-  console.log(`  [${validationMark(matrix.ompValidation.status)}] ${matrix.ompValidation.detail}`);
-  for (const item of matrix.omp) {
-    console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
-    if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
-  }
-  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (minimum ${PIFROST_BIFROST_MIN_VERSION}; validated through ${PIFROST_BIFROST_VALIDATED_VERSION})`);
-  console.log(`  [${validationMark(matrix.bifrostValidation.status)}] ${matrix.bifrostValidation.detail}`);
-  for (const item of matrix.bifrost) {
-    console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
-    if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
-  }
-
-  const issues = [...matrix.omp, ...matrix.bifrost].filter(
-    (item) => item.status !== "supported" && item.optional !== true,
-  );
-  const drift = issues.filter((item) => item.status === "drifted").length;
-  const inaccessible = issues.filter((item) => item.status === "inaccessible").length;
-  const unavailable = issues.filter((item) => item.status === "unavailable").length;
-  console.log(
-    `Compatibility summary:  ${issues.length ? `degraded (unavailable=${unavailable}, inaccessible=${inaccessible}, drift=${drift})` : "OK"}`,
-  );
-  if ([...matrix.omp, ...matrix.bifrost].some(compatibilityNeedsAttention)) process.exitCode = 2;
-}
 
 function formatError(error) {
   if (error instanceof PifrostHttpError) return error.message;
