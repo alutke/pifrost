@@ -29,6 +29,15 @@ jobs:
         run: npm test
       - name: Verify release candidate pack and dependency closure
         run: npm run release:check
+      - name: Install actual packed CLI in isolated global prefix
+        run: |
+          npm pack --json --ignore-scripts > "$RUNNER_TEMP/pifrost-pack.json"
+          TARBALL="$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))[0].filename)' "$RUNNER_TEMP/pifrost-pack.json")"
+          mkdir -p "$RUNNER_TEMP/pifrost-prefix"
+          npm install --global --prefix "$RUNNER_TEMP/pifrost-prefix" "./$TARBALL" --ignore-scripts
+          "$RUNNER_TEMP/pifrost-prefix/bin/pifrost" --version
+          "$RUNNER_TEMP/pifrost-prefix/bin/pifrost" models status
+          "$RUNNER_TEMP/pifrost-prefix/bin/pifrost" omp commands status
       - name: Verify clean CLI and named OMP profile on Node 22
         run: |
           export PI_CONFIG_DIR="$RUNNER_TEMP/pifrost-omp-root"
