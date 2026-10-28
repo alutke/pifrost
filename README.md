@@ -15,7 +15,7 @@ pifrost migrate disable-extension
 pifrost migrate apply
 ```
 
-Migration makes a backup and removes only the exact old Pifrost `modelRoles` values. It restores native OMP defaults for `enabledModels` and `modelProviderOrder` only when the old role map establishes Pifrost ownership. It does not disable an already-installed 0.29.x plugin: use OMP's native plugin manager to disable or uninstall the old Pifrost extension, then restart OMP. `pifrost migrate rollback` refuses if the OMP config has changed since migration.
+Migration makes a backup and removes only the exact old Pifrost `modelRoles` values. It restores native OMP defaults for `enabledModels` and `modelProviderOrder` only when the old role map establishes Pifrost ownership. The optional `pifrost migrate disable-extension` command checks for the exact installed Pifrost npm plugin and invokes OMP’s native plugin-disable operation. This is separate from role cleanup, does not uninstall the package and requires an OMP restart. `pifrost migrate rollback` refuses if the OMP config has changed since migration.
 
 To expose Bifrost models for **manual selection** in OMP, run:
 
