@@ -53,6 +53,17 @@ export function nativeProviderBlock(url, api = "openai-completions", authMode = 
 export function mergeNativeProviderYaml(original, block) {
   if (typeof original !== "string") throw new Error("Expected YAML text");
   if (!["", "\n"].includes(original) && /\r/u.test(original)) throw new Error("CRLF YAML is not modified automatically.");
+  // Scope edits to the simple OMP-native YAML mapping form. Refuse
+  // multi-document, duplicate root mappings and quoted/flow/aliased providers
+  // rather than risk overwriting user-authored YAML with text insertion.
+  if (/^(?:---|\.\.\.)\s*$/mu.test(original) || /^\t/mu.test(original))
+    throw new Error("Unsupported YAML document layout; edit Bifrost provider manually.");
+  if ((original.match(/^providers\s*:/gmu)??[]).length>1)
+    throw new Error("Duplicate root providers mapping; refusing to edit.");
+  if (/^\s*["']?bifrost["']?:/mu.test(original) &&
+      !original.includes(NATIVE_START))
+    throw new Error("Existing Bifrost provider cannot be overwritten.");
+
   const countStart = original.split(NATIVE_START).length - 1;
   const countEnd = original.split(NATIVE_END).length - 1;
   if (countStart !== countEnd || countStart > 1) throw new Error("Pifrost marker mismatch; refusing to edit YAML.");
