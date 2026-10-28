@@ -14,7 +14,7 @@ const values = {
   "limit":"Maximum displayed entries", "api":"completions|responses",
 };
 const bools = new Set([
-  "help","all","version","verbose","strict","json","dry-run","yes","skip-test",
+  "help","all","version","verbose","strict","json","dry-run","yes","skip-test","skip-omp",
   "force","delete-remote","recover-by-name","rotate-existing","no-mcp-instructions",
   "install-matching-skills","no-skill-discovery",
 ]);
@@ -31,8 +31,8 @@ const rows = [
   ["omp commands status",0,0,[],"read-only"],
   ["omp commands enable",0,0,["dry-run"],"local-change"],
   ["omp commands disable",0,0,["dry-run"],"local-change"],
-  ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-test","yes","dry-run"],"local-change"],
-  ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-test","yes","dry-run"],"local-change"],
+  ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
+  ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global status",0,0,healthRead,"read-only"],
   ["global mcp-policy",0,0,read,"read-only"],
   ["global observability",0,0,["vk-id",...read],"read-only"],
@@ -123,7 +123,7 @@ export function commandUsage(name) {
       "machine-secret":"Internal machine-secret output; never share its stdout",
     }[d.operation]??d.operation),
     d.options.length?"Options:":"No options.",
-    ...d.options.map(k=>"  --"+k+(flagRequiresValue(k,name)?" <value>":"")+(values[k]?"  "+values[k]:"")),
+    ...d.options.map(k=>k==="skip-omp" ? "  --skip-omp  Deprecated no-op; Pifrost never changes OMP roles" : "  --"+k+(flagRequiresValue(k,name)?" <value>":"")+(values[k]?"  "+values[k]:"")),
     "Detailed help: pifrost help --all",
   ].join("\n");
 }
