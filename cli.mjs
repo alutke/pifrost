@@ -13,6 +13,7 @@ import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
+import { preflightLocalRepoReset } from "./repo-reset-preflight.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
 import { bifrostCredentialTransportWarnings } from "./security-diagnostics.mjs";
 import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
@@ -1940,29 +1941,6 @@ async function commandRepoRotateKey(flags = {}) {
   console.log(`Rotated MCP Virtual Key for ${current.repo.name}; local secret store updated.`);
 }
 
-function preflightLocalRepoReset(repo, repoConfig) {
-  // All local files are examined before any remote Virtual Key DELETE.
-  for (const skill of configuredSkillRows({config:repoConfig})) {
-    const target=join(repo.root,".agents/skills",skill.name);
-    if (!existsSync(target)) continue;
-    if (!readBifrostSkillMarker(repo.root,skill.name))
-      throw new Error("Reset blocked: Skill "+skill.name+" has no Pifrost ownership marker.");
-    const integrity=managedBifrostSkillIntegrity(repo.root,skill.name);
-    if(integrity.status!=="clean")
-      throw new Error("Reset blocked: Skill "+skill.name+" integrity is "+integrity.status+"; review it first.");
-  }
-  const path=join(repo.root,".omp/mcp.json");
-  if(!existsSync(path))return;
-  if(!lstatSync(path).isFile())throw new Error("Reset blocked: MCP config is not a regular file.");
-  let parsed;
-  try{parsed=JSON.parse(readFileSync(path,"utf8"));}
-  catch{throw new Error("Reset blocked: repository .omp/mcp.json is invalid JSON.");}
-  const server=parsed?.mcpServers?.bifrost;
-  if(server && (
-    typeof server!=="object" ||
-    server.headers?.["x-bf-vk"]!==`!pifrost secret repo-mcp --id ${repo.id}`
-  ))throw new Error("Reset blocked: 'bifrost' MCP entry is not owned by this repository.");
-}
 
 async function commandRepoReset(flags = {}) {
   const state = loadState();
