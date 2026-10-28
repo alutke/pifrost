@@ -1,3 +1,17 @@
+## 0.30.0 — 2026-10-28 (release candidate, not published)
+
+### Back to basics — breaking changes
+- Remove automatic OMP extension installation and inference/lifecycle interception. OMP remains authoritative for model roles, providers, reasoning, tool calls, retries, context and compaction.
+- Replace automatic model aliases, route synchronization, judgement/recovery CLI commands, and agent controls with optional native OMP Bifrost model discovery and manual /model selection.
+- Add opt-in, command-only /pifrost UI for gateway health, optional models, repository MCP grants, Virtual MCP bundles, Skills and migration preview; changes require confirmation.
+- Support environment-first inference credentials, explicit Virtual Key-only/Bearer-only/both authentication and native OMP profile resolution.
+- Decouple Bifrost MCP/Skills management authentication from global inference Virtual Key; preserve per-repository Virtual Key scope, tools, bundle grants and Skills integrity.
+- Provide exact-match migration of old Pifrost modelRoles with backups and guarded rollback, explicitly preserving enabledModels and modelProviderOrder.
+- Require legacy installed-plugin collision review before optional UI activation; preflight repository Skill and MCP ownership before remote key deletion.
+- Redact OMP slash-command results and suppress raw remote error bodies in interactive notifications.
+- Reduce npm package composition by excluding old 0.29 TypeScript runtime engines and historical release write-ups. Replace old architecture/docs release validators with CLI-only 0.30 gates.
+- This branch is **not released**. Real Bifrost Chat/Responses streaming, tool calls, reasoning and physical-model compatibility require live certification before publication.
+
 ## 0.29.27 — 2026-10-24
 
 - Release 30G: share conservative leaked-planning completion detection between the OMP compatibility safeguard and checkpoint-aware 30F recovery; recognise the five-closing-tag DeepSeek incident after successful paired tool work.
