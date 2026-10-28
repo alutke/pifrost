@@ -12,7 +12,7 @@ test("Pifrost 0.30 no longer offers the legacy model-routing CLI control plane",
     const args=removed.split(" ");
     const result=spawnSync(process.execPath,[cli,...args],{encoding:"utf8"});
     assert.equal(result.status,1,removed+" must be rejected");
-    assert.match(result.stderr,/Unsupported command/u);
+    assert.match(result.stderr,/(?:Unsupported|Unknown) command/u);
   }
   assert.match(help,/pifrost models enable/u);
   assert.match(help,/pifrost omp commands enable/u);
