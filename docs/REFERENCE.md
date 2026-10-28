@@ -1,6 +1,6 @@
 # Pifrost technical reference
 
-Current operational contract for the Pifrost OMP provider and Bifrost CLI. Start with the [README](../README.md) for first installation and normal use; consult the [changelog](../CHANGELOG.md) for historical release notes. Command flags, positional arguments and side effects are defined by `cli-command-schema.mjs` and exposed with `pifrost <command> --help`.
+**Legacy 0.29.x reference — archived during the 0.30 simplification.** The old inference provider, routing, judgment, recovery and context controls described below are not supported commands on the 0.30 branch. Use the [README](../README.md), `pifrost help --all` and `pifrost <command> --help` for the authoritative, current CLI and optional `/pifrost` commands. Bifrost repository MCP and Skills contracts remain applicable where explicitly retained.
 
 Expected for this release:
 
