@@ -13,7 +13,11 @@ test("0.30 release documentation matches package version and current native OMP 
 test("stale version, missing documentation and unsupported routing guidance fail validation",()=>{
  const original=fixture(),version=JSON.parse(original["package.json"]).version;
  for(const path of ["README.md","docs/REFERENCE.md","docs/INTEGRATION_SUPPORT.md"]){
-  const copy={...original,[path]:original[path].replace(version,"0.29.27")};
+  const copy={...original,[path]:path==="README.md"||path==="docs/REFERENCE.md"
+   ? original[path].replace("Expected for this release:\n\n```text\n"+version,
+     "Expected for this release:\n\n```text\n0.29.27")
+   : original[path].replace("# Pifrost 0.30 integration support — "+version,
+     "# Pifrost 0.30 integration support — 0.29.27")};
   assert.ok(validateDocumentation(copy).some(e=>e.includes(path)),path);
  }
  const missing={...original};delete missing["SECURITY.md"];
