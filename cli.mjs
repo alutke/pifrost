@@ -2300,16 +2300,23 @@ function commandMigrate(mode) {
   const state=loadState();
   if(state.config.ompMigration030)throw new Error("An unapplied rollback journal exists. Review it before another migration.");
   const configPath=configFileForMigration();
+  const originalHash=sha256File(configPath);
   const backup=backupOmpConfig();
   if(!backup)throw new Error("Cannot back up the OMP configuration; migration aborted.");
+  if(sha256File(configPath)!==originalHash)throw new Error("OMP config changed while preparing migration; no migration writes performed.");
   try {
     for(const row of plan.changes){
       runCommand("omp",row.method==="reset" ? ["config","reset",row.key]
         : ["config","set",row.key,JSON.stringify(row.after)]);
     }
   } catch(error) {
-    console.log("Partial migration possible. Original OMP backup: "+backup);
-    throw error;
+    try {
+      copyFileSync(backup,configPath);
+      throw new Error("Migration failed and original OMP config was restored: "+String(error?.message??error));
+    } catch(restoreError) {
+      if(String(restoreError?.message??"").startsWith("Migration failed and original"))throw restoreError;
+      throw new Error("Migration failed; automatic restore also failed. Preserve and restore original backup: "+backup);
+    }
   }
   state.config.ompMigration030={configPath,backup,afterHash:sha256File(configPath)};
   saveState(state.config,state.secrets);
