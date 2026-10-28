@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, rmSync, copyFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, copyFileSync, lstatSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
 import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
@@ -66,6 +66,8 @@ import {
   listBifrostSkills,
   normalizeConfiguredBifrostSkills,
   removeManagedBifrostSkill,
+  managedBifrostSkillIntegrity,
+  readBifrostSkillMarker,
   repoBifrostSkillStatus,
   resolveBifrostSkillNames,
 } from "./skills-bridge.mjs";
@@ -1937,6 +1939,30 @@ async function commandRepoRotateKey(flags = {}) {
   console.log(`Rotated MCP Virtual Key for ${current.repo.name}; local secret store updated.`);
 }
 
+function preflightLocalRepoReset(repo, repoConfig) {
+  // All local files are examined before any remote Virtual Key DELETE.
+  for (const skill of configuredSkillRows({config:repoConfig})) {
+    const target=join(repo.root,".agents/skills",skill.name);
+    if (!existsSync(target)) continue;
+    if (!readBifrostSkillMarker(repo.root,skill.name))
+      throw new Error("Reset blocked: Skill "+skill.name+" has no Pifrost ownership marker.");
+    const integrity=managedBifrostSkillIntegrity(repo.root,skill.name);
+    if(integrity.status!=="clean")
+      throw new Error("Reset blocked: Skill "+skill.name+" integrity is "+integrity.status+"; review it first.");
+  }
+  const path=join(repo.root,".omp/mcp.json");
+  if(!existsSync(path))return;
+  if(!lstatSync(path).isFile())throw new Error("Reset blocked: MCP config is not a regular file.");
+  let parsed;
+  try{parsed=JSON.parse(readFileSync(path,"utf8"));}
+  catch{throw new Error("Reset blocked: repository .omp/mcp.json is invalid JSON.");}
+  const server=parsed?.mcpServers?.bifrost;
+  if(server && (
+    typeof server!=="object" ||
+    server.headers?.["x-bf-vk"]!==`!pifrost secret repo-mcp --id ${repo.id}`
+  ))throw new Error("Reset blocked: 'bifrost' MCP entry is not owned by this repository.");
+}
+
 async function commandRepoReset(flags = {}) {
   const state = loadState();
   const repo = repoIdentity();
@@ -1957,6 +1983,8 @@ async function commandRepoReset(flags = {}) {
     return;
   }
 
+  if (!repoConfig && !deleteRemote) throw new Error("Current repo is not initialized; nothing to reset");
+  preflightLocalRepoReset(repo,repoConfig);
   if (deleteRemote) {
     const runtime = runtimeConfigFromState(state);
     const managementAuth = managementAuthFromState(state);
