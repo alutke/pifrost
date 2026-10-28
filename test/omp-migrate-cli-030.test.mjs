@@ -22,6 +22,7 @@ test("migration CLI preserves custom config and supports guarded rollback",()=>{
       'const fs=require("node:fs");',
       'const p=process.env.PI_CODING_AGENT_DIR+"/config.yml";',
       "const a=process.argv.slice(2);",
+      'if(a[0]==="--version"){process.stdout.write("18.12.5\\n");process.exit(0);}',
       'if(a[0]!=="config"){process.exit(2);}',
       'if(a[1]==="path"){process.stdout.write(process.env.PI_CODING_AGENT_DIR+"\\n");process.exit(0);}',
       'const obj=JSON.parse(fs.readFileSync(p,"utf8"));',
