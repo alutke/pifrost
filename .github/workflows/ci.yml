@@ -42,7 +42,13 @@ jobs:
           test -f "$PI_CONFIG_DIR/profiles/audit/agent/extensions/pifrost-commands.js"
           node cli.mjs omp commands disable
           test ! -e "$PI_CONFIG_DIR/profiles/audit/agent/extensions/pifrost-commands.js"
-      - name: Verify OMP native CLI (no provider calls)
+      - name: Verify pinned OMP 18.12.5 native CLI (no inference calls)
         run: |
-          ./node_modules/.bin/omp --version
-          ./node_modules/.bin/omp plugin list --json
+          OMP_BIN="$RUNNER_TEMP/omp-18.12.5"
+          curl --fail --location --silent --show-error \
+            "https://github.com/can1357/oh-my-pi/releases/download/v18.12.5/omp-linux-x64" \
+            --output "$OMP_BIN"
+          echo "fdbc8136084c9a10439569157b2af62312e2b0d801cab54c73e89476da798e7e  $OMP_BIN" | sha256sum -c -
+          chmod +x "$OMP_BIN"
+          "$OMP_BIN" --version
+          "$OMP_BIN" plugin list --json
