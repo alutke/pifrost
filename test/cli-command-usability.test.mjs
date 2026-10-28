@@ -132,6 +132,9 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
     const native=run("models","enable","--help");
     assert.equal(native.status,0,native.stderr);
     assert.match(native.stdout,/--api <value>/u);
+    const contextual=run("help","models","enable");
+    assert.equal(contextual.status,0,contextual.stderr);
+    assert.match(contextual.stdout,/Usage: pifrost models enable/u);
   } finally {rmSync(home,{recursive:true,force:true});}
 });
 
