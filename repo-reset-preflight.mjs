@@ -24,6 +24,6 @@ export function preflightLocalRepoReset(repo, repoConfig) {
   catch{throw new Error("Reset blocked: repository .omp/mcp.json is invalid JSON.");}
   const server=parsed?.mcpServers?.bifrost;
   if(server && (typeof server!=="object" ||
-    server.headers?.["x-bf-vk"]!==`!pifrost secret repo-mcp --id undefined`))
+    server.headers?.["x-bf-vk"]!=="!pifrost secret repo-mcp --id "+repo.id))
     throw new Error("Reset blocked: 'bifrost' MCP entry is not owned by this repository.");
 }
