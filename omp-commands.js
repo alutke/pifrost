@@ -93,7 +93,12 @@ function resolve(tokens) {
   throw Error("Unknown Pifrost command. Use /pifrost help.");
 }
 function clip(text) {
-  const safe=String(text||"").trim().replace(/(?:sk-[A-Za-z0-9_-]{8,}|Bearer\s+\S+)/gu,"[redacted]");
+  const safe=String(text||"").trim()
+    .replace(/Bearer\s+\S+/giu,"Bearer [redacted]")
+    .replace(/\b(?:sk|vk|bf|ghp|gho|ghs|ghu|github_pat)-[A-Za-z0-9_-]{8,}\b/giu,"[redacted]")
+    .replace(/\b(?:x-bf-vk|authorization|api[_-]?key|virtual[_-]?key|password|access[_-]?token|secret)\b\s*[:=]\s*["']?[^"',}\s]+/giu,"[redacted]")
+    .replace(/(https?:\/\/)[^/\s@]+@/giu,"$1[redacted]@")
+    .replace(/([?&](?:token|api_key|key|secret|password)=)[^&\s]+/giu,"$1[redacted]");
   return safe.length>CAP?safe.slice(0,CAP)+"\n… (truncated; use the Pifrost CLI to see all results)":safe;
 }
 export async function runPifrostSlash(raw, ctx, run) {
@@ -116,9 +121,14 @@ export async function runPifrostSlash(raw, ctx, run) {
   try {
     const result=await run(route.argv,ctx.cwd);
     if(result.killed){ctx.ui.notify("Pifrost command timed out. No completion is assumed.","warning");return;}
-    const output=clip(result.code===0?result.stdout:(result.stderr||result.stdout));
-    ctx.ui.notify(output||(result.code===0?"Completed.":"Command failed with exit code "+result.code),
-      result.code===0?"info":"error");
+    if(result.code!==0){
+      // Gateway error bodies may contain arbitrary credentials; do not send
+      // stderr to OMP's persistent interactive notification surface.
+      ctx.ui.notify("Pifrost command failed (exit "+result.code+"). Run the equivalent CLI command to inspect details.","error");
+      return;
+    }
+    const output=clip(result.stdout);
+    ctx.ui.notify(output||"Completed.","info");
   }catch(e){ctx.ui.notify("Could not run Pifrost CLI: "+clip(e.message),"error");}
 }
 export default function registerPifrost(pi) {
