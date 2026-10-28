@@ -56,10 +56,11 @@ const commands=[
   "secret repo-mcp",
   "secret inference",
   "secret inference-vk",
+  "secret inference-bearer",
   "doctor"
 ];
 
-test("all 45 supported CLI command contracts are present, documented and readable",()=>{
+test("all 46 supported CLI command contracts are present, documented and readable",()=>{
   assert.deepEqual([...commandCatalog.keys()],commands);
   for(const [name,def] of commandCatalog){
     const h=commandUsage(name);
