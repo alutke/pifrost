@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, copyFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
 import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
@@ -176,6 +178,9 @@ Usage:
   pifrost routes diagnose
   pifrost routes effective
   pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
+  pifrost migrate status                   Preview exact legacy role cleanup
+  pifrost migrate apply                    Backup then restore OMP-owned roles
+  pifrost migrate rollback                 Restore if config hasn't changed
   pifrost models list                      Read-only Bifrost /models roster
   pifrost models status                    Current native discovery configuration
   pifrost models enable [--api completions|responses] [--dry-run]
@@ -2250,6 +2255,62 @@ function judgeRuntimeConfig() {
   return runtime;
 }
 
+function configFileForMigration() {
+  const root = runCommand("omp",["config","path"]).stdout.trim();
+  for (const name of ["config.yml","config.yaml"]) {
+    const file = join(root,name);
+    if(existsSync(file))return file;
+  }
+  throw new Error("No existing OMP global YAML found. No changes made.");
+}
+function sha256File(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function commandMigrate(mode) {
+  if(!commandExists("omp"))throw new Error("OMP is required for migration.");
+  if(mode==="rollback"){
+    const state=loadState(), journal=state.config.ompMigration030;
+    if(!journal?.configPath || !journal?.backup || !journal?.afterHash)
+      throw new Error("No Pifrost 0.30 migration backup recorded.");
+    if(configFileForMigration()!==journal.configPath || sha256File(journal.configPath)!==journal.afterHash)
+      throw new Error("OMP config changed since migration; refusing to overwrite it. Restore from the recorded backup manually.");
+    if(!existsSync(journal.backup))throw new Error("Migration backup is missing.");
+    copyFileSync(journal.backup,journal.configPath);
+    delete state.config.ompMigration030;
+    saveState(state.config,state.secrets);
+    console.log("Restored OMP config from backup: "+journal.backup);
+    console.log("Restart OMP; provider/plugin installation was not changed.");
+    return;
+  }
+  const keys=["modelRoles","enabledModels","modelProviderOrder"];
+  const values=Object.fromEntries(keys.map(key=>[key,readOmpConfigValueResult(key)]));
+  const failures=keys.filter(key=>values[key].status!=="ok");
+  if(failures.length)throw new Error("Migration aborted: unable to read "+failures.join(", "));
+  const plan=planLegacyOmpCleanup(Object.fromEntries(keys.map(key=>[key,values[key].value])));
+  console.log("Historical Pifrost roles found: "+plan.removedRoles);
+  for(const row of plan.changes)console.log("  "+row.key+": "+row.method);
+  for(const warning of plan.warnings)console.log("NOTICE "+warning);
+  if(mode!=="apply"){console.log("Read-only. To apply: pifrost migrate apply");return;}
+  if(!plan.changes.length){console.log("No safe changes identified.");return;}
+  const state=loadState();
+  if(state.config.ompMigration030)throw new Error("An unapplied rollback journal exists. Review it before another migration.");
+  const configPath=configFileForMigration();
+  const backup=backupOmpConfig();
+  if(!backup)throw new Error("Cannot back up the OMP configuration; migration aborted.");
+  try {
+    for(const row of plan.changes){
+      runCommand("omp",row.method==="reset" ? ["config","reset",row.key]
+        : ["config","set",row.key,JSON.stringify(row.after)]);
+    }
+  } catch(error) {
+    console.log("Partial migration possible. Original OMP backup: "+backup);
+    throw error;
+  }
+  state.config.ompMigration030={configPath,backup,afterHash:sha256File(configPath)};
+  saveState(state.config,state.secrets);
+  console.log("Restored native OMP role ownership. Backup: "+backup);
+  console.log("Rollback: pifrost migrate rollback (refuses if OMP config has since changed).");
+  console.log("Disable the legacy Pifrost extension using OMP's plugin manager before restarting OMP.");
+}
+
 async function commandModelsList() {
   const runtime = judgeRuntimeConfig();
   const headers = { "x-bf-vk": runtime.virtualKey };
@@ -2583,6 +2644,9 @@ const COMMANDS = new Map([
   ["routes diagnose", () => commandRoutesDiagnose()],
   ["routes effective", () => commandRoutesEffective()],
   ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
+  ["migrate status", () => commandMigrate("status")],
+  ["migrate apply", () => commandMigrate("apply")],
+  ["migrate rollback", () => commandMigrate("rollback")],
   ["models list", () => commandModelsList()],
   ["models status", () => commandModelsStatus()],
   ["models enable", (_args,flags) => commandModelsEnable(flags)],
