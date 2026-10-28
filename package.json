@@ -59,20 +59,7 @@
     "check": "node --check cli.mjs && node --check cli-lib.mjs && node --check cli-command-schema.mjs && node --check native-models.mjs && node --check omp-commands.js && node --check omp-commands-install.mjs && node --check cli-preconditions.mjs && node --check legacy-plugin-conflicts.mjs && node --check repo-reset-preflight.mjs && node --check omp-legacy-migration.mjs && node scripts/validate-architecture.mjs && node scripts/validate-documentation.mjs",
     "test": "node --test test/0.30-*.test.mjs test/cli-030-defaults.test.mjs test/cli-command-usability.test.mjs test/management-auth.test.mjs test/mcp-*.test.mjs test/mcp-skill*.test.mjs test/repo*.test.mjs test/skills-bridge*.test.mjs test/http-*.test.mjs test/native-models-030.test.mjs test/omp-commands*.test.mjs test/omp-migrate-cli-030.test.mjs test/omp-migration-030.test.mjs test/validate-documentation.test.mjs test/security-diagnostics.test.mjs",
     "release:check": "node scripts/validate-release.mjs",
-    "smoke:live": "node scripts/smoke-live.mjs",
-    "smoke:judgments": "node scripts/smoke-native-judgments.mjs",
-    "smoke:image-metadata": "node scripts/smoke-image-metadata.mjs",
-    "cli": "node cli.mjs",
-    "build:runtime": "node --check cli.mjs",
-    "smoke:transport": "node scripts/smoke-transport.mjs",
-    "smoke:cache": "node scripts/smoke-cache-retention.mjs",
-    "test:legacy": "tsx --test test/*.test.ts && node --test test/*.test.mjs && bun test ./test/native-judge-policy.bun.ts ./test/transport-model.bun.ts ./test/route-inventory.bun.ts ./test/native-cold-start.bun.ts ./test/gateway-protocol.bun.ts ./test/release-5c-omp-policy.bun.ts"
-  },
-  "dependencies": {
-    "@oh-my-pi/pi-ai": "18.12.5",
-    "@oh-my-pi/pi-catalog": "18.12.5",
-    "@oh-my-pi/pi-natives": "18.12.5",
-    "@oh-my-pi/pi-utils": "18.12.5"
+    "cli": "node cli.mjs"
   },
   "devDependencies": {
     "@oh-my-pi/pi-coding-agent": "18.12.5",
