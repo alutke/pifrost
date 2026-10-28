@@ -816,6 +816,7 @@ async function commandInit(flags) {
   // The default must NEVER install a provider, remap OMP roles or refresh
   // Pifrost aliases. Existing native OMP settings remain authoritative.
   await commandGlobalSetup({ ...flags, "skip-omp": true });
+  if (flags["dry-run"]) console.log("Dry-run: no changes made.");
   console.log("OMP model selection is unchanged. To opt in: pifrost models enable");
   console.log("For a repository: pifrost repo init; pifrost repo skills list");
 }
