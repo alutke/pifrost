@@ -71,10 +71,11 @@
     "research-results.mjs",
     "omp-commands.js",
     "omp-commands-install.mjs",
-    "legacy-plugin-conflicts.mjs"
+    "legacy-plugin-conflicts.mjs",
+    "repo-reset-preflight.mjs"
   ],
   "scripts": {
-    "check": "node --check cli.mjs && node --check cli-lib.mjs && node --check cli-command-schema.mjs && node --check native-models.mjs && node --check omp-commands.js && node --check omp-commands-install.mjs && node --check cli-preconditions.mjs && node --check legacy-plugin-conflicts.mjs && node --check omp-legacy-migration.mjs && node scripts/validate-architecture.mjs && node scripts/validate-documentation.mjs",
+    "check": "node --check cli.mjs && node --check cli-lib.mjs && node --check cli-command-schema.mjs && node --check native-models.mjs && node --check omp-commands.js && node --check omp-commands-install.mjs && node --check cli-preconditions.mjs && node --check legacy-plugin-conflicts.mjs && node --check repo-reset-preflight.mjs && node --check omp-legacy-migration.mjs && node scripts/validate-architecture.mjs && node scripts/validate-documentation.mjs",
     "test": "node --test test/0.30-*.test.mjs test/cli*.test.mjs test/management-auth.test.mjs test/mcp-*.test.mjs test/mcp-skill*.test.mjs test/repo*.test.mjs test/skills-bridge*.test.mjs test/http-*.test.mjs test/native-models-030.test.mjs test/omp-commands*.test.mjs test/omp-migrate-cli-030.test.mjs test/omp-migration-030.test.mjs test/validate-documentation.test.mjs test/security-diagnostics.test.mjs",
     "release:check": "node scripts/validate-release.mjs",
     "smoke:live": "node scripts/smoke-live.mjs",
