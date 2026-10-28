@@ -23,6 +23,8 @@ test("migration CLI preserves custom config and supports guarded rollback",()=>{
       'const p=process.env.PI_CODING_AGENT_DIR+"/config.yml";',
       "const a=process.argv.slice(2);",
       'if(a[0]==="--version"){process.stdout.write("18.12.5\\n");process.exit(0);}',
+      'if(a[0]==="plugin"&&a[1]==="list"){process.stdout.write(JSON.stringify({npm:[{name:"pifrost",enabled:true}]}));process.exit(0);}',
+      'if(a[0]==="plugin"&&a[1]==="disable"&&a[2]==="pifrost"){fs.writeFileSync(process.env.PI_CODING_AGENT_DIR+"/plugin-disabled","yes");process.exit(0);}',
       'if(a[0]!=="config"){process.exit(2);}',
       'if(a[1]==="path"){process.stdout.write(process.env.PI_CODING_AGENT_DIR+"\\n");process.exit(0);}',
       'const obj=JSON.parse(fs.readFileSync(p,"utf8"));',
@@ -36,6 +38,12 @@ test("migration CLI preserves custom config and supports guarded rollback",()=>{
     const env={...process.env,PATH:bin+":"+process.env.PATH,
       PI_CODING_AGENT_DIR:ompDir,PIFROST_CONFIG_DIR:join(root,"pifrost")};
     const cmd=(args)=>spawnSync(process.execPath,[cli,...args],{env,encoding:"utf8"});
+    const dry=cmd(["migrate","disable-extension","--dry-run"]);
+    assert.equal(dry.status,0,dry.stderr);
+    assert.match(dry.stdout,/Would disable only OMP npm plugin/u);
+    const disabled=cmd(["migrate","disable-extension"]);
+    assert.equal(disabled.status,0,disabled.stderr);
+    assert.equal(readFileSync(join(ompDir,"plugin-disabled"),"utf8"),"yes");
     const status=cmd(["migrate","status"]);
     assert.equal(status.status,0,status.stderr);
     assert.match(status.stdout,/Historical Pifrost roles found: 1/u);
