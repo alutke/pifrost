@@ -36,6 +36,8 @@ test("quick help prioritises common tasks and contains a full-help escape hatch"
   assert.match(text,/pifrost repo init/u);
   assert.match(text,/help --all/u);
   assert.match(text,/pifrost migrate status/u);
+  assert.match(text,/pifrost omp commands enable/u);
+  assert.match(text,/\/pifrost help/u);
   assert.doesNotMatch(text,/\x1b\[/u);
 });
 
