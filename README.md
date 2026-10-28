@@ -10,6 +10,8 @@ Install Pifrost as a CLI without adding any OMP extension:
 npm install --global github:alutke/pifrost#release/0.30-simplification
 pifrost init
 pifrost migrate status
+pifrost migrate disable-extension --dry-run
+pifrost migrate disable-extension
 pifrost migrate apply
 ```
 
