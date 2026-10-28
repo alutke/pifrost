@@ -11,7 +11,8 @@ test("Pifrost 0.30 native provider is opt-in and never edits roles", () => {
   const withBifrost = mergeNativeProviderYaml(src, block);
   assert.match(withBifrost, /providers:\n  # PIFROST-NATIVE-MODELS-START/u);
   assert.match(withBifrost, /  other:\n/u);
-  assert.match(withBifrost, /apiKey: "!pifrost secret inference"/u);
+  assert.match(withBifrost, /auth: none/u);
+  assert.doesNotMatch(withBifrost,/apiKey:|authHeader: true/u);
   assert.match(withBifrost, /x-bf-vk: "!pifrost secret inference-vk"/u);
   assert.equal(mergeNativeProviderYaml(withBifrost,block),withBifrost);
   assert.match(mergeNativeProviderYaml(withBifrost,""),/  other:/u);
@@ -22,7 +23,7 @@ test("Pifrost 0.30 native provider is opt-in and never edits roles", () => {
 test("native provider protects unmanaged and hand-edited configs", () => {
   const block = nativeProviderBlock("https://gateway.invalid/v1","openai-responses");
   assert.throws(()=>mergeNativeProviderYaml("providers:\n  bifrost:\n    api: openai-responses\n",block),/unmanaged/u);
-  assert.throws(()=>mergeNativeProviderYaml("providers:\n"+block.replace("openai-responses","openai-completions").replace("    authHeader: true","    authHeader: false")+"\n",""),/local edits/u);
+  assert.throws(()=>mergeNativeProviderYaml("providers:\n"+block.replace("openai-responses","openai-completions").replace("    authHeader: false","    authHeader: true")+"\n",""),/local edits/u);
   assert.throws(()=>mergeNativeProviderYaml("providers:\n  # PIFROST-NATIVE-MODELS-START\n",block),/marker mismatch/u);
   assert.throws(()=>nativeProviderBlock("file:///tmp/v1"),/plain HTTP/u);
 });
