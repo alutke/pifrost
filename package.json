@@ -21,10 +21,8 @@
   },
   "homepage": "https://github.com/alutke/pifrost#readme",
   "files": [
-    "omp-profile-merge.mjs",
     "provider-tool-policy.mjs",
     "gateway-observability.mjs",
-    "adaptive-context-settings.mjs",
     "model-kind-boundary.mjs",
     "http-client.mjs",
     "doctor-probes.mjs",
