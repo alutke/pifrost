@@ -1,5 +1,47 @@
 # Pifrost
 
+> **0.30 simplification branch (not yet a published release).** The previous 0.29.x integration and automatic OMP role mapping are being retired. The new build is a CLI-only integration; normal OMP models and execution remain native. Existing 0.29.x documentation below is historical until the release documentation is consolidated.
+
+## 0.30 usage: native OMP by default
+
+Install Pifrost as a CLI without adding any OMP extension:
+
+```bash
+npm install --global github:alutke/pifrost#release/0.30-simplification
+pifrost init
+pifrost migrate status
+pifrost migrate apply
+```
+
+Migration makes a backup and removes only the exact old Pifrost `modelRoles` values. It restores native OMP defaults for `enabledModels` and `modelProviderOrder` only when the old role map establishes Pifrost ownership. It does not disable an already-installed 0.29.x plugin: use OMP's native plugin manager to disable or uninstall the old Pifrost extension, then restart OMP. `pifrost migrate rollback` refuses if the OMP config has changed since migration.
+
+To expose Bifrost models for **manual selection** in OMP, run:
+
+```bash
+pifrost models status
+pifrost models list
+pifrost models enable --api completions
+# or: pifrost models enable --api responses
+omp
+```
+
+This creates only a marked `bifrost` provider in OMP's native `~/.omp/agent/models.yml`; it does **not** assign model roles, configure fallback, or install runtime hooks. In OMP use `/model` to choose a Bifrost model. Choose the ingress API supported by your gateway/model: this first implementation uses one provider-wide Chat or Responses protocol, not automatic per-model conversion. Disable with `pifrost models disable`; unrelated model entries are preserved. Native OMP handles request formatting, reasoning, tools, retries and compaction. The optional provider resolves inference credentials at request time via `pifrost secret inference` and `pifrost secret inference-vk`—never store those secrets in `models.yml`.
+
+Repository MCPs and Skills **remain supported without an OMP extension**:
+
+```bash
+cd /path/to/repository
+pifrost repo init
+pifrost repo mcp list
+pifrost repo skills list
+pifrost repo skills add <name>
+```
+
+MCP access uses a dedicated repository Virtual Key with private local storage and `.omp/mcp.json` command-resolved headers. Skills are installed into `.agents/skills` with ownership and integrity checks. These commands do not modify OMP model choices.
+
+---
+
+
 **Use Maxim Bifrost as the routing, governance and MCP backend for OhMyPi (OMP).**
 
 Pifrost gives OMP a small set of stable logical models such as <code>bifrost/omp-default</code>, <code>bifrost/omp-plan</code> and <code>bifrost/omp-vision</code>. Those aliases point at routes you own in Bifrost, so you can change providers, models and fallbacks without continually reconfiguring OMP.
