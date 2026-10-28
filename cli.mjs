@@ -6,6 +6,7 @@ import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
 import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
 import { enableCommands, disableCommands, commandStatus } from "./omp-commands-install.mjs";
 import { runLiteDoctor } from "./lite-doctor.mjs";
+import { legacyPifrostConflicts } from "./legacy-plugin-conflicts.mjs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
@@ -2270,8 +2271,11 @@ function commandOmpCommands(action,flags={}) {
     let installed;
     try { installed=JSON.parse(runCommand("omp",["plugin","list","--json"]).stdout); }
     catch { throw new Error("Could not verify installed OMP plugins. Use 'omp plugin list' and disable the legacy Pifrost runtime extension first."); }
-    if(Array.isArray(installed?.npm) && installed.npm.some(x=>x?.name==="pifrost" && x.enabled!==false))
-      throw new Error("Legacy Pifrost runtime plugin is active. First run 'pifrost migrate disable-extension', then restart OMP.");
+    const conflicts=legacyPifrostConflicts(installed);
+    if(conflicts.length)
+      throw new Error("Legacy Pifrost OMP runtime remains active: "+
+        conflicts.map(x=>x.type+":"+x.id).join(", ")+
+        ". Disable it explicitly before enabling the new command-only palette.");
   }
   const result=action==="enable" ? enableCommands() : disableCommands();
   console.log(result.changed?("OMP /pifrost commands "+(action==="enable"?"installed":"disabled")+"."):
@@ -2285,6 +2289,10 @@ function commandDisableLegacyExtension(flags={}) {
   let list;
   try { list=JSON.parse(runCommand("omp",["plugin","list","--json"]).stdout); }
   catch { throw new Error("Cannot verify installed OMP plugins; no plugin modified."); }
+  const conflicts=legacyPifrostConflicts(list);
+  const other=conflicts.filter(x=>x.type!=="npm");
+  if(other.length)throw new Error("Unmanaged legacy Pifrost extension(s): "+
+    other.map(x=>x.type+":"+x.id).join(", ")+". Disable manually in OMP first.");
   const installed=Array.isArray(list?.npm) ? list.npm.filter(x=>x?.name==="pifrost") : [];
   if(installed.length>1)throw new Error("Multiple Pifrost plugins reported; inspect OMP plugin list manually.");
   if(!installed.length){console.log("No exact Pifrost npm plugin found; no changes made.");return;}
