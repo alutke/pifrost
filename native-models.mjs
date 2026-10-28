@@ -94,9 +94,16 @@ export function nativeModelsStatus(env = process.env) {
   const path = nativeModelsPath(env);
   if (!existsSync(path)) return {path, enabled:false};
   const content = readFileSync(path,"utf8");
-  const enabled = content.includes(NATIVE_START) && content.includes(NATIVE_END);
-  const protocol = enabled ? /^    api: (openai-(?:completions|responses))$/mu.exec(content.slice(content.indexOf(NATIVE_START),content.indexOf(NATIVE_END)))?.[1] : undefined;
-  return {path, enabled, protocol};
+  const marked = content.includes(NATIVE_START) || content.includes(NATIVE_END);
+  if (!marked) return {path,enabled:false,status:"disabled"};
+  try {
+    // Verify the entire managed block is exactly the Pifrost canonical form.
+    mergeNativeProviderYaml(content, "");
+  } catch(error) {
+    return {path,enabled:false,status:"invalid",detail:String(error.message??error)};
+  }
+  const protocol = /^    api: (openai-(?:completions|responses))$/mu.exec(content.slice(content.indexOf(NATIVE_START),content.indexOf(NATIVE_END)))?.[1];
+  return {path,enabled:true,status:"configured-unverified",protocol};
 }
 
 /** Atomic, backed-up opt-in edits. Do not overwrite symlinks or auto-modify user providers. */
