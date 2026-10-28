@@ -32,10 +32,10 @@ test("issues-first health output is readable without colour or a TTY", () => {
 test("quick help prioritises common tasks and contains a full-help escape hatch", () => {
   const text=compactCliHelp("0.21.0");
   assert.match(text,/pifrost doctor/u);
-  assert.match(text,/pifrost routes verify/u);
-  assert.match(text,/pifrost repo status/u);
+  assert.match(text,/pifrost models enable/u);
+  assert.match(text,/pifrost repo init/u);
   assert.match(text,/help --all/u);
-  assert.match(text,/\/pifrost trace/u);
+  assert.match(text,/pifrost migrate status/u);
   assert.doesNotMatch(text,/\x1b\[/u);
 });
 
