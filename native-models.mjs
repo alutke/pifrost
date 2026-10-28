@@ -4,14 +4,14 @@
  * A scoped, marked YAML block is the only content we own in models.yml.
  */
 import { randomUUID } from "node:crypto";
-import { constants, existsSync, mkdirSync, openSync, readFileSync, renameSync, copyFileSync, writeFileSync, closeSync, fsyncSync } from "node:fs";
+import { constants, existsSync, mkdirSync, openSync, readFileSync, renameSync, copyFileSync, writeFileSync, closeSync, fsyncSync, lstatSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { ompAgentDir } from "./cli-lib.mjs";
 
 export const NATIVE_START = "  # PIFROST-NATIVE-MODELS-START";
 export const NATIVE_END = "  # PIFROST-NATIVE-MODELS-END";
-const ROOT_PROVIDERS = /^providers:\s*(?:#.*)?$/mu;
-const BIFROST_ENTRY = /^  bifrost:\s*(?:#.*)?$/mu;
+const ROOT_PROVIDERS = /^providers:[ \t]*(?:#.*)?$/mu;
+const BIFROST_ENTRY = /^  bifrost:[ \t]*(?:#.*)?$/mu;
 
 function yaml(value) { return JSON.stringify(value); }
 function safeModelUrl(url) {
@@ -56,8 +56,15 @@ export function mergeNativeProviderYaml(original, block) {
     if (!/^  # PIFROST-NATIVE-MODELS-START\n  bifrost:\n[\s\S]*\n  # PIFROST-NATIVE-MODELS-END$/u.test(managed)) {
       throw new Error("Managed provider block changed structurally; refusing to edit.");
     }
+    const urlLine=/^    baseUrl: ("[^"\\n]+")$/mu.exec(managed);
+    const apiLine=/^    api: (openai-(?:completions|responses))$/mu.exec(managed);
+    let expected;
+    try { expected = urlLine && apiLine ? nativeProviderBlock(JSON.parse(urlLine[1]),apiLine[1]) : undefined; }
+    catch { expected = undefined; }
+    if (managed !== expected) throw new Error("Managed provider has local edits; refusing to overwrite them.");
     const prefix = original.slice(0,start), suffix = original.slice(end);
-    return block ? prefix + block + suffix : (prefix+suffix).replace(/\n{3,}/gu,"\n\n");
+    const result = block ? prefix + block + suffix : (prefix+suffix).replace(/\n{3,}/gu,"\n\n");
+    return result.trim()==="providers:" ? "" : result;
   }
   if (!block) return original;
   if (BIFROST_ENTRY.test(original)) throw new Error("An unmanaged bifrost provider already exists; edit it manually.");
@@ -87,6 +94,7 @@ export function writeNativeModels(api, url, env = process.env) {
   const path = nativeModelsPath(env);
   const parent = dirname(path);
   mkdirSync(parent,{recursive:true,mode:0o700});
+  if (existsSync(path) && !lstatSync(path).isFile()) throw new Error("Refusing to modify non-regular OMP models.yml");
   const existing = existsSync(path) ? readFileSync(path,"utf8") : "";
   const updated = mergeNativeProviderYaml(existing, api ? nativeProviderBlock(url,api) : "");
   if(updated===existing)return {changed:false,path};
