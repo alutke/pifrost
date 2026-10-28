@@ -86,6 +86,7 @@ export function compactCliHelp(version) {
     "  pifrost init                   Bifrost connection and secret setup",
     "  pifrost doctor                 Minimal integration health check",
     "  pifrost migrate status         Preview removal of old Pifrost model mappings",
+    "  pifrost migrate disable-extension  Disable old runtime plugin explicitly",
     "  pifrost migrate apply          Restore native OMP role ownership (backed up)",
     "",
     "Optional Bifrost models:",
