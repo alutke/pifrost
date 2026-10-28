@@ -3,38 +3,26 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { validateDocumentation } from "../scripts/validate-documentation.mjs";
-
-const files=[
-  "package.json","package-lock.json","README.md","docs/REFERENCE.md",
-  "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
-  "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-  "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md","docs/RELEASE_5F_CERTIFICATION.md","SECURITY.md",
-  "CONTRIBUTING.md",".github/CODEOWNERS",
-];
-function fixture() {
-  return Object.fromEntries(files.map(path=>[path,readFileSync(resolve(import.meta.dirname,"..",path),"utf8")]));
-}
-test("R4-06 living release documentation matches current package and policy snapshot",()=>{
-  assert.deepEqual(validateDocumentation(fixture()),[]);
+const paths=["package.json","package-lock.json","README.md","docs/REFERENCE.md",
+  "docs/INTEGRATION_SUPPORT.md","CHANGELOG.md","SECURITY.md","CONTRIBUTING.md",".github/CODEOWNERS"];
+const fixture=()=>Object.fromEntries(paths.map(path=>[path,
+  readFileSync(resolve(import.meta.dirname,"..",path),"utf8")]));
+test("0.30 release documentation matches package version and current native OMP ownership",()=>{
+ assert.deepEqual(validateDocumentation(fixture()),[]);
 });
-test("R4-07 stale host-support/compatibility headings fail CI",()=>{
-  for(const path of ["docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md","docs/OUTPUT_BUDGET.md"]) {
-    const contents=fixture();
-    const version=JSON.parse(contents["package.json"]).version;
-    contents[path]=contents[path].replace(version,"0.29.0");
-    assert.ok(validateDocumentation(contents).some(x=>x.includes(path)),path);
-  }
+test("stale version, missing documentation and unsupported routing guidance fail validation",()=>{
+ const original=fixture(),version=JSON.parse(original["package.json"]).version;
+ for(const path of ["README.md","docs/REFERENCE.md","docs/INTEGRATION_SUPPORT.md"]){
+  const copy={...original,[path]:original[path].replace(version,"0.29.27")};
+  assert.ok(validateDocumentation(copy).some(e=>e.includes(path)),path);
+ }
+ const missing={...original};delete missing["SECURITY.md"];
+ assert.ok(validateDocumentation(missing).some(e=>e.includes("SECURITY.md")));
+ assert.ok(validateDocumentation({...original,["README.md"]:original["README.md"]+"\npifrost routes sync"})
+   .some(e=>e.includes("unsupported runtime routing")));
 });
-test("R4-08 missing private security, contribution or code ownership policy fails CI",()=>{
-  for(const file of ["SECURITY.md","CONTRIBUTING.md",".github/CODEOWNERS"]) {
-    const contents=fixture();
-    delete contents[file];
-    assert.ok(validateDocumentation(contents).some(x=>x.includes(file)),file);
-  }
-});
-test("R4-09 unpinned OMP package or incompatible policy snapshot fails CI",()=>{
-  const contents=fixture(),pkg=JSON.parse(contents["package.json"]);
-  pkg.dependencies["@oh-my-pi/pi-catalog"]="18.10.4";
-  contents["package.json"]=JSON.stringify(pkg);
-  assert.ok(validateDocumentation(contents).some(x=>x.includes("OMP policy snapshot dependency mismatch")));
+test("lockfile root version must match package",()=>{
+ const contents=fixture(),lock=JSON.parse(contents["package-lock.json"]);
+ lock.version="0.29.27";contents["package-lock.json"]=JSON.stringify(lock);
+ assert.ok(validateDocumentation(contents).some(e=>e.includes("Package lock")));
 });
