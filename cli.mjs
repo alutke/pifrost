@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, rmSync, copyFileSync, lstatSync } from "node:fs";
+import { existsSync, readFileSync, copyFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
 import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
@@ -15,148 +15,20 @@ import { spawnSync } from "node:child_process";
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
 import { preflightLocalRepoReset } from "./repo-reset-preflight.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
-import { bifrostCredentialTransportWarnings } from "./security-diagnostics.mjs";
-import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
 import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
-import {
-  explainRouteRequest,
-  formatEffectiveRouteReport,
-  formatRouteExplanation,
-  printModelDoctor,
-  readCatalog,
-} from "./model-diagnostics.mjs";
-import {
-  formatCatalogSnapshot,
-  routeAliasForInput,
-  routeExplanationRequestFromFlags,
-} from "./route-cli.mjs";
-import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
-import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
-import { reconcileRouteSnapshot, attestCompatibilityRoute, RouteReconcileError } from "./route-reconcile.mjs";
 import { commandCatalog, flagRequiresValue, isKnownFlag, cliUsageError, validateCliInvocation, commandUsage, operationLabel } from "./cli-command-schema.mjs";
 import { reportHealth, listFilter, operationSummary, safeUiText } from "./cli-health.mjs";
-import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
-import {
-  RESEARCH_PROFILES,
-  eligibleResearchCodeModeClients,
-  normalizeResearchPreference,
-  researchProviderDiagnostics,
-  probeResearchCodeMode,
-} from "./research-providers.mjs";
-import { classifyResearchResult } from "./research-results.mjs";
-import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
+import { eligibleResearchCodeModeClients, researchProviderDiagnostics, probeResearchCodeMode } from "./research-providers.mjs";
 import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-boundary.mjs";
-import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
-import { decisionProviderInventory, resolvePinnedOmpJudgeCapabilities } from "./judge-certification.mjs";
-import { OMP_ORCHESTRATION_SETTING_IDS, assessOmpOrchestration, formatOmpOrchestration } from "./omp-orchestration-readiness.mjs";
-import { formatAdaptiveContextPlan } from "./adaptive-context-settings.mjs";
-import { inspectPifrostWorkarounds, formatPifrostWorkarounds } from "./workaround-register.mjs";
-import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
-import { planJudgeRoleActivation, applyJudgeRoleActivation } from "./judge-activation.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
-import {
-  compactCliHelp, formatCliFailure, renderHealthOverview,
-  terminalSection, terminalField, terminalStatus, terminalNextSteps, humanAge,
-} from "./terminal-presentation.mjs";
+import { compactCliHelp, formatCliFailure, renderHealthOverview, terminalSection, terminalField, terminalStatus, terminalNextSteps } from "./terminal-presentation.mjs";
 
-import {
-  bifrostSkillCompatibility,
-  findOmpSkillCollisions,
-  fetchBifrostSkillBundle,
-  installBifrostSkillBundle,
-  listBifrostSkills,
-  normalizeConfiguredBifrostSkills,
-  removeManagedBifrostSkill,
-  managedBifrostSkillIntegrity,
-  readBifrostSkillMarker,
-  repoBifrostSkillStatus,
-  resolveBifrostSkillNames,
-} from "./skills-bridge.mjs";
+import { bifrostSkillCompatibility, findOmpSkillCollisions, fetchBifrostSkillBundle, installBifrostSkillBundle, listBifrostSkills, normalizeConfiguredBifrostSkills, removeManagedBifrostSkill, repoBifrostSkillStatus, resolveBifrostSkillNames } from "./skills-bridge.mjs";
 
-import {
-  clientsForVirtualMcps,
-  discoverMcpSkillMatches,
-  mcpSkillDrift,
-  normalizeMcpSkillDiscovery,
-  recordMcpSkillLink,
-  setMcpSkillAlias,
-  setMcpSkillDismissal,
-  withoutMcpSkillLinks,
-} from "./mcp-skill-discovery.mjs";
+import { clientsForVirtualMcps, discoverMcpSkillMatches, mcpSkillDrift, normalizeMcpSkillDiscovery, recordMcpSkillLink, setMcpSkillAlias, setMcpSkillDismissal, withoutMcpSkillLinks } from "./mcp-skill-discovery.mjs";
 
-import {
-  VERSION,
-  PIFROST_OMP_MIN_VERSION,
-  PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
-  PIFROST_OMP_VALIDATED_VERSION,
-  PIFROST_BIFROST_MIN_VERSION,
-  PIFROST_BIFROST_VALIDATED_VERSION,
-  PifrostHttpError,
-  aliasManifestPath,
-  attachVirtualMcpToVirtualKey,
-  buildCompatibilityMatrix,
-  buildRepoMcpConfig,
-  commandExists,
-  configureOmp,
-  configureOmpAdaptiveContext,
-  planOmpAdaptiveContext,
-  backupOmpConfig,
-  currentRepoState,
-  detachVirtualMcpFromVirtualKey,
-  diffAliases,
-  effectiveRepoMcpPolicy,
-  getRepoRoot,
-  getBifrostVersion,
-  getBifrostHealth,
-  getBifrostSetupState,
-  getOmpVersion,
-  getBifrostConfig,
-  listBifrostProviderInventory,
-  getVirtualKeyQuota,
-  getComplexityAnalyzerConfig,
-  formatQuotaGovernanceSource,
-  getVirtualKey,
-  installOmpPlugin,
-  listMcpClients,
-  callMcpGatewayTool,
-  listMcpGatewayTools,
-  mcpToolSurfaceDiagnostics,
-  mcpClientExecutionDiagnostics,
-  listVirtualMcps,
-  loadAliasManifest,
-  loadState,
-  managementAuthFromState,
-  managementAuthLabel,
-  normalizeBifrostUrl,
-  quotaGovernanceSources,
-  removeRepoState,
-  repoIdentity,
-  repoMcpInstructions,
-  requestJson,
-  resolveVirtualMcpNames,
-  rotateVirtualKey,
-  routingFeatureSummary,
-  runCommand,
-  runtimeConfigFromState,
-  saveState,
-  ompWebSearchDiagnostics,
-  ompContextPolicyDiagnostics,
-  formatOmpContextPolicyDiagnostics,
-  readOmpConfigValue,
-  readOmpConfigValueResult,
-  testInference,
-  testManagement,
-  syncVirtualMcpAssignments,
-  testMcp,
-  updateRepoState,
-  updateVirtualKey,
-  upsertRepoVirtualKey,
-  virtualKeyMcpConfigs,
-  virtualMcpsForVirtualKey,
-  writeAliasManifest,
-  writeRepoMcpConfig,
-} from "./cli-lib.mjs";
+import { VERSION, PIFROST_OMP_MIN_VERSION, PIFROST_OMP_POLICY_SNAPSHOT_VERSION, PIFROST_OMP_VALIDATED_VERSION, PIFROST_BIFROST_MIN_VERSION, PIFROST_BIFROST_VALIDATED_VERSION, PifrostHttpError, aliasManifestPath, attachVirtualMcpToVirtualKey, buildCompatibilityMatrix, commandExists, backupOmpConfig, currentRepoState, detachVirtualMcpFromVirtualKey, effectiveRepoMcpPolicy, getBifrostSetupState, getOmpVersion, getBifrostConfig, listBifrostProviderInventory, getComplexityAnalyzerConfig, formatQuotaGovernanceSource, getVirtualKey, listMcpClients, callMcpGatewayTool, listMcpGatewayTools, mcpToolSurfaceDiagnostics, mcpClientExecutionDiagnostics, listVirtualMcps, loadState, managementAuthFromState, managementAuthLabel, normalizeBifrostUrl, quotaGovernanceSources, removeRepoState, repoIdentity, repoMcpInstructions, requestJson, resolveVirtualMcpNames, rotateVirtualKey, routingFeatureSummary, runCommand, runtimeConfigFromState, saveState, ompWebSearchDiagnostics, readOmpConfigValueResult, testInference, testManagement, syncVirtualMcpAssignments, testMcp, updateRepoState, updateVirtualKey, upsertRepoVirtualKey, virtualKeyMcpConfigs, virtualMcpsForVirtualKey, writeRepoMcpConfig } from "./cli-lib.mjs";
 
 const HELP = `Pifrost ${VERSION} — optional Bifrost models, MCPs and Skills for OMP
 
