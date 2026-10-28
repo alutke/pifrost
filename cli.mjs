@@ -2674,7 +2674,13 @@ function resolveCommand(positional) {
   for (let length = positional.length; length > 0; length -= 1) {
     const key = positional.slice(0, length).join(" ");
     const handler = COMMANDS.get(key);
-    if (handler) return { handler, args: positional.slice(length) };
+    if (handler) {
+      // A short overview alias is only valid by itself. Do not mistake an
+      // unsupported old subcommand for extra positional arguments to an alias.
+      if (length === 1 && ["models","mcp","skills","status"].includes(key) && positional.length > 1)
+        return undefined;
+      return { handler, args: positional.slice(length) };
+    }
   }
   return undefined;
 }
