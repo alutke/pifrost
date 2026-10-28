@@ -31,7 +31,7 @@ test("issues-first health output is readable without colour or a TTY", () => {
 
 test("quick help prioritises common tasks and contains a full-help escape hatch", () => {
   const text=compactCliHelp("0.21.0");
-  assert.match(text,/pifrost doctor/u);
+  assert.match(text,/pifrost status/u);
   assert.match(text,/pifrost models enable/u);
   assert.match(text,/pifrost repo init/u);
   assert.match(text,/help --all/u);
@@ -59,19 +59,19 @@ test("public CLI quick help, full help and unknown command are distinct", () => 
   try {
     const quick=run("help");
     assert.equal(quick.status,0,quick.stderr);
-    assert.match(quick.stdout,/Start here:/u);
-    assert.doesNotMatch(quick.stdout,/Global setup options:/u);
+    assert.match(quick.stdout,/Quick start:/u);
+    assert.doesNotMatch(quick.stdout,/Advanced \/ internal:/u);
     const full=run("help","--all");
     assert.equal(full.status,0,full.stderr);
-    assert.match(full.stdout,/Global setup options:/u);
+    assert.match(full.stdout,/Advanced \/ internal:/u);
     assert.match(full.stdout,/pifrost repo skills/u);
     const unknown=run("not-a-command","very-secret-command-argument");
     assert.equal(unknown.status,1);
     assert.match(unknown.stderr,/Unknown command/u);
     assert.doesNotMatch(unknown.stderr,/very-secret-command-argument/u);
-    const model=run("models","doctor");
-    assert.match(model.stdout,/Model catalogue/u);
-    assert.match(model.stdout,/models refresh --force/u);
+    const model=run("models","status");
+    assert.equal(model.status,0,model.stderr);
+    assert.match(model.stdout,/Native Bifrost model discovery:/u);
     assert.doesNotMatch(model.stdout,/\x1b\[/u);
   } finally { rmSync(root,{recursive:true,force:true}); }
 });
