@@ -38,8 +38,6 @@ const rows = [
   ["omp commands status",0,0,[],"read-only"],
   ["omp commands enable",0,0,["dry-run"],"local-change"],
   ["omp commands disable",0,0,["dry-run"],"local-change"],
-  ["omp commands enable",0,0,["dry-run"],"local-change"],
-  ["omp commands disable",0,0,["dry-run"],"local-change"],
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global status",0,0,healthRead,"read-only"],
