@@ -44,18 +44,17 @@ import {
 import { normalizeMcpClient as normalizeStandaloneMcpClient } from "../mcp-client-normalization.mjs";
 import { parseMcpJsonRpcResponse } from "../mcp-rpc.mjs";
 
-test("canonical CLI help exposes the full repo Skills/reset surface", () => {
+test("0.30 full CLI help matches supported MCP, Skills and optional OMP commands", () => {
   const cli = resolve(import.meta.dirname, "../cli.mjs");
   const result = spawnSync(process.execPath, [cli, "help", "--all"], { encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
   assert.match(result.stdout, /pifrost repo skills sync \[name\]/u);
-  assert.match(result.stdout, /pifrost repo reset \[--delete-remote\] \[--recover-by-name\] \[--yes\]/u);
-  assert.match(result.stdout, /--rotate-existing/u);
-  assert.match(result.stdout, /pifrost routes diagnose/u);
-  assert.match(result.stdout, /pifrost routes effective/u);
-  assert.match(result.stdout, /pifrost global mcp-policy/u);
+  assert.match(result.stdout, /pifrost repo reset/u);
+  assert.match(result.stdout, /pifrost models enable/u);
+  assert.match(result.stdout, /pifrost omp commands enable/u);
+  assert.match(result.stdout, /pifrost repo mcp add/u);
   assert.match(result.stdout, /pifrost models kinds/u);
-  assert.match(result.stdout, /pifrost routes explain <role\|alias>/u);
+  assert.doesNotMatch(result.stdout, /pifrost routes sync|pifrost judge activate|pifrost omp context apply/u);
 });
 
 test("parses and compares upstream semantic versions conservatively", () => {
