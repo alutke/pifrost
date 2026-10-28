@@ -12,8 +12,8 @@ test("legacy Pifrost roles are removed without changing custom roles", () => {
   assert.equal(plan.removedRoles,2);
   assert.deepEqual(plan.changes.find(x=>x.key==="modelRoles").after,
     {judge:"typesafe/jev-latest",plan:"custom/my-plan"});
-  assert.deepEqual(plan.changes.find(x=>x.key==="enabledModels").after,["openai-codex/*"]);
-  assert.deepEqual(plan.changes.find(x=>x.key==="modelProviderOrder").after,["openai-codex"]);
+  assert.equal(plan.changes.find(x=>x.key==="enabledModels"),undefined);
+  assert.equal(plan.changes.find(x=>x.key==="modelProviderOrder"),undefined);
 });
 test("migration resets lone historical Pifrost defaults", () => {
  const plan=planLegacyOmpCleanup({
@@ -21,7 +21,7 @@ test("migration resets lone historical Pifrost defaults", () => {
   enabledModels:["bifrost/*"],modelProviderOrder:["bifrost"],
  });
  assert.deepEqual(plan.changes.map(x=>[x.key,x.method]),
-   [["modelRoles","reset"],["enabledModels","reset"],["modelProviderOrder","reset"]]);
+   [["modelRoles","reset"]]);
 });
 test("migration does not infer ownership from a user's Bifrost selections", () => {
  const input={modelRoles:{default:"bifrost/my-model"},
