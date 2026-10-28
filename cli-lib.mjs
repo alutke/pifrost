@@ -123,7 +123,17 @@ export function pifrostPaths(env = process.env) {
 }
 
 export function ompAgentDir(env = process.env) {
-  return nonEmpty(env.PI_CODING_AGENT_DIR) ?? resolve(homedir(), ".omp/agent");
+  // Match native OMP profile precedence and roots. Named profiles ignore
+  // PI_CODING_AGENT_DIR; the selected profile applies to models and commands.
+  const profile = (Object.hasOwn(env,"OMP_PROFILE") ? env.OMP_PROFILE : env.PI_PROFILE)?.trim();
+  const configRoot = resolve(homedir(), nonEmpty(env.PI_CONFIG_DIR) ?? ".omp");
+  if (profile && profile !== "default") {
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/u.test(profile) || profile === "..") {
+      throw new Error("Unsafe OMP profile name; select a simple named OMP profile.");
+    }
+    return resolve(configRoot, "profiles", profile, "agent");
+  }
+  return nonEmpty(env.PI_CODING_AGENT_DIR) ?? resolve(configRoot, "agent");
 }
 
 export function aliasManifestPath(env = process.env) {
