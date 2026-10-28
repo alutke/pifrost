@@ -31,29 +31,18 @@ const filters = ["filter","limit"];
 const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
 // Registered commands. Source-of-truth for validation/help side effects.
 const rows = [
+  ["status",0,0,healthRead,"read-only"],
+  ["models",0,0,[],"read-only"],
+  ["mcp",0,0,[...filters,...read],"read-only"],
+  ["skills",0,0,[...filters,...read],"read-only"],
+  ["omp commands status",0,0,[],"read-only"],
+  ["omp commands enable",0,0,["dry-run"],"local-change"],
+  ["omp commands disable",0,0,["dry-run"],"local-change"],
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global status",0,0,healthRead,"read-only"],
   ["global mcp-policy",0,0,read,"read-only"],
   ["global observability",0,0,["vk-id",...read],"read-only"],
-  ["global configure-omp",0,0,["dry-run"],"local-change"],
-  ["omp readiness",0,0,["json","verbose"],"read-only"],
-  ["omp context",0,0,["json","verbose"],"read-only"],
-  ["omp context apply",0,0,["dry-run"],"local-change"],
-  ["omp workarounds",0,0,["json","verbose"],"read-only"],
-  ["judge status",0,0,read,"read-only"],
-  ["judge providers",0,0,read,"read-only"],
-  ["judge activate",0,0,["dry-run"],"local-change"],
-  ["judge probe",0,0,["decisions","image","box","yes"],"billed"],
-  ["routes list",0,0,[...filters,...read],"read-only"],
-  ["routes diff",0,0,read,"read-only"],
-  ["routes verify",0,0,["dry-run",...read],"local-change"],
-  ["routes attest",1,1,["json"],"read-only"],
-  ["routes sync",0,0,["no-refresh","dry-run",...read],"local-change"],
-  ["routes reconcile",0,0,["json"],"local-change"],
-  ["routes diagnose",0,0,read,"read-only"],
-  ["routes effective",0,0,read,"read-only"],
-  ["routes explain",1,1,routeOptions,"read-only"],
   ["migrate status",0,0,[],"read-only"],
   ["migrate disable-extension",0,0,["dry-run"],"local-change"],
   ["migrate apply",0,0,[],"local-change"],
@@ -62,16 +51,9 @@ const rows = [
   ["models status",0,0,[],"read-only"],
   ["models enable",0,0,["api","dry-run"],"local-change"],
   ["models disable",0,0,["dry-run"],"local-change"],
-  ["models refresh",0,0,["force"],"local-change"],
-  ["models doctor",0,0,healthRead,"read-only"],
   ["models kinds",0,0,read,"read-only"],
   ["repo init",0,0,["clients","tools","virtual-mcps","rotate-existing","no-mcp-instructions","install-matching-skills","no-skill-discovery","dry-run","yes"],"gateway-change"],
   ["repo status",0,0,healthRead,"read-only"],
-  ["repo research status",0,0,read,"read-only"],
-  ["repo research bind",2,2,["profile","search-tool","fetch-tool","crawl-tool","screenshot-tool"],"local-change"],
-  ["repo research unbind",1,1,[],"local-change"],
-  ["repo research prefer",1,1,[],"local-change"],
-  ["repo research probe",0,1,["yes"],"billed"],
   ["repo rotate-key",0,0,["dry-run","yes"],"gateway-change"],
   ["repo reset",0,0,["delete-remote","recover-by-name","yes","dry-run"],"gateway-change"],
   ["repo mcp list",0,0,[...filters,...read],"read-only"],
@@ -100,7 +82,7 @@ export const commandCatalog = new Map(rows.map(([name,min,max,options,operation]
   operation,
 }]));
 export function flagRequiresValue(key, command) {
-  if (key === "tools") return command !== "routes explain"; // "--tools" always requires explicit allow-list.
+  if (key === "tools") return true; // An explicit MCP grant is never inferred.
   return Object.hasOwn(values,key);
 }
 export function isKnownFlag(key) { return Object.hasOwn(values,key) || bools.has(key); }
