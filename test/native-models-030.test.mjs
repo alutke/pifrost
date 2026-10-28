@@ -49,3 +49,11 @@ test("native provider writes atomically, retains unrelated providers, and disabl
     assert.match(readFileSync(path,"utf8"),/user-api/u);
   } finally {rmSync(root,{recursive:true,force:true});}
 });
+
+test("native model editor refuses duplicate and unsupported YAML layouts without writes",()=>{
+ const block=nativeProviderBlock("http://127.0.0.1:8180/v1");
+ assert.throws(()=>mergeNativeProviderYaml("providers:\n  other: {}\nproviders:\n  another: {}\n",block),/Duplicate root/u);
+ assert.throws(()=>mergeNativeProviderYaml("---\nproviders:\n  other: {}\n",block),/Unsupported YAML/u);
+ assert.throws(()=>mergeNativeProviderYaml("providers:\n  \"bifrost\": {}\n",block),/Existing Bifrost/u);
+ assert.throws(()=>mergeNativeProviderYaml("providers: {other: {}}\n",block),/Non-standard root/u);
+});
