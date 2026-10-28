@@ -2311,7 +2311,7 @@ function commandMigrate(mode) {
     console.log("Restart OMP; provider/plugin installation was not changed.");
     return;
   }
-  const keys=["modelRoles","enabledModels","modelProviderOrder"];
+  const keys=["modelRoles"];
   const values=Object.fromEntries(keys.map(key=>[key,readOmpConfigValueResult(key)]));
   const failures=keys.filter(key=>values[key].status!=="ok");
   if(failures.length)throw new Error("Migration aborted: unable to read "+failures.join(", "));
