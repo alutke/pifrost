@@ -12,9 +12,8 @@ export const OLD_PIFROST_ROLES = Object.freeze({
 const object=v=>v&&typeof v==="object"&&!Array.isArray(v);
 
 export function planLegacyOmpCleanup(current) {
-  if (!current || !object(current.modelRoles) ||
-      !Array.isArray(current.enabledModels) || !Array.isArray(current.modelProviderOrder)) {
-    throw new Error("OMP migration cannot safely read modelRoles, enabledModels and modelProviderOrder.");
+  if (!current || !object(current.modelRoles)) {
+    throw new Error("OMP migration cannot safely read modelRoles.");
   }
   const roles={...current.modelRoles};
   let removed=0;
