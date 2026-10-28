@@ -55,6 +55,7 @@ const rows = [
   ["routes effective",0,0,read,"read-only"],
   ["routes explain",1,1,routeOptions,"read-only"],
   ["migrate status",0,0,[],"read-only"],
+  ["migrate disable-extension",0,0,["dry-run"],"local-change"],
   ["migrate apply",0,0,[],"local-change"],
   ["migrate rollback",0,0,[],"local-change"],
   ["models list",0,0,[],"read-only"],
