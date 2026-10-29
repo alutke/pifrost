@@ -1,4 +1,4 @@
-name: CI — Pifrost 0.30
+name: CI
 
 on:
   push:
