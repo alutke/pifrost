@@ -1,253 +1,96 @@
 #!/usr/bin/env node
 
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, copyFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { planLegacyOmpCleanup } from "./omp-legacy-migration.mjs";
+import { nativeModelsStatus, writeNativeModels } from "./native-models.mjs";
+import { enableCommands, disableCommands, commandStatus } from "./omp-commands-install.mjs";
+import { runLiteDoctor } from "./lite-doctor.mjs";
+import { legacyPifrostConflicts } from "./legacy-plugin-conflicts.mjs";
 import { join } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { spawnSync } from "node:child_process";
 
 import { deleteRepoVirtualKeyForReset } from "./repo-reset.mjs";
+import { preflightLocalRepoReset } from "./repo-reset-preflight.mjs";
 import { collectDoctorSnapshot } from "./doctor-probes.mjs";
-import { bifrostCredentialTransportWarnings } from "./security-diagnostics.mjs";
-import { storedRuntimeConfigDiagnostics } from "./dist/config-store.js";
 import { requireManagement, requireRuntime } from "./cli-preconditions.mjs";
-import {
-  explainRouteRequest,
-  formatEffectiveRouteReport,
-  formatRouteExplanation,
-  printModelDoctor,
-  readCatalog,
-} from "./model-diagnostics.mjs";
-import {
-  formatCatalogSnapshot,
-  routeAliasForInput,
-  routeExplanationRequestFromFlags,
-} from "./route-cli.mjs";
-import { deriveAliasesRobust, discoverRoutingRules } from "./routing-discovery.mjs";
-import { routePolicyFingerprint, routePolicyDrift } from "./route-policy-fingerprint.mjs";
-import { reconcileRouteSnapshot, attestCompatibilityRoute, RouteReconcileError } from "./route-reconcile.mjs";
 import { commandCatalog, flagRequiresValue, isKnownFlag, cliUsageError, validateCliInvocation, commandUsage, operationLabel } from "./cli-command-schema.mjs";
 import { reportHealth, listFilter, operationSummary, safeUiText } from "./cli-health.mjs";
-import { MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS } from "./dist/routing-core.js";
-import {
-  RESEARCH_PROFILES,
-  eligibleResearchCodeModeClients,
-  normalizeResearchPreference,
-  researchProviderDiagnostics,
-  probeResearchCodeMode,
-} from "./research-providers.mjs";
-import { classifyResearchResult } from "./research-results.mjs";
-import { nativeJudgeSelection, nativeJudgeGateway } from "./judge-bridge.mjs";
+import { eligibleResearchCodeModeClients, researchProviderDiagnostics, probeResearchCodeMode } from "./research-providers.mjs";
 import { bifrostModelKindEvidence, bifrostModelKindSummary } from "./model-kind-boundary.mjs";
-import { inspectNativeJudgeModels, probeNativeJudge } from "./judge-control.mjs";
-import { decisionProviderInventory, resolvePinnedOmpJudgeCapabilities } from "./judge-certification.mjs";
-import { OMP_ORCHESTRATION_SETTING_IDS, assessOmpOrchestration, formatOmpOrchestration } from "./omp-orchestration-readiness.mjs";
-import { formatAdaptiveContextPlan } from "./adaptive-context-settings.mjs";
-import { inspectPifrostWorkarounds, formatPifrostWorkarounds } from "./workaround-register.mjs";
-import { reconcilePifrostOmpSetting } from "./omp-profile-merge.mjs";
-import { planJudgeRoleActivation, applyJudgeRoleActivation } from "./judge-activation.mjs";
 import { gatewayInjectedToolDiagnostics, formatGatewayInjectedToolDiagnostics } from "./provider-tool-policy.mjs";
 import { formatGatewayComplexity, formatGatewayPrivacy, formatGatewayResearchTools } from "./gateway-observability.mjs";
-import {
-  compactCliHelp, formatCliFailure, renderHealthOverview,
-  terminalSection, terminalField, terminalStatus, terminalNextSteps, humanAge,
-} from "./terminal-presentation.mjs";
+import { compactCliHelp, formatCliFailure, renderHealthOverview, terminalSection, terminalField, terminalStatus, terminalNextSteps } from "./terminal-presentation.mjs";
 
-import {
-  bifrostSkillCompatibility,
-  findOmpSkillCollisions,
-  fetchBifrostSkillBundle,
-  installBifrostSkillBundle,
-  listBifrostSkills,
-  normalizeConfiguredBifrostSkills,
-  removeManagedBifrostSkill,
-  repoBifrostSkillStatus,
-  resolveBifrostSkillNames,
-} from "./skills-bridge.mjs";
+import { bifrostSkillCompatibility, findOmpSkillCollisions, fetchBifrostSkillBundle, installBifrostSkillBundle, listBifrostSkills, normalizeConfiguredBifrostSkills, removeManagedBifrostSkill, repoBifrostSkillStatus, resolveBifrostSkillNames } from "./skills-bridge.mjs";
 
-import {
-  clientsForVirtualMcps,
-  discoverMcpSkillMatches,
-  mcpSkillDrift,
-  normalizeMcpSkillDiscovery,
-  recordMcpSkillLink,
-  setMcpSkillAlias,
-  setMcpSkillDismissal,
-  withoutMcpSkillLinks,
-} from "./mcp-skill-discovery.mjs";
+import { clientsForVirtualMcps, discoverMcpSkillMatches, mcpSkillDrift, normalizeMcpSkillDiscovery, recordMcpSkillLink, setMcpSkillAlias, setMcpSkillDismissal, withoutMcpSkillLinks } from "./mcp-skill-discovery.mjs";
 
-import {
-  VERSION,
-  PIFROST_OMP_MIN_VERSION,
-  PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
-  PIFROST_OMP_VALIDATED_VERSION,
-  PIFROST_BIFROST_MIN_VERSION,
-  PIFROST_BIFROST_VALIDATED_VERSION,
-  PifrostHttpError,
-  aliasManifestPath,
-  attachVirtualMcpToVirtualKey,
-  buildCompatibilityMatrix,
-  buildRepoMcpConfig,
-  commandExists,
-  configureOmp,
-  configureOmpAdaptiveContext,
-  planOmpAdaptiveContext,
-  backupOmpConfig,
-  currentRepoState,
-  detachVirtualMcpFromVirtualKey,
-  diffAliases,
-  effectiveRepoMcpPolicy,
-  getRepoRoot,
-  getBifrostVersion,
-  getBifrostHealth,
-  getBifrostSetupState,
-  getOmpVersion,
-  getBifrostConfig,
-  listBifrostProviderInventory,
-  getVirtualKeyQuota,
-  getComplexityAnalyzerConfig,
-  formatQuotaGovernanceSource,
-  getVirtualKey,
-  installOmpPlugin,
-  listMcpClients,
-  callMcpGatewayTool,
-  listMcpGatewayTools,
-  mcpToolSurfaceDiagnostics,
-  mcpClientExecutionDiagnostics,
-  listVirtualMcps,
-  loadAliasManifest,
-  loadState,
-  managementAuthFromState,
-  managementAuthLabel,
-  normalizeBifrostUrl,
-  quotaGovernanceSources,
-  removeRepoState,
-  repoIdentity,
-  repoMcpInstructions,
-  requestJson,
-  resolveVirtualMcpNames,
-  rotateVirtualKey,
-  routingFeatureSummary,
-  runCommand,
-  runtimeConfigFromState,
-  saveState,
-  ompWebSearchDiagnostics,
-  ompContextPolicyDiagnostics,
-  formatOmpContextPolicyDiagnostics,
-  readOmpConfigValue,
-  readOmpConfigValueResult,
-  testInference,
-  testManagement,
-  syncVirtualMcpAssignments,
-  testMcp,
-  updateRepoState,
-  updateVirtualKey,
-  upsertRepoVirtualKey,
-  virtualKeyMcpConfigs,
-  virtualMcpsForVirtualKey,
-  writeAliasManifest,
-  writeRepoMcpConfig,
-} from "./cli-lib.mjs";
+import { VERSION, PIFROST_OMP_MIN_VERSION, PIFROST_OMP_POLICY_SNAPSHOT_VERSION, PIFROST_OMP_VALIDATED_VERSION, PIFROST_BIFROST_MIN_VERSION, PIFROST_BIFROST_VALIDATED_VERSION, PifrostHttpError, aliasManifestPath, attachVirtualMcpToVirtualKey, commandExists, backupOmpConfig, currentRepoState, detachVirtualMcpFromVirtualKey, effectiveRepoMcpPolicy, getBifrostSetupState, getOmpVersion, getBifrostConfig, listBifrostProviderInventory, getComplexityAnalyzerConfig, formatQuotaGovernanceSource, getVirtualKey, listMcpClients, callMcpGatewayTool, listMcpGatewayTools, mcpToolSurfaceDiagnostics, mcpClientExecutionDiagnostics, listVirtualMcps, loadState, managementAuthFromState, managementAuthLabel, normalizeBifrostUrl, quotaGovernanceSources, removeRepoState, repoIdentity, repoMcpInstructions, requestJson, resolveVirtualMcpNames, rotateVirtualKey, routingFeatureSummary, runCommand, runtimeConfigFromState, saveState, ompWebSearchDiagnostics, readOmpConfigValueResult, testInference, testManagement, syncVirtualMcpAssignments, testMcp, updateRepoState, updateVirtualKey, upsertRepoVirtualKey, virtualKeyMcpConfigs, virtualMcpsForVirtualKey, writeRepoMcpConfig } from "./cli-lib.mjs";
 
-const HELP = `Pifrost ${VERSION} — OMP ↔ Maxim Bifrost configuration and control plane
+const HELP = `Pifrost ${VERSION} — optional Bifrost models, MCPs and Skills for OMP
 
-Usage:
-  pifrost init
-  pifrost global setup [options]
-  pifrost global status
-  pifrost global mcp-policy               Read-only gateway-injected provider tools
-  pifrost global observability [--vk-id ID]  Optional gateway intelligence, research, privacy (read-only)
-  pifrost global configure-omp
-  pifrost omp readiness [--json|--verbose] Read-only prewalk, seance and advisor readiness
-  pifrost omp context [--json|--verbose] Read-only adaptive context policy preview
-  pifrost omp context apply [--dry-run]  Backed-up additive OMP context thresholds
-  pifrost omp workarounds [--json|--verbose] Read-only compatibility retirement register
-  pifrost judge status                      Inspect opt-in OMP judge bounds and gateway model availability
-  pifrost judge providers                   Read-only Azure/Databricks Decisions model visibility
-  pifrost judge activate                    Explicitly bind OMP modelRoles.judge, preserving other roles
-  pifrost judge probe [--image] [--box] [--decisions] Explicitly billed native Decisions conformance
-  pifrost routes list
-  pifrost routes diff
-  pifrost routes verify                   Verify live rule policy; refresh unchanged fingerprint
-  pifrost routes attest <alias> --json    Read-only live policy/member attestation for OMP
-  pifrost routes sync [--no-refresh]
-  pifrost routes reconcile --json         Safe user-triggered comparison and sync (OMP integration)
-  pifrost routes diagnose
-  pifrost routes effective
-  pifrost routes explain <role|alias> [--input-tokens N] [--output-tokens N] [--image] [--tools] [--reasoning] [--tool-search] [--between-tools] [--tool-choice auto|required|any|name:tool] [--service-tier tier]
-  pifrost models refresh [--force]
-  pifrost models doctor
-  pifrost models kinds                     Read-only Bifrost model-kind inventory, not model runner registration
-  pifrost repo init [--clients a,b] [--tools '*'] [--virtual-mcps 'Bundle A,Bundle B'] [--no-mcp-instructions] [--install-matching-skills]
-  pifrost repo status
-  pifrost repo research status
-  pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name] [--fetch-tool name] [--crawl-tool name] [--screenshot-tool name]
-  pifrost repo research unbind <id>
-  pifrost repo research prefer <id|none>
-  pifrost repo research probe [<id>]       Explicit, read-only live search test via Bifrost (Classic MCP only)
-  pifrost repo rotate-key
+Usage: pifrost <command> [options]
+
+Everyday:
+  pifrost status                Quick health check (alias: doctor)
+  pifrost init                  Configure gateway and credentials; OMP is unchanged
+  pifrost models                Native OMP/Bifrost integration status
+  pifrost models list           Bifrost model inventory
+  pifrost models enable [--api completions|responses]    Optional model discovery
+  pifrost models disable        Remove managed model discovery
+  pifrost mcp                   MCP clients available to current repository
+  pifrost skills                Skills available from Bifrost
+  pifrost repo status           Check current repository setup
+  pifrost omp commands enable   Enable the optional /pifrost command palette
+  pifrost omp commands disable  Disable the command palette
+  pifrost omp commands status   Check slash-command installation
+
+Repo MCP:
+  pifrost repo init [--clients name] [--tools tool1,tool2] [--virtual-mcps name]
   pifrost repo mcp list
-  pifrost repo mcp add <client> [--tools '*|tool1,tool2'] [--install-matching-skills]
+  pifrost repo mcp add <client> --tools <tool1,tool2|*>
   pifrost repo mcp remove <client>
   pifrost repo mcp instructions <on|off|default>
   pifrost repo vmcp list
-  pifrost repo vmcp add <name> [--install-matching-skills]
-  pifrost repo vmcp remove <name>
+  pifrost repo vmcp add <bundle>
+  pifrost repo vmcp remove <bundle>
+  pifrost repo rotate-key [--dry-run]
+  pifrost repo reset [--dry-run] [--delete-remote] [--yes]
+
+Repo Skills:
   pifrost repo skills list
   pifrost repo skills add <name> [--force]
-  pifrost repo skills remove <name> [--force]
   pifrost repo skills sync [name] [--force]
-  pifrost repo skills suggestions [--install-matching-skills]
+  pifrost repo skills remove <name> [--force]
+  pifrost repo skills suggestions
   pifrost repo skills bind <client> <skill>
   pifrost repo skills unbind <client>
   pifrost repo skills dismiss <client>
   pifrost repo skills undismiss <client>
-  pifrost repo reset [--delete-remote] [--recover-by-name] [--yes]
-  pifrost secret repo-mcp --id <repo-id>
-  pifrost doctor
-  pifrost --version
 
-Global setup options:
-  --url <url>                    Bifrost URL, e.g. http://192.168.1.221:8180/v1
-  --api-key <key>                Optional separate inference Bearer/API key (Bifrost 2.x can use VK-only auth)
-  --virtual-key <key>            Global inference Virtual Key
-  --management-auth <mode>       basic (Bifrost OSS) or bearer (Enterprise)
-  --management-username <user>   OSS admin/dashboard username
-  --management-password <pass>   OSS admin/dashboard password
-  --management-key <key>         Enterprise scoped management API key
-  --skip-omp                     Do not change OMP settings
-  --skip-test                    Save without connectivity tests
-  --yes                          Accept existing/default values non-interactively
+Migration (explicit):
+  pifrost migrate status
+  pifrost migrate disable-extension [--dry-run]
+  pifrost migrate apply
+  pifrost migrate rollback
 
-Repo init options:
-  --clients <a,b>                 Direct MCP clients to grant
-  --tools <*|tool1,tool2>         Tool allow-list for selected direct MCP clients
-  --virtual-mcps <a,b>            Named Bifrost Virtual MCP bundles to attach
-  --rotate-existing               Explicitly rotate an adopted existing repo Virtual Key when its raw value is unavailable
-  --no-mcp-instructions           Keep Bifrost MCP tools but omit its server instructions from OMP prompts
-  --install-matching-skills       Explicitly install safe matching Skills; never implied by --yes
-  --no-skill-discovery            Skip optional MCP-to-Skill discovery
+Advanced / internal:
+  pifrost global setup [--url URL] [--virtual-key KEY]
+  pifrost global status [--json|--verbose]
+  pifrost global mcp-policy
+  pifrost global observability
+  pifrost models kinds
+  pifrost secret repo-mcp --id <repo-id>   Internal command: prints secret
+  pifrost secret inference                Internal command: prints secret
+  pifrost secret inference-vk             Internal command: prints secret
+  pifrost secret inference-bearer         Internal command: prints bearer secret
 
-Repo reset options:
-  --delete-remote                 Delete the repo Bifrost Virtual Key before local cleanup
-  --recover-by-name               With --delete-remote, recover only the exact canonical VK name
-  --yes                           Skip the destructive DELETE confirmation
-
-Environment overrides:
-  BIFROST_URL
-  BIFROST_API_KEY
-  BIFROST_VIRTUAL_KEY
-  BIFROST_MANAGEMENT_AUTH_MODE
-  BIFROST_ADMIN_USERNAME
-  BIFROST_ADMIN_PASSWORD
-  BIFROST_MANAGEMENT_API_KEY
-  PIFROST_CONFIG_DIR
-
-Bifrost OSS management APIs use HTTP Basic auth with the dashboard/admin
-username and password. Scoped management API keys are a Bifrost Enterprise
-feature. Secrets are stored in ~/.config/pifrost/secrets.json with mode 0600.
-Repo .omp/mcp.json files contain no secret; they resolve the repo VK through
-'!pifrost secret repo-mcp --id ...' at connection time.
+Tip: use pifrost <command> --help for accepted flags and side effects.
+Secret flags may be visible in shell history; prefer interactive or environment configuration.
+OMP model roles, retries, compaction and execution are always OMP-owned.
 `;
 
 function parseArgs(argv) {
@@ -284,67 +127,6 @@ function splitCsv(value) {
     .filter(Boolean);
 }
 
-
-function compatibilityMark(status) {
-  if (status === "supported") return "OK";
-  if (status === "unavailable") return "UNAVAILABLE";
-  if (status === "inaccessible") return "INACCESSIBLE";
-  if (status === "drifted") return "DRIFT";
-  return String(status ?? "UNKNOWN").toUpperCase();
-}
-
-function validationMark(status) {
-  if (status === "tested-current") return "TESTED CURRENT";
-  if (status === "supported") return "SUPPORTED";
-  if (status === "newer") return "NEWER THAN VALIDATED";
-  if (status === "unsupported") return "UNSUPPORTED";
-  return "UNKNOWN";
-}
-
-function compatibilityNeedsAttention(item) {
-  return item.status === "drifted" || (item.id === "omp-baseline" && item.status !== "supported");
-}
-
-async function commandCompatibilityDoctor(snapshot) {
-  const state = loadState();
-  const runtime = runtimeConfigFromState(state);
-  const managementAuth = managementAuthFromState(state);
-  const matrix = await buildCompatibilityMatrix({
-    url: runtime.url,
-    managementAuth,
-    virtualKey: runtime.virtualKey,
-    apiKey: runtime.apiKey,
-    ompVersion: getOmpVersion(),
-    bifrostVersion: snapshot?.version?.ok ? snapshot.version.value : undefined,
-    probes: snapshot,
-  });
-
-  printHeader("Upstream compatibility");
-  console.log(`OMP version:             ${matrix.ompVersion ?? "unavailable"} (minimum ${PIFROST_OMP_MIN_VERSION}; validated through ${PIFROST_OMP_VALIDATED_VERSION})`);
-  console.log(`OMP policy snapshot:     ${PIFROST_OMP_POLICY_SNAPSHOT_VERSION} + Pifrost compatibility patches`);
-  console.log(`  [${validationMark(matrix.ompValidation.status)}] ${matrix.ompValidation.detail}`);
-  for (const item of matrix.omp) {
-    console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
-    if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
-  }
-  console.log(`Bifrost version:         ${matrix.bifrostVersion ?? "unavailable"} (minimum ${PIFROST_BIFROST_MIN_VERSION}; validated through ${PIFROST_BIFROST_VALIDATED_VERSION})`);
-  console.log(`  [${validationMark(matrix.bifrostValidation.status)}] ${matrix.bifrostValidation.detail}`);
-  for (const item of matrix.bifrost) {
-    console.log(`  [${compatibilityMark(item.status)}] ${item.label} >=${item.minimum} — ${item.detail}`);
-    if (item.status !== "supported" && item.impact) console.log(`    impact: ${item.impact}`);
-  }
-
-  const issues = [...matrix.omp, ...matrix.bifrost].filter(
-    (item) => item.status !== "supported" && item.optional !== true,
-  );
-  const drift = issues.filter((item) => item.status === "drifted").length;
-  const inaccessible = issues.filter((item) => item.status === "inaccessible").length;
-  const unavailable = issues.filter((item) => item.status === "unavailable").length;
-  console.log(
-    `Compatibility summary:  ${issues.length ? `degraded (unavailable=${unavailable}, inaccessible=${inaccessible}, drift=${drift})` : "OK"}`,
-  );
-  if ([...matrix.omp, ...matrix.bifrost].some(compatibilityNeedsAttention)) process.exitCode = 2;
-}
 
 function formatError(error) {
   if (error instanceof PifrostHttpError) return error.message;
@@ -500,7 +282,7 @@ async function commandGlobalSetup(flags) {
       virtualKey = await askSecret(rl, "Global inference Virtual Key", virtualKey);
       const wantManagement = await confirm(
         rl,
-        "Configure management auth for route sync and repo MCP automation?",
+        "Configure management auth for repo MCP and Skills operations?",
         true,
       );
       if (wantManagement) {
@@ -536,13 +318,13 @@ async function commandGlobalSetup(flags) {
     });
   }
 
-  if (!url || !virtualKey) {
-    throw new Error("Bifrost URL and global inference Virtual Key are required");
+  if (!url && !flags["dry-run"]) {
+    throw new Error("Bifrost URL is required");
   }
-  url = normalizeBifrostUrl(url);
+  if (url) url = normalizeBifrostUrl(url);
   let setupState;
   try {
-    setupState = await getBifrostSetupState(url);
+    setupState = url ? await getBifrostSetupState(url) : undefined;
   } catch {
     setupState = undefined;
   }
@@ -563,14 +345,18 @@ async function commandGlobalSetup(flags) {
     console.log(operationSummary("Read-only preview",[
       "Would save Bifrost connection configuration and protected credentials",
       "Would test inference/management access unless --skip-test",
-      flags["skip-omp"]?"Would leave OMP settings unchanged":"Would configure Pifrost-owned OMP settings with backup",
+      "Would leave all OMP model roles, defaults and settings unchanged",
       "Secret values will not be printed"
     ]));return;
   }
   if (!flags["skip-test"]) {
     process.stdout.write("Testing inference connection... ");
-    const inference = await testInference({ url, apiKey, virtualKey });
-    console.log(`OK (${inference.models} models visible)`);
+    if (virtualKey) {
+      const inference = await testInference({ url, apiKey, virtualKey });
+      console.log(`OK (${inference.models} models visible)`);
+    } else {
+      console.log("SKIPPED (no inference Virtual Key; repo MCP/Skills setup remains available)");
+    }
     if (managementAuth) {
       process.stdout.write(`Testing management API via ${managementAuthLabel(managementAuth)}... `);
       await testManagement(url, managementAuth);
@@ -581,7 +367,8 @@ async function commandGlobalSetup(flags) {
   state.config.bifrost = { ...(state.config.bifrost ?? {}), url };
   if (apiKey) state.secrets.inferenceApiKey = apiKey;
   else delete state.secrets.inferenceApiKey;
-  state.secrets.inferenceVirtualKey = virtualKey;
+  if (virtualKey) state.secrets.inferenceVirtualKey = virtualKey;
+  else delete state.secrets.inferenceVirtualKey;
 
   delete state.secrets.managementApiKey;
   delete state.secrets.managementAdminUsername;
@@ -604,13 +391,8 @@ async function commandGlobalSetup(flags) {
   console.log(`Saved config:  ${paths.config}`);
   console.log(`Saved secrets: ${paths.secrets} (0600)`);
 
-  if (!flags["skip-omp"]) {
-    process.stdout.write("Configuring OMP roles/settings... ");
-    const result = configureOmp(readCatalog().cache?.models ?? []);
-    console.log(`OK (${result.settings} settings)`);
-    if (result.backup) console.log(`OMP config backup: ${result.backup}`);
-  }
-  console.log("Setup completed. Verify with pifrost doctor; synchronise routes using pifrost routes sync, then restart OMP.");
+  console.log("Setup completed. OMP model roles are unchanged.");
+  console.log("Use pifrost models enable for optional native Bifrost model discovery; repo init for MCPs.");
 }
 
 function snapshotCheck(id, label, snapshot, action, required = false) {
@@ -800,304 +582,13 @@ async function commandGlobalStatus(snapshot, options = {}) {
 }
 
 async function commandInit(flags) {
-  printHeader("Pifrost first-time setup");
-  if(flags["dry-run"]){
-    console.log(operationSummary("Read-only preview",[
-      "Would install/update the Pifrost OMP extension",
-      "Would configure Bifrost connection and management credentials",
-      "Would sync routes and refresh model catalogue where available",
-      "Would configure Pifrost-owned OMP settings; no changes made"
-    ]));return;
-  }
-  if (!commandExists("omp")) throw new Error("OMP is required but `omp` is not on PATH");
-  console.log("Installing/updating Pifrost OMP extension...");
-  installOmpPlugin();
-  await commandGlobalSetup(flags);
-  const state = loadState();
-  if (managementAuthFromState(state)) {
-    console.log("Synchronizing Bifrost omp-* routes...");
-    await commandRoutesSync({ "no-refresh": true });
-  } else {
-    console.log("Skipping route sync because no management authentication is configured.");
-  }
-  console.log("Refreshing Pifrost model catalog...");
-  await commandModelsRefresh({ force: true });
-  await commandGlobalStatus();
-}
-
-async function routingSnapshot() {
-  const state = loadState();
-  const { url, managementKey } = requireManagement(state);
-  const discovered = await discoverRoutingRules(url, managementKey);
-  return {
-    ...discovered,
-    manifest: deriveAliasesRobust(discovered.rules),
-    policyFingerprint: routePolicyFingerprint(discovered.rules),
-  };
-}
-
-async function commandRoutesList(flags = {}) {
-  const { manifest } = await routingSnapshot();
-  printHeader(`Bifrost OMP routes (${Object.keys(manifest.aliases).length})`);
-  const aliases=Object.entries(manifest.aliases).sort(([a],[b])=>a.localeCompare(b))
-    .map(([name,definition])=>({name,definition}));
-  const shown=listFilter(aliases,flags);
-  console.log("Showing "+shown.items.length+" of "+shown.total+" matching routes");
-  for (const {name:id,definition} of shown.items) {
-    console.log(id);
-    const pins = Array.isArray(definition.routingPins) ? definition.routingPins : [];
-    definition.chain.forEach((member, index) => {
-      const memberPins = pins.filter((pin) => pin.reference === member);
-      const suffix = memberPins.length
-        ? ` [${memberPins.map((pin) => pin.providerKeyName ? `provider-key=${pin.providerKeyName}` : `key-id=${pin.keyId}`).join(", ")}]`
-        : "";
-      console.log(`  ${index + 1}. ${member}${suffix}`);
-    });
-  }
-}
-
-async function commandRoutesDiagnose() {
-  const { rules, diagnostics, manifest } = await routingSnapshot();
-  printHeader("Bifrost routing discovery");
-  for (const item of diagnostics) {
-    if (item.ok) console.log(`${item.path}: OK rules=${item.count} ${item.shape}`);
-    else console.log(`${item.path}: FAIL${item.status ? ` HTTP ${item.status}` : ""} ${item.error}`);
-  }
-  console.log(`\nUnique raw rules: ${rules.length}`);
-  console.log(`Derived omp-* aliases: ${Object.keys(manifest.aliases).length}`);
-
-  const unmatched = rules.filter((rule) => {
-    const one = deriveAliasesRobust([rule]);
-    return Object.keys(one.aliases).length === 0;
-  });
-  if (unmatched.length) {
-    console.log("\nRules not recognized as Pifrost aliases:");
-    for (const rule of unmatched.slice(0, 30)) {
-      console.log(`  - ${rule?.name ?? rule?.id ?? "<unnamed>"}`);
-    }
-    if (unmatched.length > 30) console.log(`  ... ${unmatched.length - 30} more`);
-  }
-}
-
-async function commandRoutesDiff() {
-  const { manifest: remote, policyFingerprint } = await routingSnapshot();
-  const local = loadAliasManifest();
-  const differences = diffAliases(local, remote);
-  const drift = routePolicyDrift(local.policyFingerprint, policyFingerprint);
-  if (drift !== "verified-match") {
-    console.log(`Bifrost policy fingerprint: ${drift}; model chains alone do not establish routing-policy parity.`);
-  }
-  if (!differences.length && drift === "verified-match") {
-    console.log("Routes are in sync (full gateway rule-policy fingerprint matches).");
-    return;
-  }
-  if (!differences.length) {
-    console.log("Route members match, but routing conditions/pins/metadata may have changed. Run `pifrost routes sync` after review.");
-    process.exitCode = 2;
-    return;
-  }
-  printHeader(`Route differences (${differences.length})`);
-  for (const item of differences) {
-    console.log(item.id);
-    console.log(`  local:  ${item.local ? item.local.join(" -> ") : "missing"}`);
-    console.log(`  remote: ${item.remote ? item.remote.join(" -> ") : "missing"}`);
-    if (item.localPins?.length || item.remotePins?.length) {
-      console.log(`  local pins:  ${item.localPins?.length ? JSON.stringify(item.localPins) : "none"}`);
-      console.log(`  remote pins: ${item.remotePins?.length ? JSON.stringify(item.remotePins) : "none"}`);
-    }
-  }
-  process.exitCode = 2;
-}
-
-async function commandRoutesVerify(flags = {}) {
-  const { policyFingerprint, manifest } = await routingSnapshot();
-  const local = loadAliasManifest();
-  const status = routePolicyDrift(local.policyFingerprint, policyFingerprint);
-  printHeader("Bifrost live rule-policy verification");
-  if (status !== "verified-match") {
-    console.log(`Policy ${status}: local and gateway rule configurations are not verified equal. Run pifrost routes diff, then pifrost routes sync and restart OMP.`);
-    process.exitCode = 2;
-    return;
-  }
-  if (diffAliases(local, manifest).length > 0) {
-    console.log("Alias membership drift despite matching policy digest; refusing to refresh.");
-    process.exitCode = 2;
-    return;
-  }
-  if(flags["dry-run"]){console.log(operationSummary("Read-only preview",[
-    "Rule fingerprints match; verification timestamp would be refreshed",
-    "Restart OMP after applying verification"
-  ]));return;}
-  const stamp = new Date().toISOString();
-  const result = writeAliasManifest({ ...local, synchronizedAt: stamp, policyFingerprint });
-  console.log(`Verified full Bifrost rule policy unchanged; refreshed local verification at ${stamp}.`);
-  console.log(`Manifest: ${result.path}; restart OMP to refresh active compatibility profiles.`);
-}
-
-async function commandRoutesAttest(alias, flags = {}) {
-  try {
-    const attestation = await attestCompatibilityRoute({ alias });
-    if (flags.json) console.log(JSON.stringify(attestation));
-    else console.log(`Bifrost live route attested: ${attestation.alias} policy=${attestation.policyFingerprint.slice(0,12)} members=${attestation.memberDigest.slice(0,12)}`);
-  } catch (error) {
-    const code = error instanceof RouteReconcileError ? error.code : "gateway-check-failed";
-    if (flags.json) console.log(JSON.stringify({ schemaVersion:1, status:"unverified", reason:code }));
-    else console.error("Bifrost compatibility route attestation failed: "+code);
-    process.exitCode = 2;
-  }
-}
-
-async function commandRoutesSync(flags = {}) {
-  const { manifest, rules, diagnostics, policyFingerprint } = await routingSnapshot();
-  const count = Object.keys(manifest.aliases).length;
-  if (!count) {
-    const sourceSummary = diagnostics
-      .map((item) => `${item.path}=${item.ok ? item.count : `HTTP-${item.status ?? "error"}`}`)
-      .join(", ");
-    throw new Error(
-      `Bifrost returned ${rules.length} routing rule(s), but none could be derived as omp-* aliases (${sourceSummary}). Run \`pifrost routes diagnose\` for details.`,
-    );
-  }
-  // A local exception route must carry provenance of an actual management API
-  // read. Model-catalog refresh alone does not refresh Bifrost rule membership.
-  if(flags["dry-run"]){
-    console.log(operationSummary("Read-only preview",[
-      "Would save "+count+" logical route aliases and the complete Bifrost rule-policy fingerprint",
-      flags["no-refresh"]?"Model refresh would be skipped":"Would refresh the OMP model catalogue",
-      "Restart OMP after applying"
-    ]));return;
-  }
-  const result = writeAliasManifest({ ...manifest, synchronizedAt: new Date().toISOString(), policyFingerprint });
-  console.log(`Wrote ${count} aliases to ${result.path}`);
-  if (result.backup) console.log(`Previous manifest backed up to ${result.backup}`);
-  if (!flags["no-refresh"]) await commandModelsRefresh({ force: true });
-}
-
-async function commandRoutesReconcile(flags = {}) {
-  try {
-    const result = await reconcileRouteSnapshot();
-    if (flags.json) {
-      console.log(JSON.stringify({ schemaVersion: 1, ...result }));
-    } else {
-      console.log(result.status === "updated"
-        ? `Bifrost routing changed; synchronized ${result.routes} aliases. Refresh OMP models to apply.`
-        : "Bifrost routes unchanged; no refresh required.");
-    }
-  } catch (error) {
-    const code = error instanceof RouteReconcileError ? error.code : "check-failed";
-    if (flags.json) {
-      // This machine-readable result never includes Bifrost credentials or
-      // raw CEL expressions; the OMP hook fails open without blocking work.
-      console.log(JSON.stringify({ schemaVersion: 1, status: "unavailable", code }));
-    } else {
-      console.log(`Route check unavailable (${code}); local routes unchanged.`);
-    }
-  }
-}
-
-async function commandModelsRefresh(flags = {}) {
-  if (!commandExists("omp")) throw new Error("`omp` is not installed or not on PATH");
-  const env = { ...process.env };
-  if (flags.force) env.PIFROST_FORCE_REFRESH = "1";
-  runCommand("omp", ["models", "refresh"], { env, inherit: true });
-}
-
-async function commandModelsDoctor(options = {}) {
-  if (!options.verbose) {
-    const result = printModelDoctor(process.env, { log() {} });
-    const check = result.checks?.[0];
-    const issues = (result.unresolved ?? []).length;
-    const checks=[{id:"model-catalogue",label:"Model readiness",status:result.ok?"ok":"fail",
-      required:true,detail:check?.summary ?? (result.ok?"Available":"Needs attention"),
-      action:"pifrost models refresh --force"}];
-    const health=reportHealth({command:"models doctor",checks,strict:options.strict,json:options.json});
-    if(options.json){if(health.exitCode)process.exitCode=health.exitCode;return result;}
-    console.log(terminalSection("Model catalogue"));
-    console.log(terminalStatus(result.ok ? "ok" : "fail", "Model readiness",
-      check?.summary ?? (result.ok ? "Available" : "Needs attention")));
-    if (!result.ok) {
-      for (const item of result.unresolved.slice(0, 8)) {
-        console.log(`  - ${item.id}: ${item.unresolved.join(", ")}`);
-      }
-      if (issues > 8) console.log(`  ... and ${issues - 8} more affected routes.`);
-      console.log(terminalNextSteps(["pifrost models refresh --force", "pifrost models doctor --verbose"]));
-    } else {
-      console.log("For capability, provenance and context-band details: pifrost models doctor --verbose");
-    }
-    if (health.exitCode) process.exitCode = health.exitCode;
-    return result;
-  }
-  const result = printModelDoctor();
-  if (!result.ok) process.exitCode = 2;
-  return result;
-}
-
-function currentOmpModelRoles() {
-  const value = readOmpConfigValue("modelRoles");
-  return value && typeof value === "object" && !Array.isArray(value) ? value : undefined;
-}
-
-function commandRoutesEffective() {
-  const { path, cache, staleSchema, ageMs, stale } = readCatalog();
-  printHeader("Effective OMP → Pifrost → Bifrost routes");
-  if (!cache) {
-    console.log(`Model catalog unavailable at ${path}${staleSchema !== undefined ? ` (schema ${staleSchema} is stale)` : ""}.`);
-    console.log("Run: pifrost models refresh --force");
-    process.exitCode = 2;
-    return;
-  }
-  if (Number.isFinite(ageMs)) {
-    const minutes = Math.floor(ageMs / 60_000);
-    console.log(formatCatalogSnapshot(cache, ageMs, stale));
-    if (stale) console.log("WARN route membership may have changed in Bifrost; run `pifrost models refresh --force` for a fresh effective view.");
-  }
-  const manifest = loadAliasManifest();
-  const hasCompatibilityRoutes = Object.values(manifest.aliases ?? {}).some(
-    definition => definition && !Array.isArray(definition) && definition.dynamicRouting?.source === "bifrost-simple-rule",
-  );
-  if (hasCompatibilityRoutes) {
-    const syncedAt = typeof manifest.synchronizedAt === "string" ? Date.parse(manifest.synchronizedAt) : NaN;
-    const age = Date.now() - syncedAt;
-    if (!Number.isFinite(syncedAt) || age < -60_000 || age > MAX_COMPATIBILITY_ROUTE_SYNC_AGE_MS) {
-      console.log("WARN local compatibility routes need a recent rule sync: run `pifrost routes sync` and restart OMP. Model metadata refresh does not update Bifrost routing rules.");
-    } else {
-      console.log(`Bifrost rule sync: ${manifest.synchronizedAt} (fingerprint=${typeof manifest.policyFingerprint === "string" ? manifest.policyFingerprint.slice(0, 12) : "legacy-unverified"}; verify with pifrost routes verify)`);
-    }
-  }
-  console.log(formatEffectiveRouteReport(currentOmpModelRoles(), cache.diagnostics));
-}
-
-
-function commandRoutesExplain(input, flags = {}) {
-  if (!input) throw new Error("Usage: pifrost routes explain <role|alias> [request flags]");
-  const { cache, path } = readCatalog();
-  if (!cache) throw new Error(`Model catalog unavailable at ${path}; run pifrost models refresh --force`);
-  const roles = currentOmpModelRoles() ?? {};
-  const alias = routeAliasForInput(input, roles);
-  const diagnostic = cache.diagnostics.find((item) => String(item.id).toLowerCase() === alias);
-  if (!diagnostic) throw new Error(`No Pifrost alias diagnostic found for ${input} (resolved alias: ${alias})`);
-  const explanation = explainRouteRequest(diagnostic, routeExplanationRequestFromFlags(flags));
-  printHeader(`Route request: ${input}`);
-  console.log(formatRouteExplanation(explanation));
-  const members = diagnostic.members ?? [];
-  const protocols = [...new Set(members.flatMap(item => item.protocols ?? []))];
-  if (protocols.includes("openai-responses")) {
-    const gatewayOwned = !cache.models.find(item => String(item.id).toLowerCase() === alias)?.pifrostDynamicRoute;
-    if (gatewayOwned) {
-      console.log("Runtime: Bifrost owns the original logical routing rule.");
-      console.log("  Ingress protocol is selected using the model catalog; only a definite");
-      console.log("  pre-output protocol error permits retry through another gateway ingress.");
-      console.log("  Pifrost never copies or executes Bifrost CEL, target weights, key pins or fallbacks.");
-      if (protocols.includes("openai-completions")) {
-        console.log("  WARN: mixed Chat/Responses members still need Bifrost conversion or");
-        console.log("  compatible fallback models for successful gateway-managed fallback.");
-      }
-    } else {
-      console.log("Runtime: verified Pifrost compatibility profile; ordered pre-output protocol groups.");
-    }
-  }
-  console.log("Request simulation only: this does not invoke a Bifrost rule or establish route-counter attribution.");
-  console.log("After an actual inference, inspect /pifrost trace and correlate its gateway request/trace ID with Bifrost Logs and Routes.");
+  printHeader("Pifrost 0.30 — Bifrost connections and repo tools only");
+  // The default must NEVER install a provider, remap OMP roles or refresh
+  // Pifrost aliases. Existing native OMP settings remain authoritative.
+  await commandGlobalSetup({ ...flags, "skip-omp": true });
+  if (flags["dry-run"]) console.log("Dry-run: no changes made.");
+  console.log("OMP model selection is unchanged. To opt in: pifrost models enable");
+  console.log("For a repository: pifrost repo init; pifrost repo skills list");
 }
 
 async function chooseClientsInteractively(clients) {
@@ -1986,6 +1477,7 @@ async function commandRepoRotateKey(flags = {}) {
   console.log(`Rotated MCP Virtual Key for ${current.repo.name}; local secret store updated.`);
 }
 
+
 async function commandRepoReset(flags = {}) {
   const state = loadState();
   const repo = repoIdentity();
@@ -2006,6 +1498,8 @@ async function commandRepoReset(flags = {}) {
     return;
   }
 
+  if (!repoConfig && !deleteRemote) throw new Error("Current repo is not initialized; nothing to reset");
+  preflightLocalRepoReset(repo,repoConfig);
   if (deleteRemote) {
     const runtime = runtimeConfigFromState(state);
     const managementAuth = managementAuthFromState(state);
@@ -2068,117 +1562,7 @@ async function commandRepoReset(flags = {}) {
 }
 
 
-async function researchSnapshot(includeLive = false) {
-  const state = loadState();
-  const { url, managementKey } = requireManagement(state);
-  const current = currentRepoState(state);
-  if (!current.config?.virtualKeyId) throw Error("Initialize the current repository first: pifrost repo init");
-  const [vk, clients, virtualMcps] = await Promise.all([
-    getVirtualKey(url, managementKey, current.config.virtualKeyId),
-    listMcpClients(url, managementKey),
-    listVirtualMcps(url, managementKey),
-  ]);
-  const policy = effectiveRepoMcpPolicy(vk, virtualMcps, clients);
-  let liveTools, codeModeProbes;
-  if (includeLive && current.secret?.mcpVirtualKey) {
-    liveTools = await listMcpGatewayTools(url, current.secret.mcpVirtualKey);
-    const code = eligibleResearchCodeModeClients(policy, clients, current.config?.research ?? {});
-    if (code.length) codeModeProbes = await probeResearchCodeMode(
-      (name, args) => callMcpGatewayTool(url, current.secret.mcpVirtualKey, name, args), code);
-  }
-  return { state, current, url, clients, policy, liveTools, diagnostics: researchProviderDiagnostics(policy, clients, {
-    research: current.config?.research ?? {}, liveTools, codeModeProbes, ompSearch: ompWebSearchDiagnostics(),
-  }) };
-}
-async function commandRepoResearchStatus(flags = {}) {
-  const { diagnostics } = await researchSnapshot(true);
-  printHeader("Bifrost MCP research providers");
-  if(!flags.verbose){
-    console.log("Preferred (guidance only): "+(diagnostics.preferred??"none"));
-    const ready=diagnostics.providers.filter(p=>p.webResearchReady).length;
-    console.log("Research-ready: "+ready+" of "+diagnostics.providers.length+" configured/discovered providers");
-    for(const provider of diagnostics.providers){
-      const state=provider.webResearchReady?"READY":provider.authorized?"PARTIAL":"UNVERIFIED";
-      console.log("  ["+state+"] "+provider.id+" via "+provider.client+" ("+provider.mode+")");
-      for(const warning of (provider.warnings??[]).slice(0,2))console.log("    "+safeUiText(warning));
-    }
-    console.log("Search path: "+(diagnostics.search.path??"unverified"));
-    console.log("Preferred is advisory: OMP owns actual tool selection and execution.");
-    console.log("For capability grants and tool names: pifrost repo research status --verbose");
-    return;
-  }
-  console.log("Preferred (guidance): " + (diagnostics.preferred ?? "none"));
-  for (const provider of diagnostics.providers) {
-    console.log(provider.id + " [" + provider.client + "] profile=" + provider.profile + " mode=" + (provider.mode ?? "unknown") + " status=" + provider.status);
-    for (const [cap, entry] of Object.entries(provider.capabilities ?? {})) {
-      if (entry.tool) console.log("  " + cap + ": " + entry.tool + " granted=" + entry.granted + " executable=" + String(entry.executable) + " visible=" + String(entry.visible) + (entry.gatewayName ? " gateway=" + entry.gatewayName : entry.visibilityReason ? " reason=" + entry.visibilityReason : ""));
-    }
-  }
-  console.log("Search path: " + diagnostics.search.path);
-  console.log("No MCP requests are rerouted or automatically failed over by Pifrost.");
-}
-async function commandRepoResearchBind(id, name, flags) {
-  if (!id || !name) throw Error("Usage: pifrost repo research bind <id> <bifrost-client> [--profile donsetch|hound|generic] [--search-tool name]");
-  const { state, current, clients } = await researchSnapshot();
-  const client = clients.find((c) => c.name.toLowerCase() === name.toLowerCase() || c.id?.toLowerCase() === name.toLowerCase());
-  if (!client) throw Error("No Bifrost MCP client named " + name + "; register it in Bifrost first");
-  const profile = flagString(flags, "profile") ?? (client.name.toLowerCase() === "donsetch" ? "donsetch" : client.name.toLowerCase() === "hound" ? "hound" : "generic");
-  const tools = {};
-  for (const cap of ["search","fetch","crawl","screenshot"]) {
-    const tool = flagString(flags, cap + "-tool");
-    if (tool) {
-      if (!client.tools.includes(tool)) throw Error("Bifrost client " + client.name + " does not expose tool " + tool);
-      tools[cap] = tool;
-    }
-  }
-  const entry = { id, clientId: client.id, mcpClient: client.name, profile, ...(Object.keys(tools).length || profile === "generic" ? { tools: Object.keys(tools).length ? tools : undefined } : {}) };
-  const previous = normalizeResearchPreference(current.config?.research ?? {});
-  const proposed = { preferred: previous.preferred, providers: [...previous.providers.filter((p) => p.id !== id),entry] };
-  normalizeResearchPreference(proposed);
-  updateRepoState(state, current.repo.id, { research: proposed });
-  console.log("Bound " + id + " to Bifrost MCP " + client.name + " (" + profile + "); no Virtual Key grants changed.");
-}
-async function commandRepoResearchUnbind(id) {
-  if (!id) throw Error("Usage: pifrost repo research unbind <id>");
-  const { state, current } = await researchSnapshot();
-  const previous = normalizeResearchPreference(current.config?.research ?? {});
-  const providers = previous.providers.filter(p => p.id !== id);
-  if (providers.length === previous.providers.length) throw Error("Unknown research binding: " + id);
-  updateRepoState(state, current.repo.id, { research: { preferred: previous.preferred === id ? undefined : previous.preferred, providers } });
-  console.log("Removed research binding " + id + "; Bifrost client and grants are unchanged.");
-}
-async function commandRepoResearchPrefer(id) {
-  if (!id) throw Error("Usage: pifrost repo research prefer <id|none>");
-  const { state, current } = await researchSnapshot();
-  const previous = normalizeResearchPreference(current.config?.research ?? {});
-  const preferred = id === "none" ? undefined : id;
-  normalizeResearchPreference({ ...previous, preferred });
-  updateRepoState(state, current.repo.id, { research: { ...previous, preferred } });
-  console.log("Preferred research provider: " + (preferred ?? "automatic") + " (guidance only).");
-}
-async function commandRepoResearchProbe(id) {
-  const { current, url, diagnostics } = await researchSnapshot(true);
-  const target = diagnostics.providers.find((p) => p.id === (id || diagnostics.preferred));
-  if (!target) throw Error("No matching research provider; bind a provider first");
-  if (target.mode !== "classic") throw Error("Read-only live probes require a Classic MCP provider; Code Mode requires execution and is not probed");
-  if (!target.searchReady) throw Error("Search tool not proven callable; inspect pifrost repo research status");
-  if (!current.secret?.mcpVirtualKey) throw Error("Repository MCP Virtual Key is missing");
-  const selected = target.capabilities.search;
-  if (!selected.gatewayName) throw Error("Bifrost tool identity could not be resolved");
-  const query = "IETF RFC 9110 HTTP semantics";
-  const args = target.profile === "donsetch"
-    ? { query, max_results: 3, deadline_ms: 15000 }
-    : target.profile === "hound"
-      ? { query }
-      : { query };
-  const result = await callMcpGatewayTool(url, current.secret.mcpVirtualKey, selected.gatewayName, args, { timeoutMs: 20000 });
-  const status = classifyResearchResult(result, target.profile);
-  console.log("Live research probe through Bifrost MCP " + target.client + ": " + (status.ok === false ? "FAIL" : status.ok === true ? "OK" : "INDETERMINATE"));
-  console.log("Result status: " + JSON.stringify({ ok: status.ok, code: status.code, errorKind: status.errorKind, nextAction: status.nextAction, source: status.source }));
-  if (status.ok !== true) process.exitCode = 2;
-}
-
-async function commandSecretRepoMcp(flags) {
+function commandSecretRepoMcp(flags) {
   const id = flagString(flags, "id");
   if (!id) throw new Error("Usage: pifrost secret repo-mcp --id <repo-id>");
   const state = loadState();
@@ -2259,15 +1643,179 @@ async function commandGlobalMcpPolicy(snapshot) {
 function judgeRuntimeConfig() {
   const state = loadState();
   const runtime = runtimeConfigFromState(state);
-  if (!runtime.url || !runtime.virtualKey) {
-    throw new Error("Bifrost URL and inference Virtual Key are required; run pifrost global setup");
+  if (!runtime.url || (!runtime.virtualKey && !runtime.apiKey)) {
+    throw new Error("Bifrost URL and an inference credential are required; run pifrost init");
   }
   return runtime;
 }
 
+function configFileForMigration() {
+  const root = runCommand("omp",["config","path"]).stdout.trim();
+  for (const name of ["config.yml","config.yaml"]) {
+    const file = join(root,name);
+    if(existsSync(file))return file;
+  }
+  throw new Error("No existing OMP global YAML found. No changes made.");
+}
+function sha256File(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
+function commandOmpCommands(action,flags={}) {
+  if(action==="status"){
+    const result=commandStatus();
+    console.log("OMP /pifrost commands: "+result.status);
+    console.log("Extension: "+result.file);
+    if(result.status!=="enabled")console.log("Enable explicitly: pifrost omp commands enable");
+    return;
+  }
+  if(flags["dry-run"]){
+    console.log("Would "+action+" the optional /pifrost command palette; no changes made.");
+    console.log("This integration only registers a slash command; it has no event hooks or model interceptors.");
+    return;
+  }
+  if(action==="enable" && commandExists("omp")){
+    let installed;
+    try { installed=JSON.parse(runCommand("omp",["plugin","list","--json"]).stdout); }
+    catch { throw new Error("Could not verify installed OMP plugins. Use 'omp plugin list' and disable the legacy Pifrost runtime extension first."); }
+    const conflicts=legacyPifrostConflicts(installed);
+    if(conflicts.length)
+      throw new Error("Legacy Pifrost OMP runtime remains active: "+
+        conflicts.map(x=>x.type+":"+x.id).join(", ")+
+        ". Disable it explicitly before enabling the new command-only palette.");
+  }
+  const result=action==="enable" ? enableCommands() : disableCommands();
+  console.log(result.changed?("OMP /pifrost commands "+(action==="enable"?"installed":"disabled")+"."):
+    "Already "+(action==="enable"?"enabled":"disabled")+".");
+  if(result.backup)console.log("Backup: "+result.backup);
+  console.log("Extension file: "+result.file);
+  console.log("Restart OMP to "+(action==="enable"?"use":"stop using")+" /pifrost.");
+}
+function commandDisableLegacyExtension(flags={}) {
+  if(!commandExists("omp"))throw new Error("OMP CLI is required.");
+  let list;
+  try { list=JSON.parse(runCommand("omp",["plugin","list","--json"]).stdout); }
+  catch { throw new Error("Cannot verify installed OMP plugins; no plugin modified."); }
+  const conflicts=legacyPifrostConflicts(list);
+  const other=conflicts.filter(x=>x.type!=="npm");
+  if(other.length)throw new Error("Unmanaged legacy Pifrost extension(s): "+
+    other.map(x=>x.type+":"+x.id).join(", ")+". Disable manually in OMP first.");
+  const installed=Array.isArray(list?.npm) ? list.npm.filter(x=>x?.name==="pifrost") : [];
+  if(installed.length>1)throw new Error("Multiple Pifrost plugins reported; inspect OMP plugin list manually.");
+  if(!installed.length){console.log("No exact Pifrost npm plugin found; no changes made.");return;}
+  if(installed[0].enabled===false){console.log("Pifrost runtime plugin already disabled.");return;}
+  if(flags["dry-run"]){console.log("Would disable only OMP npm plugin 'pifrost' (not uninstall it).");return;}
+  runCommand("omp",["plugin","disable","pifrost"]);
+  console.log("Disabled legacy Pifrost runtime plugin. Restart OMP.");
+  console.log("Repository MCP config and installed Skills are unaffected.");
+}
+
+function commandMigrate(mode) {
+  if(!commandExists("omp"))throw new Error("OMP is required for migration.");
+  if(mode==="rollback"){
+    const state=loadState(), journal=state.config.ompMigration030;
+    if(!journal?.configPath || !journal?.backup || !journal?.afterHash)
+      throw new Error("No Pifrost 0.30 migration backup recorded.");
+    if(configFileForMigration()!==journal.configPath || sha256File(journal.configPath)!==journal.afterHash)
+      throw new Error("OMP config changed since migration; refusing to overwrite it. Restore from the recorded backup manually.");
+    if(!existsSync(journal.backup))throw new Error("Migration backup is missing.");
+    copyFileSync(journal.backup,journal.configPath);
+    delete state.config.ompMigration030;
+    saveState(state.config,state.secrets);
+    console.log("Restored OMP config from backup: "+journal.backup);
+    console.log("Restart OMP; provider/plugin installation was not changed.");
+    return;
+  }
+  const keys=["modelRoles"];
+  const values=Object.fromEntries(keys.map(key=>[key,readOmpConfigValueResult(key)]));
+  const failures=keys.filter(key=>values[key].status!=="ok");
+  if(failures.length)throw new Error("Migration aborted: unable to read "+failures.join(", "));
+  const plan=planLegacyOmpCleanup(Object.fromEntries(keys.map(key=>[key,values[key].value])));
+  console.log("Historical Pifrost roles found: "+plan.removedRoles);
+  for(const row of plan.changes)console.log("  "+row.key+": "+row.method);
+  for(const warning of plan.warnings)console.log("NOTICE "+warning);
+  if(mode!=="apply"){console.log("Read-only. To apply: pifrost migrate apply");return;}
+  if(!plan.changes.length){console.log("No safe changes identified.");return;}
+  const state=loadState();
+  if(state.config.ompMigration030)throw new Error("An unapplied rollback journal exists. Review it before another migration.");
+  const configPath=configFileForMigration();
+  const originalHash=sha256File(configPath);
+  const backup=backupOmpConfig();
+  if(!backup)throw new Error("Cannot back up the OMP configuration; migration aborted.");
+  if(sha256File(configPath)!==originalHash)throw new Error("OMP config changed while preparing migration; no migration writes performed.");
+  try {
+    for(const row of plan.changes){
+      runCommand("omp",row.method==="reset" ? ["config","reset",row.key]
+        : ["config","set",row.key,JSON.stringify(row.after)]);
+    }
+  } catch(error) {
+    try {
+      copyFileSync(backup,configPath);
+      throw new Error("Migration failed and original OMP config was restored: "+String(error?.message??error));
+    } catch(restoreError) {
+      if(String(restoreError?.message??"").startsWith("Migration failed and original"))throw restoreError;
+      throw new Error("Migration failed; automatic restore also failed. Preserve and restore original backup: "+backup);
+    }
+  }
+  state.config.ompMigration030={configPath,backup,afterHash:sha256File(configPath)};
+  saveState(state.config,state.secrets);
+  console.log("Restored native OMP role ownership. Backup: "+backup);
+  console.log("Rollback: pifrost migrate rollback (refuses if OMP config has since changed).");
+  console.log("Disable the legacy Pifrost extension using OMP's plugin manager before restarting OMP.");
+}
+
+async function commandModelsList() {
+  const runtime = judgeRuntimeConfig();
+  const headers = runtime.virtualKey ? { "x-bf-vk": runtime.virtualKey } : {};
+  if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
+  const listing = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
+  if (!Array.isArray(listing?.data)) throw new Error("Bifrost /models returned no model list");
+  for (const item of listing.data) if (item && typeof item.id === "string") {
+    console.log(item.id);
+  }
+}
+function commandModelsStatus() {
+  const result = nativeModelsStatus();
+  console.log(result.enabled ? "Native Bifrost model discovery: configured ("+result.protocol+"); live OMP discovery unverified" :
+    result.status==="invalid" ? "Native Bifrost model configuration: INVALID ("+result.detail+")" :
+    "Native Bifrost model discovery: disabled; OMP defaults unchanged");
+  console.log("OMP models.yml: " + result.path);
+}
+async function commandModelsEnable(flags = {}) {
+  const runtime = judgeRuntimeConfig();
+  const protocol = flagString(flags, "api") ?? "completions";
+  if (!["completions","responses"].includes(protocol))
+    throw new Error("--api must be completions or responses");
+  const api = "openai-" + protocol;
+  const authMode = runtime.apiKey ? (runtime.virtualKey ? "bearer+vk" : "bearer") : "vk";
+  if (flags["dry-run"]) {
+    console.log("Would add/update only Pifrost's marked bifrost provider under OMP models.yml");
+    console.log("Gateway: " + runtime.url + " | Native API: " + api);
+    console.log("All modelRoles and enabledModels stay unchanged; other providers are preserved.");
+    return;
+  }
+  const outcome = writeNativeModels(api,runtime.url,process.env,authMode);
+  console.log(outcome.changed?"Enabled native Bifrost discovery.":"Bifrost discovery already enabled.");
+  console.log("OMP config: " + outcome.path);
+  if(outcome.backup)console.log("Backup: " + outcome.backup);
+  console.log("No OMP model role changed. Restart OMP, then use /model to select bifrost/<model-id>.");
+  console.log("Models requiring a different Chat/Responses protocol need explicit native OMP overrides.");
+}
+function commandModelsDisable(flags = {}) {
+  if(flags["dry-run"]){console.log("Would remove only the marked Pifrost Bifrost provider; OMP roles stay untouched.");return;}
+  const outcome=writeNativeModels(null,null);
+  console.log(outcome.changed?"Disabled Pifrost-managed Bifrost provider.":"No Pifrost-managed provider to remove.");
+  if(outcome.backup)console.log("Backup: " + outcome.backup);
+}
+function commandInferenceSecret(kind) {
+  // Use the same environment-first resolution as all other CLI commands.
+  const runtime = runtimeConfigFromState(loadState());
+  const value = kind === "virtual-key" ? runtime.virtualKey
+    : kind === "bearer" ? runtime.apiKey : runtime.apiKey ?? runtime.virtualKey;
+  if (!value) throw new Error("Required inference credential is not configured; run pifrost init");
+  process.stdout.write(value);
+}
+
 async function commandModelsKinds() {
   const runtime = judgeRuntimeConfig();
-  const headers = { "x-bf-vk": runtime.virtualKey };
+  const headers = runtime.virtualKey ? { "x-bf-vk": runtime.virtualKey } : {};
   if (runtime.apiKey) headers.Authorization = "Bearer " + runtime.apiKey;
   const catalog = await requestJson(runtime.url + "/models", { headers, timeoutMs: 10_000 });
   if (!Array.isArray(catalog?.data)) throw new Error("Bifrost model-kinds inventory returned no data array");
@@ -2287,243 +1835,9 @@ async function commandModelsKinds() {
     console.log("    " + kind + ": " + count);
   }
   console.log("  non-chat kinds must use OMP-native APIs, not Pifrost chat transport.");
-  console.log("  Bifrost Decisions capability requires separate native judge discovery/probe: pifrost judge status");
+  console.log("  Non-chat models remain OMP-owned; no Pifrost judge execution or role rewriting.");
 }
 
-
-function commandOmpWorkarounds(flags = {}) {
-  const result = inspectPifrostWorkarounds({ hostVersion: getOmpVersion() });
-  if (flags.json) console.log(JSON.stringify(result));
-  else console.log(formatPifrostWorkarounds(result, flags.verbose === true));
-}
-
-function commandOmpContext(flags = {}, apply = false) {
-  const models = readCatalog().cache?.models ?? [];
-  if (apply && !flags["dry-run"]) {
-    const result = configureOmpAdaptiveContext(models);
-    console.log(formatAdaptiveContextPlan(result.plan));
-    console.log(result.changed ? "OMP context thresholds updated; restart OMP for new sessions." :
-      "No changes made.");
-    if (result.backup) console.log("OMP config backup: " + result.backup);
-    return;
-  }
-  const plan = planOmpAdaptiveContext(models);
-  if (flags.json) console.log(JSON.stringify(plan));
-  else console.log(formatAdaptiveContextPlan(plan) + (apply ? "\nDry-run: no changes made." : ""));
-}
-
-function commandOmpReadiness(flags = {}) {
-  const settings = Object.fromEntries(
-    OMP_ORCHESTRATION_SETTING_IDS.map(id => [id, readOmpConfigValueResult(id)])
-  );
-  const { cache, stale } = readCatalog();
-  let selectedJudge;
-  try { selectedJudge = nativeJudgeSelection(); } catch { selectedJudge = undefined; }
-  const result = assessOmpOrchestration({
-    settings, catalog: cache, stale: stale === true,
-    hostVersion: getOmpVersion(), selectedJudge,
-    policySnapshotVersion: PIFROST_OMP_POLICY_SNAPSHOT_VERSION,
-    stalledMode: process.env.PIFROST_STALLED_TURN_MODE,
-  });
-  if (flags.json) console.log(JSON.stringify(result));
-  else console.log(formatOmpOrchestration(result, flags.verbose === true));
-}
-
-async function commandJudgeStatus() {
-  const selected = nativeJudgeSelection();
-  console.log("OMP native judgment (optional; OMP owns judge execution and session usage):");
-  if (!selected) {
-    console.log("  disabled: set PIFROST_NATIVE_JUDGE_MODEL=jev-latest or openai/gpt-6-luna before launching OMP");
-    console.log("  other OMP kinds (image, search, speech, dictation, embedding, rerank, video) remain OMP-owned");
-    return;
-  }
-  console.log("  configured provider: bifrost-judge");
-  console.log("  configured model: " + selected.model);
-  const judge = nativeJudgeGateway(judgeRuntimeConfig());
-  console.log("  native judgment transport: " + judge.api);
-  console.log("  image judgments: " + (judge.imageEnabled ? "opted in (experimental for Jev)" : "disabled"));
-  const capabilities = await resolvePinnedOmpJudgeCapabilities(judge);
-  console.log("  OMP image bounds: " + capabilities.imageBounds + (capabilities.bounds ? " " + JSON.stringify(capabilities.bounds) : ""));
-  console.log("  Jev box questions: " + capabilities.boxQuestions + (capabilities.ompBoxWire ? " (OMP wire: " + capabilities.ompBoxWire + ")" : ""));
-  console.log("  Capabilities are metadata, not live gateway execution.");
-  const current = readOmpConfigValueResult("modelRoles");
-  const roles = current.status === "ok" && current.value && typeof current.value === "object"
-    && !Array.isArray(current.value) ? current.value : undefined;
-  console.log("  OMP judge role: " + (roles?.judge ?? (current.status === "ok" ? "not explicitly assigned" : "unavailable")));
-  console.log("  role matches opt-in: " + (roles?.judge === selected.selector ? "yes" : "no"));
-  console.log("  Native non-chat judges are not filtered by OMP enabledModels.");
-  try {
-    const status = await inspectNativeJudgeModels(judgeRuntimeConfig());
-    console.log("  Bifrost native " + status.family + " model listing: " + status.status);
-    console.log("  model-list names: " + status.models.length);
-    if (status.status !== "available") process.exitCode = 2;
-  } catch (error) {
-    console.log("  Bifrost native judge models: unavailable (" + formatError(error) + ")");
-    process.exitCode = 2;
-  }
-  console.log("  Native endpoint model listing is not a billable judgment conformance check.");
-  console.log("  TypeSafe System One and OpenAI Decisions use separate native wire formats.");
-  console.log("  no judgment was submitted; use pifrost judge probe to run a billed fixture");
-}
-
-async function commandJudgeProviders() {
-  const config = judgeRuntimeConfig();
-  if (!config.url || !config.virtualKey) throw new Error("Bifrost inference URL and Virtual Key required");
-  const body = await requestJson(config.url.replace(/\/+$/u, "") + "/models", {
-    method: "GET", timeoutMs: 8000, maxResponseBytes: 512000,
-    headers: { "x-bf-vk": config.virtualKey },
-  });
-  const inventory = decisionProviderInventory(body);
-  console.log("Bifrost Decisions provider visibility (read-only /v1/models):");
-  for (const row of inventory.providers) console.log(`  ${row.provider}: ${row.status} (${row.listedModels.length} model(s))`);
-  console.log("  Listing does not prove /v1/decisions support, provider authorization, or correct answers.");
-  console.log("  Separately approved billable endpoint probes are needed for live certification.");
-}
-
-async function commandJudgeActivate(flags = {}) {
-  const selected = nativeJudgeSelection();
-  if (!selected) throw new Error("Set PIFROST_NATIVE_JUDGE_MODEL before activating a native judge");
-  const runtime = judgeRuntimeConfig();
-  if (!nativeJudgeGateway(runtime)) throw new Error("Native judgment provider not configured");
-  const available = await inspectNativeJudgeModels(runtime);
-  if (available.status !== "available")
-    throw new Error("Configured native judge was not confirmed by Bifrost model listing");
-  const read = readOmpConfigValueResult;
-  if (flags["dry-run"]) {
-    planJudgeRoleActivation(read,selected.selector);
-    console.log(operationSummary("Read-only preview",[
-      "Would set OMP modelRoles.judge to "+selected.selector,
-      "All other roles and enabledModels remain unchanged",
-      "OMP resolves native non-chat judge roles independently of enabledModels",
-    ]));
-    return;
-  }
-  const outcome=applyJudgeRoleActivation({
-    read, selector:selected.selector, backup:backupOmpConfig,
-    write:(id,value)=>runCommand("omp",["config","set",id,JSON.stringify(value)]),
-  });
-  console.log("OMP modelRoles.judge: "+selected.selector);
-  console.log(outcome.changed?"Verified role update.":"Judge role already configured.");
-  console.log("Other roles and enabledModels unchanged.");
-  if (outcome.backup) console.log("Configuration backup: "+outcome.backup);
-}
-
-async function commandJudgeProbe(flags = {}) {
-  const result = await probeNativeJudge(judgeRuntimeConfig(), process.env, { decisions: flags.decisions === true, image: flags.image === true, box: flags.box === true });
-  console.log("Bifrost " + result.kind + " judgment conformance: OK");
-  console.log("  model: " + result.model);
-  console.log("  typed answers checked: " + result.answered);
-  console.log("  image conformance: " + (result.image ? "PNG fixture submitted" : "not requested"));
-  console.log("  usage: " + (result.hasUsage ? "reported" : "not reported"));
-  console.log("  this was an explicitly requested inference request; normal judgments remain OMP-owned");
-}
-
-async function commandDoctor(flags = {}) {
-  const storedWarnings = storedRuntimeConfigDiagnostics();
-  if (storedWarnings.length) {
-    if(flags.json){
-      reportHealth({command:"doctor",json:true,checks:storedWarnings.map((detail,i)=>({
-        id:"stored-config-"+i,label:"Stored Pifrost configuration",detail,
-        status:"fail",required:true,action:"pifrost global setup"
-      }))});
-      process.exitCode=2;return;
-    }
-    printHeader("Stored Pifrost configuration");
-    for (const warning of storedWarnings) console.log(`WARN ${warning}`);
-    console.log("Repair or rerun `pifrost global setup` before live diagnostics.");
-    process.exitCode = 2;
-    return;
-  }
-
-  const state = loadState();
-  const runtime = runtimeConfigFromState(state);
-  const managementAuth = managementAuthFromState(state);
-  const snapshot = await collectDoctorSnapshot({ runtime, managementAuth });
-
-  const transportWarnings = bifrostCredentialTransportWarnings(runtime, managementAuth);
-  if (!flags.verbose) {
-    const catalog = printModelDoctor(process.env, { log() {} });
-    const checks = [
-      { label:"OMP", status:commandExists("omp") ? "ok" : "fail",
-        detail: commandExists("omp") ? `Installed (${getOmpVersion() ?? "version unknown"})` : "Not installed",
-        action:"Install or update OMP, then rerun pifrost doctor." },
-      snapshotCheck("health", "Bifrost gateway", snapshot, "pifrost global setup", true),
-      snapshotCheck("inference", "Inference access", snapshot, "pifrost global setup", true),
-      snapshotCheck("management", "Management API", snapshot, "pifrost global setup", false),
-      snapshotCheck("routing", "Routing rules", snapshot, "pifrost routes diagnose", false),
-      {label:"Model catalogue", status:catalog.ok ? "ok" : "fail",
-        detail:catalog.checks?.[0]?.summary ?? "Not verified",
-        action:"pifrost models refresh --force"},
-    ];
-    const matrix = await buildCompatibilityMatrix({
-      url: runtime.url,
-      managementAuth,
-      virtualKey: runtime.virtualKey,
-      apiKey: runtime.apiKey,
-      ompVersion: getOmpVersion(),
-      bifrostVersion: snapshot.version?.ok ? snapshot.version.value : undefined,
-      probes: snapshot,
-    });
-    const incompatibilities = [...matrix.omp, ...matrix.bifrost]
-      .filter(item => item.optional !== true && item.status !== "supported");
-    for (const item of incompatibilities.slice(0, 5)) {
-      checks.push({
-        label:`Compatibility: ${item.label}`,
-        status:item.status === "unavailable" || item.status === "drifted" ? "warn" : "unknown",
-        detail:item.detail ? item.detail.slice(0, 140) : "Cannot verify",
-        action:"pifrost doctor --verbose",
-      });
-    }
-    if (incompatibilities.length > 5) checks.push({
-      label:"Other compatibility checks",status:"warn",
-      detail:`${incompatibilities.length - 5} additional findings`,
-      action:"pifrost doctor --verbose",
-    });
-    if (transportWarnings.length) checks.push({
-      label:"Transport security",status:"warn",
-      detail:`${transportWarnings.length} warning(s) - see verbose report`,
-      action:"pifrost doctor --verbose",
-    });
-    if (storedWarnings.length) checks.push({
-      label:"Stored configuration",status:"fail",
-      detail:`${storedWarnings.length} unreadable or invalid file(s)`,
-      action:"pifrost global setup",
-    });
-    const result=reportHealth({command:"doctor",checks,strict:flags.strict,json:flags.json});
-    if(!flags.json) console.log(renderHealthOverview(result.checks));
-    if(result.exitCode) process.exitCode = result.exitCode;
-    return;
-  }
-
-  if (transportWarnings.length) {
-    printHeader("Transport security");
-    for (const warning of transportWarnings) console.log(`WARN ${warning}`);
-    console.log("");
-  }
-
-  await commandGlobalStatus(snapshot, { verbose:true });
-  console.log("");
-  await commandGlobalMcpPolicy(snapshot);
-  console.log("");
-  console.log(formatOmpContextPolicyDiagnostics(ompContextPolicyDiagnostics()));
-  console.log("");
-  await commandCompatibilityDoctor(snapshot);
-  console.log("");
-  await commandModelsDoctor({ verbose:true });
-  console.log("");
-  commandRoutesEffective();
-  console.log("");
-  console.log("Inference diagnostics: inside OMP use /pifrost trace verbose for typed failures,");
-  console.log("  gateway-reported physical model and aggregate request shape (no prompts or credentials).");
-  console.log("  Route fingerprint verification cannot prove session affinity or replay validity.");
-  try {
-    getRepoRoot();
-    console.log("");
-    await commandRepoStatus(snapshot, { verbose:true });
-  } catch (error) {
-    if (!String(formatError(error)).includes("not inside a Git repository")) throw error;
-  }
-}
 
 const COMMANDS = new Map([
   ["init", (_args, flags) => commandInit(flags)],
@@ -2531,39 +1845,24 @@ const COMMANDS = new Map([
   ["global status", (_args, flags) => commandGlobalStatus(undefined, flags)],
   ["global mcp-policy", () => commandGlobalMcpPolicy()],
   ["global observability", (_args, flags) => commandGlobalObservability(flags)],
-  ["omp readiness", (_args, flags) => commandOmpReadiness(flags)],
-  ["omp context", (_args, flags) => commandOmpContext(flags)],
-  ["omp context apply", (_args, flags) => commandOmpContext(flags, true)],
-  ["omp workarounds", (_args, flags) => commandOmpWorkarounds(flags)],
-  ["judge status", () => commandJudgeStatus()],
-  ["judge providers", () => commandJudgeProviders()],
-  ["judge activate", (_args, flags) => commandJudgeActivate(flags)],
-  ["judge probe", (_args, flags) => commandJudgeProbe(flags)],
-  ["global configure-omp", (_args, flags) => {
-    if(flags["dry-run"]){console.log(operationSummary("Read-only preview",["Would apply Pifrost-owned OMP configuration with backup"]));return;}
-    const result = configureOmp(readCatalog().cache?.models ?? []);
-    console.log(`Configured ${result.settings} OMP settings.`);
-    if (result.backup) console.log(`Backup: ${result.backup}`);
-  }],
-  ["routes list", (_args,flags) => commandRoutesList(flags)],
-  ["routes diff", () => commandRoutesDiff()],
-  ["routes verify", (_args, flags) => commandRoutesVerify(flags)],
-  ["routes attest", (args, flags) => commandRoutesAttest(args[0], flags)],
-  ["routes sync", (_args, flags) => commandRoutesSync(flags)],
-  ["routes reconcile", (_args, flags) => commandRoutesReconcile(flags)],
-  ["routes diagnose", () => commandRoutesDiagnose()],
-  ["routes effective", () => commandRoutesEffective()],
-  ["routes explain", (args, flags) => commandRoutesExplain(args[0], flags)],
-  ["models refresh", (_args, flags) => commandModelsRefresh(flags)],
-  ["models doctor", (_args, flags) => commandModelsDoctor(flags)],
+  ["status", (_args,flags) => runLiteDoctor(flags)],
+  ["models", () => commandModelsStatus()],
+  ["mcp", (_args,flags) => commandRepoMcpList(flags)],
+  ["skills", (_args,flags) => commandRepoSkillsList(flags)],
+  ["omp commands status", () => commandOmpCommands("status")],
+  ["omp commands enable", (_args,flags) => commandOmpCommands("enable",flags)],
+  ["omp commands disable", (_args,flags) => commandOmpCommands("disable",flags)],
+  ["migrate status", () => commandMigrate("status")],
+  ["migrate disable-extension", (_args,flags) => commandDisableLegacyExtension(flags)],
+  ["migrate apply", () => commandMigrate("apply")],
+  ["migrate rollback", () => commandMigrate("rollback")],
+  ["models list", () => commandModelsList()],
+  ["models status", () => commandModelsStatus()],
+  ["models enable", (_args,flags) => commandModelsEnable(flags)],
+  ["models disable", (_args,flags) => commandModelsDisable(flags)],
   ["models kinds", () => commandModelsKinds()],
   ["repo init", (_args, flags) => commandRepoInit(flags)],
   ["repo status", (_args, flags) => commandRepoStatus(undefined, flags)],
-  ["repo research status", (_args,flags) => commandRepoResearchStatus(flags)],
-  ["repo research bind", (args, flags) => commandRepoResearchBind(args[0], args[1], flags)],
-  ["repo research unbind", (args) => commandRepoResearchUnbind(args[0])],
-  ["repo research prefer", (args) => commandRepoResearchPrefer(args[0])],
-  ["repo research probe", (args) => commandRepoResearchProbe(args[0])],
   ["repo rotate-key", (_args, flags) => commandRepoRotateKey(flags)],
   ["repo reset", (_args, flags) => commandRepoReset(flags)],
   ["repo mcp list", (_args,flags) => commandRepoMcpList(flags)],
@@ -2583,14 +1882,23 @@ const COMMANDS = new Map([
   ["repo skills remove", (args, flags) => commandRepoSkillsRemove(args[0], flags)],
   ["repo skills sync", (args, flags) => commandRepoSkillsSync(args[0], flags)],
   ["secret repo-mcp", (_args, flags) => commandSecretRepoMcp(flags)],
-  ["doctor", (_args, flags) => commandDoctor(flags)],
+  ["secret inference", () => commandInferenceSecret("auth")],
+  ["secret inference-vk", () => commandInferenceSecret("virtual-key")],
+  ["secret inference-bearer", () => commandInferenceSecret("bearer")],
+  ["doctor", (_args, flags) => runLiteDoctor(flags)],
 ]);
 
 function resolveCommand(positional) {
   for (let length = positional.length; length > 0; length -= 1) {
     const key = positional.slice(0, length).join(" ");
     const handler = COMMANDS.get(key);
-    if (handler) return { handler, args: positional.slice(length) };
+    if (handler) {
+      // A short overview alias is only valid by itself. Do not mistake an
+      // unsupported old subcommand for extra positional arguments to an alias.
+      if (length === 1 && ["models","mcp","skills","status"].includes(key) && positional.length > 1)
+        return undefined;
+      return { handler, args: positional.slice(length) };
+    }
   }
   return undefined;
 }
@@ -2603,6 +1911,12 @@ async function main() {
     return;
   }
   if (!one || one === "help") {
+    if(one === "help" && positional.length>1){
+      const name=positional.slice(1).join(" ");
+      if(!commandCatalog.has(name))throw cliUsageError("Unknown command. Use pifrost help --all for supported commands.");
+      process.stdout.write(commandUsage(name)+"\n");
+      return;
+    }
     process.stdout.write(flags.all || flags["help-all"] ? HELP : compactCliHelp(VERSION));
     return;
   }

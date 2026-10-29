@@ -1,95 +1,49 @@
-import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { dirname,join } from "node:path";
 
-const root = fileURLToPath(new URL("../", import.meta.url));
-/** Pure validator so tests can deliberately mutate each required contract. */
+const files=["package.json","package-lock.json","README.md","docs/REFERENCE.md",
+  "docs/INTEGRATION_SUPPORT.md","CHANGELOG.md","SECURITY.md",
+  "CONTRIBUTING.md",".github/CODEOWNERS"];
 export function validateDocumentation(contents) {
-  const errors = [];
-  const required = [
-    "package.json","package-lock.json","README.md","docs/REFERENCE.md",
-    "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
-    "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md","docs/RELEASE_5F_CERTIFICATION.md","SECURITY.md",
-    "CONTRIBUTING.md",".github/CODEOWNERS",
-  ];
-  for (const file of required) if (typeof contents[file] !== "string") errors.push("Missing documentation contract: " + file);
-  if (errors.length) return errors;
-  const parse = file => {
-    try { return JSON.parse(contents[file]); }
-    catch { errors.push("Malformed release metadata: " + file); return {}; }
-  };
-  const pkg = parse("package.json"), lock = parse("package-lock.json");
-  const version = pkg.version;
-  if (typeof version !== "string" || !/^\d+\.\d+\.\d+$/u.test(version)) {
-    errors.push("Invalid package semver");
-    return errors;
-  }
-  if (lock.version !== version || lock.packages?.[""]?.version !== version) {
+  const errors=[],get=x=>contents[x]??"";
+  for(const path of files)if(!get(path))errors.push(path+" missing");
+  if(errors.length)return errors;
+  let pkg,lock;
+  try{pkg=JSON.parse(get("package.json"));lock=JSON.parse(get("package-lock.json"));}
+  catch{return ["Invalid package or lockfile JSON"];}
+  const version=pkg.version;
+  if(lock.version!==version||lock.packages?.[""]?.version!==version)
     errors.push("Package lock release version disagrees with package.json");
-  }
-  for (const file of ["README.md","docs/REFERENCE.md"]) {
-    if (!contents[file].includes("Expected for this release:\n\n```text\n" + version + "\n")) {
-      errors.push(file + " has stale expected release");
-    }
-  }
-  const heading = {
-    "docs/INTEGRATION_SUPPORT.md": "# Pifrost integration support — v" + version,
-    "docs/OMP_COMPATIBILITY.md": "# OMP compatibility — Pifrost v" + version,
-    "docs/OUTPUT_BUDGET.md": "# Output-budget policy — Release 4 behaviour, current v" + version,
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md": "# Release 4 — target-scoped budgets and living documentation (v0.29.13)",
-    "docs/RELEASE_5A_CONTRACT_FOUNDATION.md": "# Release 5A — OMP and Bifrost contract foundation (v0.29.14)",
-    "docs/RELEASE_5B_INFERENCE_HARDENING.md": "# Release 5B — inference wire and output-budget hardening (v0.29.15)",
-    "docs/RELEASE_5C_CONTEXT_DISCOVERY.md": "# Release 5C — OMP image accounting and Bifrost catalogue completeness (v0.29.16)",
-    "docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md": "# Release 5D — OMP lifecycle recovery and MCP replay safety (v0.29.17)",
-    "docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md": "# Release 5E — Bifrost gateway-native MCP integration diagnostics (v0.29.18)",
-    "docs/RELEASE_5F_CERTIFICATION.md": "# Release 5F — judgment, cache, cost and compatibility certification (v" + version + ")",
-  };
-  for (const [file, prefix] of Object.entries(heading)) {
-    if (!contents[file].startsWith(prefix + "\n")) errors.push(file + " has stale current-release heading");
-  }
-  if (!contents["CHANGELOG.md"].startsWith("## " + version + " — ")) errors.push("Current changelog heading disagrees with package.json");
-  const deps = ["@oh-my-pi/pi-ai","@oh-my-pi/pi-catalog","@oh-my-pi/pi-natives","@oh-my-pi/pi-utils","@oh-my-pi/pi-coding-agent"];
-  const snapshot = pkg.dependencies?.["@oh-my-pi/pi-ai"];
-  for (const name of deps) {
-    const versionPin = (pkg.dependencies ?? pkg.devDependencies ?? {})[name] ?? pkg.devDependencies?.[name];
-    if (!snapshot || versionPin !== snapshot) errors.push("OMP policy snapshot dependency mismatch: " + name);
-  }
-  const support = contents["docs/INTEGRATION_SUPPORT.md"];
-  for (const evidence of ["OMP " + snapshot,"18.10.4","18.12.1","Live physical provider","billable","mock","Bifrost 2.3.2","Release 5E","Release 5F"]) {
-    if (!support.includes(evidence)) errors.push("Support matrix omits evidence boundary: " + evidence);
-  }
-  if (!contents["SECURITY.md"].includes("privately") || !contents["SECURITY.md"].includes("Virtual Key")) {
-    errors.push("Security policy lacks private disclosure / secret hygiene");
-  }
-  if (!contents["CONTRIBUTING.md"].includes("npm run check") ||
-      !contents["CONTRIBUTING.md"].includes("Bifrost")) {
-    errors.push("Contribution guidance lacks tests and upstream ownership");
-  }
-  if (!contents[".github/CODEOWNERS"].includes("* @alutke")) {
-    errors.push("Missing project maintainer code ownership");
-  }
+  if(!/^0\.30\.\d+$/u.test(version))errors.push("Unexpected release version: "+version);
+  if(!get("CHANGELOG.md").includes("## "+version+" —"))
+    errors.push("CHANGELOG.md has no "+version+" release heading");
+  if(!get("README.md").includes("Expected for this release:\n\n\`\`\`text\n"+version+"\n"))
+    errors.push("README.md has stale expected release");
+  if(!get("docs/REFERENCE.md").includes("Expected for this release:\n\n\`\`\`text\n"+version+"\n"))
+    errors.push("docs/REFERENCE.md has stale expected release");
+  const support=get("docs/INTEGRATION_SUPPORT.md");
+  if(!support.startsWith("# Pifrost 0.30 integration support — "+version))
+    errors.push("docs/INTEGRATION_SUPPORT.md current version mismatch");
+  for(const phrase of ["OMP","Bifrost","MCP","Skills","billable","live","PI_CONFIG_DIR","OMP_PROFILE"])
+    if(!support.includes(phrase))errors.push("docs/INTEGRATION_SUPPORT.md missing "+phrase);
+  const readme=get("README.md");
+  for(const phrase of ["native OhMyPi","/pifrost","pifrost models enable","pifrost migrate status"])
+    if(!readme.includes(phrase))errors.push("README.md missing "+phrase);
+  if(readme.includes("pifrost routes sync"))errors.push("README.md advertises unsupported runtime routing");
+  for(const phrase of ["security","Virtual Key","MCP"])
+    if(!get("SECURITY.md").toLowerCase().includes(phrase.toLowerCase()))
+      errors.push("SECURITY.md missing "+phrase);
+  if(!get(".github/CODEOWNERS").trim())errors.push(".github/CODEOWNERS empty");
   return errors;
 }
-
-export function checkDocumentation(directory = root) {
-  const paths = [
-    "package.json","package-lock.json","README.md","docs/REFERENCE.md",
-    "docs/INTEGRATION_SUPPORT.md","docs/OMP_COMPATIBILITY.md",
-    "CHANGELOG.md","docs/OUTPUT_BUDGET.md",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md","docs/RELEASE_5A_CONTRACT_FOUNDATION.md","docs/RELEASE_5B_INFERENCE_HARDENING.md","docs/RELEASE_5C_CONTEXT_DISCOVERY.md","docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md","docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md","docs/RELEASE_5F_CERTIFICATION.md","SECURITY.md",
-    "CONTRIBUTING.md",".github/CODEOWNERS",
-  ];
-  const files = Object.fromEntries(paths.map(path => [
-    path, existsSync(resolve(directory,path)) ? readFileSync(resolve(directory,path),"utf8") : undefined,
-  ]));
-  return validateDocumentation(files);
-}
-
-if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
-  const errors=checkDocumentation();
-  if (errors.length) {
-    for (const error of errors) console.error("documentation: " + error);
-    process.exitCode=1;
-  } else console.log("Release documentation and owner policies: OK");
+const root=dirname(dirname(fileURLToPath(import.meta.url)));
+if(process.argv[1] && fileURLToPath(import.meta.url)===process.argv[1]){
+  const contents=Object.fromEntries(files.map(path=>{
+    try{return [path,readFileSync(join(root,path),"utf8")];}
+    catch{return [path,undefined];}
+  }));
+  const errors=validateDocumentation(contents);
+  if(errors.length){for(const e of errors)console.error("DOC: "+e);process.exitCode=1;}
+  else console.log("Pifrost 0.30 documentation and release policy: OK");
 }

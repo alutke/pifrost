@@ -4,66 +4,49 @@
  * Machine-secret endpoints are excluded from any JSON or diagnostic renderer.
  */
 const values = {
-  "url":"Gateway URL", "api-key":"Inference API key", "virtual-key":"Inference Virtual Key",
-  "management-auth":"Management auth mode", "management-username":"Management username",
-  "management-password":"Management password", "management-key":"Management API key",
-  "setup-token":"Bifrost setup token", "clients":"Comma-separated MCP clients",
-  "tools":"Tool allow-list or explicit *", "virtual-mcps":"Comma-separated Virtual MCP bundles",
-  "input-tokens":"Input token count", "output-tokens":"Output token count",
-  "tool-choice":"auto|required|any|name:tool", "service-tier":"Service tier",
-  "profile":"donsetch|hound|generic", "search-tool":"Search tool name",
-  "fetch-tool":"Fetch tool name", "crawl-tool":"Crawl tool name",
-  "screenshot-tool":"Screenshot tool name", "vk-id":"Virtual Key management ID",
+  "url":"Bifrost gateway URL", "api-key":"Optional inference API key",
+  "virtual-key":"Inference Virtual Key", "management-auth":"Bifrost management auth mode",
+  "management-username":"Management username", "management-password":"Management password",
+  "management-key":"Management API key", "setup-token":"Initial setup token",
+  "clients":"Comma-separated MCP clients", "tools":"Explicit comma-separated MCP tool allow-list or *",
+  "virtual-mcps":"Comma-separated Virtual MCP bundles", "vk-id":"Virtual Key management ID",
   "id":"Internal repository identifier", "filter":"Case-insensitive name filter",
-  "limit":"Maximum displayed entries", "role":"OMP logical role",
-  "last":"Recent request count",
+  "limit":"Maximum displayed entries", "api":"completions|responses",
 };
 const bools = new Set([
-  "help","all","version","verbose","strict","json","dry-run","yes","skip-test",
-  "skip-omp","no-refresh","force","image","tools","reasoning","tool-search",
-  "between-tools","delete-remote","recover-by-name","decisions","box","rotate-existing",
-  "no-mcp-instructions","install-matching-skills","no-skill-discovery",
+  "help","all","version","verbose","strict","json","dry-run","yes","skip-test","skip-omp",
+  "force","delete-remote","recover-by-name","rotate-existing","no-mcp-instructions",
+  "install-matching-skills","no-skill-discovery",
 ]);
 const general = ["help"];
 const read = ["verbose"];
 const healthRead = ["verbose","strict","json"];
 const filters = ["filter","limit"];
-const routeOptions = ["input-tokens","output-tokens","image","tools","reasoning","tool-search","between-tools","tool-choice","service-tier"];
 // Registered commands. Source-of-truth for validation/help side effects.
 const rows = [
+  ["status",0,0,healthRead,"read-only"],
+  ["models",0,0,[],"read-only"],
+  ["mcp",0,0,[...filters,...read],"read-only"],
+  ["skills",0,0,[...filters,...read],"read-only"],
+  ["omp commands status",0,0,[],"read-only"],
+  ["omp commands enable",0,0,["dry-run"],"local-change"],
+  ["omp commands disable",0,0,["dry-run"],"local-change"],
   ["init",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global setup",0,0,["url","api-key","virtual-key","management-auth","management-username","management-password","management-key","setup-token","skip-omp","skip-test","yes","dry-run"],"local-change"],
   ["global status",0,0,healthRead,"read-only"],
   ["global mcp-policy",0,0,read,"read-only"],
   ["global observability",0,0,["vk-id",...read],"read-only"],
-  ["global configure-omp",0,0,["dry-run"],"local-change"],
-  ["omp readiness",0,0,["json","verbose"],"read-only"],
-  ["omp context",0,0,["json","verbose"],"read-only"],
-  ["omp context apply",0,0,["dry-run"],"local-change"],
-  ["omp workarounds",0,0,["json","verbose"],"read-only"],
-  ["judge status",0,0,read,"read-only"],
-  ["judge providers",0,0,read,"read-only"],
-  ["judge activate",0,0,["dry-run"],"local-change"],
-  ["judge probe",0,0,["decisions","image","box","yes"],"billed"],
-  ["routes list",0,0,[...filters,...read],"read-only"],
-  ["routes diff",0,0,read,"read-only"],
-  ["routes verify",0,0,["dry-run",...read],"local-change"],
-  ["routes attest",1,1,["json"],"read-only"],
-  ["routes sync",0,0,["no-refresh","dry-run",...read],"local-change"],
-  ["routes reconcile",0,0,["json"],"local-change"],
-  ["routes diagnose",0,0,read,"read-only"],
-  ["routes effective",0,0,read,"read-only"],
-  ["routes explain",1,1,routeOptions,"read-only"],
-  ["models refresh",0,0,["force"],"local-change"],
-  ["models doctor",0,0,healthRead,"read-only"],
+  ["migrate status",0,0,[],"read-only"],
+  ["migrate disable-extension",0,0,["dry-run"],"local-change"],
+  ["migrate apply",0,0,[],"local-change"],
+  ["migrate rollback",0,0,[],"local-change"],
+  ["models list",0,0,[],"read-only"],
+  ["models status",0,0,[],"read-only"],
+  ["models enable",0,0,["api","dry-run"],"local-change"],
+  ["models disable",0,0,["dry-run"],"local-change"],
   ["models kinds",0,0,read,"read-only"],
   ["repo init",0,0,["clients","tools","virtual-mcps","rotate-existing","no-mcp-instructions","install-matching-skills","no-skill-discovery","dry-run","yes"],"gateway-change"],
   ["repo status",0,0,healthRead,"read-only"],
-  ["repo research status",0,0,read,"read-only"],
-  ["repo research bind",2,2,["profile","search-tool","fetch-tool","crawl-tool","screenshot-tool"],"local-change"],
-  ["repo research unbind",1,1,[],"local-change"],
-  ["repo research prefer",1,1,[],"local-change"],
-  ["repo research probe",0,1,["yes"],"billed"],
   ["repo rotate-key",0,0,["dry-run","yes"],"gateway-change"],
   ["repo reset",0,0,["delete-remote","recover-by-name","yes","dry-run"],"gateway-change"],
   ["repo mcp list",0,0,[...filters,...read],"read-only"],
@@ -83,6 +66,9 @@ const rows = [
   ["repo skills remove",1,1,["force","dry-run"],"local-change"],
   ["repo skills sync",0,1,["force","dry-run"],"local-change"],
   ["secret repo-mcp",0,0,["id"],"machine-secret"],
+  ["secret inference",0,0,[],"machine-secret"],
+  ["secret inference-vk",0,0,[],"machine-secret"],
+  ["secret inference-bearer",0,0,[],"machine-secret"],
   ["doctor",0,0,healthRead,"read-only"],
 ];
 export const commandCatalog = new Map(rows.map(([name,min,max,options,operation]) => [name,{
@@ -90,7 +76,7 @@ export const commandCatalog = new Map(rows.map(([name,min,max,options,operation]
   operation,
 }]));
 export function flagRequiresValue(key, command) {
-  if (key === "tools") return command !== "routes explain"; // "--tools" always requires explicit allow-list.
+  if (key === "tools") return true; // An explicit MCP grant is never inferred.
   return Object.hasOwn(values,key);
 }
 export function isKnownFlag(key) { return Object.hasOwn(values,key) || bools.has(key); }
@@ -119,13 +105,8 @@ export function validateCliInvocation(name,args,flags) {
     throw cliUsageError("--clients requires an explicit --tools allow-list; use --tools '*' only if intentional.");
   if(flags.limit!==undefined && (!/^[1-9]\d{0,3}$/u.test(flags.limit)||Number(flags.limit)>1000))
     throw cliUsageError("--limit must be an integer from 1 to 1000.");
-  for(const key of ["input-tokens","output-tokens","last"]){
-    if(flags[key]!==undefined && (!/^\d{1,8}$/u.test(flags[key]) || Number(flags[key])<1))
-      throw cliUsageError("--"+key+" must be a positive integer.");
-  }
-  if(name==="routes explain"&&flags["tool-choice"]!==undefined&&
-    !/^(?:auto|required|any|name:[a-z0-9_.-]+)$/iu.test(flags["tool-choice"]))
-    throw cliUsageError("--tool-choice must be auto, required, any or name:tool.");
+  if(name==="models enable" && flags.api!==undefined && !["completions","responses"].includes(flags.api))
+    throw cliUsageError("--api must be completions or responses.");
   return def;
 }
 export function commandUsage(name) {
@@ -143,7 +124,7 @@ export function commandUsage(name) {
       "machine-secret":"Internal machine-secret output; never share its stdout",
     }[d.operation]??d.operation),
     d.options.length?"Options:":"No options.",
-    ...d.options.map(k=>"  --"+k+(flagRequiresValue(k,name)?" <value>":"")+(values[k]?"  "+values[k]:"")),
+    ...d.options.map(k=>k==="skip-omp" ? "  --skip-omp  Deprecated no-op; Pifrost never changes OMP roles" : "  --"+k+(flagRequiresValue(k,name)?" <value>":"")+(values[k]?"  "+values[k]:"")),
     "Detailed help: pifrost help --all",
   ].join("\n");
 }

@@ -1,422 +1,54 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { dirname,join,posix } from "node:path";
 import { spawnSync } from "node:child_process";
+import { validateDocumentation } from "./validate-documentation.mjs";
 
-const root = new URL("../", import.meta.url);
-const pkg = JSON.parse(readFileSync(new URL("package.json", root), "utf8"));
-const lock = JSON.parse(readFileSync(new URL("package-lock.json", root), "utf8"));
-const changelog = readFileSync(new URL("CHANGELOG.md", root), "utf8");
-const readme = readFileSync(new URL("README.md", root), "utf8");
-const reference = readFileSync(new URL("docs/REFERENCE.md", root), "utf8");
-const integrationSupport = readFileSync(new URL("docs/INTEGRATION_SUPPORT.md", root), "utf8");
-if (!integrationSupport.includes("Release 5B") || !integrationSupport.includes("Release 5C") || !integrationSupport.includes("Release 5E") || !integrationSupport.includes("Release 5F")) throw new Error("Release 5B and 5C evidence boundaries must appear in support matrix");
-if (!integrationSupport.includes("Bifrost 2.3.2")) throw new Error("Current Bifrost 2.3.2 contract must appear in the support matrix");
-if (!integrationSupport.includes(`OMP ${pkg.dependencies["@oh-my-pi/pi-ai"]}`) || !integrationSupport.includes("18.10.4") ||
-    !integrationSupport.includes("billable")) throw new Error("Integration support matrix must document host and live-test limits");
-const cliLib = readFileSync(new URL("cli-lib.mjs", root), "utf8");
-const native = readFileSync(new URL("native.ts", root), "utf8");
-const transportModel = readFileSync(new URL("transport-model.ts", root), "utf8");
-
-function fail(message) {
-  throw new Error(message);
+const root=dirname(dirname(fileURLToPath(import.meta.url)));
+const load=p=>readFileSync(join(root,p),"utf8");
+const pkg=JSON.parse(load("package.json"));
+const lock=JSON.parse(load("package-lock.json"));
+const fail=message=>{throw new Error("0.30 release check: "+message);};
+if(pkg.version!==lock.version||pkg.version!==lock.packages?.[""]?.version)fail("package and lockfile versions differ");
+if(!/^0\.30\.\d+$/u.test(pkg.version))fail("Release requires a 0.30 semver");
+if(pkg.bin?.pifrost!=="./cli.mjs")fail("Expected CLI executable");
+if(pkg.omp?.extensions||pkg.pi?.extensions)fail("No automatic OMP extension permitted");
+if(pkg.files.some(x=>/\.ts$|\.d\.mts$|^docs\/RELEASE_/u.test(x)))
+  fail("Legacy TypeScript runtime and release-history assets may not be shipped");
+for(const path of ["README.md","docs/REFERENCE.md","docs/INTEGRATION_SUPPORT.md",
+  "CHANGELOG.md","SECURITY.md","CONTRIBUTING.md",".github/CODEOWNERS"])
+  if(!existsSync(join(root,path)))fail("Required document is missing: "+path);
+const requiredDocs=["package.json","package-lock.json","README.md","docs/REFERENCE.md",
+  "docs/INTEGRATION_SUPPORT.md","CHANGELOG.md","SECURITY.md","CONTRIBUTING.md",".github/CODEOWNERS"];
+const docs=Object.fromEntries(requiredDocs.map(p=>[p,load(p)]));
+const documentationErrors=validateDocumentation(docs);
+if(documentationErrors.length)fail(documentationErrors.join("; "));
+const r=spawnSync("npm",["pack","--dry-run","--json","--ignore-scripts"],{
+  cwd:root,encoding:"utf8",maxBuffer:8*1024*1024,
+  env:{...process.env,npm_config_audit:"false",npm_config_fund:"false"}
+});
+if(r.error||r.status!==0)fail("npm pack failed: "+(r.error?.message??r.stderr));
+let items;
+try{items=JSON.parse(r.stdout)?.[0]?.files?.map(x=>x.path);}
+catch{fail("npm pack returned invalid JSON");}
+if(!Array.isArray(items)||!items.includes("cli.mjs")||!items.includes("omp-commands.js"))
+  fail("npm tarball lacks CLI or opt-in slash extension");
+const packed=new Set(items);
+for(const filename of items){
+  if(/\.ts$|\.d\.mts$|^docs\/RELEASE_|^native\.ts$|^index\.ts$/u.test(filename))
+    fail("Obsolete runtime source or historical release packaged: "+filename);
 }
-
-function commandError(label, result) {
-  return `${label} failed (status=${result.status ?? "unknown"}): ${result.stderr || result.stdout || "no output"}`;
-}
-
-if (!/^\d+\.\d+\.\d+$/u.test(pkg.version)) fail(`package.json version is not a release semver: ${pkg.version}`);
-if (lock?.lockfileVersion !== 3) fail(`package-lock.json must use lockfileVersion 3; got ${lock?.lockfileVersion ?? "missing"}`);
-if (lock?.version !== pkg.version || lock?.packages?.[""]?.version !== pkg.version) {
-  fail(`package-lock.json version does not match package.json ${pkg.version}`);
-}
-
-const requiredDirectRuntimeDependencies = [
-  "@oh-my-pi/pi-ai",
-  "@oh-my-pi/pi-catalog",
-  "@oh-my-pi/pi-natives",
-  "@oh-my-pi/pi-utils",
+const forbidden=[
+"native.ts","index.ts","stalled-turn-recovery.ts","dynamic-routing.ts",
+"reasoning-stream.ts","checkpoint-lifecycle.mjs","intelligent-stall-recovery.mjs",
 ];
-for (const dependency of requiredDirectRuntimeDependencies) {
-  const declared = pkg.dependencies?.[dependency];
-  if (typeof declared !== "string" || !declared.trim()) {
-    fail(`package.json must declare ${dependency} as a direct runtime dependency`);
-  }
-  if (lock?.packages?.[""]?.dependencies?.[dependency] !== declared) {
-    fail(`package-lock.json root dependency for ${dependency} must match package.json`);
-  }
-}
-if (!changelog.match(new RegExp(`^## ${pkg.version.replaceAll(".", "\\.")} — \\d{4}-\\d{2}-\\d{2}$`, "mu"))) {
-  fail(`CHANGELOG.md has no dated release heading for ${pkg.version}`);
-}
-
-const releaseMarker = "Expected for this release:\n\n\`\`\`text\n";
-const releaseOffset = readme.indexOf(releaseMarker);
-const expectedRelease = releaseOffset >= 0
-  ? readme.slice(releaseOffset + releaseMarker.length).split("\n", 1)[0]?.trim()
-  : undefined;
-if (expectedRelease !== pkg.version) {
-  fail(`README expected release is ${expectedRelease ?? "missing"}, package.json is ${pkg.version}`);
-}
-
-const referenceReleaseOffset = reference.indexOf(releaseMarker);
-const referenceExpectedRelease = referenceReleaseOffset >= 0
-  ? reference.slice(referenceReleaseOffset + releaseMarker.length).split("\n", 1)[0]?.trim()
-  : undefined;
-if (referenceExpectedRelease !== pkg.version) {
-  fail(`docs/REFERENCE.md expected release is ${referenceExpectedRelease ?? "missing"}, package.json is ${pkg.version}`);
-}
-
-const snapshotMatch = cliLib.match(/PIFROST_OMP_POLICY_SNAPSHOT_VERSION\s*=\s*"([^"]+)"/u);
-const ompPolicySnapshot = snapshotMatch?.[1];
-if (!ompPolicySnapshot) fail("cli-lib.mjs must declare PIFROST_OMP_POLICY_SNAPSHOT_VERSION");
-for (const dependency of requiredDirectRuntimeDependencies) {
-  if (pkg.dependencies?.[dependency] !== ompPolicySnapshot) {
-    fail(`${dependency} must match OMP policy snapshot ${ompPolicySnapshot}; got ${pkg.dependencies?.[dependency] ?? "missing"}`);
+for(const filename of forbidden)if(packed.has(filename))fail("Retired runtime source shipped: "+filename);
+const imports=/(?:\bfrom\s*|\bimport\s*\(\s*)["'](\.[^"']+)["']/gu;
+for(const filename of items.filter(x=>/\.(?:js|mjs)$/u.test(x))){
+  const source=load(filename);
+  for(const match of source.matchAll(imports)){
+    const ref=posix.normalize(posix.join(posix.dirname(filename),match[1]));
+    if(!packed.has(ref))fail("Missing packed dependency: "+filename+" imports "+ref);
   }
 }
-if (pkg.devDependencies?.["@oh-my-pi/pi-coding-agent"] !== ompPolicySnapshot) {
-  fail(`@oh-my-pi/pi-coding-agent must match OMP policy snapshot ${ompPolicySnapshot}`);
-}
-
-const catalogFallback = readFileSync(new URL("catalog-fallback.ts", root), "utf8");
-if (/@oh-my-pi\/pi-catalog\/build/u.test(native)) {
-  fail("runtime package must not import @oh-my-pi/pi-catalog/build; compiled OMP 18.4.x cannot resolve that subpath");
-}
-for (const [name, source] of [["transport-model.ts", transportModel], ["catalog-fallback.ts", catalogFallback]]) {
-  if (/from\s+["']@oh-my-pi\/pi-catalog(?:\/|["'])/u.test(source)) {
-    fail(`${name} must not import pi-catalog at runtime; Pifrost's pinned catalog-snapshot imports belong in native.ts`);
-  }
-}
-if (!/from\s+["']@oh-my-pi\/pi-catalog["']/u.test(native) ||
-    !/@oh-my-pi\/pi-catalog\/compat\/resolve/u.test(native) ||
-    !/@oh-my-pi\/pi-catalog\/compat\/behavior/u.test(native)) {
-  fail("native.ts must own the supported OMP catalog root, compat/resolve and compat/behavior imports");
-}
-
-for (const path of [
-  "native.ts",
-  "transport-model.ts",
-  "multi-protocol-routing.ts",
-  "context-estimator.ts",
-  "agent-attribution.ts",
-  "omp-cfg.ts",
-  "pricing-time.ts",
-  "routing-core.ts",
-  "route-eligibility.ts",
-  "protocol-capability.ts",
-  "cache-schema.ts",
-  "http-client.mjs",
-  "mcp-rpc.mjs",
-  "hound-diagnostics.mjs",
-  "research-providers.mjs",
-  "research-results.mjs",
-  "docs/RESEARCH_PROVIDERS.md",
-  "scripts/validate-donsetch-contract.mjs",
-  "bifrost-rich-content.ts",
-  "bifrost-cost-bridge.ts",
-  "request-provenance.ts",
-  "controlled-recovery.ts",
-  "recovery-command.ts",
-  "docs/CONTROLLED_RECOVERY.md",
-  "docs/CROSS_PROVIDER_HARDENING.md",
-  "reasoning-integrity.ts",
-  "docs/REASONING_INTEGRITY.md",
-  "route-compatibility.ts",
-  "docs/ROUTE_COMPATIBILITY.md",
-  "output-budget.ts",
-  "docs/RELEASE_4_BUDGET_GOVERNANCE.md",
-    "docs/RELEASE_5A_CONTRACT_FOUNDATION.md",
-  "docs/RELEASE_5B_INFERENCE_HARDENING.md",
-  "docs/RELEASE_5C_CONTEXT_DISCOVERY.md",
-  "docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md",
-  "docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md",
-  "docs/RELEASE_5F_CERTIFICATION.md",
-  "scripts/smoke-cache-retention.mjs",
-  "judge-certification.mjs",
-  "inference-cache-evidence.ts",
-  "SECURITY.md",
-  "CONTRIBUTING.md",
-  "scripts/validate-documentation.mjs",
-  "docs/OUTPUT_BUDGET.md",
-  "inference-failure.ts",
-  "request-diagnostics.ts",
-  "docs/INFERENCE_DIAGNOSTICS.md",
-  "research-repo-config.ts",
-  "mcp-client-shape.mjs",
-  "route-cli.mjs",
-  "doctor-probes.mjs",
-  "security-diagnostics.mjs",
-  "diagnostic-result.mjs",
-  "cli-preconditions.mjs",
-  "skills-bridge.mjs",
-  "README.md",
-  "docs/REFERENCE.md",
-  "CHANGELOG.md",
-  "tsconfig.runtime.json",
-  "scripts/build-runtime.mjs",
-  "scripts/validate-architecture.mjs",
-  "scripts/smoke-live.mjs",
-  "scripts/validate-release.mjs",
-]) {
-  if (!pkg.files?.includes(path)) fail(`package.json files is missing ${path}`);
-}
-
-if (pkg.scripts?.["build:runtime"] !== "node --no-warnings scripts/build-runtime.mjs") {
-  fail("build:runtime must use the Node-only runtime builder");
-}
-for (const lifecycle of ["prepare", "prepack", "preinstall", "install", "postinstall", "build"]) {
-  if (pkg.scripts?.[lifecycle]) {
-    fail(`Git-install package must not define consumer build lifecycle script: ${lifecycle}`);
-  }
-}
-
-rmSync(new URL("dist/", root), { recursive: true, force: true });
-const cleanRuntimeBuild = spawnSync(process.execPath, ["--no-warnings", "scripts/build-runtime.mjs"], {
-  cwd: new URL(".", root),
-  encoding: "utf8",
-  env: {
-    ...process.env,
-    // The runtime build must not depend on node_modules/.bin tools such as tsc.
-    PATH: process.env.PATH,
-  },
-});
-if (cleanRuntimeBuild.status !== 0) fail(commandError("clean Node-only runtime build", cleanRuntimeBuild));
-for (const path of ["dist/config-store.js", "dist/routing-core.js", "dist/route-eligibility.js", "dist/cache-schema.js"]) {
-  if (!existsSync(new URL(path, root))) fail(`clean runtime build did not create ${path}`);
-}
-
-const distDiff = spawnSync("git", ["diff", "--exit-code", "--", "dist/"], {
-  cwd: new URL(".", root),
-  encoding: "utf8",
-});
-if (distDiff.status !== 0) {
-  fail(`committed dist/ is stale relative to TypeScript sources:\n${distDiff.stdout || distDiff.stderr}`);
-}
-
-const cliEntry = pkg.bin?.pifrost;
-if (typeof cliEntry !== "string" || !cliEntry.trim()) fail("package.json bin.pifrost is missing");
-const cli = spawnSync(process.execPath, [cliEntry, "--version"], {
-  cwd: new URL(".", root),
-  encoding: "utf8",
-});
-if (cli.status !== 0) fail(commandError("repository pifrost --version", cli));
-if (cli.stdout.trim() !== pkg.version) {
-  fail(`CLI version ${cli.stdout.trim()} does not match package.json ${pkg.version}`);
-}
-
-const workspace = mkdtempSync(join(tmpdir(), "pifrost-release-"));
-let packedFileCount = 0;
-try {
-  const packed = spawnSync("npm", ["pack", "--json", "--pack-destination", workspace], {
-    cwd: new URL(".", root),
-    encoding: "utf8",
-  });
-  if (packed.status !== 0) fail(commandError("npm pack", packed));
-
-  let payload;
-  try {
-    payload = JSON.parse(packed.stdout);
-  } catch (error) {
-    fail(`npm pack returned invalid JSON: ${error instanceof Error ? error.message : String(error)}\n${packed.stdout}`);
-  }
-
-  const artifact = payload?.[0];
-  const files = new Set(artifact?.files?.map((entry) => entry.path) ?? []);
-  packedFileCount = files.size;
-
-  for (const path of [
-    "package.json",
-    "native.ts",
-    "runtime-route-state.ts",
-    "docs/RELEASE_4_BUDGET_GOVERNANCE.md",
-    "docs/RELEASE_5A_CONTRACT_FOUNDATION.md",
-  "docs/RELEASE_5B_INFERENCE_HARDENING.md",
-  "docs/RELEASE_5C_CONTEXT_DISCOVERY.md",
-  "docs/RELEASE_5D_LIFECYCLE_MCP_SAFETY.md",
-  "docs/RELEASE_5E_GATEWAY_MCP_INTEGRATION.md",
-  "docs/RELEASE_5F_CERTIFICATION.md",
-    "SECURITY.md",
-    "CONTRIBUTING.md",
-    "scripts/validate-documentation.mjs",
-    "docs/RELEASE_3_ARCHITECTURE.md",
-    "attempt-retry-policy.ts",
-    "docs/RELEASE_1_EXECUTION_SAFETY.md",
-  "docs/RELEASE_2_LIFECYCLE_REASONING.md",
-    "transport-model.ts",
-    "capability-bridge.ts",
-    "context-estimator.ts",
-    "routing-core.ts",
-    "route-eligibility.ts",
-    "protocol-capability.ts",
-    "cache-schema.ts",
-    "dist/config-store.js",
-    "dist/routing-core.js",
-    "dist/route-eligibility.js",
-    "dist/cache-schema.js",
-    "http-client.mjs",
-    "mcp-rpc.mjs",
-    "hound-diagnostics.mjs",
-    "research-providers.mjs",
-    "research-repo-config.ts",
-    "research-results.mjs",
-    "docs/RESEARCH_PROVIDERS.md",
-    "scripts/validate-donsetch-contract.mjs",
-    "bifrost-rich-content.ts",
-    "mcp-client-shape.mjs",
-    "route-cli.mjs",
-    "doctor-probes.mjs",
-    "security-diagnostics.mjs",
-    "diagnostic-result.mjs",
-    "cli-preconditions.mjs",
-    "skills-bridge.mjs",
-    "pricing-time.ts",
-    "README.md",
-    "docs/REFERENCE.md",
-    "CHANGELOG.md",
-    "scripts/build-runtime.mjs",
-    "scripts/validate-architecture.mjs",
-    "scripts/smoke-live.mjs",
-    "scripts/validate-release.mjs",
-  ]) {
-    if (!files.has(path)) fail(`release tarball is missing ${path}`);
-  }
-
-  if (artifact?.version !== pkg.version) {
-    fail(`release tarball version ${artifact?.version ?? "missing"} does not match ${pkg.version}`);
-  }
-
-  const filename = artifact?.filename;
-  if (typeof filename !== "string" || !filename) fail("npm pack did not report a tarball filename");
-  const tarball = join(workspace, filename);
-  if (!existsSync(tarball)) fail(`npm pack tarball does not exist: ${tarball}`);
-
-  const installRoot = join(workspace, "installed");
-  const home = join(workspace, "home");
-  mkdirSync(installRoot, { recursive: true });
-  mkdirSync(home, { recursive: true });
-  writeFileSync(join(installRoot, "package.json"), '{\n  "private": true\n}\n', "utf8");
-
-  const installed = spawnSync(
-    "npm",
-    ["install", "--prefix", installRoot, "--ignore-scripts", "--no-audit", "--no-fund", tarball],
-    { cwd: new URL(".", root), encoding: "utf8" },
-  );
-  if (installed.status !== 0) fail(commandError("tarball npm install", installed));
-
-  const installedPackageRoot = join(installRoot, "node_modules", pkg.name);
-  const installedPackage = JSON.parse(readFileSync(join(installedPackageRoot, "package.json"), "utf8"));
-  if (installedPackage.version !== pkg.version) {
-    fail(`installed package version ${installedPackage.version ?? "missing"} does not match ${pkg.version}`);
-  }
-
-  const installedPiUtils = join(installRoot, "node_modules", "@oh-my-pi", "pi-utils", "package.json");
-  if (!existsSync(installedPiUtils)) {
-    fail("installed package is missing direct runtime dependency @oh-my-pi/pi-utils");
-  }
-  const installedPiNatives = join(installRoot, "node_modules", "@oh-my-pi", "pi-natives", "package.json");
-  if (!existsSync(installedPiNatives)) {
-    fail("installed package is missing direct runtime dependency @oh-my-pi/pi-natives");
-  }
-
-  const installedEntry = installedPackage.bin?.pifrost;
-  if (typeof installedEntry !== "string" || !installedEntry.trim()) {
-    fail("installed package bin.pifrost is missing");
-  }
-
-  const installedCli = join(installedPackageRoot, installedEntry.replace(/^\.\//u, ""));
-  const installedEnv = {
-    ...process.env,
-    HOME: home,
-    PIFROST_CONFIG_DIR: join(home, ".config", "pifrost"),
-  };
-
-  const installedVersion = spawnSync(process.execPath, [installedCli, "--version"], {
-    cwd: installRoot,
-    encoding: "utf8",
-    env: installedEnv,
-  });
-  if (installedVersion.status !== 0) fail(commandError("installed pifrost --version", installedVersion));
-  if (installedVersion.stdout.trim() !== pkg.version) {
-    fail(`installed CLI version ${installedVersion.stdout.trim()} does not match ${pkg.version}`);
-  }
-
-  const installedHelp = spawnSync(process.execPath, [installedCli, "--help"], {
-    cwd: installRoot,
-    encoding: "utf8",
-    env: installedEnv,
-  });
-  if (installedHelp.status !== 0) fail(commandError("installed pifrost --help", installedHelp));
-  if (!installedHelp.stdout.includes(`Pifrost ${pkg.version}`)) {
-    fail("installed pifrost --help did not render the expected versioned help banner");
-  }
-
-  const githubSha = process.env.GITHUB_SHA?.trim();
-  if (githubSha) {
-    const gitPrefix = join(workspace, "git-global");
-    const gitHome = join(workspace, "git-home");
-    mkdirSync(gitPrefix, { recursive: true });
-    mkdirSync(gitHome, { recursive: true });
-
-    const gitInstalled = spawnSync(
-      "npm",
-      [
-        "install",
-        "--global",
-        "--prefix",
-        gitPrefix,
-        "--no-audit",
-        "--no-fund",
-        `github:alutke/pifrost#${githubSha}`,
-      ],
-      {
-        cwd: installRoot,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          HOME: gitHome,
-          npm_config_cache: join(workspace, "npm-cache"),
-        },
-      },
-    );
-    if (gitInstalled.status !== 0) {
-      fail(commandError("GitHub global git-dependency install", gitInstalled));
-    }
-
-    const gitPackageRoot = join(gitPrefix, "lib", "node_modules", pkg.name);
-    if (!existsSync(join(gitPackageRoot, "package.json"))) {
-      fail(`GitHub global install reported success but did not leave ${gitPackageRoot}`);
-    }
-    const gitPackage = JSON.parse(readFileSync(join(gitPackageRoot, "package.json"), "utf8"));
-    if (gitPackage.version !== pkg.version) {
-      fail(`GitHub global install version ${gitPackage.version ?? "missing"} does not match ${pkg.version}`);
-    }
-
-    const gitBin = join(gitPrefix, "bin", "pifrost");
-    if (!existsSync(gitBin)) {
-      fail(`GitHub global install did not create executable link ${gitBin}`);
-    }
-    const gitVersion = spawnSync(gitBin, ["--version"], {
-      cwd: installRoot,
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        HOME: gitHome,
-        PATH: `${join(gitPrefix, "bin")}:${process.env.PATH ?? ""}`,
-      },
-    });
-    if (gitVersion.status !== 0) {
-      fail(commandError("GitHub-global pifrost --version", gitVersion));
-    }
-    if (gitVersion.stdout.trim() !== pkg.version) {
-      fail(`GitHub-global CLI version ${gitVersion.stdout.trim()} does not match ${pkg.version}`);
-    }
-  }
-} finally {
-  rmSync(workspace, { recursive: true, force: true });
-}
-
-console.log(
-  `Release package ${pkg.version}: OK (${packedFileCount} files; packed and GitHub-global install paths validated)`,
-);
+console.log("Pifrost "+pkg.version+" release-candidate package: OK ("+items.length+" files)");

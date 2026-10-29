@@ -11,8 +11,10 @@ test("compatibility retirement stays explicitly evidence-gated",()=>{
   assert.ok(r.workarounds.every(x=>x.state==="retained"&&x.retirement&&x.tests.length));
   assert.equal(PIFROST_WORKAROUNDS.length,new Set(PIFROST_WORKAROUNDS.map(x=>x.id)).size);
   assert.match(formatPifrostWorkarounds(r,true),/Retirement gate/);
-  assert.equal(commandCatalog.get("omp workarounds")?.operation,"read-only");
-  assert.throws(()=>validateCliInvocation("omp workarounds",[],{json:true,verbose:true}),/separate/);
+  // Historical diagnostics remain testable as library code but are no longer
+  // part of the supported 0.30 user-facing CLI.
+  assert.equal(commandCatalog.has("omp workarounds"),false);
+  assert.throws(()=>validateCliInvocation("omp workarounds",[],{}),/Unsupported command/u);
 });
 
 test("image-budget diagnostics are explicit and absent when unknown",()=>{

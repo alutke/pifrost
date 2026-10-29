@@ -20,7 +20,9 @@ export function requireRuntime(state, env = process.env) {
  * command, including repository MCP/Skills operations.
  */
 export function requireManagement(state, env = process.env) {
-  const runtime = requireRuntime(state, env);
+  // Control-plane management does not require an inference Virtual Key.
+  const runtime = runtimeConfigFromState(state, env);
+  if (!runtime.url) throw new Error("Bifrost URL is missing; run pifrost init");
   const managementAuth = managementAuthFromState(state, env);
   if (!managementAuth) {
     throw new Error(

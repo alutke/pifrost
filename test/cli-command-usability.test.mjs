@@ -12,17 +12,55 @@ import {
 } from "../cli-health.mjs";
 
 const commands=[
-"init","global setup","global status","global mcp-policy","global observability","global configure-omp",
-"omp readiness","omp context","omp context apply","omp workarounds","judge status","judge providers","judge activate","judge probe","routes list","routes diff","routes verify","routes attest","routes sync","routes reconcile",
-"routes diagnose","routes effective","routes explain","models refresh","models doctor","models kinds",
-"repo init","repo status","repo research status","repo research bind","repo research unbind",
-"repo research prefer","repo research probe","repo rotate-key","repo reset","repo mcp list",
-"repo mcp add","repo mcp remove","repo mcp instructions","repo vmcp list","repo vmcp add",
-"repo vmcp remove","repo skills list","repo skills suggestions","repo skills bind","repo skills unbind",
-"repo skills dismiss","repo skills undismiss","repo skills add","repo skills remove","repo skills sync",
-"secret repo-mcp","doctor",
+  "status",
+  "models",
+  "mcp",
+  "skills",
+  "omp commands status",
+  "omp commands enable",
+  "omp commands disable",
+  "init",
+  "global setup",
+  "global status",
+  "global mcp-policy",
+  "global observability",
+  "migrate status",
+  "migrate disable-extension",
+  "migrate apply",
+  "migrate rollback",
+  "models list",
+  "models status",
+  "models enable",
+  "models disable",
+  "models kinds",
+  "repo init",
+  "repo status",
+  "repo rotate-key",
+  "repo reset",
+  "repo mcp list",
+  "repo mcp add",
+  "repo mcp remove",
+  "repo mcp instructions",
+  "repo vmcp list",
+  "repo vmcp add",
+  "repo vmcp remove",
+  "repo skills list",
+  "repo skills suggestions",
+  "repo skills bind",
+  "repo skills unbind",
+  "repo skills dismiss",
+  "repo skills undismiss",
+  "repo skills add",
+  "repo skills remove",
+  "repo skills sync",
+  "secret repo-mcp",
+  "secret inference",
+  "secret inference-vk",
+  "secret inference-bearer",
+  "doctor"
 ];
-test("all 53 CLI command contracts are present, documented and readable",()=>{
+
+test("all 46 supported CLI command contracts are present, documented and readable",()=>{
   assert.deepEqual([...commandCatalog.keys()],commands);
   for(const [name,def] of commandCatalog){
     const h=commandUsage(name);
@@ -40,7 +78,7 @@ test("grant allow-lists must be explicit and never silently expand",()=>{
   assert.throws(()=>validateCliInvocation("repo init",[],{clients:"DonSeTch"}),/explicit --tools/u);
   assert.equal(validateCliInvocation("repo mcp add",["DonSeTch"],{tools:"web_search"}).operation,"gateway-change");
   assert.equal(validateCliInvocation("repo mcp add",["DonSeTch"],{tools:"*"}).operation,"gateway-change");
-  assert.equal(flagRequiresValue("tools","routes explain"),false);
+  assert.equal(flagRequiresValue("tools","repo init"),true);
   assert.equal(flagRequiresValue("tools","repo mcp add"),true);
 });
 test("health results distinguish required failure, warning and strict unknown",()=>{
@@ -80,7 +118,7 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
       [["repo","mcp","add","DonSeTch","--tools","--force"],"requires a value"],
       [["repo","init","--clients","DonSeTch"],"explicit --tools"],
       [["doctor","--unrecognised"],"Unknown option"],
-      [["routes","explain","default","--output-tokens","bad"],"positive integer"],
+      [["models","enable","--api","unknown"],"completions or responses"],
       [["repo","reset","extra"],"Expected 0 argument"],
     ]){
       const r=run(...args);
@@ -92,9 +130,12 @@ test("CLI invalid arguments are rejected before any gateway access or writes",()
     assert.equal(help.status,0,help.stderr);
     assert.match(help.stdout,/Operation: Changes gateway permissions or credentials/u);
     assert.match(help.stdout,/--tools <value>/u);
-    const shortcut=run("routes","explain","default","--tools","--help");
-    assert.equal(shortcut.status,0,shortcut.stderr);
-    assert.match(shortcut.stdout,/--tools(?:\s|$)/u);
+    const native=run("models","enable","--help");
+    assert.equal(native.status,0,native.stderr);
+    assert.match(native.stdout,/--api <value>/u);
+    const contextual=run("help","models","enable");
+    assert.equal(contextual.status,0,contextual.stderr);
+    assert.match(contextual.stdout,/Usage: pifrost models enable/u);
   } finally {rmSync(home,{recursive:true,force:true});}
 });
 

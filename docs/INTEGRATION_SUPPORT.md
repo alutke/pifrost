@@ -1,107 +1,54 @@
-# Pifrost integration support — v0.29.27
+# Pifrost 0.30 integration support — 0.30.0
 
-This page tracks the **current release** and describes **tested scope**, not an assertion that a real Bifrost gateway and every provider always work. Policy snapshot: **OMP 18.12.5**. Supported historical host installation: **OMP 18.10.4**; prior compiled host **18.12.1**; current host contract: **OMP 18.12.5**. Minimum documented Bifrost: **2.2.4+**, pinned contract validation **Bifrost 2.3.2** (including 2.3.0 historical fixtures).
+This document describes the *unpublished* release candidate. It distinguishes automated validation from live conformance evidence and intentionally does not certify a paid provider model.
 
-| Capability | 18.10.4 compiled host | 18.12.5 compiled host | Live physical provider |
-| --- | --- | --- | --- |
-| Plugin installation / `omp plugin list` | Tested in CI | Tested in CI | Not applicable |
-| Native extension registration with mocked model discovery | Shared integration test (not executed inside the compiled host) | Shared integration test (not executed inside the compiled host) | Not proven |
-| Bifrost routing, fallback and reasoning replay | Mocked CI and upstream contracts | Mocked CI and upstream contracts | Separate opt-in transport smoke |
-| TypeSafe `/typesafe/v1/systemone` Jev | Not advertised as supported | Native wire mocked; optional registered provider | Opt-in billable conformance |
-| OpenAI `/openai/v1/decisions` | Not advertised as supported | Native wire mocked; optional registered provider | Opt-in billable conformance |
-| Jev native image judgments | Not advertised as supported | Experimental, opt-in, mocked | Opt-in billable image conformance |
-| Auto-prewalk / `/seance` / advisor | Not advertised as supported | Settings and source contract inspection | No real session/consultation run |
-| Optional gateway image-count metadata | Deterministic unit coverage | Deterministic unit coverage | Only if Bifrost actually reports validated fields |
+## Ownership
 
-## Ownership and limits
+| Capability | Owner | Pifrost role |
+| --- | --- | --- |
+| Model defaults, modelRoles and provider selection | OMP | Never modify automatically |
+| Reasoning, tool-call serialization, streaming, retry and compaction | OMP and selected provider | No model interception |
+| Optional Bifrost model discovery | OMP native models.yml | Opt-in marked provider configuration |
+| Bifrost model routing and logging | Bifrost | Expose model IDs through native OMP |
+| MCP grant authorization | Bifrost Virtual Keys | Per-repository grant setup and private credential resolver |
+| MCP tool execution | OMP / Bifrost | No custom runner |
+| Skill discovery and repository installation | Bifrost / OMP | Optional integrity-checked bridge |
+| Slash-command interface | OMP | One opt-in /pifrost command |
 
-OMP owns native judgment execution, image input validation, agent sessions, prewalk, advisor and native fallback. Bifrost owns endpoint routing, gateway auth, provider policy and billing. Pifrost owns isolated model registration, conservative metadata and CLI diagnostics. Native non-chat judge roles are **not filtered** by `enabledModels`; only `modelRoles.judge` is changed by activation. Bifrost inventory image-count properties `image_count_budget` and `per_request_limits.images` are optional extensions, **not documented universal fields**. Missing fields cannot be inferred from a provider name.
+## OMP support
 
-## Safe user verification
+Configuration design targets **OMP 18.12.5** and documents compatibility with OMP's native command-resolved model keys, .omp/mcp.json and .omp/agent/extensions discovery.
 
-```bash
-pifrost doctor
-pifrost omp readiness --verbose
-pifrost omp workarounds --verbose
-pifrost judge status
-pifrost judge activate --dry-run
-```
+- **Default profile**: PI_CODING_AGENT_DIR if supplied, otherwise PI_CONFIG_DIR/agent (normally ~/.omp/agent)
+- **Named profiles**: OMP_PROFILE or fallback PI_PROFILE; PI_CONFIG_DIR/profiles/NAME/agent, ignoring PI_CODING_AGENT_DIR
+- Both models.yml and models.yaml are legitimate OMP inputs; Pifrost refuses to create a competing configuration file.
+- Older OMP 18.10.4/18.12.1 binaries may support different native behaviour. Do not assume current feature parity without an actual compatibility check.
 
-For optional **billable** native conformance, on a trusted machine with a test Bifrost Virtual Key authorised to both TypeSafe and OpenAI:
+## Bifrost support
 
-```bash
-export BIFROST_URL=http://127.0.0.1:8180/v1
-export BIFROST_VIRTUAL_KEY=YOUR_TEST_VIRTUAL_KEY
-export PIFROST_LIVE_JUDGMENTS=1
-npm run smoke:judgments
-```
+Management authentication may be OSS Basic or Enterprise Bearer auth; **an inference Virtual Key is not required** for MCP and Skills administration. Bifrost inference auth is configured separately: Virtual Key-only (x-bf-vk header), Bearer-only (Authorization header), or both. Native OMP resolves these values from protected local Pifrost commands, honouring environment overrides.
 
-The smoke runs text and synthetic-image judgments for `jev-1.14.0` and `openai/gpt-6-luna` by default. Set `PIFROST_LIVE_JUDGE_MODELS` to a comma-separated subset. It fails when discovery, typed answers, or usage evidence are missing. Output suppresses upstream response bodies and secrets. It **does not** demonstrate correct answers on a representative production workload, and does not automate OMP's `/seance` or prewalk lifecycle.
+Bifrost model discovery uses a native OMP OpenAI model-list provider. Chat Completions and Responses are selected explicitly, not translated or automatically negotiated by Pifrost. Tool calls, thinking / reasoning fidelity, context capacity, errors and fallback are delegated to OMP and Bifrost. Physical provider compatibility remains an end-to-end live-testing requirement.
 
-## Quality gates
+Repository MCP permissions are enforced by the Bifrost Virtual Key, not by Pifrost's CLI. The repository Skill bridge validates path safety, ownership, file hashes and collisions.
 
-CI runs package and source contracts, the native-extension mocked-registration test, the model metadata tests, judge role rollback tests, historical/current compiled installation, and the workaround-registry reference validator. All assertions beyond these gates require separate evidence. Never remove routing/transport/reasoning guards based on an OMP version number alone.
+## Evidence and limitations
 
-For optional **read-only** live gateway image-budget inventory inspection, set `PIFROST_LIVE_IMAGE_METADATA=1` and run `npm run smoke:image-metadata` with the same Bifrost URL and test Virtual Key. No image or decision request is submitted; counts may legitimately be zero because the fields are optional.
+| Evidence | Status |
+| --- | --- |
+| Static 0.30 architectural and command contracts | Automated in CI |
+| CLI, MCP/Skills, profile and secret regression tests | Automated in CI |
+| OMP native configuration and optional palette installation | Automated and/or mocked in CI |
+| Package composition and production dependency audit | Automated in CI |
+| Real Bifrost Chat streaming/reasoning/tool calls | **Not live certified** |
+| Real Bifrost Responses streaming/reasoning/tool calls | **Not live certified** |
+| Named-profile installation on a real user OMP environment | Automated path tests; user environment not certified |
+| Live remote MCP Virtual Key management and Skill serving | Needs separately authorised gateway test |
 
-## Historical: thinking-qualified auto-prewalk target checks (v0.29.1)
+Live inference and Skills/MCP operations may be billable or alter gateway grants. CI does not automatically run them without explicit credentials and authorisation. Tests do not assert real provider identity, inference quality, latency, price or correctness of Bifrost billing. No workaround or automatic retry should be inferred from legacy 0.29 documentation.
 
-`pifrost omp readiness` checks a role such as `bifrost/omp-smol:high` using the underlying logical ID `omp-smol`, while preserving the full OMP selector in the read-only report. OMP-supported thinking suffixes are also removed when comparing basic `enabledModels` patterns. Unsupported selectors, complex scopes, missing aliases and stale caches still produce conservative unknown/warning results. No Bifrost route or OMP setting is changed by this diagnostic fix.
+## Release criteria
 
+Release is NO-GO until blocking security/migration findings are resolved, CI passes on the final commit, and an operator accepts the limits of any live conformance not executed. The 0.30 branch should not be merged into main or tagged automatically before that review.
 
-## Release 4 evidence update (v0.29.13)
-
-- CI validates atomic per-request route snapshots, target-scoped output ceilings,
-  Bifrost logical alias passthrough, confirmed entitlement-scoped endpoint caps,
-  MCP response size bounds and denied credential redirects.
-- Compiled OMP 18.10.4 and OMP 18.12.5 test **installation/plugin discovery** (with additional historical 18.12.1 coverage).
-  Native integration uses a mocked Bifrost endpoint; no production provider
-  fallback or live user session is proven.
-- Release documentation/policy snapshot drift, missing private security guidance,
-  and missing owner declarations are CI failures.
-- Live provider output, requested fallback token handling, command/tool side
-  effects and billing must be assessed with a separate, explicitly approved,
-  potentially billable conformance probe.
-
-## Release 5A evidence update (v0.29.14)
-
-- The five pinned OMP package versions and the policy snapshot are all **18.12.5**; the current compiled host gate is 18.12.5, alongside 18.10.4 minimum-host and 18.12.1 historical checks.
-- Bifrost 2.3.2 security and 2.3.1 feature contracts are checked against immutable upstream release commits. This validates public/source contracts, **not** the installed gateway's version or live transport semantics.
-- Bifrost 2.3.1 introduces additive and some non-reversible database migrations. Before independently upgrading the actual gateway, back up the configuration/database and rehearse migrations. 2.3.2 requires rebuilding custom Go plugins with Go 1.27.3; it introduces no additional database migration.
-- Upgrade does not enable tool search, auto-executing OpenAPI MCP tools, newer judgment wire modes, new response header placement, or any paid live probe. Later 5B–5F phases assess those behaviours.
-
-## Release 5B wire and protocol evidence (v0.29.15)
-
-- Mocked Chat/Responses responses preserve stream event identity, native signed reasoning, function call IDs, empty tool results and combined instructions. HTTP 413 never permits Pifrost protocol fallback.
-- Bifrost 2.3.1/2.3.2 supports placing `extra_fields` in either the JSON body or `x-bifrost-*` headers. Pifrost records only bounded, sanitized gateway-provided model/protocol provenance and specifically reported dropped `max_*` fields; it never infers the physical provider from the configured primary.
-- `/pifrost trace` warns when Bifrost reports removing an output-token limit. This is **not** an upstream parameter forwarding fix: Bifrost issue #8765 requires gateway/provider verification, including incomplete datasheet rows.
-- No Bifrost production egress, actual provider fallback, billable session, MCP mutation, or 413 request-body boundary was live-executed by these CI fixtures. A separately opted-in Bifrost smoke and provider-level egress evidence remain required.
-
-## Release 5C image and model inventory validation (v0.29.16)
-
-- Packaged OMP **18.12.5** public model image rules now drive candidate-aware prewalk. DeepSeek V4.1 Flash patch billing is used instead of generic OpenAI/Claude estimates; use actual physical model identity where available.
-- Standalone Node tests compare the portable fallback to OMP 18.12.5, cover image-heavy conversations, provider usage anchors and unrecognised image dimensions.
-- Bifrost `/v1/models` discovery follows explicit `next_page_token` pages; invalid, cyclic or missing continuation cursors and reported failed provider-key inventories are **incomplete**, not an authoritative list. Failed refresh leaves prior cache unchanged. Upstream Bifrost issue #8759 may also omit models without a completeness flag; this cannot be proven from one response and still needs provider-scoped live comparison.
-- No physical gateway egress, provider context billing, production image request, independent supplier quota or pricing was live verified by these deterministic fixtures.
-
-## Release 5D lifecycle/MCP regression evidence (v0.29.17)
-
-- OMP 18.12.5 remains the pinned policy. Simulated lifecycle checks verify cancelled turns, incomplete/uncertain tool outcomes, stale approvals, one-shot continuation, and history changes; compiled historical OMP installation compatibility is retained.
-- A disposable local HTTP server commits a fixture record then drops the response or returns HTTP 503: Pifrost sends exactly one `tools/call`, reports `MCP_OUTCOME_UNCERTAIN`, and does not retry. This does not exercise Bifrost itself.
-- Bifrost [#8795](https://github.com/maximhq/bifrost/issues/8795) remains an upstream gateway retry bug. Read-only diagnostics identify auto-executable unknown or non-idempotent grants, without changing grants. Tool hints are advisory and cannot certify at-most-once execution.
-- Live physical gateway MCP retry behaviour and OMP historical host lifecycle semantics are **not verified** by these fixtures; explicit opt-in conformance remains necessary. No production mutations or billable provider requests were made.
-
-## Release 5E gateway MCP diagnostics (v0.29.18)
-
-- Native Responses deferred search remains capability gated, with no duplicate tool-search insertion or ambiguous definition rewrites. Explicit gateway-managed discovery stays under Bifrost rather than pretending to be Responses-native support.
-- OpenAPI MCP client-source hints and Code Mode underlying grants are derived only from management metadata. They do not prove live authentication, tool execution, operation safety, OMP approval visibility or provider-side retry behaviour.
-- Bounded Code Mode result-shape diagnostics, duplicate injected tool-name warnings and optional token-scoped progress parsing are deterministic unit-tested. Progress is post-response inspection, not a background stream.
-- Upstream Bifrost #8795 may still replay committed tools internally; this phase does not fix it. A separately approved disposable 2.3.2 deployment and actual OMP host are required for live conformance; no billable or mutating tests ran in CI.
-
-## Release 5F judgment, cache and cost evidence (v0.29.19)
-
-- OMP 18.12.5 native image bounds and box-support APIs are consumed read-only where importable; capability and actual Jev 1.14 execution remain distinct. Compiled OMP compatibility is checked in CI; no real OMP judge session is claimed.
-- Bifrost Azure/Databricks `/v1/models` visibility is not canonical `/v1/decisions` conformance. New `pifrost judge providers` performs no judgment or permission write.
-- Incoming `prompt_cache_options.ttl=12h` and mixed explicit breakpoints are observed but not automatically configured. The optional two-request `PIFROST_LIVE_CACHE=1` script is potentially billable and excluded from CI.
-- Cache read/write counters and Bifrost cost are logged only when gateway actually reports them; missing fields stay unknown and reported zeros stay zero. A physical-model header is gateway evidence, not external invoice or independently verified provider egress.
-- Unit tests and pinned cross-version CI cannot prove 12-hour persistence, Moonshot/DeepSeek supplier pricing, actual Azure/Databricks Decisions output or OMP image/box UI behaviour. Separate user-approved live certification and provider logs remain necessary.
+Historical Pifrost 0.29 routing, output-budget and recovery design remains in Git history for reference, not as an operational 0.30 contract.

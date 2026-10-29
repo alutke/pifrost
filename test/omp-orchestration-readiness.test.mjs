@@ -115,11 +115,11 @@ test("advisor severity is read-only, exposes resumption and cost impacts",()=>{
   assert.doesNotMatch(JSON.stringify(unknown),/Bearer|sk-bf-/);
 });
 
-test("readiness CLI is registered read-only and JSON/verbose are exclusive",async()=>{
+test("legacy readiness command is retired; OMP-native health is read-only",async()=>{
   const {commandCatalog,validateCliInvocation}=await import("../cli-command-schema.mjs");
-  assert.equal(commandCatalog.get("omp readiness")?.operation,"read-only");
-  assert.ok(commandCatalog.get("omp readiness")?.options.includes("json"));
-  assert.throws(()=>validateCliInvocation("omp readiness",[],{json:true,verbose:true}),/separate/);
+  assert.equal(commandCatalog.has("omp readiness"),false);
+  assert.equal(commandCatalog.get("status")?.operation,"read-only");
+  assert.throws(()=>validateCliInvocation("status",[],{json:true,verbose:true}),/separate/);
 });
 
 test("complex OMP chat scope is unverified rather than falsely denied",()=>{
